@@ -1,0 +1,146 @@
+<!doctype html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>راهنمای کلود</title>
+<!-- Standalone on purpose: opens from the app AND by double-clicking the file
+     on disk. Font path is relative so both work. -->
+<link rel="stylesheet" href="style.css">
+<style>
+  body { display: block; overflow-y: auto; }
+  .page { max-width: 68ch; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 .2em; }
+  .lead { color: var(--fg-muted); margin: 0 0 2em; }
+  h2 {
+    font-size: 1.1rem; font-weight: 700; margin: 2em 0 .5em;
+    padding-block-end: .3em; border-block-end: 1px solid var(--border);
+  }
+  p, li { line-height: 1.9; }
+  ul { padding-inline-start: 1.3em; }
+  kbd {
+    display: inline-block; padding: 1px 7px; margin: 0 2px;
+    border: 1px solid var(--border); border-radius: 5px;
+    background: var(--surface-2);
+    font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
+    font-size: .85em;
+    direction: ltr; unicode-bidi: isolate;
+  }
+  .card {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); padding: 14px 16px; margin: 1em 0;
+  }
+  .card.warn { border-inline-start: 3px solid var(--danger); }
+  .card.tip  { border-inline-start: 3px solid var(--accent); }
+  .card h3 { margin: 0 0 .4em; font-size: 1rem; font-weight: 700; }
+  .card p:last-child { margin-block-end: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  th, td { text-align: right; padding: 7px 6px; border-block-end: 1px solid var(--border); }
+  th { color: var(--fg-muted); font-weight: 500; font-size: .9em; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>راهنمای کلود</h1>
+<p class="lead">
+  کلود یک دستیار برنامه‌نویسی است که می‌تواند روی فایل‌های کامپیوتر شما کار کند.
+  شما فارسی می‌نویسید، او کار را انجام می‌دهد. لازم نیست هیچ دستور فنی بلد باشید.
+</p>
+
+<h2>شروع کار</h2>
+<p>
+  روی آیکون <b>کلود</b> در دسکتاپ دوبار کلیک کنید. یک پنجره باز می‌شود.
+  پیام خود را در کادر پایین بنویسید و <kbd>Enter</kbd> را بزنید.
+</p>
+<p>
+  برای رفتن به خط بعد بدون ارسال پیام، <kbd>Shift</kbd> + <kbd>Enter</kbd> را بزنید.
+</p>
+
+<div class="card tip">
+  <h3>نیم‌فاصله</h3>
+  <p>
+    برای نوشتن کلمه‌هایی مثل «می‌رود» یا «خانه‌ها»، به‌جای فاصله معمولی
+    <kbd>Shift</kbd> + <kbd>Space</kbd> را بزنید. این همان نیم‌فاصله است.
+  </p>
+</div>
+
+<h2>وقتی کلود اجازه می‌خواهد</h2>
+<p>
+  هر وقت کلود بخواهد فایلی بسازد، تغییر دهد، یا دستوری اجرا کند،
+  یک پنجره باز می‌شود و از شما اجازه می‌گیرد. در آن پنجره می‌بینید که
+  دقیقاً چه کاری می‌خواهد بکند و روی چه فایلی.
+</p>
+<ul>
+  <li><b>اجازه بده</b> — کار انجام می‌شود.</li>
+  <li><b>رد کن</b> — کار انجام نمی‌شود. کلود ادامه می‌دهد و چیزی خراب نمی‌شود.</li>
+  <li>اگر تیک «دوباره نپرس» را بزنید، تا وقتی برنامه باز است دیگر برای همان ابزار نمی‌پرسد.</li>
+</ul>
+
+<div class="card warn">
+  <h3>اگر مطمئن نیستید، رد کنید</h3>
+  <p>
+    رد کردن هیچ ضرری ندارد. می‌توانید بعد از آن از کلود بپرسید چرا آن کار را می‌خواست،
+    و بعد تصمیم بگیرید. بستن پنجره هم مثل «رد کن» عمل می‌کند.
+  </p>
+</div>
+
+<h2>دکمه‌های بالای پنجره</h2>
+<table>
+  <tr><th>دکمه</th><th>کار</th></tr>
+  <tr><td><b>نشست‌ها</b></td><td>گفتگوهای قبلی و پوشه‌های اخیر</td></tr>
+  <tr><td><b>انتخاب پوشه</b></td><td>عوض کردن پوشه‌ای که کلود روی آن کار می‌کند</td></tr>
+</table>
+
+<h2>ادامه دادن یک گفتگوی قبلی</h2>
+<p>
+  دکمه <b>نشست‌ها</b> را بزنید. فهرست گفتگوهای قبلی همین پوشه را می‌بینید.
+</p>
+<ul>
+  <li><b>نمایش</b> — فقط گفتگو را می‌خوانید.</li>
+  <li><b>ادامه</b> — گفتگو از همان‌جا ادامه پیدا می‌کند و کلود همه‌چیز را به یاد دارد.</li>
+</ul>
+<p>
+  اگر برنامه بسته شد یا کامپیوتر خاموش شد، چیزی از دست نمی‌رود.
+  دوباره باز کنید و <b>ادامه</b> را بزنید.
+</p>
+
+<h2>توقف</h2>
+<p>
+  وقتی کلود در حال نوشتن است، دکمه <b>توقف</b> ظاهر می‌شود.
+  اگر دیدید دارد اشتباه می‌رود، آن را بزنید. گفتگو از بین نمی‌رود و می‌توانید ادامه دهید.
+</p>
+
+<h2>فرستادن فایل و عکس</h2>
+<p>
+  دکمه گیره کاغذ کنار کادر نوشتن را بزنید و فایل را انتخاب کنید.
+  عکس را کلود می‌بیند؛ فایل متنی را می‌خواند. می‌توانید چند فایل با هم بفرستید.
+</p>
+
+<h2>دستورهای آماده</h2>
+<p>
+  اگر در ابتدای کادر <kbd>/</kbd> بزنید، فهرستی از دستورهای آماده باز می‌شود.
+  با کلیدهای بالا و پایین انتخاب کنید و <kbd>Tab</kbd> را بزنید.
+</p>
+
+<h2>اگر مشکلی پیش آمد</h2>
+<ul>
+  <li>پنجره را ببندید و دوباره از دسکتاپ باز کنید. کاری خراب نمی‌شود.</li>
+  <li>اگر پیام «اتصال قطع شد» دیدید، برنامه بسته شده — دوباره بازش کنید.</li>
+  <li>اگر باز هم درست نشد، به همکار فنی خود بگویید فایل
+    <span class="path">setup-log.txt</span> را ببیند.</li>
+</ul>
+
+<h2>چیزهایی که این برنامه ندارد</h2>
+<p>
+  چند امکان که در نسخه خط فرمانی کلود هست و اینجا عمداً ساخته نشده — نبودشان ایراد نیست:
+</p>
+<ul>
+  <li>عوض کردن حالت دسترسی وسط گفتگو</li>
+  <li>اجرای مستقیم دستور سیستمی با <kbd>!</kbd></li>
+  <li>کلید <kbd>Esc</kbd> برای توقف — به‌جای آن از دکمه <b>توقف</b> استفاده کنید</li>
+</ul>
+
+</div>
+</body>
+</html>

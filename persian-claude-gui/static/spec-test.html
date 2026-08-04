@@ -1,0 +1,161 @@
+<!doctype html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spec tests 1–8</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  /* Harness chrome only — never let this file introduce direction rules. */
+  body { grid-template-rows: 1fr auto auto; }
+  .case-head {
+    align-self: stretch; max-width: none;
+    margin-block-start: 1.2em; padding: 6px 10px;
+    border-inline-start: 3px solid var(--accent);
+    background: var(--surface-2); border-radius: 6px;
+  }
+  .case-head b { font-weight: 700; }
+  .case-head .expect { display: block; color: var(--fg-muted); font-size: .85em; }
+  #verdict { padding: 10px var(--gap); background: var(--surface); border-block-start: 1px solid var(--border); }
+  #verdict .fail { color: var(--danger); font-weight: 700; }
+  #verdict .pass { color: var(--ok); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<main id="log" aria-label="spec tests"></main>
+
+<!-- Test 6 needs the real composer handler, so the harness carries the real
+     composer markup and lets app.js bind to it. -->
+<form id="composer">
+  <label class="sr-only" for="input">ZWNJ test</label>
+  <textarea id="input" rows="1" dir="auto"
+            placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
+  <button type="submit" id="send">ارسال</button>
+</form>
+
+<footer id="statusline"></footer>
+<div id="verdict"></div>
+
+<script src="/static/strings.fa.js"></script>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/app.js"></script>
+<script>
+/* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
+   copy, so a regression in app.js fails here. Cases match
+   claude-persian-rtl-spec.md §"Test cases" exactly. */
+const CASES = [
+  [1, "سلام دنیا",
+      "راست‌چین، راست به چپ، حروف چسبیده"],
+  [2, "Hello world",
+      "چپ‌چین، بدون تغییر"],
+  [3, "فایل C:\\Users\\Lion\\Desktop\\test.md را باز کن",
+      "متن فارسی راست‌چین؛ مسیر سالم و خوانا از چپ به راست، بک‌اسلش‌ها سر جای خود"],
+  [4, "```js\nif (x > 0) { return \"ok\"; }\n```",
+      "چپ‌چین، LTR، آکولاد و نقل‌قول سر جای خود"],
+  [5, "نسخه 2.1.221 نصب شد",
+      "شماره نسخه 2.1.221 خوانده شود، جابه‌جا نشود"],
+  [6, null,
+      "در کادر پایین بنویسید «می» + Shift+Space + «رود» → باید می‌رود شود، نه میرود"],
+  [7, "این یک بند فارسی است که بلافاصله بعد از آن یک بلوک کد می‌آید.\n\n```py\ndef ok(): return 1\n```",
+      "هیچ‌کدام جهت یا چینش دیگری را خراب نکند"],
+  [8, "این یک بند طولانی فارسی است که باید روی چند خط بشکند و در هر خط راست‌چین بماند بدون آنکه دنباله حروف بریده شود. " +
+      "متن باید با فاصله سطر مناسب نمایش داده شود تا حروف کشیده و زیرنویس‌دار روی هم نیفتند و خواندن آن راحت باشد. " +
+      "این بند به‌عمد بلند نوشته شده تا شکست خط چندباره اتفاق بیفتد.",
+      "چینش راست در همه خطوط، بدون بریدگی زیرنویس"],
+];
+
+// app.js already declares `log` at top level in the shared classic-script
+// scope, so the harness must not redeclare it.
+const specLog = document.getElementById("log");
+
+for (const [n, markdown, expected] of CASES) {
+  const head = document.createElement("div");
+  head.className = "case-head";
+  head.setAttribute("dir", "auto");
+  head.innerHTML = "<b>تست " + n + "</b>";
+  const exp = document.createElement("span");
+  exp.className = "expect";
+  exp.setAttribute("dir", "auto");
+  exp.textContent = expected;
+  head.append(exp);
+  specLog.append(head);
+
+  if (markdown === null) continue;   // case 6 is interactive
+  window.renderEvent({
+    type: "assistant",
+    message: { content: [{ type: "text", text: markdown }] },
+  });
+}
+
+/* Automated checks for the failures that are invisible to a screenshot. */
+const checks = [];
+function check(name, ok, detail) { checks.push({ name, ok, detail }); }
+
+const bubbles = [...specLog.querySelectorAll(".msg.assistant")];
+
+check("base CSS: .msg is unicode-bidi:plaintext",
+  getComputedStyle(bubbles[0]).unicodeBidi === "plaintext",
+  getComputedStyle(bubbles[0]).unicodeBidi);
+
+const anyPre = specLog.querySelector("pre");
+check("base CSS: pre is direction:ltr + isolate",
+  getComputedStyle(anyPre).direction === "ltr" &&
+  getComputedStyle(anyPre).unicodeBidi === "isolate",
+  getComputedStyle(anyPre).direction + " / " + getComputedStyle(anyPre).unicodeBidi);
+
+check("rule 1: block elements carry dir=auto",
+  [...specLog.querySelectorAll(".msg p")].every(p => p.getAttribute("dir") === "auto"));
+
+const case3 = bubbles[2];
+const bdi = case3.querySelector("bdi.path");
+check("rule 2: bare Windows path wrapped in <bdi>",
+  !!bdi && bdi.textContent === "C:\\Users\\Lion\\Desktop\\test.md",
+  bdi ? bdi.textContent : "no <bdi> found");
+
+const case5 = bubbles[4];
+const ver = case5.querySelector("bdi.path");
+check("rule 2: version number isolated",
+  !!ver && ver.textContent === "2.1.221", ver ? ver.textContent : "none");
+
+check("rule 3: Vazirmatn is the body face",
+  getComputedStyle(document.body).fontFamily.includes("Vazirmatn"));
+
+check("rule 4: line-height >= 1.9 on Persian text",
+  parseFloat(getComputedStyle(bubbles[0]).lineHeight) /
+  parseFloat(getComputedStyle(bubbles[0]).fontSize) >= 1.89,
+  getComputedStyle(bubbles[0]).lineHeight);
+
+check("rule 5: digits inside <pre> stay Latin",
+  !/[۰-۹]/.test(specLog.querySelector("pre").textContent));
+
+check("no global dir=rtl leak: code block computes LTR inside RTL shell",
+  getComputedStyle(specLog.querySelector("pre code")).direction === "ltr");
+
+check("page does not scroll horizontally",
+  document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  document.documentElement.scrollWidth + " vs " + document.documentElement.clientWidth);
+
+const input = document.getElementById("input");
+input.value = "می" + "\u200C" + "رود";
+check("rule 6: ZWNJ survives in the composer value",
+  input.value.includes("\u200C"));
+
+const verdict = document.getElementById("verdict");
+const failed = checks.filter(c => !c.ok);
+verdict.innerHTML = "<b>" + (failed.length ? "<span class='fail'>FAIL</span>"
+                                           : "<span class='pass'>PASS</span>") +
+  " — " + (checks.length - failed.length) + "/" + checks.length + "</b>";
+const ul = document.createElement("ul");
+for (const c of checks) {
+  const li = document.createElement("li");
+  li.setAttribute("dir", "auto");
+  li.className = c.ok ? "" : "fail";
+  li.textContent = (c.ok ? "✓ " : "✗ ") + c.name + (c.detail ? "  [" + c.detail + "]" : "");
+  ul.append(li);
+}
+verdict.append(ul);
+window.__specChecks = checks;
+</script>
+</body>
+</html>
