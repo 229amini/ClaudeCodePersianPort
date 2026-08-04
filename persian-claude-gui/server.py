@@ -80,6 +80,7 @@ MIME_TYPES = {
     ".json": "application/json; charset=utf-8",
     ".woff2": "font/woff2",
     ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
 }
 
 
@@ -180,6 +181,7 @@ class Hub:
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 RECENTS_FILE = HERE / "recents.json"
+ARCHIVED_FILE = HERE / "archived.json"
 MAX_RECENTS = 10
 
 
@@ -229,9 +231,10 @@ def _first_field(path: Path, field: str) -> str | None:
 def list_sessions(cwd: Path) -> list[dict]:
     """Session list for the history browser: newest first, with a preview."""
     folder = transcript_dir(cwd)
-    if folder is None:
-        return []
+    return _sessions_in(folder) if folder else []
 
+
+def _sessions_in(folder: Path) -> list[dict]:
     sessions = []
     for transcript in folder.glob("*.jsonl"):
         try:
@@ -245,6 +248,47 @@ def list_sessions(cwd: Path) -> list[dict]:
         })
     sessions.sort(key=lambda item: item["modified"], reverse=True)
     return sessions
+
+
+def list_projects() -> list[dict]:
+    """Sidebar data: every project the CLI has transcripts for, plus recent
+    folders opened through the wrapper that have no transcripts yet.
+
+    The real cwd is read from inside the transcripts, not un-sanitised from the
+    folder name — the name mangling is lossy (both ":" and "\\" become "-").
+    Projects whose folder no longer exists on disk are dropped: opening one
+    would only produce a "not a folder" error.
+    """
+    projects: dict[str, dict] = {}   # lowercased real path -> entry
+
+    def entry_for(path_str: str) -> dict:
+        key = path_str.lower()
+        if key not in projects:
+            projects[key] = {"path": path_str, "modified": 0.0, "sessions": []}
+        return projects[key]
+
+    if PROJECTS_DIR.is_dir():
+        for candidate in PROJECTS_DIR.iterdir():
+            if not candidate.is_dir():
+                continue
+            transcripts = list(candidate.glob("*.jsonl"))
+            if not transcripts:
+                continue
+            cwd = _first_field(transcripts[0], "cwd")
+            if not cwd or not Path(cwd).is_dir():
+                continue
+            entry = entry_for(cwd)
+            entry["sessions"] = _sessions_in(candidate)
+            if entry["sessions"]:
+                entry["modified"] = entry["sessions"][0]["modified"]
+    for recent in load_recents():
+        if Path(recent).is_dir():
+            entry_for(recent)
+    archived = {a.lower() for a in load_archived()}
+    result = sorted(projects.values(), key=lambda p: p["modified"], reverse=True)
+    for entry in result:
+        entry["archived"] = entry["path"].lower() in archived
+    return result
 
 
 def first_user_text(path: Path) -> str | None:
@@ -265,6 +309,22 @@ def first_user_text(path: Path) -> str | None:
     return None
 
 
+def transcript_path(cwd: Path, session_id: str) -> Path | None:
+    """Existing transcript file for `session_id`, or None.
+
+    Single choke point for the traversal guard: a crafted id must not escape
+    the project's transcript folder. Every caller that touches a transcript by
+    id goes through here.
+    """
+    folder = transcript_dir(cwd)
+    if folder is None:
+        return None
+    transcript = (folder / f"{session_id}.jsonl").resolve()
+    if folder.resolve() not in transcript.parents or not transcript.is_file():
+        return None
+    return transcript
+
+
 def read_session(cwd: Path, session_id: str) -> list[dict]:
     """Replayable events for one session.
 
@@ -274,12 +334,8 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
     queue-operation, attachment, last-prompt, and sidechain (subagent) turns —
     is bookkeeping and would only add noise.
     """
-    folder = transcript_dir(cwd)
-    if folder is None:
-        return []
-    # Guard against a crafted id escaping the transcript folder.
-    transcript = (folder / f"{session_id}.jsonl").resolve()
-    if folder.resolve() not in transcript.parents or not transcript.is_file():
+    transcript = transcript_path(cwd, session_id)
+    if transcript is None:
         return []
 
     events: list[dict] = []
@@ -414,23 +470,42 @@ def pick_folder(interpreter: Path) -> str | None:
     return str(Path(chosen)) if chosen else None
 
 
-def load_recents() -> list[str]:
+def _load_paths(file: Path) -> list[str]:
     try:
-        data = json.loads(RECENTS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(file.read_text(encoding="utf-8"))
         return [str(item) for item in data if isinstance(item, str)]
     except (OSError, ValueError):
         return []
+
+
+def _save_paths(file: Path, items: list[str]) -> None:
+    try:
+        file.write_text(json.dumps(items, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def load_recents() -> list[str]:
+    return _load_paths(RECENTS_FILE)
 
 
 def remember_recent(cwd: Path) -> list[str]:
     recents = [item for item in load_recents() if item.lower() != str(cwd).lower()]
     recents.insert(0, str(cwd))
     recents = recents[:MAX_RECENTS]
-    try:
-        RECENTS_FILE.write_text(json.dumps(recents, indent=2), encoding="utf-8")
-    except OSError:
-        pass
+    _save_paths(RECENTS_FILE, recents)
     return recents
+
+
+def load_archived() -> list[str]:
+    return _load_paths(ARCHIVED_FILE)
+
+
+def drop_project_from_lists(*variants: str) -> None:
+    """Forget a path in recents and archived (case-insensitive)."""
+    gone = {v.lower() for v in variants}
+    _save_paths(RECENTS_FILE, [i for i in load_recents() if i.lower() not in gone])
+    _save_paths(ARCHIVED_FILE, [i for i in load_archived() if i.lower() not in gone])
 
 
 class PermissionBroker:
@@ -794,15 +869,37 @@ class Handler(BaseHTTPRequestHandler):
                 "recents": load_recents(),
                 "sessions": list_sessions(self.session.cwd),
             })
+        elif parsed.path == "/api/projects":
+            # Sidebar payload: all known projects with their sessions inline,
+            # one round-trip. The current project may be brand new (opened via
+            # --cwd at boot, no transcripts, not in recents yet) — always
+            # include it so the sidebar can highlight it.
+            projects = list_projects()
+            current = str(self.session.cwd)
+            if not any(p["path"].lower() == current.lower() for p in projects):
+                projects.insert(0, {"path": current, "modified": 0.0, "sessions": []})
+            self._send_json(HTTPStatus.OK, {
+                "current_cwd": current,
+                "current_session": self.session.session_id,
+                "projects": projects,
+            })
         elif parsed.path == "/api/session":
             session_id = params.get("id", [""])[0]
             if not session_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing id"})
                 return
+            # Optional cwd: the sidebar replays sessions from any project, not
+            # just the open one. A bogus path just yields an empty event list.
+            cwd_raw = params.get("cwd", [""])[0]
+            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
             self._send_json(HTTPStatus.OK, {
                 "session_id": session_id,
-                "events": read_session(self.session.cwd, session_id),
+                "events": read_session(cwd, session_id),
             })
+        elif parsed.path == "/favicon.ico":
+            # Edge asks for this on its own; the auth cookie is already set by
+            # the time it does. Same icon the desktop shortcut uses.
+            self._serve_file(HERE / "assets" / "icon.ico")
         elif parsed.path.startswith("/static/"):
             rel = parsed.path[len("/static/"):]
             target = (STATIC_DIR / rel).resolve()
@@ -891,13 +988,82 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {
                 "cwd": str(target), "recents": remember_recent(target),
             })
+        elif parsed.path == "/api/project/archive":
+            # Hide from the sidebar but keep every transcript — reversible.
+            raw = (body.get("path") or "").strip()
+            if not raw:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing path"})
+                return
+            flag = bool(body.get("archived"))
+            items = [i for i in load_archived() if i.lower() != raw.lower()]
+            if flag:
+                items.insert(0, raw)
+            _save_paths(ARCHIVED_FILE, items)
+            self._send_json(HTTPStatus.OK, {"ok": True, "archived": flag})
+        elif parsed.path == "/api/project/remove":
+            # Deletes the project's TRANSCRIPTS and list entries. Never touches
+            # the project folder itself — those are the user's files.
+            raw = (body.get("path") or "").strip()
+            if not raw:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing path"})
+                return
+            target = Path(raw).expanduser()
+            norm = str(target.resolve()).lower()
+            if norm == str(self.session.cwd).lower():
+                self._send_json(HTTPStatus.CONFLICT, {"error": "project is open"})
+                return
+            folder = transcript_dir(target)
+            if folder is not None:
+                # Always a child of PROJECTS_DIR by construction (the sanitised
+                # name contains no separators; the fallback iterates children).
+                shutil.rmtree(folder, ignore_errors=True)
+            drop_project_from_lists(raw, norm)
+            self._send_json(HTTPStatus.OK, {"ok": True})
         elif parsed.path == "/api/session/resume":
             session_id = (body.get("session_id") or "").strip()
             if not session_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id"})
                 return
-            self.session.restart(resume_id=session_id)
+            # Optional path: resuming a session that belongs to another project
+            # must switch cwd in the same restart, not spawn twice.
+            raw = (body.get("path") or "").strip()
+            cwd = None
+            if raw:
+                target = Path(raw).expanduser()
+                if not target.is_dir():
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
+                    return
+                target = target.resolve()
+                if str(target).lower() != str(self.session.cwd).lower():
+                    cwd = target
+            self.session.restart(cwd=cwd, resume_id=session_id)
+            if cwd is not None:
+                remember_recent(cwd)
             self._send_json(HTTPStatus.OK, {"session_id": session_id})
+        elif parsed.path == "/api/session/delete":
+            session_id = (body.get("session_id") or "").strip()
+            if not session_id:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id"})
+                return
+            # The live process keeps writing its own transcript; deleting it
+            # underneath the CLI is a broken state, not a feature.
+            if session_id == self.session.session_id:
+                self._send_json(HTTPStatus.CONFLICT, {"error": "session is active"})
+                return
+            # Optional path: the sidebar deletes sessions in any project. The
+            # traversal guard on the id lives in transcript_path either way.
+            raw = (body.get("path") or "").strip()
+            cwd = Path(raw).expanduser() if raw else self.session.cwd
+            transcript = transcript_path(cwd, session_id)
+            if transcript is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
+                return
+            try:
+                transcript.unlink()
+            except OSError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "session_id": session_id})
         elif parsed.path == "/api/status":
             self._send_json(HTTPStatus.OK, {
                 "session_id": self.session.session_id,
