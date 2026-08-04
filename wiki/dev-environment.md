@@ -14,6 +14,7 @@ Re-run the probe on the target before M8; nothing here transfers automatically.
 | WebView2 | 138.0.3351.121 |
 | `msedge.exe` | present, x86 path only: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
 | Python | **installed by this project** — see below |
+| git | **installed by this project** 2026-08-04 — see below |
 
 ## winget is missing, and the Store-stub trap is real
 
@@ -52,6 +53,32 @@ CLAUDE.md requires an absolute interpreter path in `run.vbs`.
 
 3.12.9 and 3.12.8 also exist on the FTP mirror; 3.12.10 was the newest 3.12.x available and is
 what `setup.ps1` should pin (with a fallback loop, since python.org prunes old point releases).
+
+## git install that worked
+
+Also absent on this machine. Installed user-scope, no admin, from the official Git for Windows
+release (resolved via the GitHub releases API so it does not pin a stale version):
+
+```powershell
+$api   = Invoke-RestMethod "https://api.github.com/repos/git-for-windows/git/releases/latest"
+$asset = $api.assets | Where-Object { $_.name -match '^Git-.*-64-bit\.exe$' } | Select-Object -First 1
+Invoke-WebRequest $asset.browser_download_url -OutFile git-installer.exe -UseBasicParsing
+# /LOADINF supplies the answers the silent installer would otherwise prompt for
+Start-Process .\git-installer.exe -Wait -ArgumentList `
+  "/VERYSILENT","/NORESTART","/NOCANCEL","/SP-","/LOADINF=`"$PWD\git.inf`""
+```
+
+`git.inf` set `Dir=%LOCALAPPDATA%\Programs\Git`, `PathOption=Cmd`, `DefaultBranchOption=main`,
+`CRLFOption=CRLFCommitAsIs`.
+
+Lands at `C:\Users\ladyg\AppData\Local\Programs\Git\cmd\git.exe` (2.55.0). **`PathOption=Cmd`
+only affects new shells** — an already-running session still needs the absolute path, the same
+trap as Python.
+
+`CRLFCommitAsIs` matters here: `setup.ps1` must keep its UTF-8 BOM and `run.vbs` its UTF-16LE,
+and line-ending rewriting is the kind of thing that quietly breaks them. Verified after the first
+commit that the committed blob still carries `EF BB BF` and correct Farsi yeh (U+06CC), and that
+the fonts and icon are byte-identical.
 
 ## Running the wrapper in dev
 
