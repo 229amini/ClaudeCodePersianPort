@@ -1,11 +1,14 @@
 /* ============================================================================
-   Persian RTL front-end for Claude Code — M3 rendering layer.
+   Persian RTL front-end for Claude Code — dark shell (claude.ai-inspired).
 
    The direction rules in the "spec base CSS" block below are copied from
    claude-persian-rtl-spec.md and are BINDING. Do not "tidy" them:
      - text-align:right without direction only moves the block, not the characters
      - direction:ltr without unicode-bidi:isolate lets direction leak across the boundary
      - never reverse strings in JS; the BiDi algorithm is the browser's job
+
+   Dark-only by user decision 2026-08-04 (overrides the earlier follow-the-OS
+   choice recorded in wiki/rtl-rendering-notes.md).
    ========================================================================= */
 
 /* --- Vazirmatn (spec rule 3), self-hosted; the target PC may be offline ---- */
@@ -28,22 +31,28 @@
   font-display: swap;
 }
 
-/* --- tokens --------------------------------------------------------------- */
+/* --- tokens ---------------------------------------------------------------- */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  --bg: #ffffff;
-  --surface: #f8fafc;
-  --surface-2: #f1f5f9;
-  --fg: #0f172a;
-  --fg-muted: #475569;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --danger: #b91c1c;
-  --danger-bg: #fef2f2;
-  --ok: #15803d;
+  /* Warm graphite palette, claude.ai dark reference. Muted text holds ≥4.5:1
+     on --bg; coral is used for large glyphs/fills only (≥3:1 graphical). */
+  --bg: #262624;
+  --bg-side: #1e1d1b;
+  --surface: #30302e;
+  --surface-2: #3a3937;
+  --fg: #f0eee6;
+  --fg-muted: #aaa495;
+  --border: #3e3d39;
+  --accent: #d97757;
+  --accent-strong: #c4633f;
+  --accent-soft: rgb(217 119 87 / .13);
+  --danger: #e5695a;
+  --danger-bg: #3a2622;
+  --ok: #82c091;
 
   --radius: 10px;
+  --radius-lg: 16px;
   --gap: 12px;
 
   /* Persian needs more leading than Latin: taller ascenders, deeper
@@ -51,21 +60,6 @@
   --lh-fa: 1.9;
   --dur: 180ms;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a;
-    --surface: #131f36;
-    --surface-2: #1e293b;
-    --fg: #f8fafc;
-    --fg-muted: #94a3b8;
-    --border: #334155;
-    --accent: #60a5fa;
-    --danger: #f87171;
-    --danger-bg: #2a1416;
-    --ok: #4ade80;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -95,8 +89,12 @@ code,
   text-align: left;
 }
 
-/* --- shell ---------------------------------------------------------------- */
+/* --- shell ----------------------------------------------------------------- */
 * { box-sizing: border-box; }
+
+/* Any display rule on a class (e.g. button.round { display:inline-flex })
+   silently defeats the hidden attribute — the stop button proved it. */
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
@@ -110,105 +108,23 @@ body {
   font-size: 16px;
   line-height: var(--lh-fa);
   display: grid;
-  grid-template-rows: auto 1fr auto auto auto;
+  grid-template-rows: auto 1fr auto auto auto;   /* spec-test.html layout */
 }
 
-/* --- top bar -------------------------------------------------------------- */
-#topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px var(--gap);
-  border-block-end: 1px solid var(--border);
-  background: var(--surface);
-}
-#topbar button,
-#topbar a.ghost {
-  min-height: 36px;
-  padding: 0 12px;
-  font-size: .9em;
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg-muted);
-  text-decoration: none;
-  cursor: pointer;
-}
-#topbar a.ghost:hover { opacity: .8; }
-#topbar a.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-/* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
-#topbar-cwd {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: none;
-  color: var(--fg-muted);
-  font-size: .82em;
+/* The app shell: sidebar + stage. RTL puts the first column on the RIGHT.
+   spec-test.html has no .app class and keeps the stacked layout above. */
+body.app {
+  grid-template-columns: 288px minmax(0, 1fr);
+  grid-template-rows: 100%;
 }
 
-#replay-banner {
-  padding: 8px var(--gap);
-  background: var(--surface-2);
-  border-block-start: 1px solid var(--border);
-  color: var(--fg-muted);
-  font-size: .88em;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-#replay-banner[hidden] { display: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: rgb(217 119 87 / .35); }
 
-/* --- sessions dialog ------------------------------------------------------ */
-#sessions {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  padding: 18px;
-  width: min(620px, 92vw);
-  max-height: 82vh;
-  font: inherit;
-  line-height: var(--lh-fa);
-}
-#sessions::backdrop { background: rgb(0 0 0 / .55); }
-
-.dlg-head { display: flex; align-items: center; gap: 12px; margin-block-end: 12px; }
-.dlg-head h2 { margin: 0; font-size: 1.1rem; font-weight: 700; flex: 1; }
-
-#sessions h3 {
-  margin: 14px 0 6px;
-  font-size: .85rem;
-  font-weight: 500;
-  color: var(--fg-muted);
-}
-#sessions ul { list-style: none; margin: 0; padding: 0; }
-
-#sessions li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-}
-#sessions li:hover { background: var(--surface-2); }
-#sessions li[data-current="true"] { border-color: var(--accent); }
-
-.session-preview {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.session-when { color: var(--fg-muted); font-size: .8em; flex: none; }
-#sessions li button { min-height: 34px; padding: 0 12px; font-size: .88em; flex: none; }
-#sessions .empty { color: var(--fg-muted); font-size: .9em; padding: 8px 10px; }
+* { scrollbar-width: thin; scrollbar-color: #4a4844 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #4a4844; border-radius: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
 
 /* Code needs a monospace face; Vazirmatn is not monospace (spec rule 3). */
 pre, code, .path, .diff, .tool-output, .mono {
@@ -216,11 +132,295 @@ pre, code, .path, .diff, .tool-output, .mono {
   font-size: 0.9em;
 }
 
-/* --- message list --------------------------------------------------------- */
+/* --- sidebar --------------------------------------------------------------- */
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-side);
+  border-inline-end: 1px solid var(--border);
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 12px;
+}
+.side-head .spark { color: var(--accent); flex: none; }
+.brand { font-weight: 700; font-size: 1.05rem; }
+
+.new-chat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 12px 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.new-chat:hover { background: var(--surface-2); }
+.new-chat svg { color: var(--accent); flex: none; }
+
+.side-title {
+  margin: 8px 16px 4px;
+  font-size: .74rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  letter-spacing: .02em;
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+#projects .empty {
+  padding: 8px 10px;
+  color: var(--fg-muted);
+  font-size: .85em;
+}
+
+.proj { margin-block-end: 2px; }
+
+.proj-top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.proj-top:hover,
+.proj-top:focus-within { background: var(--surface); }
+/* The row carries the hover tint; the buttons inside must not go coral
+   (they inherit the global button:hover otherwise). */
+.proj-head:hover, .sess:hover { background: none; }
+.proj[data-current="true"] > .proj-top { background: var(--accent-soft); }
+.proj-top:hover .sess-act,
+.proj-top:focus-within .sess-act { display: inline-flex; }
+
+.proj-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: .92em;
+  cursor: pointer;
+  text-align: start;
+}
+.proj-head .caret {
+  flex: none;
+  color: var(--fg-muted);
+  transition: transform var(--dur) var(--ease);
+}
+.proj-head[aria-expanded="true"] .caret { transform: rotate(-90deg); }
+.proj-head .folder { flex: none; color: var(--fg-muted); }
+.proj-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0 22px 4px 0;   /* indent under the caret; RTL so padding-right */
+}
+.proj-sessions[hidden] { display: none; }
+.proj-sessions .empty { padding: 4px 10px; color: var(--fg-muted); font-size: .8em; }
+
+.proj-sessions li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.proj-sessions li:hover,
+.proj-sessions li:focus-within { background: var(--surface); }
+.proj-sessions li[data-current="true"] {
+  background: var(--accent-soft);
+}
+
+.sess {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: .85em;
+  cursor: pointer;
+  text-align: start;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+.sess-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-when { flex: none; color: var(--fg-muted); font-size: .82em; }
+
+.sess-act {
+  flex: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: .78em;
+}
+.proj-sessions li:hover .sess-act,
+.proj-sessions li:focus-within .sess-act { display: inline-flex; }
+.sess-act:hover { background: var(--surface-2); color: var(--fg); }
+.sess-act.armed {
+  display: inline-flex;
+  width: auto;
+  padding: 0 8px;
+  background: var(--danger);
+  color: #fff;
+}
+
+.arch-head {
+  width: 100%;
+  color: var(--fg-muted);
+  font-size: .85em;
+  margin-block-start: 10px;
+}
+.arch-head:hover { background: var(--surface); }
+
+.side-foot {
+  padding: 8px 12px 12px;
+  border-block-start: 1px solid var(--border);
+}
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: .9em;
+  text-decoration: none;
+  cursor: pointer;
+}
+.side-item:hover { background: var(--surface); color: var(--fg); }
+
+/* --- stage ----------------------------------------------------------------- */
+#stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+#topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 24px 6px;
+  min-height: 40px;
+}
+#topbar-name { font-weight: 700; font-size: .95em; }
+
+/* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
+#topbar-cwd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  color: var(--fg-muted);
+  font-size: .76em;
+}
+
+#replay-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto 8px;
+  width: min(50rem, calc(100% - 32px));
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-size: .88em;
+}
+#replay-banner[hidden] { display: none; }
+
+/* --- home / empty state ---------------------------------------------------- */
+#home { display: none; }
+
+body.home #topbar,
+body.home #log,
+body.home #replay-banner { display: none; }
+
+body.home #stage {
+  display: grid;
+  grid-template-rows: 1fr auto 1.2fr;   /* greeting bottom-aligned above composer */
+}
+body.home #home {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding-block-end: 26px;
+}
+body.home #statusline { align-self: end; }
+
+.greeting {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.greeting .spark { color: var(--accent); flex: none; }
+
+/* --- message list ---------------------------------------------------------- */
 #log {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--gap);
+  /* Centered reading column, claude.ai-style. */
+  padding: 8px max(20px, calc((100% - 50rem) / 2)) 16px;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -229,23 +429,24 @@ pre, code, .path, .diff, .tool-output, .mono {
 
 .msg {
   max-width: 62ch;          /* readable measure; Persian counts the same */
-  padding: 10px 14px;
-  border-radius: var(--radius);
+  padding: 10px 16px;
+  border-radius: 14px;
   overflow-wrap: anywhere;
 }
 
-/* Chat sidedness follows the RTL shell: the user sits on the right (start),
-   the assistant on the left (end). Alignment is layout only — never a
-   substitute for `dir` on the text itself. */
+/* Chat sidedness follows the RTL shell: the user sits on the right (start) in
+   a filled bubble; the assistant reads as plain text on the page, claude.ai-
+   style. Alignment is layout only — never a substitute for `dir` on the text. */
 .msg.user {
   align-self: flex-start;
   background: var(--surface-2);
 }
 
 .msg.assistant {
-  align-self: flex-end;
+  align-self: stretch;
+  max-width: none;
   background: transparent;
-  border: 1px solid var(--border);
+  padding-inline: 2px;
 }
 
 .msg.error {
@@ -253,7 +454,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   max-width: none;
   color: var(--danger);
   background: var(--danger-bg);
-  border: 1px solid currentColor;
+  border: 1px solid var(--danger);
 }
 
 .msg > :first-child { margin-top: 0; }
@@ -279,7 +480,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 }
 
 .msg pre {
-  background: var(--surface-2);
+  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -295,7 +496,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   border-radius: 4px;
 }
 
-/* --- tool cards, thinking, raw events ------------------------------------- */
+/* --- tool cards, thinking, raw events -------------------------------------- */
 details.card {
   align-self: stretch;
   max-width: none;
@@ -348,31 +549,91 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   overflow-x: auto;
   max-height: 22em;
   overflow-y: auto;
-  background: var(--surface-2);
+  background: var(--bg-side);
   border-radius: 6px;
   padding: 8px 10px;
 }
 
 .thinking .card-body { color: var(--fg-muted); font-style: normal; }
 
-/* --- todos ---------------------------------------------------------------- */
+/* --- todos ------------------------------------------------------------------ */
 .todos { align-self: stretch; max-width: none; }
 .todos ul { list-style: none; padding: 0; margin: 0; }
 .todos li { display: flex; gap: 8px; align-items: flex-start; }
 .todos li[data-status="completed"] { color: var(--fg-muted); text-decoration: line-through; }
 .todos li[data-status="in_progress"] { color: var(--accent); font-weight: 500; }
 
-/* --- composer ------------------------------------------------------------- */
+/* --- composer ---------------------------------------------------------------- */
 #composer {
+  padding: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+}
+
+.comp-box {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: var(--gap);
-  border-block-start: 1px solid var(--border);
+  gap: 4px;
+  padding: 10px 12px 8px;
   background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 18px rgb(0 0 0 / .22);
+  transition: border-color var(--dur) var(--ease);
 }
-.composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.comp-box:focus-within { border-color: #57544e; }
+
+.comp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.comp-spacer { flex: 1; }
+
+/* Base field style is for pages without the comp-box (spec-test.html). */
+#input {
+  font: inherit;
+  line-height: var(--lh-fa);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  resize: none;
+  max-height: 40vh;
+  min-height: 44px;         /* touch-target floor */
+  flex: 1;
+}
+.comp-box #input {
+  background: none;
+  border: 0;
+  padding: 4px 4px 2px;
+  min-height: 36px;
+}
+.comp-box #input:focus-visible { outline: none; }   /* the box shows focus */
+
+button {
+  font: inherit;
+  font-weight: 500;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+button:hover { background: var(--accent-strong); }
+button[disabled] { opacity: .45; cursor: not-allowed; }
+
+button.ghost {
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: var(--border);
+}
+button.ghost:hover { background: var(--surface-2); color: var(--fg); }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger:hover { background: #d1554a; }
 
 button.icon {
   min-width: 44px;
@@ -381,12 +642,55 @@ button.icon {
   align-items: center;
   justify-content: center;
 }
-button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.comp-box button.icon { min-width: 38px; min-height: 38px; border: 0; }
 
-#composer-hint { font-size: .78em; }
+/* Round send/stop, claude.ai-style: a coral circle with a large glyph. */
+button.round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+}
 
-/* --- attachments ---------------------------------------------------------- */
-#attachments { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Current-project chip under the input (the references' "choose project"). */
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  max-width: 34ch;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .82em;
+  cursor: pointer;
+}
+.chip-btn:hover { background: var(--surface-2); color: var(--fg); }
+.chip-btn .path {
+  background: none;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: inherit;     /* a folder name is a name, not code */
+}
+
+#composer-hint {
+  font-size: .74em;
+  text-align: center;
+  padding-top: 5px;
+  min-height: 1.4em;
+}
+
+/* --- attachments ------------------------------------------------------------- */
+#attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
 #attachments[hidden] { display: none; }
 
 .chip {
@@ -409,6 +713,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 }
 .chip button {
   min-height: 0;
+  min-width: 0;
   padding: 0 4px;
   background: none;
   border: 0;
@@ -416,22 +721,23 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   font-size: 1.1em;
   line-height: 1;
 }
+.chip button:hover { background: none; color: var(--fg); }
 
-/* --- slash autocomplete --------------------------------------------------- */
+/* --- slash autocomplete ------------------------------------------------------ */
 #slash-popup {
   position: absolute;
-  inset-block-end: calc(100% - var(--gap));
-  inset-inline-start: var(--gap);
-  inset-inline-end: var(--gap);
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   max-height: 40vh;
   overflow-y: auto;
   margin: 0;
   padding: 4px;
   list-style: none;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / .25);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .4);
   z-index: 40;
 }
 #slash-popup[hidden] { display: none; }
@@ -450,54 +756,16 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #slash-popup li[aria-selected="true"],
 #slash-popup li:hover { background: var(--surface-2); }
 
-#input {
-  flex: 1;
-  font: inherit;
-  line-height: var(--lh-fa);
-  color: var(--fg);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  resize: none;
-  max-height: 40vh;
-  min-height: 44px;         /* touch-target floor */
-}
-#input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
-
-button {
-  font: inherit;
-  font-weight: 500;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  transition: opacity var(--dur) var(--ease);
-}
-button:hover { opacity: .88; }
-button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-button[disabled] { opacity: .45; cursor: not-allowed; }
-
-button.ghost {
-  background: transparent;
-  color: var(--fg-muted);
-  border-color: var(--border);
-}
-
-/* --- statusline ----------------------------------------------------------- */
+/* --- statusline -------------------------------------------------------------- */
 #statusline {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 4px 16px;
   align-items: center;
-  padding: 6px var(--gap);
-  border-block-start: 1px solid var(--border);
-  background: var(--surface-2);
+  justify-content: center;
+  padding: 3px 16px 7px;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: .74em;
   line-height: 1.6;
 }
 #statusline .sl-item { display: flex; gap: 6px; align-items: baseline; }
@@ -513,16 +781,17 @@ button.ghost {
   background: none;
 }
 
-/* --- permission dialog ---------------------------------------------------- */
+/* --- permission dialog -------------------------------------------------------- */
 #perm {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
   color: var(--fg);
   padding: 20px;
   max-width: min(560px, 92vw);
   font: inherit;
   line-height: var(--lh-fa);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
 }
 #perm::backdrop { background: rgb(0 0 0 / .55); }
 
@@ -537,7 +806,7 @@ button.ghost {
 /* Tool parameters are attacker-influenced text full of paths — always LTR
    isolated, never interpreted as Persian. */
 #perm-params {
-  background: var(--surface-2);
+  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;

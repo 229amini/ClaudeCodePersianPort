@@ -108,8 +108,10 @@ The spec's cases are message-focused and will not catch these. Every Windows pat
 chrome must read left-to-right with separators in the right places:
 
 - [ ] statusline cwd (bottom bar)
-- [ ] top bar cwd
-- [ ] session list previews and the recent-folders list
+- [ ] top bar project name + cwd
+- [ ] **sidebar project names** (hover one: the `title` tooltip shows the full path — check it too)
+- [ ] sidebar session previews (mixed Persian/Latin previews must each read correctly)
+- [ ] the project chip in the composer (name + tooltip path)
 - [ ] folder picker result after switching project
 - [ ] tool card summary line and its parameters
 - [ ] **permission dialog parameters** — must show `C:\Users\…`, never `C:\\Users\\…`

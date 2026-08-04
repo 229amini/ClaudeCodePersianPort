@@ -12,9 +12,9 @@
    ========================================================================= */
 
 /* Wrapped in an IIFE: these are classic scripts sharing one global scope, and
-   any page that loads app.js alongside its own script (spec-test.html today,
-   the history view at M5) would otherwise collide on `log`, `input`, `state`.
-   The only exports are the two renderer entry points on `window`. */
+   any page that loads app.js alongside its own script (spec-test.html today)
+   would otherwise collide on `log`, `input`, `state`. The only exports are the
+   two renderer entry points on `window`. */
 (function () {
 "use strict";
 
@@ -263,7 +263,9 @@ function renderEvent(ev) {
           mode: ev.permissionMode,
           sessionId: ev.session_id,
         });
-        if (ui.topbarCwd) ui.topbarCwd.textContent = ev.cwd ?? "";
+        currentSession = ev.session_id ?? currentSession;
+        setChrome(ev.cwd);
+        refreshProjects();
         // The CLI is authoritative about what commands exist on this machine
         // (custom skills, plugins) — never scan skill directories ourselves.
         if (Array.isArray(ev.slash_commands)) slashCommands = ev.slash_commands;
@@ -363,6 +365,7 @@ function renderEvent(ev) {
       }
       resetTurn();
       setBusy(false);
+      refreshProjects();   // the turn changed this session's preview/mtime
       return;
     }
 
@@ -396,6 +399,7 @@ function renderEvent(ev) {
         log.replaceChildren();
         resetTurn();
         state.toolCards.clear();
+        refreshProjects();
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);
         setBusy(false);
@@ -413,22 +417,43 @@ function renderEvent(ev) {
   }
 }
 
-// Reused by history replay at M5 and by spec-test.html, so the acceptance
-// tests exercise the shipping code path rather than a copy of it.
+// Reused by history replay and by spec-test.html, so the acceptance tests
+// exercise the shipping code path rather than a copy of it.
 window.renderEvent = renderEvent;
 window.renderMarkdown = renderMarkdown;
 
-/* --- sessions, history replay, folder picker (plan §B-4) ------------------ */
+/* --- sidebar: projects, sessions, home state (plan §B-4) ------------------- */
 
 const ui = {
+  topbarName: document.getElementById("topbar-name"),
   topbarCwd: document.getElementById("topbar-cwd"),
-  btnSessions: document.getElementById("btn-sessions"),
-  btnFolder: document.getElementById("btn-folder"),
-  dialog: document.getElementById("sessions"),
-  list: document.getElementById("sessions-list"),
-  recents: document.getElementById("recents-list"),
+  projects: document.getElementById("projects"),
+  btnNew: document.getElementById("btn-new"),
+  projChip: document.getElementById("proj-chip"),
+  projChipName: document.getElementById("proj-chip-name"),
+  home: document.getElementById("home"),
+  greeting: document.getElementById("greeting-text"),
   banner: document.getElementById("replay-banner"),
 };
+
+let currentCwd = "";
+let currentSession = null;
+const expanded = new Set();   // lowercased project paths open in the sidebar
+
+/* Static markup only — never user data — so innerHTML is safe here. */
+const SVG = {
+  caret: '<svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>',
+  folder: '<svg class="folder" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  archive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4"/></svg>',
+  unarchive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M12 18v-5M9.5 15.5L12 13l2.5 2.5"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+};
+
+function basename(p) {
+  return (p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p || "";
+}
 
 async function api(path, body) {
   const url = path + (path.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(token);
@@ -449,70 +474,231 @@ function whenLabel(epochSeconds) {
          `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-async function openSessions() {
+/* Project name and cwd everywhere in chrome: topbar, composer chip, tab-title
+   stays the constant «کلود» (an OS titlebar cannot carry <bdi>). */
+function setChrome(cwd) {
+  if (cwd) currentCwd = cwd;
+  const name = basename(currentCwd);
+  if (ui.topbarName) ui.topbarName.textContent = name;
+  if (ui.topbarCwd) ui.topbarCwd.textContent = currentCwd;
+  if (ui.projChipName) {
+    ui.projChipName.textContent = name || FA.chooseProject;
+    ui.projChip.title = currentCwd;
+  }
+}
+
+/* --- home / empty state ---------------------------------------------------- */
+
+function greetingText() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return FA.greetMorning;
+  if (h >= 12 && h < 17) return FA.greetDay;
+  if (h >= 17 && h < 22) return FA.greetEvening;
+  return FA.greetNight;
+}
+
+function syncHome() {
+  if (!ui.home) return;   // spec-test.html has no home section
+  const empty = log.childElementCount === 0;
+  if (empty) ui.greeting.textContent = greetingText();
+  document.body.classList.toggle("home", empty);
+}
+
+if (ui.home) new MutationObserver(syncHome).observe(log, { childList: true });
+
+/* --- sidebar data ---------------------------------------------------------- */
+
+let projTimer = 0;
+function refreshProjects() {
+  if (!ui.projects) return;
+  clearTimeout(projTimer);
+  projTimer = setTimeout(loadProjects, 400);
+}
+
+async function loadProjects() {
   let data;
   try {
-    data = await api("/api/sessions");
+    data = await api("/api/projects");
   } catch (err) {
-    bubble("error", FA.sendFailed);
-    return;
+    return;   // sidebar refresh is best-effort; the next event retries
   }
+  currentCwd = data.current_cwd || currentCwd;
+  currentSession = data.current_session ?? currentSession;
+  setChrome();
+  renderProjects(data.projects ?? []);
+}
 
-  ui.recents.replaceChildren();
-  for (const folder of data.recents ?? []) {
-    const li = document.createElement("li");
-    const name = pathEl(folder);
-    name.classList.add("session-preview");
-    const open = document.createElement("button");
-    open.type = "button";
-    open.textContent = FA.openFolder;
-    open.addEventListener("click", () => switchProject(folder));
-    li.append(name, open);
-    ui.recents.append(li);
+let archOpen = false;   // the «بایگانی» section, collapsed by default
+
+function renderProjects(projects) {
+  ui.projects.replaceChildren();
+  expanded.add(currentCwd.toLowerCase());
+
+  // The open project always renders as active, even if its archived flag is
+  // still set (opened via the picker while archived).
+  const active = projects.filter((p) =>
+    !p.archived || p.path.toLowerCase() === currentCwd.toLowerCase());
+  const archived = projects.filter((p) => !active.includes(p));
+
+  for (const proj of active) ui.projects.append(projEl(proj, projects));
+
+  if (archived.length) {
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "proj-head arch-head";
+    head.setAttribute("aria-expanded", String(archOpen));
+    head.innerHTML = SVG.caret;
+    head.append(label(`${FA.archiveSection} (${archived.length})`));
+    head.addEventListener("click", () => {
+      archOpen = !archOpen;
+      renderProjects(projects);
+    });
+    ui.projects.append(head);
+    if (archOpen) for (const proj of archived) ui.projects.append(projEl(proj, projects));
   }
+}
 
-  ui.list.replaceChildren();
-  if (!(data.sessions ?? []).length) {
-    const empty = document.createElement("li");
-    empty.className = "empty";
-    empty.setAttribute("dir", "auto");
-    empty.textContent = FA.sessionsEmpty;
-    ui.list.append(empty);
+function projEl(proj, projects) {
+  const key = proj.path.toLowerCase();
+  const isCurrent = key === currentCwd.toLowerCase();
+
+  const wrap = document.createElement("div");
+  wrap.className = "proj";
+  wrap.dataset.current = String(isCurrent);
+
+  const top = document.createElement("div");
+  top.className = "proj-top";
+
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "proj-head";
+  head.setAttribute("aria-expanded", String(expanded.has(key)));
+  head.innerHTML = SVG.caret + SVG.folder;
+  const name = document.createElement("bdi");
+  name.className = "proj-name";
+  name.textContent = basename(proj.path);
+  name.title = proj.path;
+  head.append(name);
+  head.addEventListener("click", () => {
+    if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+    renderProjects(projects);
+  });
+
+  // New chat in THIS project (restarts the CLI there) — an explicit action,
+  // so browsing the list can never kill the live session by accident.
+  const open = actionButton(SVG.plus, FA.newChat);
+  open.addEventListener("click", () => switchProject(proj.path));
+
+  top.append(head, open);
+
+  // Archive keeps the transcripts; remove deletes them. Neither ever touches
+  // the folder on disk. The open project gets neither — same live-state rule
+  // as the current session's missing delete button.
+  if (!isCurrent) {
+    const arch = actionButton(proj.archived ? SVG.unarchive : SVG.archive,
+      proj.archived ? FA.unarchiveProject : FA.archiveProject);
+    arch.addEventListener("click", async () => {
+      try {
+        await api("/api/project/archive",
+          { path: proj.path, archived: !proj.archived });
+      } catch (err) {
+        return;
+      }
+      loadProjects();
+    });
+    const remove = armedDelete(FA.removeProject,
+      () => api("/api/project/remove", { path: proj.path }));
+    top.append(arch, remove);
   }
-  for (const item of data.sessions ?? []) {
-    const li = document.createElement("li");
-    li.dataset.current = String(item.session_id === data.current);
+  wrap.append(top);
 
-    const preview = document.createElement("span");
-    preview.className = "session-preview";
-    preview.setAttribute("dir", "auto");   // preview is user text: could be either script
-    preview.textContent = item.preview || item.session_id;
-    li.append(preview, label(whenLabel(item.modified), "session-when"));
-
-    const view = document.createElement("button");
-    view.type = "button";
-    view.className = "ghost";
-    view.textContent = FA.viewSession;
-    view.addEventListener("click", () => replaySession(item.session_id));
-
-    const cont = document.createElement("button");
-    cont.type = "button";
-    cont.textContent = FA.continueSession;
-    cont.addEventListener("click", () => resumeSession(item.session_id));
-
-    li.append(view, cont);
-    ui.list.append(li);
+  if (expanded.has(key)) {
+    const ul = document.createElement("ul");
+    ul.className = "proj-sessions";
+    if (!(proj.sessions ?? []).length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.setAttribute("dir", "auto");
+      li.textContent = FA.sessionsEmpty;
+      ul.append(li);
+    }
+    for (const sess of proj.sessions ?? []) {
+      ul.append(sessionRow(sess, proj.path,
+        isCurrent && sess.session_id === currentSession));
+    }
+    wrap.append(ul);
   }
-  ui.dialog.showModal();
+  return wrap;
+}
+
+function sessionRow(sess, projPath, isCurrent) {
+  const li = document.createElement("li");
+  li.dataset.current = String(isCurrent);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sess";
+  const preview = document.createElement("span");
+  preview.className = "sess-preview";
+  preview.setAttribute("dir", "auto");   // user text: could be either script
+  preview.textContent = sess.preview || sess.session_id.slice(0, 8);
+  btn.append(preview, label(whenLabel(sess.modified), "sess-when"));
+  btn.addEventListener("click", () => resumeSession(sess.session_id, projPath));
+
+  const view = actionButton(SVG.eye, FA.viewSession);
+  view.addEventListener("click", () => replaySession(sess.session_id, projPath));
+
+  li.append(btn, view);
+  // The live process keeps writing its own transcript, so it cannot be
+  // deleted; the server refuses it too.
+  if (!isCurrent) {
+    li.append(armedDelete(FA.deleteSession, () =>
+      api("/api/session/delete", { session_id: sess.session_id, path: projPath })));
+  }
+  return li;
+}
+
+function actionButton(svg, title) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sess-act";
+  btn.innerHTML = svg;
+  btn.title = title;
+  btn.setAttribute("aria-label", title);
+  return btn;
+}
+
+/* Two-click confirm instead of confirm(): a browser modal would be LTR and
+   outside our RTL discipline, and this keeps the answer where the eye is. */
+function armedDelete(titleText, onDelete) {
+  const btn = actionButton(SVG.trash, titleText);
+  btn.addEventListener("click", async () => {
+    if (btn.dataset.armed !== "true") {
+      btn.dataset.armed = "true";
+      btn.classList.add("armed");
+      btn.textContent = FA.confirmDelete;
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await onDelete();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = FA.deleteFailed;
+      return;
+    }
+    loadProjects();
+  });
+  return btn;
 }
 
 /* Read-only view of an old conversation. Goes through renderEvent exactly as
    the live stream does — plan §B-4's "one renderer, two sources". */
-async function replaySession(sessionId) {
-  ui.dialog.close();
+async function replaySession(sessionId, projPath) {
   let data;
   try {
-    data = await api("/api/session?id=" + encodeURIComponent(sessionId));
+    data = await api("/api/session?id=" + encodeURIComponent(sessionId)
+                     + "&cwd=" + encodeURIComponent(projPath || currentCwd));
   } catch (err) {
     bubble("error", FA.sendFailed);
     return;
@@ -521,10 +707,10 @@ async function replaySession(sessionId) {
   resetTurn();
   state.toolCards.clear();
   for (const event of data.events ?? []) renderEvent(event);
-  showReplayBanner(sessionId);
+  showReplayBanner(sessionId, projPath);
 }
 
-function showReplayBanner(sessionId) {
+function showReplayBanner(sessionId, projPath) {
   ui.banner.replaceChildren();
   const text = document.createElement("span");
   text.setAttribute("dir", "auto");
@@ -532,61 +718,68 @@ function showReplayBanner(sessionId) {
   const cont = document.createElement("button");
   cont.type = "button";
   cont.textContent = FA.continueSession;
-  cont.addEventListener("click", () => resumeSession(sessionId));
+  cont.addEventListener("click", () => resumeSession(sessionId, projPath));
   ui.banner.append(text, cont);
   ui.banner.hidden = false;
 }
 
-async function resumeSession(sessionId) {
-  ui.dialog.close();
+async function resumeSession(sessionId, projPath) {
+  if (sessionId === currentSession) return;   // already the live session
   ui.banner.hidden = true;
   try {
-    await api("/api/session/resume", { session_id: sessionId });
+    await api("/api/session/resume", { session_id: sessionId, path: projPath });
   } catch (err) {
     bubble("error", FA.sendFailed);
     return;
   }
+  currentSession = sessionId;
+  if (projPath) setChrome(projPath);
   // The server clears history and the reset event wipes the view; replay the
   // transcript so the resumed conversation is not an empty window.
-  const data = await api("/api/session?id=" + encodeURIComponent(sessionId));
+  const data = await api("/api/session?id=" + encodeURIComponent(sessionId)
+                         + "&cwd=" + encodeURIComponent(projPath || currentCwd));
   log.replaceChildren();
   for (const event of data.events ?? []) renderEvent(event);
   bubble("assistant", FA.resumed).classList.add("meta");
+  refreshProjects();
 }
 
 async function switchProject(folder) {
-  ui.dialog.close();
-  ui.banner.hidden = true;
+  if (!folder) return;
+  if (ui.banner) ui.banner.hidden = true;
   try {
     const data = await api("/api/project/open", { path: folder });
     setStatus({ cwd: data.cwd, sessionId: null, cost: undefined });
-    ui.topbarCwd.textContent = data.cwd;
+    currentSession = null;
+    setChrome(data.cwd);
+    refreshProjects();
   } catch (err) {
     bubble("error", FA.sendFailed);
   }
 }
 
-if (ui.btnSessions) {
-  ui.btnSessions.textContent = FA.sessions;
-  ui.btnFolder.textContent = FA.pickFolder;
-  const helpLink = document.getElementById("btn-help");
-  if (helpLink) {
-    helpLink.textContent = FA.help;
-    // The help page is served, so it needs the token like every other request.
-    helpLink.href = "/static/help.html?t=" + encodeURIComponent(token);
-  }
-  document.getElementById("sessions-title").textContent = FA.sessions;
-  document.getElementById("sessions-subtitle").textContent = FA.sessionsInFolder;
-  document.getElementById("recents-title").textContent = FA.recents;
-  document.getElementById("sessions-close").textContent = FA.close;
-  document.getElementById("sessions-close")
-    .addEventListener("click", () => ui.dialog.close());
-  ui.btnSessions.addEventListener("click", openSessions);
-  ui.btnFolder.addEventListener("click", async () => {
+if (ui.projects) {
+  document.getElementById("btn-new-label").textContent = FA.newChat;
+  document.getElementById("projects-title").textContent = FA.projects;
+  document.getElementById("btn-help-label").textContent = FA.help;
+  // The help page is served, so it needs the token like every other request.
+  document.getElementById("btn-help").href =
+    "/static/help.html?t=" + encodeURIComponent(token);
+
+  ui.home.hidden = false;   // visibility is class-driven from here on
+  ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
+  ui.projChip.addEventListener("click", async () => {
     // Blocks in a child process while the native dialog is up.
-    const { path } = await api("/api/project/pick", {});
-    if (path) await switchProject(path);
+    try {
+      const { path } = await api("/api/project/pick", {});
+      if (path) await switchProject(path);
+    } catch (err) {
+      bubble("error", FA.sendFailed);
+    }
   });
+
+  loadProjects();
+  syncHome();
 }
 
 /* --- permission dialog (plan §B-5) ---------------------------------------- */
@@ -699,9 +892,8 @@ function dismissPermission(requestId) {
    than merely disabled — a non-technical user needs an obvious way out, and the
    interrupt leaves the process (and the session) alive. */
 function setBusy(busy) {
-  sendBtn.hidden = busy;
-  stopBtn.hidden = !busy;
-  sendBtn.textContent = FA.send;
+  if (sendBtn) sendBtn.hidden = busy;
+  if (stopBtn) stopBtn.hidden = !busy;
 }
 
 // No token means this page is not driving a server (spec-test.html); render
@@ -769,7 +961,7 @@ composer.addEventListener("submit", async (e) => {
   }
 });
 
-stopBtn.addEventListener("click", async () => {
+if (stopBtn) stopBtn.addEventListener("click", async () => {
   stopBtn.disabled = true;
   try {
     await fetch("/api/interrupt?t=" + encodeURIComponent(token), {
@@ -790,6 +982,7 @@ let attachments = [];
 
 function setAttachments(list) {
   attachments = list;
+  if (!attachRow) return;   // spec-test.html has no attachment row
   attachRow.replaceChildren();
   attachRow.hidden = !list.length;
   list.forEach((filePath, index) => {
@@ -807,7 +1000,7 @@ function setAttachments(list) {
   });
 }
 
-document.getElementById("btn-attach").addEventListener("click", async () => {
+document.getElementById("btn-attach")?.addEventListener("click", async () => {
   try {
     const { paths } = await api("/api/attach/pick", {});
     if (paths?.length) setAttachments([...attachments, ...paths]);
@@ -823,7 +1016,7 @@ let slashMatches = [];
 let slashIndex = 0;
 
 function slashOpen() {
-  return !slashPopup.hidden;
+  return !!slashPopup && !slashPopup.hidden;
 }
 
 function currentSlashQuery() {
@@ -834,6 +1027,7 @@ function currentSlashQuery() {
 }
 
 function refreshSlash() {
+  if (!slashPopup) return;
   const query = currentSlashQuery();
   if (query === null || !slashCommands.length) {
     slashPopup.hidden = true;
@@ -896,9 +1090,8 @@ input.addEventListener("keydown", (e) => {
 
 setAttachments([]);
 setBusy(false);
-stopBtn.textContent = FA.stop;
-document.getElementById("composer-hint").textContent =
-  FA.hintZwnj + " · " + FA.slashHint;
+const hint = document.getElementById("composer-hint");
+if (hint) hint.textContent = FA.hintZwnj + " · " + FA.slashHint;
 input.focus();
 
 })();

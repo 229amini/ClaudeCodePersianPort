@@ -4,11 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**M0–M7 done, 2026-08-04. No git repo yet.** The app is feature-complete and packaged: stdlib
+**M0–M7 done, 2026-08-04.** The app is feature-complete and packaged: stdlib
 server, real RTL Persian UI, token streaming, **spec tests 1–8 passing**, Persian permission
 dialog, sessions (resume after a kill, history replay, folder picker), parity chrome (stop, slash
 autocomplete, attach, statusline passthrough), and a one-double-click `setup.bat` bootstrap.
 **All ten §B-9 verification items are answered.**
+
+**2026-08-05: claude.ai-style shell redesign** (user-approved: dark-only, Codex-style right
+sidebar with projects→sessions, home greeting state, `/api/projects` + cross-project
+resume/replay/delete). Spec tests re-passed (11/11) after the redesign. See
+`wiki/rtl-rendering-notes.md` (new CSS traps) and `wiki/sessions-and-history.md` (new endpoints).
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
@@ -183,6 +188,7 @@ Two checks exist:
 | Rendering (M3) | start the server, open `/static/spec-test.html?t=<token>` | the 8 spec cases through the shipping renderer; verdict bar shows `PASS — n/n`, machine-readable in `window.__specChecks` |
 | Permissions (M4) | run the server with `--hook-log <file>`, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. The log distinguishes "hook never ran" from "hook ran and denied" — without it they look identical. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
+| Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
 the console. There is no Playwright here (no node), so browser QA runs through the Chrome tools

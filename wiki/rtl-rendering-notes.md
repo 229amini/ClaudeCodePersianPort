@@ -73,12 +73,28 @@ not deprecated. Plan §B-2 explicitly permits either.
 
 ## Design decisions
 
-- **Light + dark**, driven by `prefers-color-scheme`. The `ui-ux-pro-max` skill recommended
-  dark-only and a Lora/Raleway pairing; both were declined — Vazirmatn is binding under spec
-  rule 3, and a tool the colleague uses all day should follow the OS.
-- **User bubble at the RTL start (right), assistant at the end (left).** Alignment is layout
-  only; it never substitutes for `dir` on the text.
+- **Dark-only** since the claude.ai-style shell redesign (user decision 2026-08-04, superseding
+  the earlier follow-the-OS light+dark). Warm graphite palette (`#262624` bg, `#d97757` coral
+  accent), reference screenshots: claude.ai home + Codex sidebar. Vazirmatn stays binding
+  (spec rule 3).
+- **Shell layout**: `body.app` is a two-column grid; RTL puts the first column — the sidebar —
+  on the RIGHT. spec-test.html has no `.app` class and keeps the old stacked body layout; keep
+  that split or the harness breaks.
+- **User bubble at the RTL start (right) in a filled bubble; assistant is plain full-width text**
+  (claude.ai-style, no border). Alignment is layout only; it never substitutes for `dir`.
+- **Home / empty state** is class-driven: a MutationObserver on `#log` toggles `body.home`
+  whenever the log has no children. Renderer stays untouched.
 - **Scrollbar sits on the left** because the shell is RTL, consistently in every pane
   (spec rule 7).
 - `line-height: 1.9` is a spec floor, not taste — measured 30.4px at 16px base. Code blocks drop
   to 1.6 because their content is Latin.
+
+## Two CSS traps the redesign hit (will bite again)
+
+1. **A class display rule defeats `hidden`.** `button.round { display:inline-flex }` made the
+   stop button visible despite `stopBtn.hidden = true` — the UA's `[hidden]{display:none}` loses
+   to any authored display. Guard: `[hidden] { display:none !important }` now sits in the shell
+   block. Don't remove it.
+2. **The global `button` style leaks into chrome buttons.** `button:hover { background:
+   var(--accent-strong) }` painted sidebar session rows coral on hover, because `.sess` and
+   `.proj-head` are `<button>`s. Any new transparent button needs its own hover override.
