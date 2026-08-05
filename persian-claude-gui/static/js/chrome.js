@@ -33,10 +33,12 @@ const ui = {
   home: document.getElementById("home"),
   greeting: document.getElementById("greeting-text"),
   banner: document.getElementById("replay-banner"),
+  cardResume: document.getElementById("home-resume"),
 };
 
 let currentCwd = "";
 let currentSession = null;
+let lastSession = null;   // newest OTHER session here: {id, path, label}
 const expanded = new Set();   // lowercased project paths open in the sidebar
 
 /* The renderer owns the session id as of every system/init, but the sidebar
@@ -77,7 +79,7 @@ function whenLabel(epochSeconds) {
 }
 
 /* Project name and cwd everywhere in chrome: topbar, composer chip, tab-title
-   stays the constant «کلود» (an OS titlebar cannot carry <bdi>). */
+   stays the constant «کلاد فارسی» (an OS titlebar cannot carry <bdi>). */
 export function setChrome(cwd) {
   if (cwd) currentCwd = cwd;
   const name = basename(currentCwd);
@@ -106,6 +108,25 @@ function syncHome() {
   document.body.classList.toggle("home", empty);
 }
 
+/* The «ادامه آخرین گفتگو» card is the only one whose availability is data-
+   dependent: a brand-new folder has nothing to resume, and offering a dead
+   button is worse than offering three. */
+function syncResumeCard() {
+  if (!ui.cardResume) return;
+  ui.cardResume.hidden = !lastSession;
+  if (lastSession) {
+    ui.cardResume.querySelector(".hc-note").textContent = lastSession.label;
+  }
+}
+
+function cardText(id, title, note) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  el.querySelector(".hc-title").textContent = title;
+  if (note !== undefined) el.querySelector(".hc-note").textContent = note;
+  return el;
+}
+
 /* --- sidebar data ---------------------------------------------------------- */
 
 let projTimer = 0;
@@ -126,6 +147,16 @@ async function loadProjects() {
   currentSession = data.current_session ?? currentSession;
   setChrome();
   renderProjects(data.projects ?? []);
+
+  const here = (data.projects ?? []).find(
+    (p) => p.path.toLowerCase() === currentCwd.toLowerCase());
+  const prev = (here?.sessions ?? []).find((s) => s.session_id !== currentSession);
+  lastSession = prev && {
+    id: prev.session_id,
+    path: here.path,
+    label: prev.title || prev.preview || prev.session_id.slice(0, 8),
+  };
+  syncResumeCard();
 }
 
 let archOpen = false;   // the «بایگانی» section, collapsed by default
@@ -249,6 +280,12 @@ function sessionRow(sess, projPath, isCurrent) {
   btn.append(preview, label(whenLabel(sess.modified), "sess-when"));
   btn.addEventListener("click", () => resumeSession(sess.session_id, projPath));
 
+  // One truncated line cannot tell two sessions apart; the card can.
+  btn.addEventListener("mouseenter", () => schedulePreview(btn, sess, projPath));
+  btn.addEventListener("focus", () => schedulePreview(btn, sess, projPath));
+  btn.addEventListener("mouseleave", hidePreview);
+  btn.addEventListener("blur", hidePreview);
+
   const view = actionButton(SVG.eye, FA.viewSession);
   view.addEventListener("click", () => replaySession(sess.session_id, projPath));
 
@@ -260,6 +297,113 @@ function sessionRow(sess, projPath, isCurrent) {
       api("/api/session/delete", { session_id: sess.session_id, path: projPath })));
   }
   return li;
+}
+
+/* --- session hover preview -------------------------------------------------- */
+
+/* Lazy: nothing is fetched until the pointer rests on a row for 300 ms, and the
+   answer is cached, so browsing the sidebar does not read a transcript per
+   pixel. `/api/session` already exists — no server code was added for this. */
+const previewCache = new Map();   // session_id -> [{role, text}]
+let hoverTimer = 0;
+let previewCard = null;
+
+/* Built here rather than in index.html: it is pure chrome, and spec-test.html
+   would otherwise need a copy of markup it never exercises. */
+function previewEl() {
+  if (!previewCard) {
+    previewCard = document.createElement("div");
+    previewCard.id = "sess-card";
+    previewCard.hidden = true;
+    document.body.append(previewCard);
+  }
+  return previewCard;
+}
+
+function hidePreview() {
+  clearTimeout(hoverTimer);
+  if (previewCard) previewCard.hidden = true;
+}
+
+/* The first few things said, as plain text. Tool calls and their output are
+   skipped on purpose — this answers "which conversation was that?", and a
+   Bash invocation answers it worse than the sentence around it. */
+function exchanges(events) {
+  const out = [];
+  for (const ev of events) {
+    const text = (ev.message?.content ?? [])
+      .filter((part) => part?.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n")
+      .trim();
+    if (!text) continue;
+    out.push({ role: ev.type, text: text.slice(0, 200) });
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
+function schedulePreview(row, sess, projPath) {
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(async () => {
+    let items = previewCache.get(sess.session_id);
+    if (!items) {
+      try {
+        const data = await api("/api/session?id=" + encodeURIComponent(sess.session_id)
+                               + "&cwd=" + encodeURIComponent(projPath || currentCwd));
+        items = exchanges(data.events ?? []);
+      } catch (err) {
+        return;   // best-effort chrome; never interrupts the conversation
+      }
+      // The live session keeps growing, so caching it would freeze the preview
+      // at whatever the transcript held the first time it was hovered.
+      if (sess.session_id !== currentSession) previewCache.set(sess.session_id, items);
+    }
+    // The sidebar re-renders on every result event, so the row we were asked
+    // about may already be detached — or the pointer simply moved on.
+    if (!row.isConnected || !row.matches(":hover, :focus")) return;
+    showPreview(row, sess, items);
+  }, 300);
+}
+
+function showPreview(row, sess, items) {
+  const card = previewEl();
+  card.replaceChildren();
+
+  const head = document.createElement("div");
+  head.className = "sc-head";
+  head.append(label(whenLabel(sess.modified)), label(sess.session_id.slice(0, 8), "mono"));
+  card.append(head);
+
+  if (!items.length) {
+    card.append(block("sc-line meta", FA.previewEmpty));
+  }
+  for (const item of items) {
+    card.append(block("sc-line " + item.role, item.text));
+  }
+
+  card.hidden = false;
+  // Fixed positioning in px, deliberately not logical properties: the anchor is
+  // a measured rect, and the sidebar sits on the RTL start edge (right), so the
+  // card opens inward — clamped so a row near the bottom never opens offscreen.
+  const anchor = row.getBoundingClientRect();
+  const top = Math.min(Math.max(anchor.top - 6, 8),
+                       window.innerHeight - card.offsetHeight - 8);
+  card.style.top = Math.max(top, 8) + "px";
+  // Horizontally the anchor is the whole SIDEBAR, not the row: a session row
+  // stops short of the pane edge (the view/delete actions sit beside it), so
+  // anchoring on the row leaves the card half-overlapping the list it explains.
+  const pane = document.getElementById("sidebar")?.getBoundingClientRect();
+  const edge = Math.min(anchor.left, pane ? pane.left : anchor.left);
+  card.style.left = Math.max(edge - card.offsetWidth - 10, 8) + "px";
+}
+
+function block(cls, text) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.setAttribute("dir", "auto");   // either script, one line box per turn
+  el.textContent = text;
+  return el;
 }
 
 function actionButton(svg, title) {
@@ -443,6 +587,7 @@ export function initChrome() {
   if (ui.home) new MutationObserver(syncHome).observe(log, { childList: true });
 
   if (ui.projects) {
+    document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
     document.getElementById("projects-title").textContent = FA.projects;
     document.getElementById("btn-help-label").textContent = FA.help;
@@ -452,6 +597,27 @@ export function initChrome() {
 
     ui.home.hidden = false;   // visibility is class-driven from here on
     ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
+
+    /* Home action cards. Every one of them presses a control that already
+       exists — no second implementation to keep in sync, and a card whose
+       control is missing simply never fires. Same idiom as the composer's
+       lifecycle verbs. */
+    cardText("home-resume", FA.homeResume)
+      ?.addEventListener("click", () => {
+        if (lastSession) resumeSession(lastSession.id, lastSession.path);
+      });
+    cardText("home-open", FA.homeOpen, FA.homeOpenNote)
+      ?.addEventListener("click", () => ui.projChip.click());
+    cardText("home-explain", FA.homeExplain, FA.homeExplainNote)
+      ?.addEventListener("click", () => {
+        // The card's own label goes into the composer verbatim, so the user
+        // sees exactly what is about to be sent — no hidden prompt.
+        const input = document.getElementById("input");
+        input.value = FA.homeExplain;
+        document.getElementById("composer").requestSubmit();
+      });
+    cardText("home-help", FA.homeHelp, FA.homeHelpNote)
+      ?.addEventListener("click", () => document.getElementById("btn-help").click());
     ui.projChip.addEventListener("click", async () => {
       // Blocks in a child process while the native dialog is up.
       try {

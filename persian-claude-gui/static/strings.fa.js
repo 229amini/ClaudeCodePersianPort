@@ -1,18 +1,18 @@
 /* Persian UI labels. Flat key -> string, no i18n framework (plan §B-8).
    Digits stay Latin wherever they abut a technical value (spec rule 5). */
 window.FA = {
-  send: "ارسال",
-  stop: "توقف",
+  /* Product name. «کلاد» is the transliteration used everywhere in the UI —
+     never «کلود», and never Anthropic's mark: this is an independent front-end
+     (REWORK-PLAN.md "Two judgment calls", option b). */
+  appName: "کلاد فارسی",
+  appTagline: "رابط فارسی برای Claude Code",
+  independence: "این پروژه مستقل است و وابسته به Anthropic نیست.",
+
   stopped: "متوقف شد",
-  attach: "پیوست",
   removeAttachment: "حذف",
   slashHint: "برای دیدن دستورها / را بزنید",
-  slContext: "متن مصرف‌شده",
-  placeholder: "پیام خود را بنویسید…",
   hintZwnj: "نیم‌فاصله: Shift+Space",
 
-  you: "شما",
-  assistant: "کلود",
   thinking: "در حال فکر کردن",
   tool: "ابزار",
   toolResult: "نتیجه",
@@ -22,7 +22,7 @@ window.FA = {
   connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
-  cliExited: "پردازش کلود بسته شد",
+  cliExited: "پردازش کلاد بسته شد",
   waiting: "در انتظار…",
 
   help: "راهنما",
@@ -47,8 +47,22 @@ window.FA = {
   greetEvening: "عصر بخیر! چه کاری انجام دهیم؟",
   greetNight: "شب‌زنده‌داری؟",
 
+  /* Home action cards. `homeExplain` is both the card's label and the text it
+     puts in the composer, so the user sees exactly what they are about to
+     send — no hidden prompt. */
+  homeResume: "ادامه آخرین گفتگو",
+  homeResumeNote: "همان‌جا که رهایش کردید",
+  homeOpen: "باز کردن پوشه",
+  homeOpenNote: "روی پروژه دیگری کار کنید",
+  homeExplain: "این پوشه را برایم توضیح بده",
+  homeExplainNote: "شروع سریع در همین پروژه",
+  homeHelp: "راهنما",
+  homeHelpNote: "چطور با این برنامه کار کنم؟",
+
+  previewEmpty: "متنی برای پیش‌نمایش نیست",
+
   permTitle: "درخواست اجازه",
-  permBody: "کلود می‌خواهد این ابزار را اجرا کند:",
+  permBody: "کلاد می‌خواهد این ابزار را اجرا کند:",
   permAllow: "اجازه بده",
   permDeny: "رد کن",
   permRemember: "تا پایان این نشست برای این ابزار دوباره نپرس",

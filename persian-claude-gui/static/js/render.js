@@ -268,6 +268,8 @@ export function renderEvent(ev) {
     }
 
     case "user": {
+      // Always block-shaped: a transcript's bare-string prompt is normalised
+      // (and envelope-filtered) by read_session before it gets here.
       for (const part of ev.message?.content ?? []) {
         // Replayed history carries the user's own turns here. Live it does not
         // (we do not pass --replay-user-messages), so the composer echoes them
