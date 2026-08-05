@@ -171,7 +171,7 @@ if ($claude) {
 Step "کپی برنامه"
 
 New-Item -ItemType Directory -Force -Path $DeployRoot | Out-Null
-foreach ($item in @('server.py', 'permission_hook.py', 'smoke_test.py', 'static', 'assets')) {
+foreach ($item in @('server.py', 'smoke_test.py', 'static', 'assets')) {
     $src = Join-Path $Here $item
     if (-not (Test-Path $src)) { Die "فایل $item پیدا نشد — بسته نصب ناقص است" }
     Copy-Item -Path $src -Destination $DeployRoot -Recurse -Force
@@ -181,19 +181,10 @@ Log "  deployed to $DeployRoot"
 
 $serverPy = Join-Path $DeployRoot 'server.py'
 
-# The CLI splits a PreToolUse hook command on whitespace and ignores quotes, so
-# a space anywhere in these paths disables tool approvals with no error at all.
-# server.py falls back to 8.3 short names; verify one actually exists.
-foreach ($pair in @(@{n = 'مسیر نصب'; p = $DeployRoot }, @{n = 'مسیر پایتون'; p = $python })) {
-    if ($pair.p -notmatch ' ') { continue }
-    $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder((Split-Path $pair.p)).ShortPath
-    if ($short -match ' ') {
-        Warn "$($pair.n) فاصله دارد و نام کوتاه 8.3 در دسترس نیست — پنجره تأیید دسترسی کار نخواهد کرد"
-        Log "  WARN 8.3 unavailable for $($pair.p)"
-    } else {
-        Log "  8.3 fallback ok for $($pair.p) => $short"
-    }
-}
+# A space in $DeployRoot or $python used to disable tool approvals silently (the
+# CLI split the PreToolUse hook command on whitespace). That hook is gone as of
+# 2026-08-05 — approvals ride the CLI's own stdin pipe now — so the 8.3
+# short-name check that guarded it was deleted with it.
 
 # ---------------------------------------------------------------- 5. launcher
 Step "ساخت میان‌بر"
@@ -217,8 +208,14 @@ Ok "اجرا‌کننده ساخته شد"
 
 New-Item -ItemType Directory -Force -Path $ShortcutDir | Out-Null
 $shortcut = Join-Path $ShortcutDir 'کلود.lnk'
+# WshShell.Save() marshals the target path through the system's ANSI codepage
+# (a legacy COM Automation quirk) — on a non-Persian codepage this mangles a
+# Persian filename to "????.lnk" and Save() throws FileNotFoundException. So
+# build under an ASCII name first (Save() is fine with that), then rename to
+# the Persian name via Rename-Item, a plain NTFS op with no ANSI round-trip.
+$shortcutTmp = Join-Path $ShortcutDir 'claude-launcher.lnk'
 $wsh = New-Object -ComObject WScript.Shell
-$lnk = $wsh.CreateShortcut($shortcut)
+$lnk = $wsh.CreateShortcut($shortcutTmp)
 $lnk.TargetPath = "$env:SystemRoot\System32\wscript.exe"
 $lnk.Arguments = """$runVbs"""
 $lnk.WorkingDirectory = $DeployRoot
@@ -228,6 +225,7 @@ $lnk.IconLocation = (Join-Path $DeployRoot 'assets\icon.ico')
 # is the label the colleague reads, and NTFS stores that as real UTF-16.
 $lnk.Description = 'Claude - Persian assistant'
 $lnk.Save()
+Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf) -Force
 Ok "میان‌بر «کلود» روی دسکتاپ ساخته شد"
 Log "  shortcut => $shortcut"
 

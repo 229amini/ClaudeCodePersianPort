@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>spec tests 1–8</title>
+<title>spec tests 1–12</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
   /* Harness chrome only — never let this file introduce direction rules. */
@@ -21,12 +21,15 @@
   #verdict .pass { color: var(--ok); font-weight: 700; }
 </style>
 </head>
-<body>
+<!-- data-render-only: this page carries a token so its subresources authenticate,
+     but it must not open the SSE stream — live events would land in the middle
+     of the test log. js/app.js reads the attribute. -->
+<body data-render-only>
 
 <main id="log" aria-label="spec tests"></main>
 
 <!-- Test 6 needs the real composer handler, so the harness carries the real
-     composer markup and lets app.js bind to it. -->
+     composer markup and lets js/composer.js bind to it. -->
 <form id="composer">
   <label class="sr-only" for="input">ZWNJ test</label>
   <textarea id="input" rows="1" dir="auto"
@@ -35,14 +38,42 @@
 </form>
 
 <footer id="statusline"></footer>
+
+<!-- Case 10 drives the REAL permission dialog through window.renderEvent, so the
+     harness needs its markup verbatim from index.html. js/chrome.js reads these
+     ids at module-evaluation time; without them showPermission() throws and the
+     verdict comes back empty. -->
+<dialog id="perm">
+  <form method="dialog" id="perm-form">
+    <h2 id="perm-title"></h2>
+    <p id="perm-body" dir="auto"></p>
+    <div id="perm-tool"></div>
+    <pre id="perm-params"></pre>
+    <label id="perm-remember-row">
+      <input type="checkbox" id="perm-remember">
+      <span id="perm-remember-label"></span>
+    </label>
+    <menu>
+      <button value="deny" class="ghost" id="perm-deny"></button>
+      <button value="allow" id="perm-allow"></button>
+    </menu>
+  </form>
+</dialog>
+
 <div id="verdict"></div>
 
+<!-- strings.fa.js and marked stay CLASSIC scripts (they set window globals and
+     finish before any module runs); the app is a module tree. The harness block
+     below MUST be type="module" too: module scripts are deferred and execute in
+     document order, so this is what guarantees window.renderEvent exists by the
+     time the cases run. As a classic script it would run FIRST and every
+     assertion would fail in a way that looks exactly like a BiDi regression. -->
 <script src="/static/strings.fa.js"></script>
 <script src="/static/vendor/marked.min.js"></script>
-<script src="/static/app.js"></script>
-<script>
+<script type="module" src="/static/js/app.js"></script>
+<script type="module">
 /* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
-   copy, so a regression in app.js fails here. Cases match
+   copy, so a regression in the renderer fails here. Cases match
    claude-persian-rtl-spec.md §"Test cases" exactly. */
 const CASES = [
   [1, "سلام دنیا",
@@ -65,11 +96,12 @@ const CASES = [
       "چینش راست در همه خطوط، بدون بریدگی زیرنویس"],
 ];
 
-// app.js already declares `log` at top level in the shared classic-script
-// scope, so the harness must not redeclare it.
+// Kept from the classic-script era, when app.js and this block shared one
+// global scope and both declaring `log` threw. Module scope makes that
+// impossible now, but the assertions below are the contract — leave them alone.
 const specLog = document.getElementById("log");
 
-for (const [n, markdown, expected] of CASES) {
+function caseHead(n, expected) {
   const head = document.createElement("div");
   head.className = "case-head";
   head.setAttribute("dir", "auto");
@@ -80,13 +112,58 @@ for (const [n, markdown, expected] of CASES) {
   exp.textContent = expected;
   head.append(exp);
   specLog.append(head);
+}
 
+for (const [n, markdown, expected] of CASES) {
+  caseHead(n, expected);
   if (markdown === null) continue;   // case 6 is interactive
   window.renderEvent({
     type: "assistant",
     message: { content: [{ type: "text", text: markdown }] },
   });
 }
+
+/* Cases 9–12: BiDi at the moment of consent (spec rule 8). These are not
+   messages — they are tool parameters and tool output, the one place the
+   message-shaped cases above structurally cannot reach. */
+const PERSIAN_LINE = "این خط فارسی است";
+const WRITE_CONTENT = PERSIAN_LINE + "\nconst x = 1;\n\n" + "مقدار 42 تنظیم شد";
+
+caseHead(9, "کارت ابزار: خطوط فارسیِ محتوای Write راست‌چین، کد لاتین چپ‌چین");
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec9", name: "Write",
+    input: { file_path: "C:\\Users\\Lion\\Desktop\\note.md", content: WRITE_CONTENT },
+  }] },
+});
+
+caseHead(10, "پنجره تأیید: new_string فارسیِ Edit خواناست، نه چپ‌چین");
+window.renderEvent({
+  type: "wrapper", subtype: "permission_request", request_id: "spec10",
+  tool_name: "Edit", tool_use_id: "spec10-tool",
+  tool_input: {
+    file_path: "C:\\Users\\Lion\\Desktop\\note.md",
+    old_string: "old",
+    new_string: PERSIAN_LINE + "\nreturn true;",
+  },
+});
+
+caseHead(11, "خروجی ابزار با خطوط فارسی و لاتین: هر خط جهت خودش");
+caseHead(12, "رقم لاتین کنار متن فارسی در همان خط می‌ماند");
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec11", name: "Bash", input: { command: "type note.md" },
+  }] },
+});
+window.renderEvent({
+  type: "user",
+  message: { content: [{
+    type: "tool_result", tool_use_id: "spec11",
+    content: PERSIAN_LINE + "\nSecond line in English\n" + "مقدار 42 تنظیم شد",
+  }] },
+});
 
 /* Automated checks for the failures that are invisible to a screenshot. */
 const checks = [];
@@ -140,6 +217,53 @@ const input = document.getElementById("input");
 input.value = "می" + "\u200C" + "رود";
 check("rule 6: ZWNJ survives in the composer value",
   input.value.includes("\u200C"));
+
+/* --- rule 8: LTR containers, per-line direction ---------------------------- */
+const dirOf = (el) => el && getComputedStyle(el).direction;
+
+const card9 = [...specLog.querySelectorAll("details.card.tool")]
+  .find(c => c.querySelector(".param-key")?.textContent === "file_path");
+const box9 = card9?.querySelectorAll(".param-row .tool-output")[1];
+const lines9 = box9 ? [...box9.children] : [];
+
+check("rule 8: tool-card param box stays LTR",
+  dirOf(box9) === "ltr", dirOf(box9) ?? "no param box");
+
+check("rule 8: Persian line inside the LTR box resolves RTL",
+  lines9[0]?.getAttribute("dir") === "auto" && dirOf(lines9[0]) === "rtl",
+  (lines9[0]?.textContent ?? "?") + " -> " + (dirOf(lines9[0]) ?? "none"));
+
+check("rule 8: Latin line in the same box stays LTR",
+  dirOf(lines9[1]) === "ltr", lines9[1]?.textContent ?? "none");
+
+check("rule 8: blank line survives as its own line box",
+  lines9[2]?.firstElementChild?.tagName === "BR", lines9.length + " lines");
+
+const permBox = document.querySelectorAll("#perm-params .param-row .tool-output")[2];
+const permLine = permBox?.firstElementChild;
+check("case 10: permission dialog uses the same per-line builder",
+  dirOf(permBox) === "ltr" && dirOf(permLine) === "rtl",
+  (permLine?.textContent ?? "no dialog params") + " -> " + (dirOf(permLine) ?? "none"));
+
+// Dismiss before the DOM dump so the modal backdrop does not sit over #verdict.
+window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
+                     request_id: "spec10", tool_use_id: "spec10-tool",
+                     decision: "deny" });
+
+const out11 = [...specLog.querySelectorAll("details.card.tool")]
+  .at(-1)?.querySelector(".card-body > .tool-output");
+const lines11 = out11 ? [...out11.children] : [];
+check("case 11: tool_result mixes directions line by line",
+  dirOf(out11) === "ltr" && dirOf(lines11[0]) === "rtl" && dirOf(lines11[1]) === "ltr",
+  lines11.map(dirOf).join(",") || "no tool_result output");
+
+// Rule 8 is per LINE, not per run: a run-level <bdi> would strand these digits
+// in their own isolate and reorder them against the Persian around them.
+const digitLine = lines11[2];
+check("case 12: Latin digits stay inside their Persian line",
+  digitLine?.textContent === "\u0645\u0642\u062F\u0627\u0631 42 \u062A\u0646\u0638\u06CC\u0645 \u0634\u062F" &&
+  digitLine.children.length === 0 && dirOf(digitLine) === "rtl",
+  (digitLine?.textContent ?? "none") + " -> " + (dirOf(digitLine) ?? "none"));
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);
