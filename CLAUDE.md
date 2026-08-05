@@ -16,10 +16,13 @@ resume/replay/delete). Spec tests re-passed after the redesign. See
 `wiki/rtl-rendering-notes.md` (new CSS traps) and `wiki/sessions-and-history.md` (new endpoints).
 
 **2026-08-05: rework underway — see `REWORK-PLAN.md`, tracked as beads `pcg-b67`
-(`bd list --tree`).** Phase 0 (permission transport spike) closed; Phase 1 (control plumbing) is
-in place bar a deletion pass; **Phase 2 (module split + CSS layers) done** — `static/app.js` is
-now six ES modules under `static/js/`, and `style.css` runs on cascade layers. Read
-`wiki/frontend-modules.md` before touching either.
+(`bd list --tree`).** Phases 0–4 are closed. Phase 2 split `static/app.js` into ES modules under
+`static/js/` (seven since Phase 4 added `controls.js`) and put `style.css` on cascade layers; read
+`wiki/frontend-modules.md` before touching either. **Phase 4 made the GUI a capability mirror**:
+the model picker, slash popup and approval pill are rendered from what `initialize` returned, and
+every live change goes through `/api/control` or `/api/posture` — nothing about the CLI is
+hardcoded. Read `wiki/approval-postures.md` before touching the pill, and note that `compact` is
+**not** a control subtype on this build. Phase 5 (Codex-style shell + rebrand) is next.
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
@@ -197,7 +200,7 @@ Two checks exist:
 
 | Check | How | Asserts |
 |---|---|---|
-| Transport (M2) | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects a `result` event and a 403 on a bad token. Costs one subscription turn. |
+| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects a `result` event and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, and the session title read back out of the transcript. 9 checks, still one subscription turn. |
 | Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 18 assertions, so `PASS — 18/18` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |

@@ -61,5 +61,23 @@ window.FA = {
   slMode: "حالت",
   slSession: "نشست",
   slContext: "متن",
+  slQuota: "سهمیه ۵ ساعته",
   slNone: "—",
+
+  /* model picker + approval posture — every label the CLI itself supplies
+     (model names, descriptions) is rendered as it arrives, never translated:
+     they are product names, and a wrong Persian guess would be worse. */
+  modelTitle: "مدل",
+  modelDefault: "مدل پیش‌فرض",
+  modelFailed: "تغییر مدل ممکن نشد",
+  postureTitle: "سطح اجازه",
+  postureAsk: "محتاط",
+  postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
+  postureAcceptEdits: "ویرایش آزاد",
+  postureAcceptEditsNote: "فایل‌های پروژه را بدون پرسش ویرایش می‌کند؛ برای اجرای دستور باز هم می‌پرسد",
+  postureAutoApprove: "خودکار",
+  postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
+  postureFailed: "تغییر سطح اجازه ممکن نشد",
+  autoActions: "اقدام خودکار",
+  autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
 };

@@ -5,6 +5,7 @@
 
      api.js       token + fetch helper                       (leaf, no imports)
      bidi.js      the whole BiDi contract, spec rules 1-2    (leaf, no imports)
+     controls.js  model picker + approval pill               (imports api.js)
      render.js    renderEvent: stream events -> DOM
      chrome.js    sidebar, home state, replay, permission dialog
      composer.js  input, ZWNJ, send/stop, attachments, slash
@@ -27,6 +28,7 @@ import { renderMarkdown } from "./bidi.js";
 import { renderEvent, setStatus } from "./render.js";
 import { initChrome } from "./chrome.js";
 import { initComposer } from "./composer.js";
+import { initControls } from "./controls.js";
 import { token } from "./api.js";
 
 // Reused by history replay and by spec-test.html, so the acceptance tests
@@ -64,3 +66,4 @@ if (events) events.onmessage = (e) => {
 if (events) events.onerror = () => setStatus({});
 
 initComposer();
+initControls();

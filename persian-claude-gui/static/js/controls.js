@@ -1,0 +1,205 @@
+/* ============================================================================
+   The two live CLI controls in the composer row: the model picker and the
+   approval pill (plus the auto-approval audit counter).
+
+   CAPABILITY MIRROR. Nothing here is hardcoded about the CLI. The model list,
+   its display names, descriptions and effort support all arrive in the
+   `initialize` reply (wiki/control-protocol.md §1) and are account- and
+   plan-specific — a hardcoded list would ship a wrong picker to every user on
+   a different plan. If `initialize` says nothing, the chip stays hidden.
+
+   A LEAF-ish module: imports api.js only. render.js drives it; keeping the
+   arrow one-way avoids a third import cycle.
+   ========================================================================= */
+"use strict";
+
+import { api } from "./api.js";
+
+const FA = window.FA;
+
+const ui = {
+  menu: document.getElementById("menu-popup"),
+  modelChip: document.getElementById("model-chip"),
+  modelName: document.getElementById("model-chip-name"),
+  postureChip: document.getElementById("posture-chip"),
+  postureName: document.getElementById("posture-chip-name"),
+  autoChip: document.getElementById("auto-chip"),
+};
+
+/* The wrapper's three postures. The server maps each to a CLI permission mode
+   plus its own auto-approve flag (server.py POSTURES) — the UI only names
+   them, in plain Persian, so the user can tell what they are agreeing to. */
+const POSTURES = [
+  { key: "ask", title: FA.postureAsk, note: FA.postureAskNote },
+  { key: "acceptEdits", title: FA.postureAcceptEdits, note: FA.postureAcceptEditsNote },
+  { key: "autoApprove", title: FA.postureAutoApprove, note: FA.postureAutoApproveNote },
+];
+
+let models = [];
+let chosen = null;     // the value we asked for, until a turn confirms it
+let resolved = null;   // system/init.model — what the CLI actually ran
+let posture = "ask";
+
+/* --- model chip ------------------------------------------------------------ */
+
+/* From `initialize`, on every spawn. */
+export function applyInitInfo(info) {
+  models = Array.isArray(info?.models) ? info.models : [];
+  paintModel();
+}
+
+/* system/init reports the model the turn actually ran on. That is the only
+   real confirmation available: `set_model` answers "success" with an empty
+   body and would ack a model it never applied. So a confirmed turn drops our
+   optimistic choice and the label falls back to the measured truth. */
+export function setModelResolved(id) {
+  if (!id) return;
+  resolved = id;
+  if (models.some((m) => m.resolvedModel === id)) chosen = null;
+  paintModel();
+}
+
+function modelEntry() {
+  return models.find((m) => m.value === chosen)
+      ?? models.find((m) => m.resolvedModel === resolved)
+      ?? models[0] ?? null;
+}
+
+function paintModel() {
+  if (!ui.modelChip) return;
+  ui.modelChip.hidden = !models.length;
+  const entry = modelEntry();
+  ui.modelName.textContent = entry?.displayName ?? resolved ?? FA.modelDefault;
+  ui.modelChip.title = entry?.description ?? "";
+}
+
+async function pickModel(item) {
+  closeMenu();
+  const previous = chosen;
+  chosen = item.key;
+  paintModel();
+  try {
+    const res = await api("/api/control",
+      { subtype: "set_model", params: { model: item.key } });
+    if (!res.ok) throw new Error(res.error || "set_model refused");
+  } catch (err) {
+    chosen = previous;
+    paintModel();
+    console.error("set_model failed", err);
+    openMenu("model", [{ title: FA.modelFailed }]);
+  }
+}
+
+/* --- approval pill --------------------------------------------------------- */
+
+/* Driven ONLY by the server's `posture` event, which is published after the
+   CLI acknowledged the permission mode. Never by our own click: a pill that
+   moves on click while the engine refused the change is exactly the silent
+   lie this project exists to avoid. */
+export function setPostureState(name, autoCount) {
+  if (name) posture = name;
+  if (!ui.postureChip) return;
+  const entry = POSTURES.find((p) => p.key === posture) ?? POSTURES[0];
+  ui.postureChip.hidden = false;
+  ui.postureName.textContent = entry.title;
+  ui.postureChip.title = entry.note;
+  ui.postureChip.dataset.posture = posture;
+  setAutoCount(autoCount);
+}
+
+/* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
+export function setAutoCount(count) {
+  if (!ui.autoChip) return;
+  const n = Number(count) || 0;
+  ui.autoChip.hidden = n === 0;
+  ui.autoChip.textContent = n.toLocaleString("fa-IR") + " " + FA.autoActions;
+  ui.autoChip.title = FA.autoActionsTitle;
+}
+
+async function pickPosture(item) {
+  closeMenu();
+  try {
+    const res = await api("/api/posture", { posture: item.key });
+    if (!res.ok) throw new Error(res.error || "posture refused");
+    // Deliberately no repaint here — see setPostureState().
+  } catch (err) {
+    console.error("posture change failed", err);
+    openMenu("posture", [{ title: FA.postureFailed }]);
+  }
+}
+
+/* --- the shared popup ------------------------------------------------------ */
+
+function openMenu(owner, items, onPick) {
+  if (!ui.menu) return;
+  ui.menu.replaceChildren();
+  for (const item of items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "menu-row";
+    if (onPick) {
+      row.setAttribute("role", "menuitemradio");
+      row.setAttribute("aria-checked", String(!!item.selected));
+      row.addEventListener("click", () => onPick(item));
+    }
+    const title = document.createElement("span");
+    title.className = "menu-title";
+    title.setAttribute("dir", "auto");   // model names are Latin, postures Persian
+    title.textContent = item.title;
+    row.append(title);
+    if (item.note) {
+      const note = document.createElement("span");
+      note.className = "menu-note";
+      note.setAttribute("dir", "auto");
+      note.textContent = item.note;
+      row.append(note);
+    }
+    ui.menu.append(row);
+  }
+  ui.menu.dataset.owner = owner;
+  ui.menu.hidden = false;
+}
+
+function closeMenu() {
+  if (ui.menu) ui.menu.hidden = true;
+}
+
+function toggleMenu(owner, items, onPick) {
+  if (!ui.menu.hidden && ui.menu.dataset.owner === owner) {
+    closeMenu();
+    return;
+  }
+  openMenu(owner, items, onPick);
+}
+
+/* --- init ------------------------------------------------------------------ */
+
+export function initControls() {
+  if (!ui.menu) return;   // spec-test.html carries no composer chrome
+
+  ui.modelChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const current = modelEntry();
+    toggleMenu("model", models.map((m) => ({
+      key: m.value,
+      title: m.displayName || m.value,
+      note: m.description || "",
+      selected: m === current,
+    })), pickModel);
+  });
+
+  ui.postureChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu("posture", POSTURES.map((p) => ({
+      key: p.key, title: p.title, note: p.note, selected: p.key === posture,
+    })), pickPosture);
+  });
+
+  // Click-anywhere and Escape close it — the popup is a menu, not a dialog.
+  document.addEventListener("click", (e) => {
+    if (!ui.menu.hidden && !ui.menu.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+}

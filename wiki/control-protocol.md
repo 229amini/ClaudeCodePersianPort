@@ -118,6 +118,27 @@ process. `get_context_usage` returns `categories[]` with per-bucket token counts
 returns `{session:{total_cost_usd,…}, subscription_type, rate_limits{…}}` — real statusline data
 for free, no client-side arithmetic.
 
+## 6. What Phase 4 measured on top (2026-08-05, 2.1.222)
+
+- **`compact` is NOT a control subtype.** `{"subtype":"compact"}` answers
+  `Unsupported control request subtype: compact` in 0.1 s. It was in the wrapper's whitelist on the
+  strength of a strings-grep; that was wrong. `/compact` reaches the CLI as ordinary message text
+  like every other slash command, and the GUI must not intercept it.
+- **`set_permission_mode` accepts `default`** — the mode the wrapper spawns with, and the one the
+  cautious posture returns to. The valid list comes from the error on a bad value:
+  `acceptEdits, auto, bypassPermissions, default, dontAsk, plan`.
+- **`manual` is a silent alias for `default`.** It is not in the valid list, yet
+  `{"mode":"manual"}` answers `success` with `{"mode":"default"}` — an ack that reports a mode you
+  did not ask for. Read the `mode` in the reply, and bind the UI to the `system/status` echo.
+- **`get_context_usage`** answers `{categories[], totalTokens, maxTokens, percentage, gridRows[]}`.
+  `percentage` is the whole statusline number — no client-side arithmetic over `modelUsage`.
+- **`get_usage`** answers `{session:{total_cost_usd,…}, subscription_type, rate_limits:{five_hour:
+  {utilization, resets_at}, seven_day:{…}, limits:[…]}}`. `five_hour.utilization` is an integer
+  percent: the subscription quota, free, every turn.
+- Both answer on an idle process in well under a second, so firing them after each `result` costs
+  nothing. Do it off the stdout reader thread — `control()` waits for a reply that only that thread
+  can deliver, so calling it from there deadlocks the event pump.
+
 ## Consequences for this project
 
 - Slash autocomplete can be populated **at spawn**, with descriptions and argument hints, instead

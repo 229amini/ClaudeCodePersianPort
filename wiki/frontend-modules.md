@@ -11,10 +11,19 @@ ES modules under `static/js/`. (The gate is 18/18 since rule 8 landed — see
 |---|---|
 | `api.js` | `token` + the `api()` fetch helper. **Leaf — imports nothing.** |
 | `bidi.js` | The whole BiDi contract: `TECHNICAL`, `isolateTechnicalTokens`, `applyDirection`, `renderMarkdown`, `pathEl`. **Leaf — imports nothing.** |
+| `controls.js` | model picker + approval pill + auto-approval counter. **Imports `api.js` only** — deliberately outside the cycle below; `render.js` drives it one-way (Phase 4) |
 | `render.js` | `renderEvent`, renderer `state`, bubble/card/label/block builders, todos, raw cards, statusline |
 | `chrome.js` | sidebar (projects → sessions), home state, replay banner, permission dialog |
-| `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete |
+| `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete, lifecycle verbs |
 | `app.js` | entry: `window.renderEvent`/`window.renderMarkdown`, init order, SSE transport |
+
+`controls.js` reports failures **inside its own menu**, not through `bubble()`, purely so it never
+has to import `render.js` — that import would close a second cycle for a message the user reads
+better next to the control they just used anyway.
+
+The composer's lifecycle verbs (`/model`, `/permissions`, `/clear`) `.click()` the button that
+already does the job rather than importing the module that owns it. One implementation, no cycle,
+and a verb whose button is hidden falls through to the CLI as ordinary text.
 
 ## The load-order rule — the one way to break this
 

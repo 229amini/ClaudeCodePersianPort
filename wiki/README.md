@@ -11,6 +11,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   Hidden spawn flag `--permission-prompt-tool stdio` + inbound `can_use_tool` control requests,
   verified allow and deny. `permission_hook.py`, the 8.3 short-path hack and the HTTP callback are
   **deleted** as of 2026-08-05, and so is the old `permission-broker.md` that documented them.
+- [approval-postures.md](approval-postures.md) — the three-posture pill: why the full-auto one is
+  wrapper-side (the CLI's own `auto`/`dontAsk` approve before we are ever asked, leaving nothing to
+  audit) and why the pill only ever moves on the server's echo.
 - [permission-hook-broken.md](permission-hook-broken.md) — evidence record for why the
   `--settings` PreToolUse hook was abandoned: it does not fire at all on 2.1.221, leaving the gate
   silently inert (unattended writes under `auto`, silent denial under `default`).
@@ -22,8 +25,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
 - [dev-environment.md](dev-environment.md) — **the repo moved machines**: current interpreter is
   `C:\Python314\python.exe`, not the `Python312` path older files still quote. Also: no Chrome
   extension, and why headless screenshots are a dead end here.
-- [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The six-module
-  layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
+- [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The
+  seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched).
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope

@@ -19,6 +19,9 @@ import {
   showPermission, dismissPermission,
 } from "./chrome.js";
 import { setBusy, setSlashCommands } from "./composer.js";
+import {
+  applyInitInfo, setModelResolved, setPostureState, setAutoCount,
+} from "./controls.js";
 
 const FA = window.FA;
 
@@ -160,6 +163,7 @@ export function setStatus(patch) {
     [FA.slMode, s.mode && label(s.mode, "mono")],
     [FA.slContext, s.context !== undefined && label(s.context + "%", "mono")],
     [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
+    [FA.slQuota, s.quota !== undefined && label(s.quota + "%", "mono")],
     [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
   ];
 
@@ -204,8 +208,15 @@ export function renderEvent(ev) {
         // The CLI is authoritative about what commands exist on this machine
         // (custom skills, plugins) — never scan skill directories ourselves.
         if (Array.isArray(ev.slash_commands)) setSlashCommands(ev.slash_commands);
+        // The model this turn actually ran on: the only real confirmation that
+        // a set_model took effect (its own ack is empty).
+        setModelResolved(ev.model);
+      } else if (ev.subtype === "status" && ev.permissionMode) {
+        // The CLI's echo of a permission-mode change. The statusline shows the
+        // raw mode; the pill has its own wrapper-level event.
+        setStatus({ mode: ev.permissionMode });
       }
-      // hook_started / hook_response / status are noise for the user.
+      // hook_started / hook_response are noise for the user.
       return;
 
     case "stream_event": {
@@ -329,6 +340,25 @@ export function renderEvent(ev) {
         const note = label(ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
                            "meta");
         if (card) card.append(note);
+        // Approved by the wrapper's «خودکار» posture, not by the user: the
+        // count is the audit trail that keeps that posture honest.
+        if (ev.auto) setAutoCount(ev.auto_count);
+      } else if (ev.subtype === "init_info") {
+        // Everything the CLI can do, answered at spawn and free
+        // (wiki/control-protocol.md §1). Richer than system/init.
+        applyInitInfo(ev.info);
+        if (Array.isArray(ev.info?.commands)) setSlashCommands(ev.info.commands);
+      } else if (ev.subtype === "posture") {
+        setPostureState(ev.posture, ev.auto_count);
+      } else if (ev.subtype === "usage") {
+        // Measured by the CLI itself (get_context_usage / get_usage) — it
+        // replaces the estimate the `result` branch computes below. Only the
+        // keys that actually arrived: a missing one must not erase a good value.
+        const patch = {};
+        for (const key of ["context", "cost", "quota"]) {
+          if (typeof ev[key] === "number") patch[key] = ev[key];
+        }
+        setStatus(patch);
       } else if (ev.subtype === "statusline") {
         setStatus({ custom: ev.text });
       } else if (ev.subtype === "reset") {

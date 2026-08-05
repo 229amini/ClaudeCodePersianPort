@@ -4,6 +4,30 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
+## 2026-08-05 — rework Phase 4: capability-mirror composer
+
+- Shipped: Jalali/Persian-digit dates in the sidebar (`Intl.DateTimeFormat('fa-IR')`), slash popup
+  fed from `initialize` with descriptions + argument hints, model picker and 3-posture approval
+  pill rendered from the account's own model list, real session titles via `rename_session`, and
+  statusline numbers from `get_context_usage`/`get_usage` instead of client arithmetic.
+  New module `static/js/controls.js` (`frontend-modules.md`); posture design in
+  `approval-postures.md`.
+- **Three fixes that came out of measuring rather than trusting the plan:**
+  - `compact` is **not** a control subtype (`Unsupported control request subtype`) — removed from
+    the whitelist, `/compact` passes through as text. The plan's `/compact → /api/control` step
+    would have failed every time.
+  - `set_permission_mode` accepts `default` (so the cautious posture works) but silently answers
+    `success {"mode":"default"}` for `manual`. `control-protocol.md` §6.
+  - `/api/control` params could carry `timeout`/`wait` straight into the transport's own kwargs.
+    Rejected now.
+- **Effort picker deliberately not built.** `apply_flag_settings` acks any garbage, so live effort
+  switching cannot be verified for free (`control-protocol.md` §5) — and a greyed control that
+  explains it does nothing is clutter for this audience. `--effort` remains a spawn flag.
+- `smoke_test.py` now asserts the whole capability mirror in its **same single paid turn**:
+  initialize data, posture round-trip + `system/status` echo, `set_model` proven by the next
+  turn's `system/init.model`, usage numbers, and the session title read back out of the transcript.
+  9/9 PASS. Spec gate still 18/18.
+
 ## 2026-08-04 — M8 materials written
 
 - `M8-acceptance.md` (repo root) — the executable acceptance checklist. Expands plan §B-10 with

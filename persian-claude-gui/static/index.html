@@ -74,6 +74,11 @@
            slash_commands list, authoritative for this machine. -->
       <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
 
+      <!-- One popup serves both the model picker and the approval pill: they
+           are never open at the same time, and it keeps a single
+           click-outside/Escape handler (js/controls.js). -->
+      <div id="menu-popup" hidden role="menu"></div>
+
       <div id="attachments" hidden></div>
 
       <label class="sr-only" for="input">پیام</label>
@@ -98,6 +103,29 @@
           </svg>
           <bdi id="proj-chip-name" class="path"></bdi>
         </button>
+
+        <!-- Model picker and approval pill are rendered entirely from what
+             `initialize` returned (js/controls.js). Hidden until it arrives —
+             a hardcoded model list would be wrong on any other plan. -->
+        <button type="button" id="model-chip" class="chip-btn" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3l2.2 5.1 5.3.6-4 3.6 1.2 5.2L12 14.9 7.3 17.5l1.2-5.2-4-3.6 5.3-.6z"/>
+          </svg>
+          <span id="model-chip-name" dir="auto"></span>
+        </button>
+
+        <button type="button" id="posture-chip" class="chip-btn" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/>
+          </svg>
+          <span id="posture-chip-name" dir="auto"></span>
+        </button>
+
+        <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
+             on the user's behalf. Never hidden behind a menu. -->
+        <span id="auto-chip" class="chip-btn is-info" hidden></span>
 
         <span class="comp-spacer"></span>
 

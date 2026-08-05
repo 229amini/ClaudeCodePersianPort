@@ -81,15 +81,34 @@ CLAUDE_ARGS = [
 
 # Control-request subtypes the GUI may invoke through /api/control. A whitelist,
 # not a passthrough: the browser must not be able to drive arbitrary control
-# traffic into the CLI. Verified present in 2.1.221's dispatch switch.
+# traffic into the CLI. Each one answered on a real 2.1.222 process.
+#
+# `compact` is NOT here: it answers "Unsupported control request subtype"
+# (measured 2026-08-05). /compact reaches the CLI as ordinary message text like
+# every other slash command -- do not add it back without re-probing.
 CONTROL_ALLOWED = frozenset({
     "set_model", "set_permission_mode", "set_max_thinking_tokens",
-    "compact", "rename_session", "get_context_usage", "get_usage",
+    "rename_session", "get_context_usage", "get_usage",
 })
 
 # How long a control_request may take before the caller gives up. These are
 # local round-trips on an open pipe, so anything slow means trouble.
 CONTROL_TIMEOUT = 15.0
+
+# The three approval postures the pill offers -> (CLI permission mode, wrapper
+# auto-approve). `bypassPermissions` is never sent (the engine refuses it) and
+# neither is `auto`: it approves before the wrapper is ever asked, so there is
+# nothing left to show the user. The full-auto posture is therefore wrapper-side
+# -- the CLI still asks us, we answer instantly, and every answer is logged.
+POSTURES = {
+    "ask": ("default", False),
+    "acceptEdits": ("acceptEdits", False),
+    "autoApprove": ("default", True),
+}
+
+# Longest session title we ask the CLI to store. Titles render in a narrow
+# sidebar; anything longer is truncated by CSS anyway.
+TITLE_MAX = 60
 
 EDGE_CANDIDATES = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -239,10 +258,12 @@ def _sessions_in(folder: Path) -> list[dict]:
             mtime = transcript.stat().st_mtime
         except OSError:
             continue
+        preview, title = session_meta(transcript)
         sessions.append({
             "session_id": transcript.stem,
             "modified": mtime,
-            "preview": (first_user_text(transcript) or "")[:160],
+            "preview": (preview or "")[:160],
+            "title": title,
         })
     sessions.sort(key=lambda item: item["modified"], reverse=True)
     return sessions
@@ -289,22 +310,41 @@ def list_projects() -> list[dict]:
     return result
 
 
-def first_user_text(path: Path) -> str | None:
+def session_meta(path: Path) -> tuple[str | None, str | None]:
+    """(first user text, session title) from one pass over a transcript.
+
+    `rename_session` persists a title by APPENDING
+    {"type":"custom-title","customTitle":…} to the session's own transcript --
+    the only place it lands (wiki/control-protocol.md §4). The last such line
+    wins, so the file has to be read to the end; json.loads runs only on the
+    lines that can possibly matter, because a long transcript is thousands of
+    lines and the sidebar re-reads every session on each refresh.
+    """
+    first = title = None
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if event.get("type") != "user" or event.get("isSidechain"):
-                    continue
-                for part in event.get("message", {}).get("content", []) or []:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        return (part.get("text") or "").strip()
+                if '"custom-title"' in line:
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("type") == "custom-title":
+                        title = (event.get("customTitle") or "").strip() or title
+                elif first is None and '"user"' in line:
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("type") != "user" or event.get("isSidechain"):
+                        continue
+                    for part in event.get("message", {}).get("content", []) or []:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            first = (part.get("text") or "").strip()
+                            break
     except OSError:
         pass
-    return None
+    return first, title
 
 
 def transcript_path(cwd: Path, session_id: str) -> Path | None:
@@ -521,6 +561,34 @@ class PermissionBroker:
         # "always allow this tool for this session" — cleared when the server
         # exits, never written to the user's real settings.
         self.session_allow: set[str] = set()
+        # The "autoApprove" posture: the wrapper approves instead of the user.
+        # Wrapper-side on purpose — the CLI's own `auto` mode would approve
+        # before we ever see the call, and then there is nothing to audit.
+        self.auto_approve = False
+        self.auto_log: list[dict] = []
+        self.posture = "ask"
+
+    def reset_posture(self) -> None:
+        """A fresh CLI process spawns with --permission-mode default, so the
+        posture and its audit log are session-scoped and must not survive it."""
+        with self._lock:
+            self.posture = "ask"
+            self.auto_approve = False
+            self.auto_log.clear()
+
+    def set_posture(self, posture: str, auto: bool) -> None:
+        with self._lock:
+            self.posture = posture
+            self.auto_approve = auto
+        self.publish_posture()
+
+    def publish_posture(self) -> None:
+        """The pill binds to THIS event, never to its own click: the server
+        sends it only after the CLI acknowledged the mode change."""
+        with self._lock:
+            event = {"type": "wrapper", "subtype": "posture",
+                     "posture": self.posture, "auto_count": len(self.auto_log)}
+        self.hub.publish(event)
 
     def request(self, tool_name: str, tool_input: dict, tool_use_id: str | None,
                 display_name: str | None = None, description: str | None = None,
@@ -532,6 +600,20 @@ class PermissionBroker:
                 return {"decision": "allow", "reason": "session allow-rule"}
 
         request_id = uuid.uuid4().hex
+
+        with self._lock:
+            auto = self.auto_approve
+            if auto:
+                self.auto_log.append({"tool_name": tool_name,
+                                      "at": time.time()})
+                count = len(self.auto_log)
+        if auto:
+            # Approved without asking, but never silently: the window shows a
+            # running count and each tool card gets its "allowed" note.
+            self._publish_resolved(request_id, tool_use_id, "allow",
+                                   auto=True, auto_count=count)
+            return {"decision": "allow", "reason": "auto-approve posture"}
+
         waiter = threading.Event()
         with self._lock:
             self._pending[request_id] = {"event": waiter, "decision": None}
@@ -567,13 +649,16 @@ class PermissionBroker:
         return {"decision": decision, "reason": "user decision"}
 
     def _publish_resolved(self, request_id: str, tool_use_id: str | None,
-                          decision: str) -> None:
+                          decision: str, auto: bool = False,
+                          auto_count: int = 0) -> None:
         self.hub.publish({
             "type": "wrapper",
             "subtype": "permission_resolved",
             "request_id": request_id,
             "tool_use_id": tool_use_id,
             "decision": decision,
+            "auto": auto,
+            "auto_count": auto_count,
         })
 
     def respond(self, request_id: str, decision: str, remember: bool,
@@ -612,6 +697,10 @@ class ClaudeSession:
         # Fetched once per process at start(); everything the UI knows about
         # this CLI comes from here rather than being hardcoded.
         self.init_info: dict | None = None
+        # First prompt of a brand-new session, kept until the first result
+        # turns it into the session title (see _after_result).
+        self._titled = True
+        self._first_prompt: str | None = None
 
     def start(self, resume_id: str | None = None) -> None:
         self._generation += 1
@@ -643,6 +732,12 @@ class ClaudeSession:
         )
         proc = self.proc
         self.init_info = None
+        # Only a session started from scratch gets an auto-title: a resumed one
+        # already has its own history (and possibly a title the user chose).
+        self._titled = resume_id is not None
+        self._first_prompt = None
+        if self.broker:
+            self.broker.reset_posture()
         threading.Thread(target=self._read_stdout, args=(proc, generation),
                          daemon=True).start()
         threading.Thread(target=self._read_stderr, args=(proc, generation),
@@ -701,14 +796,66 @@ class ClaudeSession:
                 self.session_id = event.get("session_id")
                 self.model = event.get("model")
             if event.get("type") == "result":
-                # Off-thread: the statusline is someone else's script and must
-                # never stall the event pump.
-                threading.Thread(target=self._publish_statusline,
+                # Off-thread: the statusline is someone else's script, and the
+                # usage/rename control requests wait on THIS reader thread for
+                # their replies — doing either here deadlocks the event pump.
+                threading.Thread(target=self._after_result,
                                  args=(event, generation), daemon=True).start()
             self.hub.publish(event)
         if generation == self._generation:
             self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
                               "returncode": proc.poll()})
+
+    def _after_result(self, result: dict, generation: int) -> None:
+        """Everything that happens once a turn is finished, on one thread."""
+        if generation != self._generation:
+            return
+        try:
+            self._title_session(generation)
+            self._publish_usage(generation)
+        except RuntimeError:
+            pass   # the process went away mid-turn; there is nothing to ask
+        self._publish_statusline(result, generation)
+
+    def _title_session(self, generation: int) -> None:
+        """Name a fresh session after its first prompt.
+
+        Only after the first result: on a session with no messages yet the CLI
+        writes the title nowhere at all and the rename is silently lost
+        (wiki/control-protocol.md §4). The ack means nothing either way, so the
+        sidebar reads the title back out of the transcript.
+        """
+        if self._titled or not self._first_prompt:
+            return
+        self._titled = True
+        title = " ".join(self._first_prompt.split())[:TITLE_MAX]
+        if title:
+            self.control("rename_session", title=title)
+
+    def _publish_usage(self, generation: int) -> None:
+        """Real context/cost numbers from the CLI instead of client arithmetic.
+
+        Both requests are free and answer on an idle process. If either is
+        missing on an older build the client keeps its own estimate — hence
+        every key here is optional.
+        """
+        patch: dict = {}
+        context = self.control("get_context_usage", timeout=5.0)
+        if context.get("subtype") == "success":
+            body = context.get("response") or {}
+            if isinstance(body.get("percentage"), (int, float)):
+                patch["context"] = body["percentage"]
+        usage = self.control("get_usage", timeout=5.0)
+        if usage.get("subtype") == "success":
+            body = usage.get("response") or {}
+            cost = (body.get("session") or {}).get("total_cost_usd")
+            if isinstance(cost, (int, float)):
+                patch["cost"] = cost
+            five = (body.get("rate_limits") or {}).get("five_hour") or {}
+            if isinstance(five.get("utilization"), (int, float)):
+                patch["quota"] = five["utilization"]
+        if patch and generation == self._generation:
+            self.hub.publish({"type": "wrapper", "subtype": "usage", **patch})
 
     def _publish_statusline(self, result: dict, generation: int) -> None:
         command = statusline_command()
@@ -745,6 +892,9 @@ class ClaudeSession:
             self.proc.stdin.flush()
 
     def send_blocks(self, blocks: list[dict]) -> None:
+        if not self._titled and self._first_prompt is None:
+            self._first_prompt = next(
+                (b.get("text") for b in blocks if b.get("type") == "text"), None)
         self._write_line({"type": "user",
                           "message": {"role": "user", "content": blocks}})
 
@@ -870,6 +1020,10 @@ class ClaudeSession:
             return
         self.init_info = info
         self.hub.publish({"type": "wrapper", "subtype": "init_info", "info": info})
+        # Publish the (reset) posture on the same path, so a window that opens
+        # or reconnects later gets it out of Hub history instead of guessing.
+        if self.broker:
+            self.broker.publish_posture()
 
     def stop(self) -> None:
         if not self.proc or self.proc.poll() is not None:
@@ -1061,6 +1215,12 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(control_params, dict):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "params must be an object"})
                 return
+            # control() takes `timeout` and `wait` as its own keyword arguments,
+            # so a params object carrying either would reach into the transport
+            # instead of the CLI -- a browser must not be able to do that.
+            if control_params.keys() & {"timeout", "wait"}:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "reserved param"})
+                return
             try:
                 response = self.session.control(subtype, **control_params)
             except (RuntimeError, TypeError) as exc:
@@ -1074,6 +1234,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK,
                             {"ok": True, "response": response.get("response") or {}})
+        elif parsed.path == "/api/posture":
+            # The approval posture is two settings at once (the CLI's permission
+            # mode and the wrapper's auto-approve flag), so it is one endpoint
+            # rather than two client calls that can half-apply.
+            posture = (body.get("posture") or "").strip()
+            if posture not in POSTURES:
+                self._send_json(HTTPStatus.BAD_REQUEST,
+                                {"error": f"unknown posture: {posture}"})
+                return
+            mode, auto = POSTURES[posture]
+            try:
+                response = self.session.control("set_permission_mode", mode=mode)
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            if response.get("subtype") == "error":
+                # The CLI refused the mode: change nothing. The pill listens for
+                # the posture event, so it stays on the posture that is real.
+                self._send_json(HTTPStatus.OK,
+                                {"ok": False, "error": response.get("error")})
+                return
+            self.broker.set_posture(posture, auto)
+            self._send_json(HTTPStatus.OK, {"ok": True, "posture": posture,
+                                            "mode": mode})
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
         elif parsed.path == "/api/permission/respond":
