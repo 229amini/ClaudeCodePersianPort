@@ -1,22 +1,58 @@
 # RTL rendering — what M3 actually needed
 
-Built and verified 2026-08-04. All 8 spec test cases pass, plus 11 automated assertions in
-`persian-claude-gui/static/spec-test.html`. This file records what was **not** obvious from
-`claude-persian-rtl-spec.md`.
+Built and verified 2026-08-04. **Extended 2026-08-05 with spec rule 8 and cases 9–12: the gate is
+now `PASS — 18/18`** (12 cases, 18 assertions) in `persian-claude-gui/static/spec-test.html`. This
+file records what was **not** obvious from `claude-persian-rtl-spec.md`.
+
+## Rule 8 — the containers that are LTR on purpose
+
+Cases 1–8 are all message-shaped and **structurally cannot** catch the project's worst BiDi bug.
+`.tool-output`, `<pre>` and `.path` force `direction: ltr`, which is right for the *box* and wrong
+for its *content* — and that content is Persian far more often than it looks: a file being written,
+an `Edit.new_string`, a command's output, the parameters shown in the approval dialog. Until
+2026-08-05 the dialog pushed every string through `pathEl()` and the tool card dumped
+`JSON.stringify(input)`, so the user read mangled LTR Persian *at the moment they were asked to
+consent to it*.
+
+The fix is `linesAuto()` in `js/bidi.js`: split on `\n`, one `<div dir="auto">` per line, inside the
+LTR container. Three things about it are load-bearing:
+
+- **Per line, not per run.** A run-level `<bdi>` around the Persian leaves adjacent digits outside
+  the isolate — case 12 exists to catch exactly that.
+- **No direction detection in JS.** `dir="auto"` is the whole algorithm; splitting on newlines is
+  not a content sniff.
+- **A blank line needs a `<br>`** or it has no line box and silently vanishes.
+
+`renderParamRows()` in `js/render.js` is the single builder for tool parameters, used by the card
+**and** the dialog — case 10 fails if they ever diverge again. The harness therefore carries a copy
+of the `<dialog id="perm">` markup from `index.html`; `js/chrome.js` reads those ids at
+module-evaluation time, so removing them makes the whole verdict empty rather than failing one case.
 
 ## How to re-run the spec tests
 
+One command, free, no CLI turn spent (added 2026-08-05):
+
 ```powershell
-$env:PYTHONIOENCODING = "utf-8"
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" `
-    "persian-claude-gui\server.py" --cwd . --no-window
-# then open the URL it prints, swapping the path:
-#   http://127.0.0.1:<port>/static/spec-test.html?t=<token>
+python persian-claude-gui\run_spec_test.py     # exit 0 = PASS
 ```
 
-The verdict bar at the bottom shows `PASS — n/n`, and `window.__specChecks` holds the machine
-readable result. The harness pushes each case through `window.renderEvent` — the **shipping**
-renderer, not a copy — so a regression in `app.js` fails the harness.
+It boots the server, **holds one SSE connection open for the whole run**, drives Edge headless
+with `--dump-dom`, and parses `#verdict` out of the DOM. The SSE hold is not optional: the idle
+watchdog (`server.py:1349`) tears the server down 10 s after the last client leaves, so a headless
+run that only fetches the page loses the race and reports a false failure.
+
+Manual equivalent, if you want to see it: start the server with `--no-window` and open
+`http://127.0.0.1:<port>/static/spec-test.html?t=<token>`. The verdict bar shows `PASS — n/n` and
+`window.__specChecks` holds the machine-readable result.
+
+The harness pushes each case through `window.renderEvent` — the **shipping** renderer, not a copy
+— so a regression in `static/js/render.js` fails the harness. It runs as
+`<script type="module">`; see `frontend-modules.md` for why that is load-bearing.
+
+**A page that never ran and a page that passed look the same from outside.** An empty `#verdict`
+is what a module load error produces, so the runner treats "no verdict" as FAIL, not as silence.
+Confirmed by deleting `js/render.js` and re-running: `FAIL — harness never ran`. If you change the
+runner, re-do that negative test — a gate that cannot fail is not a gate.
 
 ## Bare paths in prose need JS, not CSS
 
@@ -50,9 +86,10 @@ BiDi-correct because `.msg` carries `unicode-bidi: plaintext` and `dir="auto"`.
    from auth — that would leave the whole UI readable by any local process.
 2. **Global scope collision.** `app.js` declared `const log` / `const input` at top level;
    `spec-test.html` loads app.js *and* its own classic script, so both threw
-   `Identifier 'log' has already been declared` and the harness silently never ran. `app.js` is
-   now wrapped in an IIFE exporting only `window.renderEvent` and `window.renderMarkdown`. The
-   M5 history view will hit the same trap if that wrapper is removed.
+   `Identifier 'log' has already been declared` and the harness silently never ran. The IIFE that
+   fixed it is gone as of the 2026-08-05 module split — module scope makes the collision
+   impossible — but the two `window.*` exports it introduced are still the harness's only entry
+   point. Do not remove them.
 
 ## Shift+Space is safe, despite appearances
 
@@ -73,12 +110,32 @@ not deprecated. Plan §B-2 explicitly permits either.
 
 ## Design decisions
 
-- **Light + dark**, driven by `prefers-color-scheme`. The `ui-ux-pro-max` skill recommended
-  dark-only and a Lora/Raleway pairing; both were declined — Vazirmatn is binding under spec
-  rule 3, and a tool the colleague uses all day should follow the OS.
-- **User bubble at the RTL start (right), assistant at the end (left).** Alignment is layout
-  only; it never substitutes for `dir` on the text.
+- **Dark-only** since the claude.ai-style shell redesign (user decision 2026-08-04, superseding
+  the earlier follow-the-OS light+dark). Warm graphite palette (`#262624` bg, `#d97757` coral
+  accent), reference screenshots: claude.ai home + Codex sidebar. Vazirmatn stays binding
+  (spec rule 3).
+- **Shell layout**: `body.app` is a two-column grid; RTL puts the first column — the sidebar —
+  on the RIGHT. spec-test.html has no `.app` class and keeps the old stacked body layout; keep
+  that split or the harness breaks.
+- **User bubble at the RTL start (right) in a filled bubble; assistant is plain full-width text**
+  (claude.ai-style, no border). Alignment is layout only; it never substitutes for `dir`.
+- **Home / empty state** is class-driven: a MutationObserver on `#log` toggles `body.home`
+  whenever the log has no children. Renderer stays untouched.
 - **Scrollbar sits on the left** because the shell is RTL, consistently in every pane
   (spec rule 7).
 - `line-height: 1.9` is a spec floor, not taste — measured 30.4px at 16px base. Code blocks drop
   to 1.6 because their content is Latin.
+
+## Two CSS traps the redesign hit (will bite again)
+
+1. **A class display rule defeats `hidden`.** `button.round { display:inline-flex }` made the
+   stop button visible despite `stopBtn.hidden = true` — the UA's `[hidden]{display:none}` loses
+   to any authored display. Guard: `[hidden] { display:none !important }` now sits in the shell
+   block. Don't remove it.
+2. **The global `button` style leaks into chrome buttons.** `button:hover { background:
+   var(--accent-strong) }` painted sidebar session rows coral on hover, because `.sess` and
+   `.proj-head` are `<button>`s. Any new transparent button needs its own hover override.
+
+Both survive the 2026-08-05 cascade-layer restructure untouched — `!important` beats normal
+declarations in any layer, and trap 2 is why every visual rule shares one `components` layer.
+See `frontend-modules.md`.

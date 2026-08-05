@@ -48,6 +48,11 @@ whatever that machine actually has (built-ins, plugins, custom skills). Plan §B
 scanning `~/.claude/skills/` and project `.claude/skills/` — don't. The CLI already tells us, and
 its list includes plugin commands that directory scanning would miss.
 
+**Prefer the `initialize` control request over the `init` event for this** (2026-08-05): same
+authority, available at spawn instead of after turn one, and each entry carries a `description`
+and `argumentHint` that `slash_commands` (names only) does not. See
+[control-protocol.md](control-protocol.md).
+
 ## B-9.5 — image content blocks are accepted
 
 Standard Anthropic shape, sent as a block in the stream-json user message:
@@ -87,9 +92,12 @@ event pump. 10-second timeout.
 
 Plan §B-7 says known-unavailable features get a "known differences" list rather than imitations:
 
-- **Mode switching** (plan mode, acceptEdits toggle) — not implemented. `--permission-mode` is a
+- **Mode switching** (plan mode, acceptEdits toggle) — ~~not implemented. `--permission-mode` is a
   launch flag; nothing verified lets it change mid-session over stream-json. Would need a restart,
-  which would be a surprising thing for a button to do.
+  which would be a surprising thing for a button to do.~~
+  **Wrong as of 2026-08-05.** A `control_request` with subtype `set_permission_mode` changes it
+  live and the CLI confirms with a `system/status` event; `set_model` works the same way. Neither
+  needs a restart. See [control-protocol.md](control-protocol.md). Build these as instant controls.
 - **`!` shell passthrough** and **`Esc` semantics** — terminal-only, no equivalent.
 - Cost on an interrupted turn reports `$0.0000`. That is what the CLI returns for an aborted
   result; it is not a wrapper bug.

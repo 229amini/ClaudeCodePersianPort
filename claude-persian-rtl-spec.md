@@ -118,6 +118,27 @@ Verify the ZWNJ survives the round-trip to the CLI and back — some pipelines s
 
 When a container is RTL, the scrollbar moves to the left in most engines. Decide deliberately whether the message list is RTL (scrollbar left, feels native to Persian readers) or LTR with RTL text inside it (scrollbar right). Be consistent — mixing the two across panes looks broken.
 
+### 8. LTR containers must still give each line its own `dir="auto"`
+
+*Added 2026-08-05, after the rules above shipped.* `direction: ltr` is correct for a container that must not be reordered — a code block, a path, a tool-parameter box, a tool's stdout. It is **not** correct for the text inside it. An LTR container forces LTR onto every line it holds, so a Persian line comes out left-aligned with its trailing punctuation on the wrong side.
+
+Those containers are not always code. A file's contents, an edit's replacement text, a command's output, the parameters of a tool call awaiting approval — all of them routinely hold Persian, and the tool-approval case is the worst possible place to render it wrongly: the user is being asked to consent to text they cannot read properly.
+
+Keep the container LTR and wrap **every line** in its own `dir="auto"` element:
+
+```html
+<div class="tool-output">          <!-- direction: ltr; unicode-bidi: isolate -->
+  <div dir="auto">این خط فارسی است</div>
+  <div dir="auto">const x = 1;</div>
+</div>
+```
+
+Line order and the box's own alignment stay LTR; each line resolves its own direction from its first strong character. Latin and neutral-only lines are unaffected.
+
+**Per line, never per run.** Wrapping the Persian *run* inside a line in `<bdi>` looks equivalent and is not: adjacent digits fall outside the isolate and get reordered against the text they belong to. Splitting on `\n` is the whole algorithm — do not detect direction in JavaScript (that is still forbidden by rule 1 and the list at the end of this document).
+
+A blank line needs a `<br>` inside its wrapper, or it has no line box and the blank line silently disappears.
+
 ---
 
 ## Test cases
@@ -134,8 +155,12 @@ Paste each of these and confirm the described result.
 | 6 | `می‌رود` typed via Shift+Space | ZWNJ present; renders as two disjoint word-parts, not `میرود` |
 | 7 | Persian paragraph immediately followed by a code block | Neither affects the other's direction or alignment |
 | 8 | Long Persian paragraph wrapping over several lines | Consistent right alignment on every line, no clipped descenders |
+| 9 | Tool card for a `Write` whose `content` is Persian, Latin code and a blank line | Persian lines right-aligned, Latin lines left-aligned, both inside one LTR box; blank line still visible |
+| 10 | Permission dialog for an `Edit` with a Persian `new_string` | The replacement text is readable in the dialog, rendered exactly as the tool card renders it |
+| 11 | `tool_result` whose output mixes Persian and Latin lines | Every line takes its own direction; line order unchanged |
+| 12 | Persian line containing Latin digits (`مقدار 42 تنظیم شد`) inside tool output | Digits stay attached to that line, in the right place |
 
-Test 3 is the one that catches the global-`dir="rtl"` mistake. Test 4 catches a missing `unicode-bidi: isolate`.
+Test 3 is the one that catches the global-`dir="rtl"` mistake. Test 4 catches a missing `unicode-bidi: isolate`. Tests 9–12 catch rule 8, and cases 1–8 structurally cannot: they are all message-shaped, and the bug lives in containers that are deliberately LTR.
 
 ---
 
@@ -145,3 +170,4 @@ Test 3 is the one that catches the global-`dir="rtl"` mistake. Test 4 catches a 
 - **Reversing strings in JavaScript** — never do this. The Unicode Bidirectional Algorithm is the browser's job; manual reversal corrupts combining marks and breaks copy-paste.
 - **A CSS `direction` toggle button** — a per-message `dir="auto"` handles mixed conversations automatically. A manual toggle is wrong the moment one message is Persian and the next is English.
 - **Relying on the font to fix direction** — the font handles glyph shaping and joining. Direction and reordering are separate concerns handled by CSS and the BiDi algorithm.
+- **Treating `direction: ltr` on a container as "handled"** — it fixes the box and breaks the content. See rule 8.

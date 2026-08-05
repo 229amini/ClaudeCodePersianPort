@@ -82,6 +82,53 @@ path reaches the UI or the CLI.
 Recents live in `persian-claude-gui/recents.json`, capped at 10, most-recent-first,
 case-insensitively de-duplicated.
 
+## Deleting a session (added 2026-08-04)
+
+`POST /api/session/delete {session_id}` unlinks the transcript. Three things it must keep doing:
+
+- **Refuse the live session** (409). The running CLI keeps writing its own transcript; deleting it
+  underneath leaves a session that exists in memory but not on disk, and `--resume` on it fails.
+  The window also just omits the delete button on the current row, but the server check is the
+  real guard — the row is stale the moment the id is adopted.
+- **Route through `transcript_path()`.** That helper is the single choke point for the traversal
+  guard, shared with `read_session()`. Before delete existed a bypass only leaked a file's
+  contents; now it would unlink an arbitrary path. `test_transcript_path.py` is the check.
+- **Deletion is permanent** — no trash, no undo. Hence the two-click confirm in the dialog
+  (`ghost` → `danger` + «مطمئنید؟») instead of a native `confirm()`, which would render LTR in
+  browser chrome and sit outside the RTL discipline.
+
+The dialog refreshes by calling `openSessions()` again, so it must stay re-entrant:
+`showModal()` on an already-open `<dialog>` throws `InvalidStateError`, which is why the call is
+guarded with `if (!ui.dialog.open)`.
+
+## Sidebar endpoints (added with the claude.ai-style shell, 2026-08-05)
+
+- **`GET /api/projects`** — one round-trip for the whole sidebar: every project the CLI has
+  transcripts for (real cwd read from inside the transcripts, never un-mangled from the folder
+  name) plus recents, each with its sessions inline. Projects whose folder no longer exists are
+  dropped. The current cwd is always present, prepended if unknown.
+- **`GET /api/session?id=…&cwd=…`** — optional `cwd` lets the sidebar replay sessions from any
+  project. A bogus cwd yields an empty event list, not an error.
+- **`POST /api/session/resume {session_id, path?}`** — optional `path` switches cwd and resumes
+  in ONE `restart()`, not two process spawns. Same-folder path is ignored. Verified end-to-end:
+  clicking a session under another project switches cwd, replays, updates chrome.
+- **`POST /api/session/delete {session_id, path?}`** — optional `path` for cross-project delete.
+  The traversal guard is still `transcript_path()`; the live-session 409 still applies.
+
+"New chat" is not an endpoint — it is `POST /api/project/open` with the current cwd (fresh
+process → fresh session id → `wrapper/reset` clears the view → the home state reappears).
+
+Project-level actions (added 2026-08-05):
+
+- **`POST /api/project/archive {path, archived}`** — toggles membership in
+  `persian-claude-gui/archived.json`. Transcripts untouched; the sidebar shows archived
+  projects under a collapsed «بایگانی» section with an unarchive action. The currently open
+  project always renders as active even if flagged.
+- **`POST /api/project/remove {path}`** — `shutil.rmtree` on the project's transcript folder
+  (always a child of `~/.claude/projects/` by construction) + drops it from recents and
+  archived. **Never touches the project folder itself.** Refuses the currently open project
+  (409) for the same reason session delete refuses the live session.
+
 ## Testing gotcha
 
 The idle watchdog kills the server ~10 s after the last SSE client disconnects. An API-only test

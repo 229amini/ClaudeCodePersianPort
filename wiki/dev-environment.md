@@ -1,7 +1,42 @@
 # Dev environment — this machine (author PC)
 
-Probed 2026-08-04. This is the **author's** PC (`ladyg`), not the colleague's target machine.
-Re-run the probe on the target before M8; nothing here transfers automatically.
+> **The repo moved machines on/before 2026-08-05.** Everything below the "Second author PC"
+> section was measured on `ladyg` and no longer describes where you are running. In particular
+> **the `Python312` path in every older command in this repo is wrong now.** Read the next
+> section first.
+
+## Second author PC — current, measured 2026-08-05
+
+| Item | Result |
+|---|---|
+| OS | Windows 11 Pro 26200 |
+| repo root | `D:\projects\Claude` (was `C:\Users\ladyg\Desktop\Claude`) |
+| user profile | `C:\Users\Lion` |
+| **Python** | **`C:\Python314\python.exe` (3.14.0)** — machine-wide, NOT under `%LOCALAPPDATA%\Programs\Python` |
+| `msedge.exe` | present, x86 path only: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
+| node / npm | npm present (`bd` installs through it); no node needed by this project |
+| Claude-in-Chrome extension | **not connected** — the MCP browser tools error out |
+
+Consequences, all of which cost time to rediscover:
+
+- `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` **does not exist here**; only `Python38`
+  is under that root. Commands copied from CLAUDE.md or older wiki files fail with
+  *"No such file or directory"*. Use `C:\Python314\python.exe`, or plain `python` — on this
+  machine it resolves to 3.14 and is **not** a Store stub (that trap was `ladyg`-specific).
+- **Browser QA through the Chrome MCP tools is unavailable** (extension not connected), and there
+  is still no node, so no Playwright either. That is why `run_spec_test.py` drives Edge directly.
+- **Headless `--screenshot` is a dead end — do not re-walk it.** `msedge --headless=new
+  --screenshot` produces a uniformly blank `--bg`-coloured PNG for both `index.html` and
+  `spec-test.html`, with or without an open SSE stream, with or without
+  `--virtual-time-budget`. `--dump-dom` on the same command line works fine. Visual regression
+  checking therefore has no automated path on this machine; assertions that must be *seen* are
+  manual acceptance items (`M8-acceptance.md` §5).
+
+## First author PC (`ladyg`) — historical, probed 2026-08-04
+
+Kept for the install-branch evidence (winget absence, the Store-stub trap, the exact Python and
+git installers that worked). Re-run the probe on the colleague's target before M8; nothing here
+transfers automatically.
 
 | Item | Result |
 |---|---|
@@ -84,9 +119,11 @@ the fonts and icon are byte-identical.
 
 ```powershell
 $env:PYTHONIOENCODING = "utf-8"
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" `
-    "C:\Users\ladyg\Desktop\Claude\persian-claude-gui\server.py" --cwd <project> --no-window
+& "C:\Python314\python.exe" `
+    "D:\projects\Claude\persian-claude-gui\server.py" --cwd <project> --no-window
 ```
+
+(On `ladyg` this was `$env:LOCALAPPDATA\Programs\Python\Python312\python.exe` and a Desktop path.)
 
 `--no-window` skips the Edge launch so the server can be driven from a script. It prints the
 tokenised URL on stdout; the smoke test scrapes it with

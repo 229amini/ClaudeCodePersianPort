@@ -35,12 +35,8 @@ answers; they decide what happens next.
 | `msedge.exe` present? WebView2? | | Absent → degraded to a normal browser tab |
 | **Are installs permitted at all?** | | Forbidden → B2 is impossible, re-plan (plan Phase 0) |
 
-Two more the plan's probe does not ask, both of which silently break things:
+One more the plan's probe does not ask, and it silently breaks things:
 
-- [ ] **Does the Windows username contain a space?** (`echo %USERNAME%`)
-      → `%LOCALAPPDATA%` gets a space → the permission hook depends on an 8.3 short name existing.
-      Setup warns if it does not. If you see that warning, **tool approvals will not work** —
-      stop and re-plan the install location.
 - [ ] **Is the username non-ASCII (e.g. Persian)?**
       → `run.vbs` paths. It is written UTF-16LE for exactly this reason; verify the shortcut
       actually launches rather than assuming.
@@ -60,7 +56,7 @@ The whole point is that nothing else is needed.
       `setup.bat`.
 - [ ] Smoke test reports success (`آزمایش موفق بود`).
 - [ ] Desktop shortcut «کلود» exists, with the blue speech-bubble icon.
-- [ ] Read `setup-log.txt`. **Check specifically for the 8.3 warning.**
+- [ ] Read `setup-log.txt` end to end for anything that looks skipped rather than done.
 - [ ] Re-run `setup.bat` once more — must be clean and idempotent.
 
 If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-ever execution**.
@@ -77,13 +73,13 @@ If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-e
 
 ---
 
-## 4. Spec test cases 1–8 — **in both live view and history replay**
+## 4. Spec test cases 1–12 — **in both live view and history replay**
 
 Plan §B-10 item 1. The automated harness covers the mechanics; this is the human check on a real
 machine with the colleague's own fonts and display scaling.
 
 - [ ] Open `/static/spec-test.html?t=<token>` (token from the address bar). Verdict bar reads
-      `PASS — 11/11`.
+      `PASS — 18/18`.
 - [ ] Then, in the **live chat**, send each case as a real message and eyeball it:
 
 | # | Send | Must look like |
@@ -96,8 +92,12 @@ machine with the colleague's own fonts and display scaling.
 | 6 | type `می` + Shift+Space + `رود` | renders `می‌رود`, not `میرود` |
 | 7 | Persian paragraph then a code block | neither disturbs the other |
 | 8 | long Persian paragraph | right-aligned on every line, descenders not clipped |
+| 9 | ask it to write a file whose content is Persian | the tool card's `content` shows Persian lines right-aligned, Latin lines left-aligned, in one box |
+| 10 | approve that write | the **permission dialog** shows the same content, just as readable — this is the moment of consent |
+| 11 | ask it to read a file with mixed Persian/Latin lines | every line takes its own direction; order unchanged |
+| 12 | make sure one of those lines has Latin digits in it | digits stay in place inside the Persian line |
 
-- [ ] **Now replay the same conversation from the sessions list and check all 8 again.** This is
+- [ ] **Now replay the same conversation from the sessions list and check all 12 again.** This is
       the half people skip; the renderer is shared but the event path is not.
 
 ---
@@ -108,8 +108,10 @@ The spec's cases are message-focused and will not catch these. Every Windows pat
 chrome must read left-to-right with separators in the right places:
 
 - [ ] statusline cwd (bottom bar)
-- [ ] top bar cwd
-- [ ] session list previews and the recent-folders list
+- [ ] top bar project name + cwd
+- [ ] **sidebar project names** (hover one: the `title` tooltip shows the full path — check it too)
+- [ ] sidebar session previews (mixed Persian/Latin previews must each read correctly)
+- [ ] the project chip in the composer (name + tooltip path)
 - [ ] folder picker result after switching project
 - [ ] tool card summary line and its parameters
 - [ ] **permission dialog parameters** — must show `C:\Users\…`, never `C:\\Users\\…`
@@ -157,7 +159,7 @@ Sit on your hands. Watch where they hesitate — that is the actual finding, not
       failed, since those are the untested ones.
 - [ ] Note the tested `claude --version` on that machine. Every finding in `wiki/` is pinned to
       2.1.221; if theirs differs, the permission design in particular needs re-verification
-      (`wiki/permission-broker.md`).
+      (`wiki/permission-transport.md`).
 - [ ] Hand over `راهنما` (the Persian guide) — it opens from the «راهنما» button in the app.
 
 ## Known differences from the real CLI — tell them up front

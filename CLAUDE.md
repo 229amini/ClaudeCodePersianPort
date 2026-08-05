@@ -5,15 +5,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **M0–M7 done, 2026-08-04. No git repo yet.** The app is feature-complete and packaged: stdlib
-server, real RTL Persian UI, token streaming, **spec tests 1–8 passing**, Persian permission
+server, real RTL Persian UI, token streaming, **spec tests 1–12 passing**, Persian permission
 dialog, sessions (resume after a kill, history replay, folder picker), parity chrome (stop, slash
 autocomplete, attach, statusline passthrough), and a one-double-click `setup.bat` bootstrap.
 **All ten §B-9 verification items are answered.**
 
 **2026-08-05: claude.ai-style shell redesign** (user-approved: dark-only, Codex-style right
 sidebar with projects→sessions, home greeting state, `/api/projects` + cross-project
-resume/replay/delete). Spec tests re-passed (11/11) after the redesign. See
+resume/replay/delete). Spec tests re-passed after the redesign. See
 `wiki/rtl-rendering-notes.md` (new CSS traps) and `wiki/sessions-and-history.md` (new endpoints).
+
+**2026-08-05: rework underway — see `REWORK-PLAN.md`, tracked as beads `pcg-b67`
+(`bd list --tree`).** Phase 0 (permission transport spike) closed; Phase 1 (control plumbing) is
+in place bar a deletion pass; **Phase 2 (module split + CSS layers) done** — `static/app.js` is
+now six ES modules under `static/js/`, and `style.css` runs on cascade layers. Read
+`wiki/frontend-modules.md` before touching either.
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
@@ -23,9 +29,11 @@ machine.
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
-`wiki/dev-environment.md` (no winget; absolute Python path), `wiki/rtl-rendering-notes.md`
-before editing `static/`, `wiki/permission-broker.md` before touching the hook — it documents a
-failure mode that produces no error message at all — `wiki/sessions-and-history.md` before
+`wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
+wrong**), `wiki/frontend-modules.md` **and** `wiki/rtl-rendering-notes.md`
+before editing `static/`, `wiki/permission-transport.md` + `wiki/control-protocol.md` before
+touching approvals or any control request — both document failure modes that produce no error
+message at all, only a cheerful `success` — `wiki/sessions-and-history.md` before
 touching restart, replay, or the renderer's `user` case, `wiki/parity-chrome.md` for the
 interrupt/slash/attach/statusline contracts, and `wiki/packaging.md` before editing `setup.ps1`
 or `run.vbs` — all three of their encoding rules fail silently and corrupt Persian.
@@ -137,17 +145,20 @@ Verification before features. Plan §B-9 items 1–3 are answered and recorded i
 
 1. **`--verbose` is required** alongside `-p --output-format stream-json`, or the CLI refuses.
 2. **`--include-partial-messages` exists** — token streaming, no per-message fallback needed.
-3. **The plan's permission design is dead.** `--permission-prompt-tool` does not exist on 2.1.221,
-   and no control-protocol permission request appears on the stream either — the CLI silently
-   auto-denies with a synthetic error `tool_result`. The replacement, built and verified in M4, is
-   a **`PreToolUse` hook** injected via `--settings`. `permission_mcp.py` is gone from the plan's
-   §B-1 layout; `permission_hook.py` replaces it.
+3. **The plan's permission design is dead, and so is its M4 replacement.** `--permission-prompt-tool`
+   is absent from `--help` but **present in the arg parser**: spawning with
+   `--permission-prompt-tool stdio` routes approvals to inbound `can_use_tool` control requests,
+   verified allow and deny (`wiki/permission-transport.md`). The M4 `PreToolUse` hook injected via
+   `--settings` does not fire at all on this build (`wiki/permission-hook-broken.md`);
+   `permission_hook.py`, `space_safe()` and the HTTP callback were **deleted 2026-08-05**. Neither
+   `permission_mcp.py` nor `permission_hook.py` exists — the broker is in-band in `server.py`.
 4. **Slash commands work** as plain text; `init.slash_commands` is the authoritative list.
 5. **Image blocks accepted** — standard `{"type":"image","source":{"type":"base64",…}}`.
 6. **ZWNJ survives** the composer → CLI → renderer round-trip.
 7. **`session_id` is stable** across turns on one long-lived process.
 8. **`--resume` survives a hard kill** and reuses the same `session_id` rather than forking.
-9. **Hooks fire in `-p` mode** — that is what makes the permission design work at all.
+9. ~~**Hooks fire in `-p` mode**~~ — **false on 2.1.221+.** Hooks from the user's real
+   `~/.claude/settings.json` fire; hooks supplied via `--settings` never do. See item 3.
 10. **Interrupt** is a `control_request` on stdin; the process survives, so the session does too.
     The aborted turn arrives as `error_during_execution` / `aborted_streaming` — check
     `terminal_reason` **before** `is_error`, or every stop looks like a crash.
@@ -168,12 +179,14 @@ node/npm/python/py/pip/cargo/rustc/uv/winget/claude/code, distinguishes real Pyt
 Store alias stub, reads the WebView2 version from the registry, tests for `msedge.exe`, and
 prints `claude --version`. `setup.ps1` step 1 is meant to run this inline and log it.
 
-Entry points (plan §0.5, §B-1). Use the absolute interpreter path — `python` is a Store alias
-stub on this machine:
+Entry points (plan §0.5, §B-1). **The interpreter is `C:\Python314\python.exe` on this machine** —
+the `%LOCALAPPDATA%\Programs\Python\Python312` path quoted throughout the older docs belongs to
+the previous author PC and does not exist here (`wiki/dev-environment.md`). Shipped code must
+still use an absolute path: `python` is a Store alias stub on the target machine.
 
 | What | Command | Exists |
 |---|---|---|
-| Dev run with console | `%LOCALAPPDATA%\Programs\Python\Python312\python.exe persian-claude-gui\server.py --cwd <project> --no-window` | **yes** |
+| Dev run with console | `C:\Python314\python.exe persian-claude-gui\server.py --cwd <project> --no-window` | **yes** |
 | Dev run with window | same, without `--no-window` (launches Edge app-mode) | **yes** |
 | Full bootstrap | double-click `setup.bat` (→ `powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1`) | **yes** |
 | Bootstrap into a test location | `setup.ps1 -DeployRoot <dir> -ProjectDir <dir> -ShortcutDir <dir> -SkipSmokeTest` | **yes** |
@@ -185,21 +198,23 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects a `result` event and a 403 on a bad token. Costs one subscription turn. |
-| Rendering (M3) | start the server, open `/static/spec-test.html?t=<token>` | the 8 spec cases through the shipping renderer; verdict bar shows `PASS — n/n`, machine-readable in `window.__specChecks` |
-| Permissions (M4) | run the server with `--hook-log <file>`, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. The log distinguishes "hook never ran" from "hook ran and denied" — without it they look identical. |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 18 assertions, so `PASS — 18/18` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
-the console. There is no Playwright here (no node), so browser QA runs through the Chrome tools
-rather than the `webapp-testing` skill.
+the console. There is no Playwright here (no node) **and the Claude-in-Chrome extension is not
+connected**, so there is no automated *visual* check at all — `run_spec_test.py` covers computed
+styles and DOM structure, and anything that must be seen is a manual acceptance item. Headless
+`--screenshot` renders blank on this machine; do not spend time on it (`wiki/dev-environment.md`).
 
 `setup.ps1` must stay idempotent — every step checks before acting, safe to re-run (verified by
 running it twice). It ends in the smoke test above. **It must stay UTF-8 with BOM**, and the
 `run.vbs` it generates must stay UTF-16LE with BOM; see `wiki/packaging.md` for why both fail
 silently otherwise.
 
-Acceptance is plan §B-10: the 8 spec test cases in *both* live view and history replay, the
+Acceptance is plan §B-10: the 12 spec test cases in *both* live view and history replay, the
 chrome-path sweep, the feature pass, and the colleague completing a real task without a terminal.
 **`M8-acceptance.md` at the repo root is the executable checklist** — it expands §B-10 with the
 failure modes M0–M7 actually uncovered (username with a space, non-ASCII username, the four

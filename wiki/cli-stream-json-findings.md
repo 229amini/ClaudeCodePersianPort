@@ -145,6 +145,11 @@ before emitting `init`, so `session_id`, model, and the slash-command list are *
 until the first turn completes**. The statusline must tolerate an empty state on a fresh window,
 and `--resume` recovery cannot be armed until turn one has happened.
 
+> **Superseded in part, 2026-08-05.** The above is still true of the `init` *event*, but it is no
+> longer a limitation: a `control_request` with subtype `initialize` answers at spawn, for free,
+> with a **richer** command list (descriptions + argument hints) plus the account's model list.
+> `session_id` still requires turn one. See [control-protocol.md](control-protocol.md).
+
 ## `result` event payload
 
 `total_cost_usd`, `usage` (input/output/cache tokens, per-model breakdown, `contextWindow`,
