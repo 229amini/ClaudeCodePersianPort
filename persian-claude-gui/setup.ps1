@@ -102,9 +102,17 @@ if ($python) {
 
     $installer = $null
     if ($Payload) {
-        $installer = Get-ChildItem -Path $Payload -Filter 'python-3.12*-amd64.exe' -ErrorAction SilentlyContinue |
-                     Select-Object -First 1 -ExpandProperty FullName
-        if ($installer) { Note "استفاده از فایل نصب روی حافظه جانبی" }
+        # Say why the offline folder was ignored. Silently falling through to a
+        # download means a blocked network reports "دانلود ناموفق" when the real
+        # problem is a wrong -Payload path.
+        if (-not (Test-Path $Payload)) {
+            Warn "پوشه آفلاین پیدا نشد: $Payload"
+        } else {
+            $installer = Get-ChildItem -Path $Payload -Filter 'python-3.12*-amd64.exe' -ErrorAction SilentlyContinue |
+                         Select-Object -First 1 -ExpandProperty FullName
+            if ($installer) { Note "استفاده از فایل نصب روی حافظه جانبی" }
+            else { Warn "فایل نصب پایتون در پوشه آفلاین نبود" }
+        }
     }
 
     if (-not $installer) {
@@ -126,7 +134,10 @@ if ($python) {
     $p = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList `
         '/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0', 'Include_launcher=1'
     Log "  installer exit $($p.ExitCode)"
-    if ($p.ExitCode -ne 0) { Die "نصب پایتون ناموفق بود (کد $($p.ExitCode))" }
+    # 3010 is ERROR_SUCCESS_REBOOT_REQUIRED — installed, not failed. Treating it
+    # as failure would abort a bootstrap that actually worked.
+    if ($p.ExitCode -eq 3010) { Warn "پایتون نصب شد؛ ویندوز نیاز به ری‌استارت دارد" }
+    elseif ($p.ExitCode -ne 0) { Die "نصب پایتون ناموفق بود (کد $($p.ExitCode))" }
 
     # PATH is not refreshed inside a running process, so re-detect by path.
     $python = Find-RealPython
@@ -153,10 +164,24 @@ if ($claude) {
     Log "  claude => $claude ($ver)"
 } else {
     Note "کلاد کد نصب نیست — در حال نصب"
-    try {
-        Invoke-Expression (Invoke-RestMethod 'https://claude.ai/install.ps1')
-    } catch {
-        Die "نصب کلاد کد ناموفق بود: $($_.Exception.Message)"
+    # Run the vendor installer in a CHILD powershell, never Invoke-Expression.
+    # IEX executes in *this* scope, and claude.ai/install.ps1 (read 2026-08-05)
+    # both calls `exit 1` on every failure path — verified to terminate the
+    # calling script outright, catch block and all — and sets
+    # `Set-StrictMode -Version Latest`, which would then govern every later step
+    # here. A child process can leak neither.
+    # EAP is dropped to Continue only around the call: PowerShell 5.1 turns a
+    # native command's stderr into a *terminating* NativeCommandError when EAP
+    # is Stop, so `2>&1` on a failing installer would kill setup.ps1 too.
+    $eap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex" 2>&1 |
+        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray; Log "  claude-install: $_" }
+    $installCode = $LASTEXITCODE
+    $ErrorActionPreference = $eap
+    Log "  claude installer exit $installCode"
+    if ($installCode -ne 0) {
+        Die "نصب کلاد کد ناموفق بود (کد $installCode). اینترنت را بررسی کنید — ممکن است این سرویس در کشور شما در دسترس نباشد. گزارش کامل: $LogFile"
     }
     $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
     if (-not $claude) {
@@ -247,8 +272,17 @@ if ($SkipSmokeTest) {
 
     $env:PYTHONIOENCODING = 'utf-8'
     $smoke = Join-Path $DeployRoot 'smoke_test.py'
+    # EAP=Continue for exactly this call. Under EAP=Stop, PowerShell 5.1 wraps a
+    # native command's stderr in a terminating NativeCommandError — so the FIRST
+    # line of a Python traceback would abort setup.ps1 here, i.e. the
+    # not-logged-in machine would get a red English stack trace instead of the
+    # Persian login instructions below. Verified 2026-08-05.
+    $eap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & $python $smoke 2>&1 | ForEach-Object { Log "  smoke: $_" }
-    $smokeOk = $LASTEXITCODE -eq 0
+    $smokeCode = $LASTEXITCODE
+    $ErrorActionPreference = $eap
+    $smokeOk = $smokeCode -eq 0
 
     if ($smokeOk) {
         Ok "آزمایش موفق بود"
@@ -263,7 +297,7 @@ if ($SkipSmokeTest) {
         Write-Host "       claude" -ForegroundColor Cyan
         Write-Host "    3. سپس همین فایل نصب را دوباره اجرا کنید" -ForegroundColor White
         Write-Host ""
-        Log "  smoke test failed (exit $LASTEXITCODE)"
+        Log "  smoke test failed (exit $smokeCode)"
     }
 }
 
