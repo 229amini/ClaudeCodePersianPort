@@ -23,8 +23,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   "mode switching needs a restart" limitations recorded in the two files below. §4–5 also record
   where `rename_session` really stores a title and why `apply_flag_settings`'s `success` is worthless.
 - [dev-environment.md](dev-environment.md) — **the repo moved machines**: current interpreter is
-  `C:\Python314\python.exe`, not the `Python312` path older files still quote. Also: no Chrome
-  extension, and why headless screenshots are a dead end here.
+  `C:\Python314\python.exe`, not the `Python312` path older files still quote. Also: how to point
+  the Chrome extension at the running app (it works as of 2026-08-05 — hold an SSE connection or
+  the watchdog kills the server first), and why headless screenshots are a dead end here.
 - [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The
   seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched).
@@ -32,8 +33,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
   collision) that a screenshot cannot catch.
 - [sessions-and-history.md](sessions-and-history.md) — `--resume` semantics, where transcripts
-  live, how they differ from the live stream, and the restart pitfalls (stale readers, replay
-  history).
+  live, how they differ from the live stream, the restart pitfalls (stale readers, replay
+  history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
+  injected envelopes, not the person.
 - [parity-chrome.md](parity-chrome.md) — the interrupt control message, slash commands, image
   blocks, statusLine passthrough, and the CLI features deliberately left unbuilt.
 - [packaging.md](packaging.md) — `setup.ps1`/`run.vbs`/shortcut, the three encoding rules that

@@ -4,6 +4,31 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
+## 2026-08-05 — rework Phase 5: Codex-style shell + rebrand
+
+- **Rebrand to «کلاد فارسی»** with an original mark — a mirrored terminal prompt (`_<`), coral
+  tile. «کلود» is gone from the UI, `setup.ps1` and `help.html`; the CLI is «کلاد کد» where it has
+  to be named. `assets/make_icon.py` is new: the previous icon's generator was never committed, so
+  the icon could not be regenerated at all. Disclaimer «این پروژه مستقل است و وابسته به Anthropic
+  نیست.» now sits at the foot of `help.html`. Detail in `packaging.md`.
+- **Home: four action cards; sidebar: 300 ms hover preview.** Both wired to endpoints that already
+  existed — Phase 5 added no server route. The resume card hides itself when the folder has no
+  earlier session rather than offering a dead button. `help.html` documents both.
+- **First visual QA this project has ever had.** The Chrome extension is connected now
+  (`dev-environment.md` §"Seeing the running app" — the watchdog will kill the server out from
+  under you unless you hold an SSE connection). It immediately caught two things the 18/18 spec
+  gate structurally cannot see, and both were real:
+  - every session started outside the wrapper was titled `<local-command-caveat>Caveat: The
+    messages below we…`;
+  - the hover card opened half-on-top of the sidebar, because it anchored on the row button rather
+    than the pane.
+- **The bug underneath the first one:** `user` transcript content has **two** shapes, and the
+  array-only code failed silently in two places (no preview, and replay iterating a string
+  character by character → zero user bubbles). Fixed once in `server.py`'s `user_prompt_text()`,
+  used by both `session_meta()` and `read_session()`, which now normalises and envelope-filters
+  server-side so the client still sees exactly one shape. `sessions-and-history.md`.
+- Gates: spec **18/18**, `test_transcript_path.py` PASS, `smoke_test.py` **9/9** (one paid turn).
+
 ## 2026-08-05 — rework Phase 4: capability-mirror composer
 
 - Shipped: Jalali/Persian-digit dates in the sidebar (`Intl.DateTimeFormat('fa-IR')`), slash popup

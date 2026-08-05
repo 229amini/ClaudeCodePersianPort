@@ -310,6 +310,39 @@ def list_projects() -> list[dict]:
     return result
 
 
+CLI_ENVELOPE_RE = re.compile(r"^\s*<[a-z][a-z-]+>")
+
+
+def user_prompt_text(content) -> str | None:
+    """What the person actually typed on a `user` turn, or None.
+
+    Two shapes reach here and only the second was ever handled, which is why
+    every session started outside the wrapper had no preview at all:
+
+    * the wrapper's own turns go out as stream-json, so they come back as
+      ``[{"type": "text", ...}]``;
+    * a session started in the interactive CLI stores the typed prompt as a
+      bare **string**.
+
+    That string is frequently not a prompt. The CLI injects its own
+    ``<local-command-caveat>``, ``<command-name>`` and ``<system-reminder>``
+    envelopes as user turns — it talking to itself. Showing one as a session's
+    title, or replaying it as something the person said, is worse than showing
+    nothing, so those are dropped and the caller keeps looking.
+    """
+    if isinstance(content, str):
+        text = content.strip()
+    else:
+        text = ""
+        for part in content or []:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = (part.get("text") or "").strip()
+                break
+    if not text or CLI_ENVELOPE_RE.match(text):
+        return None
+    return text
+
+
 def session_meta(path: Path) -> tuple[str | None, str | None]:
     """(first user text, session title) from one pass over a transcript.
 
@@ -338,10 +371,7 @@ def session_meta(path: Path) -> tuple[str | None, str | None]:
                         continue
                     if event.get("type") != "user" or event.get("isSidechain"):
                         continue
-                    for part in event.get("message", {}).get("content", []) or []:
-                        if isinstance(part, dict) and part.get("type") == "text":
-                            first = (part.get("text") or "").strip()
-                            break
+                    first = user_prompt_text(event.get("message", {}).get("content"))
     except OSError:
         pass
     return first, title
@@ -387,7 +417,17 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
                 continue
             if event.get("isSidechain"):
                 continue
-            events.append({"type": event["type"], "message": event.get("message", {})})
+            message = event.get("message", {})
+            if event["type"] == "user" and isinstance(message.get("content"), str):
+                # A typed prompt from a session started outside the wrapper.
+                # Normalised to the block shape the renderer already handles, so
+                # "one renderer, two sources" keeps holding, and filtered so the
+                # CLI's own envelopes never replay as the person's words.
+                text = user_prompt_text(message["content"])
+                if text is None:
+                    continue
+                message = {"content": [{"type": "text", "text": text}]}
+            events.append({"type": event["type"], "message": message})
     return events
 
 

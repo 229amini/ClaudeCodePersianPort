@@ -16,13 +16,21 @@ resume/replay/delete). Spec tests re-passed after the redesign. See
 `wiki/rtl-rendering-notes.md` (new CSS traps) and `wiki/sessions-and-history.md` (new endpoints).
 
 **2026-08-05: rework underway — see `REWORK-PLAN.md`, tracked as beads `pcg-b67`
-(`bd list --tree`).** Phases 0–4 are closed. Phase 2 split `static/app.js` into ES modules under
+(`bd list --tree`).** Phases 0–5 are closed. Phase 2 split `static/app.js` into ES modules under
 `static/js/` (seven since Phase 4 added `controls.js`) and put `style.css` on cascade layers; read
 `wiki/frontend-modules.md` before touching either. **Phase 4 made the GUI a capability mirror**:
 the model picker, slash popup and approval pill are rendered from what `initialize` returned, and
 every live change goes through `/api/control` or `/api/posture` — nothing about the CLI is
 hardcoded. Read `wiki/approval-postures.md` before touching the pill, and note that `compact` is
-**not** a control subtype on this build. Phase 5 (Codex-style shell + rebrand) is next.
+**not** a control subtype on this build.
+
+**Phase 5 (2026-08-05) — rebrand + Codex-style shell.** The product is «کلاد فارسی» with an
+**original** mark (a mirrored terminal prompt, `assets/make_icon.py` — never Anthropic's Claude
+mark, never «کلود», which is gone from the UI). Home state gained four action cards, the sidebar
+gained a 300 ms hover preview, and both are wired to endpoints that already existed — Phase 5 added
+**no** server route. Read `wiki/sessions-and-history.md` before touching `read_session` or
+`session_meta`: `user` content arrives in two shapes and one of them is mostly the CLI talking to
+itself. Phase 6 (open-source scaffolding + release) is next.
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
@@ -207,10 +215,12 @@ Two checks exist:
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
-the console. There is no Playwright here (no node) **and the Claude-in-Chrome extension is not
-connected**, so there is no automated *visual* check at all — `run_spec_test.py` covers computed
-styles and DOM structure, and anything that must be seen is a manual acceptance item. Headless
-`--screenshot` renders blank on this machine; do not spend time on it (`wiki/dev-environment.md`).
+the console. There is no Playwright here (no node), and headless `--screenshot` renders blank on
+this machine — do not spend time on it. **The Claude-in-Chrome extension does work as of
+2026-08-05** and is the only way to actually *see* the UI; it caught two defects on its first use
+that the 18/18 spec gate structurally cannot. Read `wiki/dev-environment.md` §"Seeing the running
+app" first — the idle watchdog kills the server before the browser arrives unless you hold an SSE
+connection open, and a stale browser entry reports every page as an error page.
 
 `setup.ps1` must stay idempotent — every step checks before acting, safe to re-run (verified by
 running it twice). It ends in the smoke test above. **It must stay UTF-8 with BOM**, and the

@@ -50,7 +50,7 @@ function Warn([string]$fa) { Write-Host "  ! $fa" -ForegroundColor Yellow; Log "
 function Die([string]$fa)  { Write-Host ""; Write-Host "✗ $fa" -ForegroundColor Red; Log "FAIL: $fa"; exit 1 }
 
 Write-Host ""
-Write-Host "نصب کلود فارسی" -ForegroundColor White
+Write-Host "نصب کلاد فارسی" -ForegroundColor White
 Write-Host "این کار چند دقیقه طول می‌کشد. پنجره را نبندید." -ForegroundColor Gray
 
 # ---------------------------------------------------------------- 1. probe
@@ -139,7 +139,7 @@ if (-not (Test-Path $pythonw)) { $pythonw = $python }
 Log "  pythonw => $pythonw"
 
 # ---------------------------------------------------------------- 3. claude
-Step "بررسی کلود"
+Step "بررسی کلاد کد"
 
 $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
 if (-not $claude) {
@@ -149,22 +149,22 @@ if (-not $claude) {
 
 if ($claude) {
     $ver = & $claude --version
-    Ok "کلود نصب است ($ver)"
+    Ok "کلاد کد نصب است ($ver)"
     Log "  claude => $claude ($ver)"
 } else {
-    Note "کلود نصب نیست — در حال نصب"
+    Note "کلاد کد نصب نیست — در حال نصب"
     try {
         Invoke-Expression (Invoke-RestMethod 'https://claude.ai/install.ps1')
     } catch {
-        Die "نصب کلود ناموفق بود: $($_.Exception.Message)"
+        Die "نصب کلاد کد ناموفق بود: $($_.Exception.Message)"
     }
     $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
     if (-not $claude) {
         $local = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
         if (Test-Path $local) { $claude = $local }
     }
-    if (-not $claude) { Die "کلود نصب شد ولی پیدا نشد. سیستم را ری‌استارت کنید و دوباره اجرا کنید." }
-    Ok "کلود نصب شد"
+    if (-not $claude) { Die "کلاد کد نصب شد ولی پیدا نشد. سیستم را ری‌استارت کنید و دوباره اجرا کنید." }
+    Ok "کلاد کد نصب شد"
 }
 
 # ---------------------------------------------------------------- 4. deploy
@@ -207,7 +207,7 @@ sh.Run """$pythonw"" ""$serverPy"" --cwd ""$ProjectDir""", 0, False
 Ok "اجرا‌کننده ساخته شد"
 
 New-Item -ItemType Directory -Force -Path $ShortcutDir | Out-Null
-$shortcut = Join-Path $ShortcutDir 'کلود.lnk'
+$shortcut = Join-Path $ShortcutDir 'کلاد فارسی.lnk'
 # WshShell.Save() marshals the target path through the system's ANSI codepage
 # (a legacy COM Automation quirk) — on a non-Persian codepage this mangles a
 # Persian filename to "????.lnk" and Save() throws FileNotFoundException. So
@@ -223,10 +223,14 @@ $lnk.IconLocation = (Join-Path $DeployRoot 'assets\icon.ico')
 # ASCII on purpose: the .lnk Description round-trips through an ANSI codepage
 # and silently rewrites Persian ی (U+06CC) as Arabic ي. The shortcut's *name*
 # is the label the colleague reads, and NTFS stores that as real UTF-16.
-$lnk.Description = 'Claude - Persian assistant'
+$lnk.Description = 'Persian front-end for Claude Code (independent project)'
 $lnk.Save()
 Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf) -Force
-Ok "میان‌بر «کلود» روی دسکتاپ ساخته شد"
+# An install from before the rebrand left «کلود.lnk» on the desktop. setup.ps1
+# has to stay idempotent, and two icons for one app is worse than none.
+$legacy = Join-Path $ShortcutDir 'کلود.lnk'
+if (Test-Path $legacy) { Remove-Item $legacy -Force; Log '  removed pre-rebrand shortcut' }
+Ok "میان‌بر «کلاد فارسی» روی دسکتاپ ساخته شد"
 Log "  shortcut => $shortcut"
 
 # ---------------------------------------------------------------- 6. smoke
@@ -234,7 +238,7 @@ if ($SkipSmokeTest) {
     Step "آزمایش نهایی رد شد"
 } else {
     Step "آزمایش نهایی"
-    Note "یک پیام آزمایشی به کلود فرستاده می‌شود"
+    Note "یک پیام آزمایشی به کلاد کد فرستاده می‌شود"
 
     $env:PYTHONIOENCODING = 'utf-8'
     $smoke = Join-Path $DeployRoot 'smoke_test.py'
@@ -246,7 +250,7 @@ if ($SkipSmokeTest) {
     } else {
         Warn "آزمایش ناموفق بود"
         Write-Host ""
-        Write-Host "  احتمالاً باید یک بار وارد حساب کلود شوید." -ForegroundColor Yellow
+        Write-Host "  احتمالاً باید یک بار وارد حساب کلاد کد شوید." -ForegroundColor Yellow
         Write-Host "  این تنها کاری است که باید دستی انجام دهید:" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "    1. پنجره خط فرمان را باز کنید" -ForegroundColor White
@@ -261,7 +265,7 @@ if ($SkipSmokeTest) {
 # ---------------------------------------------------------------- done
 Write-Host ""
 Write-Host "نصب تمام شد." -ForegroundColor Green
-Write-Host "برای شروع، روی آیکون «کلود» در دسکتاپ دوبار کلیک کنید." -ForegroundColor White
+Write-Host "برای شروع، روی آیکون «کلاد فارسی» در دسکتاپ دوبار کلیک کنید." -ForegroundColor White
 Write-Host "پوشه پروژه: $ProjectDir" -ForegroundColor Gray
 Write-Host "گزارش کامل: $LogFile" -ForegroundColor Gray
 Write-Host ""

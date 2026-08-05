@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>کلود</title>
+<title>کلاد فارسی</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="app">
@@ -15,10 +15,16 @@
 
 <aside id="sidebar">
   <div class="side-head">
-    <svg class="spark" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-      <path d="M12 2l1.8 6.4L20 6.6l-4.4 4.9 5.9 3-6.6.6 1.5 6.5L12 16.4 7.6 21.6l1.5-6.5-6.6-.6 5.9-3L4 6.6l6.2 1.8z"/>
+    <!-- The mark: a terminal prompt mirrored — the caret points the way Persian
+         reads, with the cursor to its left. Original by decision, not
+         Anthropic's Claude mark (REWORK-PLAN.md, branding option b). The .ico
+         is the same geometry: assets/make_icon.py. -->
+    <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+         stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M17.1 7.4L11.9 12l5.2 4.6"/>
+      <path d="M6.9 16.6h4"/>
     </svg>
-    <span class="brand">کلود</span>
+    <span class="brand" id="brand"></span>
   </div>
 
   <button type="button" id="btn-new" class="new-chat">
@@ -59,11 +65,65 @@
        Visibility is driven by whether #log has children (js/chrome.js). -->
   <section id="home" hidden>
     <h1 class="greeting">
-      <svg class="spark" viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true">
-        <path d="M12 2l1.8 6.4L20 6.6l-4.4 4.9 5.9 3-6.6.6 1.5 6.5L12 16.4 7.6 21.6l1.5-6.5-6.6-.6 5.9-3L4 6.6l6.2 1.8z"/>
+      <svg class="mark" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor"
+           stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M17.1 7.4L11.9 12l5.2 4.6"/>
+        <path d="M6.9 16.6h4"/>
       </svg>
       <span id="greeting-text"></span>
     </h1>
+
+    <!-- Four ways in, none of them new capability: each card presses something
+         the user could already have reached (js/chrome.js). No server code was
+         added for this section. -->
+    <div id="home-cards">
+      <button type="button" class="home-card" id="home-resume" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2"/>
+        </svg>
+        <span class="hc-text">
+          <span class="hc-title"></span>
+          <!-- The note is the session's own title: user text, either script. -->
+          <span class="hc-note" dir="auto"></span>
+        </span>
+      </button>
+
+      <button type="button" class="home-card" id="home-open">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        </svg>
+        <span class="hc-text">
+          <span class="hc-title"></span>
+          <span class="hc-note"></span>
+        </span>
+      </button>
+
+      <button type="button" class="home-card" id="home-explain">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.5 14.5a3 3 0 01-3 3H8.5l-4.5 3.2V6a3 3 0 013-3h10.5a3 3 0 013 3z"/>
+        </svg>
+        <span class="hc-text">
+          <span class="hc-title"></span>
+          <span class="hc-note"></span>
+        </span>
+      </button>
+
+      <button type="button" class="home-card" id="home-help">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.2"/>
+          <path d="M9.4 9.2a2.6 2.6 0 115.1.9c-.5 1.5-2 1.7-2 3.2"/>
+          <circle cx="12.4" cy="16.8" r=".4" fill="currentColor"/>
+        </svg>
+        <span class="hc-text">
+          <span class="hc-title"></span>
+          <span class="hc-note"></span>
+        </span>
+      </button>
+    </div>
   </section>
 
   <div id="replay-banner" hidden></div>

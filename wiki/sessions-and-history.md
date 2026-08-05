@@ -55,6 +55,38 @@ only `tool_result` on the `user` channel, so replay showed 6 assistant bubbles a
 bubbles — the conversation looked like a monologue. `renderEvent`'s `user` case now handles both
 part types. Any future change to either path has to keep both working.
 
+## `user` content has TWO shapes, and one of them is mostly not the user (2026-08-05)
+
+The paragraph above was measured against transcripts the **wrapper** wrote, and it is only half
+the story. Measured again while building the sidebar's hover preview:
+
+| written by | `message.content` |
+|---|---|
+| the wrapper (stream-json in) | `[{"type":"text", ...}]` |
+| the interactive CLI (a person typing in the TUI) | a bare **string** |
+
+Both kinds sit side by side in one project folder, because the sidebar lists every transcript the
+CLI ever wrote for that cwd — not just ours. The array-only code therefore failed **silently** in
+two places at once: `session_meta()` returned no preview (those rows fell back to an 8-char id),
+and `renderEvent`'s `for (const part of content)` iterated the string **character by character**,
+each character's `.type` undefined, so every one of those sessions replayed as a monologue. No
+error, no console warning, in either.
+
+Worse, the bare string is frequently **not a prompt at all**. The interactive CLI injects its own
+envelopes as `user` turns — `<local-command-caveat>`, `<command-name>`, `<system-reminder>`. Fixing
+only the shape made every such session's title read
+`<local-command-caveat>Caveat: The messages below we…`, which is how the screenshot caught it.
+
+Both are handled in **one** place, `user_prompt_text()` in `server.py`, used by `session_meta()`
+(titles/previews) and by `read_session()`, which now **normalises** a bare string into the block
+shape before it leaves the server and drops the envelopes entirely. That keeps §B-4's "one
+renderer, two sources" true — the client still sees exactly one shape — and it means the filter
+applies to replay, to the sidebar and to the hover preview from a single edit. Do not re-add a
+client-side shape check; there is nothing left for it to catch.
+
+The envelope test is `^\s*<[a-z][a-z-]+>`. A real prompt that opens with an HTML tag would be
+skipped in favour of the next one — an acceptable trade for this audience.
+
 ## Restart semantics
 
 `ClaudeSession.restart()` backs both "switch project" and "resume session": stop, optionally

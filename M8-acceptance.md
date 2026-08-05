@@ -116,6 +116,12 @@ chrome must read left-to-right with separators in the right places:
 - [ ] tool card summary line and its parameters
 - [ ] **permission dialog parameters** — must show `C:\Users\…`, never `C:\\Users\\…`
 - [ ] attachment chips
+- [ ] **session hover preview card** (rest on a session row for a moment) — each of the 2–3 lines
+      picks its own direction; a Windows path inside an assistant line still reads LTR
+- [ ] **home action cards** — the «ادامه آخرین گفتگو» note is the previous session's own title, so
+      it can be Persian, English or mixed
+- [ ] the home cards must show **four** on a project with history and **three** on a fresh folder
+      (no last session ⇒ no resume card, never a dead button)
 
 ---
 

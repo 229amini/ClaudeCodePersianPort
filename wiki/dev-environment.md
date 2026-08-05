@@ -15,7 +15,7 @@
 | **Python** | **`C:\Python314\python.exe` (3.14.0)** — machine-wide, NOT under `%LOCALAPPDATA%\Programs\Python` |
 | `msedge.exe` | present, x86 path only: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
 | node / npm | npm present (`bd` installs through it); no node needed by this project |
-| Claude-in-Chrome extension | **not connected** — the MCP browser tools error out |
+| Claude-in-Chrome extension | **connected as of 2026-08-05** — see below; it was unavailable before that |
 
 Consequences, all of which cost time to rediscover:
 
@@ -23,14 +23,35 @@ Consequences, all of which cost time to rediscover:
   is under that root. Commands copied from CLAUDE.md or older wiki files fail with
   *"No such file or directory"*. Use `C:\Python314\python.exe`, or plain `python` — on this
   machine it resolves to 3.14 and is **not** a Store stub (that trap was `ladyg`-specific).
-- **Browser QA through the Chrome MCP tools is unavailable** (extension not connected), and there
-  is still no node, so no Playwright either. That is why `run_spec_test.py` drives Edge directly.
+- There is still no node, so no Playwright. That is why `run_spec_test.py` drives Edge directly.
 - **Headless `--screenshot` is a dead end — do not re-walk it.** `msedge --headless=new
   --screenshot` produces a uniformly blank `--bg`-coloured PNG for both `index.html` and
   `spec-test.html`, with or without an open SSE stream, with or without
-  `--virtual-time-budget`. `--dump-dom` on the same command line works fine. Visual regression
-  checking therefore has no automated path on this machine; assertions that must be *seen* are
-  manual acceptance items (`M8-acceptance.md` §5).
+  `--virtual-time-budget`. `--dump-dom` on the same command line works fine.
+
+## Seeing the running app: the Chrome extension works now (2026-08-05)
+
+For M0–M7 there was no way to *look* at the UI at all, and much of the project's caution is a
+consequence of that. The Claude-in-Chrome MCP tools now drive the real app, and the first session
+that used them caught two defects the 18/18 spec gate cannot see (garbage session titles, a hover
+card overlapping the pane it explains). Use it — it is not a substitute for the spec gate, it
+catches a different class of bug.
+
+Four things that will otherwise waste a session:
+
+1. **The server dies before you can look at it.** The idle watchdog kills it ~10 s after the last
+   SSE client leaves, so `server.py --no-window` in a background shell is gone by the time the
+   browser navigates. Boot it the way `run_spec_test.py` does — subprocess + a thread holding one
+   `GET /api/events` open — and only then navigate. Symptom otherwise: the tab shows an error page
+   while `Invoke-WebRequest` on the same URL still returns 200, because the server died in between.
+2. **Pick the right browser.** `list_connected_browsers` can list more than one; a stale entry from
+   another machine accepts `select_browser` and then reports *"Frame with ID 0 is showing error
+   page"* for every single page. That message means wrong browser far more often than it means
+   broken page.
+3. **The token is single-use per boot** — it changes every restart, so re-read the URL from the
+   server's stdout after every restart rather than reusing the last one.
+4. `target="_blank"` navigations (the «راهنما» button) open a tab the extension cannot always
+   address. Navigate the main tab to `/static/help.html?t=…` instead of chasing the popup.
 
 ## First author PC (`ladyg`) — historical, probed 2026-08-04
 
