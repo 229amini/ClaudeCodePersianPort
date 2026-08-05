@@ -50,24 +50,42 @@ function setAttachments(list) {
 
 /* --- slash-command autocomplete (plan §B-6) -------------------------------- */
 
-let slashCommands = [];   // filled from system/init - authoritative per machine
+let slashCommands = [];   // [{name, description, argumentHint}] — from the CLI
 let slashMatches = [];
 let slashIndex = 0;
 
 /* The CLI is authoritative about what commands exist on this machine (custom
-   skills, plugins), so the renderer hands the list over from system/init. */
-export function setSlashCommands(names) {
-  slashCommands = names;
+   skills, plugins). TWO sources feed this, and they are not equal: the
+   `initialize` reply arrives at spawn with {name, description, argumentHint},
+   while system/init only arrives after turn one and carries bare names. Taking
+   the later, poorer list would silently strip every description off the popup —
+   hence the downgrade guard. */
+export function setSlashCommands(list) {
+  const next = (list ?? [])
+    .map((item) => (typeof item === "string" ? { name: item } : item))
+    .filter((item) => item && item.name);
+  if (!next.length) return;
+  const rich = next.some((item) => item.description);
+  if (!rich && slashCommands.some((item) => item.description)) return;
+  slashCommands = next;
 }
 
 function slashOpen() {
   return !!slashPopup && !slashPopup.hidden;
 }
 
+/* The composer is multi-line, so "the text before the cursor on the current
+   line" — not the whole box — decides whether a slash command is being typed.
+   Matching the whole value made the popup vanish the moment a second line
+   existed, and reappear over unrelated text. */
+function activeSegment() {
+  const caret = input.selectionStart ?? input.value.length;
+  const upto = input.value.slice(0, caret);
+  return { start: upto.lastIndexOf("\n") + 1, caret, text: upto.slice(upto.lastIndexOf("\n") + 1) };
+}
+
 function currentSlashQuery() {
-  const value = input.value;
-  // Only while the whole composer is a single /token — never mid-sentence.
-  const match = /^\/(\S*)$/.exec(value);
+  const match = /^\/(\S*)$/.exec(activeSegment().text);
   return match ? match[1] : null;
 }
 
@@ -79,7 +97,7 @@ function refreshSlash() {
     return;
   }
   slashMatches = slashCommands
-    .filter((name) => name.toLowerCase().startsWith(query.toLowerCase()))
+    .filter((cmd) => cmd.name.toLowerCase().startsWith(query.toLowerCase()))
     .slice(0, 50);
   if (!slashMatches.length) {
     slashPopup.hidden = true;
@@ -92,11 +110,33 @@ function refreshSlash() {
 
 function renderSlash() {
   slashPopup.replaceChildren();
-  slashMatches.forEach((name, index) => {
+  slashMatches.forEach((cmd, index) => {
     const li = document.createElement("li");
-    li.textContent = "/" + name;
     li.setAttribute("role", "option");
     li.setAttribute("aria-selected", String(index === slashIndex));
+
+    // The command itself is an ASCII token: LTR and monospace, isolated from
+    // the Persian description beside it (spec rule 2).
+    const name = document.createElement("span");
+    name.className = "slash-name";
+    name.setAttribute("dir", "ltr");
+    name.textContent = "/" + cmd.name;
+    li.append(name);
+    if (cmd.argumentHint) {
+      const hint = document.createElement("span");
+      hint.className = "slash-arg";
+      hint.setAttribute("dir", "ltr");
+      hint.textContent = cmd.argumentHint;
+      li.append(hint);
+    }
+    if (cmd.description) {
+      const desc = document.createElement("span");
+      desc.className = "slash-desc";
+      desc.setAttribute("dir", "auto");   // English from the CLI, Persian from skills
+      desc.textContent = cmd.description;
+      li.append(desc);
+    }
+
     li.addEventListener("mousedown", (e) => {
       e.preventDefault();       // keep focus in the textarea
       slashIndex = index;
@@ -107,12 +147,42 @@ function renderSlash() {
   slashPopup.children[slashIndex]?.scrollIntoView({ block: "nearest" });
 }
 
+/* Completes the active line only, through setRangeText so native undo still
+   works — the old version replaced the whole composer. */
 function acceptSlash() {
-  const name = slashMatches[slashIndex];
-  if (!name) return;
-  input.value = "/" + name + " ";
+  const cmd = slashMatches[slashIndex];
+  if (!cmd) return;
+  const { start, caret } = activeSegment();
+  input.setRangeText("/" + cmd.name + " ", start, caret, "end");
   slashPopup.hidden = true;
   input.focus();
+}
+
+/* --- lifecycle verbs ------------------------------------------------------- */
+
+/* Commands that change the WRAPPER's state, not the conversation's. Sent to the
+   CLI as text they would move the CLI and leave this window's model chip, pill
+   and log describing something that is no longer true. Each one presses the
+   button the user could have pressed themselves — no second implementation of
+   what the chip already does, and nothing to keep in sync.
+
+   `/compact` is deliberately NOT here: it is not a control subtype on this
+   build (measured — wiki/control-protocol.md), so it passes through to the CLI
+   as text like every other slash command. */
+const LIFECYCLE_BUTTONS = {
+  model: "#model-chip",
+  permissions: "#posture-chip",
+  clear: "#btn-new",
+};
+
+/* Returns true when the text was a lifecycle verb and must not be sent. */
+function interceptLifecycle(text) {
+  const verb = /^\/([a-z-]+)\s*$/.exec(text)?.[1];
+  const selector = verb && LIFECYCLE_BUTTONS[verb];
+  const button = selector && document.querySelector(selector);
+  if (!button || button.hidden) return false;   // unavailable: let it through
+  button.click();
+  return true;
 }
 
 /* --- init ------------------------------------------------------------------ */
@@ -144,9 +214,17 @@ export function initComposer() {
 
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (slashOpen()) { acceptSlash(); return; }
+    // Enter ALWAYS sends. The popup used to swallow it to accept a completion,
+    // which meant Enter did different things depending on invisible state —
+    // Tab, click and the arrow keys accept instead.
+    slashPopup && (slashPopup.hidden = true);
     const text = input.value.trim();
     if (!text && !attachments.length) return;
+    if (interceptLifecycle(text)) {
+      input.value = "";
+      input.style.height = "auto";
+      return;
+    }
     const payload = { text, attachments: attachments.slice() };
     input.value = "";
     input.style.height = "auto";

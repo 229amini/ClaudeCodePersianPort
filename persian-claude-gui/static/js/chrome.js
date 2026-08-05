@@ -62,12 +62,18 @@ function basename(p) {
   return (p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p || "";
 }
 
+/* Jalali calendar and Persian digits, from the platform: `fa-IR` implies the
+   Persian calendar, so «۱۴ مرداد ۱۴:۰۵» comes out of one formatter with no
+   conversion table to get wrong. This is prose chrome, not a technical value,
+   which is what spec rule 5 draws the line at — the statusline's cost, context
+   and session id stay Latin. Built once: constructing an Intl formatter per
+   row is the expensive part. */
+const WHEN_FORMAT = new Intl.DateTimeFormat("fa-IR", {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+});
+
 function whenLabel(epochSeconds) {
-  const d = new Date(epochSeconds * 1000);
-  const pad = (n) => String(n).padStart(2, "0");
-  // Latin digits, per spec rule 5 — this abuts technical values.
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-         `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return WHEN_FORMAT.format(new Date(epochSeconds * 1000));
 }
 
 /* Project name and cwd everywhere in chrome: topbar, composer chip, tab-title
@@ -235,7 +241,11 @@ function sessionRow(sess, projPath, isCurrent) {
   const preview = document.createElement("span");
   preview.className = "sess-preview";
   preview.setAttribute("dir", "auto");   // user text: could be either script
-  preview.textContent = sess.preview || sess.session_id.slice(0, 8);
+  // A real title if the session has one (the wrapper names each new session
+  // after its first prompt via rename_session, and the CLI stores it in the
+  // transcript). The 160-char first-prompt preview is the fallback.
+  preview.textContent = sess.title || sess.preview || sess.session_id.slice(0, 8);
+  preview.title = sess.preview || "";
   btn.append(preview, label(whenLabel(sess.modified), "sess-when"));
   btn.addEventListener("click", () => resumeSession(sess.session_id, projPath));
 
