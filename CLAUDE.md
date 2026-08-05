@@ -40,7 +40,18 @@ modules. **The README has no screenshots yet** — capture them manually, the to
 write a PNG into the repo. The phase's fresh-clone exit criterion found a shortcut bug in
 `setup.ps1` (`Rename-Item -Force` does not overwrite); fixed and re-verified — see
 `wiki/packaging.md`, which also records that `WScript.Shell` reads a Persian-named `.lnk` back as
-blank. Phase 7 (bare-machine acceptance, M8′) is next.
+blank.
+
+**Phase 7 (2026-08-05) — bare-machine acceptance, M8′ — half done.** `M8-acceptance.md` is updated
+for the post-Phase-4/5 UI and gained a **§0.5 clean-VM pre-flight**; `clean-machine.wsb` at the
+repo root boots a Windows Sandbox for it (Sandbox itself needs one elevated enable + reboot, not
+done). Auditing the four never-executed install branches found two real defects in `setup.ps1`,
+both invisible on this PC and both fixed: `EAP=Stop` made a native command's **stderr** terminating
+(the not-logged-in machine got a red English stack trace instead of the Persian login
+instructions), and the claude installer ran under `Invoke-Expression`, whose `exit 1` kills the
+caller without running its `catch`. Read `wiki/packaging.md` §"Two ways a never-executed branch
+dies silently" before editing `setup.ps1`'s native calls. The not-logged-in branch is now executed
+and proven; **Python install, claude install and `-Payload` are still unexecuted anywhere.**
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`

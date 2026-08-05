@@ -17,8 +17,63 @@ improvise it on site.
 - [ ] Prepare the offline payload folder: `python-3.12.10-amd64.exe` from
       `https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe`, plus the whole
       `persian-claude-gui/` folder. Fonts and `marked` are already vendored inside it.
+      **`-Payload` covers Python only.** Claude Code has no offline installer — its own
+      `install.ps1` downloads a binary from `downloads.claude.ai`. If that host is unreachable
+      (blocked network, or the region check in the vendor script), `claude` must already be on the
+      machine or the trip is wasted.
 - [ ] Confirm the colleague's Claude account credentials are available — **login cannot be
       automated** and is the one manual step.
+
+---
+
+## 0.5 Pre-flight: run the install branches in a clean VM — **before** the trip
+
+A restructure must not meet its first bare machine and its first install-branch execution on the
+same day. `clean-machine.wsb` at the repo root boots a throwaway Windows with the package mapped to
+the Desktop, read-only. Enable Sandbox once, elevated, then reboot:
+
+```powershell
+DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All
+```
+
+Status of the four branches as of 2026-08-05 (`wiki/packaging.md`):
+
+| branch | state |
+|---|---|
+| not-logged-in (smoke test fails) | **executed and fixed** — it used to die on a `NativeCommandError` |
+| Python install (download → silent install → re-detect) | never executed |
+| Claude Code install (`irm claude.ai/install.ps1 \| iex`) | never executed |
+| `-Payload` offline | never executed |
+
+**Run A — online, nothing installed** (double-click `clean-machine.wsb`, then in the sandbox open
+`Desktop\pkg` and double-click `setup.bat`):
+
+- [ ] Persian renders correctly in the sandbox console — a fresh Windows is where a lost BOM shows.
+- [ ] Python branch: downloads, installs silently, and is **re-detected by path** afterwards
+      (PATH is stale inside the running script — this is the step most likely to fail).
+- [ ] Claude branch: the vendor installer's output is echoed and logged, and setup **continues
+      afterwards**. It now runs in a child `powershell` — if it ever goes back to
+      `Invoke-Expression`, an `exit 1` inside it kills setup silently.
+- [ ] Not-logged-in: the smoke test fails and the **Persian login instructions** print. No red
+      English stack trace, and the script still ends with «نصب تمام شد».
+- [ ] `setup-log.txt` landed in `%TEMP%` (the mapped folder is read-only) and reads complete.
+- [ ] Shortcut «کلاد فارسی» exists on the sandbox desktop and launches the window.
+- [ ] Re-run `setup.bat` — still clean, still one shortcut.
+
+**Run B — offline `-Payload`.** Copy `clean-machine.wsb`, set `<Networking>Disable</Networking>`,
+add a second `MappedFolder` for the payload folder from §0, and run from the sandbox:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Payload C:\Users\WDAGUtilityAccount\Desktop\payload
+```
+
+- [ ] Python installs **from the folder**, no download attempted.
+- [ ] The claude step fails with the Persian network/region message — expected, and it must be that
+      message rather than a raw PowerShell error.
+- [ ] Point `-Payload` at a folder that does not exist → the warning names the folder, instead of
+      silently falling through to a download.
+
+Record anything that broke in `wiki/packaging.md` before travelling.
 
 ---
 
@@ -54,8 +109,11 @@ The whole point is that nothing else is needed.
 - [ ] Claude Code install branch, if `claude` is absent — **first execution ever**.
 - [ ] If not logged in: setup prints Persian instructions. Run `claude` once, log in, re-run
       `setup.bat`.
-- [ ] Smoke test reports success (`آزمایش موفق بود`).
-- [ ] Desktop shortcut «کلود» exists, with the blue speech-bubble icon.
+- [ ] Smoke test reports success (`آزمایش موفق بود`). It is 9 checks, one paid CLI turn — a
+      failure line names which check fell over.
+- [ ] Desktop shortcut «کلاد فارسی» exists, with the coral prompt mark (**not** Anthropic's Claude
+      logo, and never the pre-rebrand «کلود» name — if that one is on the desktop too, the
+      idempotency cleanup in step 5 of `setup.ps1` did not run).
 - [ ] Read `setup-log.txt` end to end for anything that looks skipped rather than done.
 - [ ] Re-run `setup.bat` once more — must be clean and idempotent.
 
@@ -65,7 +123,8 @@ If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-e
 
 ## 3. Launch
 
-- [ ] Double-click «کلود». A chrome-less window opens.
+- [ ] Double-click «کلاد فارسی». A chrome-less window opens on the home state (greeting + action
+      cards), not an empty chat.
 - [ ] **No console window appears at any point.**
 - [ ] The window shows the Persian UI, right-aligned, with joined letterforms.
 - [ ] Close the window. Within ~15 s: no `pythonw` and no wrapper-spawned `claude` process
@@ -136,6 +195,23 @@ chrome must read left-to-right with separators in the right places:
 - [ ] **Deny** → the action does not happen, and the reply says so calmly.
 - [ ] Tick "تا پایان این نشست … دوباره نپرس" → the next same-tool call does not prompt.
 - [ ] Press Escape on a dialog → treated as **deny**, never as approve.
+
+The composer's two capability controls (Phase 4) are rendered from what the CLI's `initialize`
+returned, so on the colleague's machine they may list different models than they do here — that is
+correct behaviour, not a bug. What must hold:
+
+- [ ] **Model picker** («مدل») lists the models the CLI reported, with the current one marked.
+      Pick another, send a turn → the reply actually comes from it (the statusline/model label
+      follows the new turn, not the click).
+- [ ] **Posture pill** («سطح اجازه») offers exactly «محتاط» / «ویرایش آزاد» / «خودکار».
+      Switch to «ویرایش آزاد» → a file edit stops prompting; a shell command still prompts.
+- [ ] Switch to «خودکار» → nothing prompts, and the counter «N اقدام خودکار» climbs next to the
+      pill. Click it: every auto-approved action is listed. **A silent full-auto mode is a defect** —
+      the count and the per-card «اجازه داده شد» note are the whole justification for the posture.
+- [ ] **The pill never moves on its own click** — if the CLI refuses, it snaps back and «تغییر سطح
+      اجازه ممکن نشد» appears. Watch for it once: a safety control that looks engaged and is not is
+      the exact failure this project already shipped and fixed.
+- [ ] Switch project (or resume a session) → the pill is back at «محتاط» with an empty count.
 - [ ] Stop button mid-generation → «متوقف شد», **not** a red error. Conversation still usable
       afterwards.
 - [ ] Kill the wrapper mid-session (Task Manager) → relaunch → open the session from the list →
@@ -172,7 +248,10 @@ Sit on your hands. Watch where they hesitate — that is the actual finding, not
 
 Not defects; deliberately not built (plan §B-7):
 
-- No mid-session permission-mode switching (no plan-mode toggle).
+- No plan mode. Permission level **is** switchable mid-session, but only through the three pill
+  postures — the CLI's other modes (`auto`, `dontAsk`, `bypassPermissions`) are deliberately not
+  offered, because in them the CLI approves before it asks the wrapper and nothing can be shown or
+  counted (`wiki/approval-postures.md`).
 - No `!` shell passthrough.
-- `Esc` does not interrupt — the «توقف» button does.
+- `Esc` does not interrupt — the «توقف» button does. (`Esc` closes a dialog or the slash popup.)
 - Cost shows `$0.0000` for an interrupted turn; that is what the CLI reports.

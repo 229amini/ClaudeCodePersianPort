@@ -1,0 +1,24 @@
+<Configuration>
+  <!--
+    Windows Sandbox: a throwaway clean Windows, for the install branches that
+    can never execute on a machine which already has Python and Claude Code.
+
+    Enable it once (elevated PowerShell, then reboot):
+      DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All
+
+    Then double-click this file and follow M8-acceptance.md §0.5.
+
+    HostFolder must be an ABSOLUTE path — edit it if the repo moves.
+    The mapping is read-only on purpose: it also exercises setup.ps1's
+    "log media not writable" fallback to %TEMP%, which is the offline/USB case.
+  -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\projects\Claude\persian-claude-gui</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\pkg</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <Networking>Enable</Networking>
+  <MemoryInMB>6144</MemoryInMB>
+</Configuration>

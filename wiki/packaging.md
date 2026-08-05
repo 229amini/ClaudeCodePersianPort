@@ -105,14 +105,62 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
 | Persian-named `.lnk` on a 1252-codepage machine | fails without the rename workaround, see rule 4 above — passes with it |
 | fresh `git clone` → `setup.ps1` twice (2026-08-05, Phase 6 exit) | both runs exit 0, one shortcut, target verified via `Shell.Application` — the tracked file set is enough to install from |
 
+## Two ways a never-executed branch dies silently (both found 2026-08-05, Phase 7)
+
+Both are PowerShell 5.1 semantics, both were live in the shipped script, and neither could ever
+show up on this PC because the branches that trigger them need a machine without Python/claude.
+
+**1. `$ErrorActionPreference = 'Stop'` turns a native command's stderr into a terminating error.**
+`& $python $smoke 2>&1 | ForEach-Object { Log $_ }` aborts the whole script on the *first* stderr
+line, as a `NativeCommandError`. Consequence: on a not-logged-in machine — the single most likely
+state of the colleague's PC — the smoke test's Python traceback killed `setup.ps1` at the last
+step, so the **Persian login instructions never printed**. The user saw a red English stack trace
+and no «نصب تمام شد». A/B verified on the real script with a stub `smoke_test.py` that writes to
+stderr and exits 1.
+
+Redirecting to a file (`2>$err`) does **not** avoid it — tested, same error. The fix is to drop the
+preference to `Continue` around that one call and restore it after, capturing `$LASTEXITCODE` into
+a variable before anything else can overwrite it. Applied at both native call sites.
+
+**2. `Invoke-Expression` runs the vendor installer in *this* scope.**
+`Invoke-Expression (Invoke-RestMethod 'https://claude.ai/install.ps1')` was the claude-install
+branch. Reading that script (2026-08-05) shows two things it does to its caller:
+
+- every failure path ends in a top-level `exit 1` — verified that an `exit` inside `Invoke-Expression`
+  terminates the calling script immediately, **without running the surrounding `catch`**;
+- it sets `Set-StrictMode -Version Latest`, which then governs every later step of `setup.ps1`, on
+  the success path too.
+
+Now spawned as a child `powershell -NoProfile -Command "irm … | iex"` with its exit code checked.
+Nothing about a vendor script's control flow can reach us. Do not revert it to `Invoke-Expression`
+for tidiness.
+
+Two smaller ones fixed alongside: the Python installer's exit code **3010** (`REBOOT_REQUIRED`) was
+treated as failure, and a `-Payload` folder that is missing or has no installer fell through to a
+download in silence — on a blocked network that surfaces as «دانلود ناموفق», pointing at the wrong
+problem.
+
+## Clean-VM kit
+
+`clean-machine.wsb` at the repo root maps `persian-claude-gui/` read-only onto a Windows Sandbox
+desktop. Sandbox needs one elevated enable + reboot
+(`DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All`); this PC has the
+firmware virtualization for it. Read-only is deliberate — it also exercises the log's `%TEMP%`
+fallback. The checklist is `M8-acceptance.md` §0.5.
+
 ## NOT verified here — needs a bare machine (M8)
 
-These branches never executed because this PC already has both:
+These branches still have never executed anywhere, because this PC has both tools:
 
-- the **Python install** path (download, silent install, re-detect)
-- the **Claude Code install** path (`irm https://claude.ai/install.ps1 | iex`)
-- the **`-Payload` offline** path
-- the **not-logged-in** flow, which prints Persian instructions to run `claude` once and re-run
-  setup. Login genuinely cannot be automated; this is the single manual step the plan allows.
+- the **Python install** path (download, silent install, re-detect) — the three python.org URLs in
+  the fallback list were re-checked live on 2026-08-05 and all three still return 200
+- the **Claude Code install** path (now a child process, see above)
+- the **`-Payload` offline** path. Note it covers **Python only**: Claude Code has no offline
+  installer, `install.ps1` downloads its binary from `downloads.claude.ai` and has an explicit
+  region check.
+
+The **not-logged-in** flow is no longer on this list — it was executed end to end on 2026-08-05
+against a stub smoke test that fails on stderr, which is how defect 1 above was found. Login itself
+still cannot be automated; that is the single manual step the plan allows.
 
 Do not claim M7 is proven end-to-end until it has run on a machine with nothing installed.
