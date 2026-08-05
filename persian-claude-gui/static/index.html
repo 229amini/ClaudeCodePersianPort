@@ -228,8 +228,9 @@
   </form>
 </dialog>
 
-<!-- Classic scripts on purpose: they set window globals (FA, marked) and every
-     classic script finishes before the first module runs. -->
+<!-- Classic scripts on purpose: they set window globals (STRINGS, marked) and
+     every classic script finishes before the first module runs. Swapping the
+     strings file for another language is the whole i18n seam. -->
 <script src="/static/strings.fa.js"></script>
 <script src="/static/vendor/marked.min.js"></script>
 <script type="module" src="/static/js/app.js"></script>

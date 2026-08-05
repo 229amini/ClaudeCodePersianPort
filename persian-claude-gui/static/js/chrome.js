@@ -19,7 +19,7 @@ import {
   bubble, label, renderEvent, renderParamRows, resetTurn, state, setStatus,
 } from "./render.js";
 
-const FA = window.FA;
+const FA = window.STRINGS;
 
 const log = document.getElementById("log");
 

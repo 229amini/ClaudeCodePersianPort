@@ -7,7 +7,7 @@ import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble } from "./render.js";
 
-const FA = window.FA;
+const FA = window.STRINGS;
 
 const input = document.getElementById("input");
 const composer = document.getElementById("composer");
