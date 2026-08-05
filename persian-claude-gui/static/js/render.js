@@ -23,7 +23,7 @@ import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount,
 } from "./controls.js";
 
-const FA = window.FA;
+const FA = window.STRINGS;
 
 const log = document.getElementById("log");
 const statusline = document.getElementById("statusline");

@@ -43,6 +43,23 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
    what `setup.ps1`'s shortcut step now does; do not revert it to a direct `CreateShortcut` call
    with a Persian path.
 
+   Two consequences found 2026-08-05 while testing Phase 6's fresh-clone exit criterion:
+
+   - **`Rename-Item -Force` does not overwrite an existing destination.** `-Force` only unblocks a
+     read-only/hidden *source*. The second `setup.ps1` run therefore died with "Cannot create a
+     file when that file already exists" and left `claude-launcher.lnk` next to the Persian one —
+     two icons for one app, and a non-zero exit from an installer that is supposed to be
+     re-runnable. The step now `Remove-Item`s the old shortcut before renaming.
+   - **Reading the shortcut back with `WScript.Shell` lies.** `$wsh.CreateShortcut('…\کلاد
+     فارسی.lnk')` returns an object with empty `TargetPath`/`Arguments` — the same ANSI
+     downgrade, now on the read side, so it silently hands back a blank new shortcut instead of
+     the existing one. A raw byte scan of the `.lnk` is also inconclusive (mixed ANSI/UTF-16
+     string sections). To verify a Persian-named shortcut, use `Shell.Application`:
+     ```powershell
+     $l = (New-Object -ComObject Shell.Application).NameSpace($dir).ParseName($name).GetLink
+     $l.Path; $l.Arguments; $l.WorkingDirectory
+     ```
+
 ## Other decisions
 
 - **Shortcut targets `wscript.exe`** with the `.vbs` path as an argument, rather than pointing
@@ -86,6 +103,7 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
 | close the window | server exited within 16 s, **no orphaned `claude` process** |
 | smoke test | passed — real CLI round-trip through the deployed copy |
 | Persian-named `.lnk` on a 1252-codepage machine | fails without the rename workaround, see rule 4 above — passes with it |
+| fresh `git clone` → `setup.ps1` twice (2026-08-05, Phase 6 exit) | both runs exit 0, one shortcut, target verified via `Shell.Application` — the tracked file set is enough to install from |
 
 ## NOT verified here — needs a bare machine (M8)
 

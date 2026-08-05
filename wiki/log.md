@@ -4,6 +4,25 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
+## 2026-08-05 — rework Phase 6: open-source scaffolding
+
+- `README.md` (bilingual, Persian block first), `LICENSE` (MIT, holder `229amini` — change it if
+  that is not the name to publish under), `CONTRIBUTING.md` (run commands, which check gates what,
+  the three encoding traps, "the spec is binding — cite rule numbers"). `.gitignore` already
+  covered everything Phase 6 asked for; nothing added.
+- README leads with the *product* differentiators, not "renders Persian" — first-party RTL shipped
+  July 2026 and made that table stakes (REWORK-PLAN.md "Two judgment calls" #2).
+- **i18n seam:** modules read `window.STRINGS`; `strings.fa.js` sets `window.STRINGS = window.FA`
+  at the bottom. A second language is one more `strings.<lang>.js` and one swapped `<script>` tag.
+  No English file ships until someone asks. Spec gate re-run after the swap: 18/18.
+- **No screenshots in the README yet** — the browser tooling here can show a page but cannot write
+  a PNG into the repo. Capture them manually.
+- **Exit criterion caught a real bug.** Fresh `git clone` → `setup.ps1` twice: the *second* run
+  exited 1 and left two desktop icons, because `Rename-Item -Force` does not overwrite an existing
+  destination. Fixed (remove-then-rename) and re-verified: both runs exit 0, one shortcut, target
+  read back with `Shell.Application` (`WScript.Shell` reads Persian-named `.lnk`s back as blank —
+  same ANSI trap, read side). Both facts are in `packaging.md`.
+
 ## 2026-08-05 — rework Phase 5: Codex-style shell + rebrand
 
 - **Rebrand to «کلاد فارسی»** with an original mark — a mirrored terminal prompt (`_<`), coral

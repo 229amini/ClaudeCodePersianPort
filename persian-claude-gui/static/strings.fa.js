@@ -1,5 +1,10 @@
 /* Persian UI labels. Flat key -> string, no i18n framework (plan §B-8).
-   Digits stay Latin wherever they abut a technical value (spec rule 5). */
+   Digits stay Latin wherever they abut a technical value (spec rule 5).
+
+   The modules read window.STRINGS, aliased at the bottom of this file. That
+   alias IS the i18n seam: a second language is one more strings.<lang>.js and
+   one swapped <script> tag in index.html — no module changes. No English file
+   ships until someone asks for one. */
 window.FA = {
   /* Product name. «کلاد» is the transliteration used everywhere in the UI —
      never «کلود», and never Anthropic's mark: this is an independent front-end
@@ -95,3 +100,5 @@ window.FA = {
   autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
 };
+
+window.STRINGS = window.FA;

@@ -15,7 +15,7 @@
 
 import { api } from "./api.js";
 
-const FA = window.FA;
+const FA = window.STRINGS;
 
 const ui = {
   menu: document.getElementById("menu-popup"),

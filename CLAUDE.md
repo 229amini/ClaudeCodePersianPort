@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**M0–M7 done, 2026-08-04. No git repo yet.** The app is feature-complete and packaged: stdlib
+**M0–M7 done, 2026-08-04.** The app is feature-complete and packaged: stdlib
 server, real RTL Persian UI, token streaming, **spec tests 1–12 passing**, Persian permission
 dialog, sessions (resume after a kill, history replay, folder picker), parity chrome (stop, slash
 autocomplete, attach, statusline passthrough), and a one-double-click `setup.bat` bootstrap.
@@ -16,7 +16,7 @@ resume/replay/delete). Spec tests re-passed after the redesign. See
 `wiki/rtl-rendering-notes.md` (new CSS traps) and `wiki/sessions-and-history.md` (new endpoints).
 
 **2026-08-05: rework underway — see `REWORK-PLAN.md`, tracked as beads `pcg-b67`
-(`bd list --tree`).** Phases 0–5 are closed. Phase 2 split `static/app.js` into ES modules under
+(`bd list --tree`).** Phases 0–6 are closed. Phase 2 split `static/app.js` into ES modules under
 `static/js/` (seven since Phase 4 added `controls.js`) and put `style.css` on cascade layers; read
 `wiki/frontend-modules.md` before touching either. **Phase 4 made the GUI a capability mirror**:
 the model picker, slash popup and approval pill are rendered from what `initialize` returned, and
@@ -30,7 +30,17 @@ mark, never «کلود», which is gone from the UI). Home state gained four act
 gained a 300 ms hover preview, and both are wired to endpoints that already existed — Phase 5 added
 **no** server route. Read `wiki/sessions-and-history.md` before touching `read_session` or
 `session_meta`: `user` content arrives in two shapes and one of them is mostly the CLI talking to
-itself. Phase 6 (open-source scaffolding + release) is next.
+itself.
+
+**Phase 6 (2026-08-05) — open-source scaffolding.** `README.md` (bilingual, Persian first),
+`LICENSE` (MIT), `CONTRIBUTING.md` are at the repo root; `.gitignore` already covered what the
+phase asked for. UI strings are now read as `window.STRINGS` (aliased to `window.FA` at the foot of
+`strings.fa.js`) — that alias is the whole i18n seam; keep new user-visible text out of the
+modules. **The README has no screenshots yet** — capture them manually, the tooling here cannot
+write a PNG into the repo. The phase's fresh-clone exit criterion found a shortcut bug in
+`setup.ps1` (`Rename-Item -Force` does not overwrite); fixed and re-verified — see
+`wiki/packaging.md`, which also records that `WScript.Shell` reads a Persian-named `.lnk` back as
+blank. Phase 7 (bare-machine acceptance, M8′) is next.
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`

@@ -225,7 +225,12 @@ $lnk.IconLocation = (Join-Path $DeployRoot 'assets\icon.ico')
 # is the label the colleague reads, and NTFS stores that as real UTF-16.
 $lnk.Description = 'Persian front-end for Claude Code (independent project)'
 $lnk.Save()
-Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf) -Force
+# -Force does NOT make Rename-Item overwrite an existing destination (it only
+# unblocks read-only/hidden sources) — a second setup run threw "Cannot create a
+# file when that file already exists" and left the ASCII temp .lnk behind, two
+# icons for one app. Drop the old shortcut first; setup.ps1 must re-run clean.
+if (Test-Path $shortcut) { Remove-Item $shortcut -Force }
+Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf)
 # An install from before the rebrand left «کلود.lnk» on the desktop. setup.ps1
 # has to stay idempotent, and two icons for one app is worse than none.
 $legacy = Join-Path $ShortcutDir 'کلود.lnk'
