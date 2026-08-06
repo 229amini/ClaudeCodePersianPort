@@ -1,0 +1,42 @@
+<Configuration>
+  <!--
+    Run B of M8-acceptance.md §0.5: the offline -Payload branch, which has
+    never executed anywhere.
+
+    Same throwaway Windows as clean-machine.wsb, with two differences that are
+    the whole point of this file:
+      - Networking is DISABLED, so a download cannot silently rescue a broken
+        offline path. If setup.ps1 reaches for the network the run fails, which
+        is the result you want to see.
+      - payload\ is mapped as a second read-only folder. Put
+        python-3.12.10-amd64.exe in it first (see payload\README.txt) or the
+        Python step has nothing to install from.
+
+    Sandbox itself still needs one elevated enable + reboot on the host:
+      DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All
+
+    Inside the sandbox, run from the mapped pkg folder:
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 `
+        -Payload C:\Users\WDAGUtilityAccount\Desktop\payload
+
+    Expected: Python installs from the folder with no download attempt, then
+    the claude step fails with the Persian network/region message -- that
+    failure is the pass condition here, not a defect.
+
+    HostFolder must be an ABSOLUTE path -- edit both if the repo moves.
+  -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\projects\Claude\persian-claude-gui</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\pkg</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>D:\projects\Claude\payload</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\payload</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <Networking>Disable</Networking>
+  <MemoryInMB>6144</MemoryInMB>
+</Configuration>

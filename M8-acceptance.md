@@ -60,8 +60,10 @@ Status of the four branches as of 2026-08-05 (`wiki/packaging.md`):
 - [ ] Shortcut «کلاد فارسی» exists on the sandbox desktop and launches the window.
 - [ ] Re-run `setup.bat` — still clean, still one shortcut.
 
-**Run B — offline `-Payload`.** Copy `clean-machine.wsb`, set `<Networking>Disable</Networking>`,
-add a second `MappedFolder` for the payload folder from §0, and run from the sandbox:
+**Run B — offline `-Payload`.** `clean-machine-offline.wsb` at the repo root is that file already:
+networking disabled, `payload\` mapped read-only as a second folder. Drop
+`python-3.12.10-amd64.exe` into `payload\` first (see `payload\README.txt`), then run from the
+sandbox:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Payload C:\Users\WDAGUtilityAccount\Desktop\payload
