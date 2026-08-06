@@ -4,6 +4,27 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
+## 2026-08-06 — M8 §4/§5 dry run on the author PC (browser-driven)
+
+- Ran the acceptance checklist's spec pass and chrome-path sweep against the real window with the
+  Chrome extension, ~2 paid CLI turns. Cases 1–12 checked in live view **and** in history replay;
+  every §5 path site (statusline, topbar, sidebar names + tooltips, previews, project chip, tool
+  card, permission dialog, hover card) reads LTR with single backslashes.
+- **Three defects, all invisible to the 18/18 gate, all in the flex shell** — composer stuck at one
+  line, tool cards shrunk to 2 px once the log scrolled, Persian tool-param lines left-aligned.
+  Plus `breaks: true` so typed newlines survive. Details and root causes in
+  `wiki/rtl-rendering-notes.md`; gate is now **20/20** with two layout guards.
+- The gate cannot catch this class at all: `spec-test.html` has no `.app` class, so it never builds
+  the flex shell. Anything about `#log`, `.comp-box` or `.app` needs the browser, not the harness.
+- Proven end-to-end: ZWNJ typed → CLI → written to disk as `E2 80 8C`; «اجازه بده» creates the
+  file; «رد کن»/timeout does not.
+- Browser-automation gotchas that cost a turn each are now `wiki/dev-environment.md` §5–8 —
+  screenshot coordinates are not click coordinates, and the permission dialog auto-denies at 110 s
+  while you are taking screenshots.
+- Not checkable from here: the folder picker and attachment chips both open a **native tkinter
+  dialog** that would block the server; verified by code path only. Same for the 3-card home state
+  (needs a fresh folder).
+
 ## 2026-08-05 — rework Phase 6: open-source scaffolding
 
 - `README.md` (bilingual, Persian block first), `LICENSE` (MIT, holder `229amini` — change it if

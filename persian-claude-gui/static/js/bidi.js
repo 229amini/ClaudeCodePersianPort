@@ -78,7 +78,10 @@ export function applyDirection(root) {
 export function renderMarkdown(text) {
   const host = document.createElement("div");
   const parse = window.marked?.parse ?? window.marked;
-  host.innerHTML = typeof parse === "function" ? parse(text) : "";
+  // breaks:true — a single newline is a <br>, as in every chat UI. Without it
+  // the six separate lines a user typed collapse into one run-on paragraph, and
+  // in Persian that is much harder to re-segment by eye than in Latin.
+  host.innerHTML = typeof parse === "function" ? parse(text, { breaks: true }) : "";
   isolateTechnicalTokens(host);
   applyDirection(host);
   return host;
@@ -98,6 +101,7 @@ export function linesAuto(text) {
   for (const raw of String(text ?? "").split("\n")) {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
     const el = document.createElement("div");
+    el.className = "ln";        // .ln { text-align: start } — see style.css
     el.setAttribute("dir", "auto");
     // An empty div has no line box; <br> keeps blank lines visible and still
     // copies back as a newline.

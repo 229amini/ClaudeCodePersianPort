@@ -40,7 +40,7 @@ mojibakes in the console.
 
 | You touched | Run | Cost |
 |---|---|---|
-| anything in `static/` | `python persian-claude-gui\run_spec_test.py` — must print `PASS — 18/18` | free |
+| anything in `static/` | `python persian-claude-gui\run_spec_test.py` — must print `PASS — 20/20` | free |
 | `transcript_path()`, session delete, replay | `python persian-claude-gui\test_transcript_path.py` | free |
 | the transport, control requests, the capability mirror | `python persian-claude-gui\smoke_test.py` | **one real subscription turn** |
 | `setup.ps1` / `run.vbs` | `setup.ps1 -DeployRoot <tmp> -ProjectDir <tmp> -ShortcutDir <tmp> -SkipSmokeTest`, twice — it must stay idempotent | free |

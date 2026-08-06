@@ -2,7 +2,7 @@
 
 Split 2026-08-05 (rework Phase 2). Pure refactor: every spec-test assertion is byte-identical and
 still passed 11/11 at the time. `static/app.js` was one 1100-line classic-script IIFE; it is now six
-ES modules under `static/js/`. (The gate is 18/18 since rule 8 landed — see
+ES modules under `static/js/`. (The gate is 20/20 since rule 8 and the two 2026-08-06 layout guards landed — see
 `rtl-rendering-notes.md`.)
 
 ## The modules

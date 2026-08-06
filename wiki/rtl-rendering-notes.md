@@ -1,8 +1,38 @@
 # RTL rendering — what M3 actually needed
 
-Built and verified 2026-08-04. **Extended 2026-08-05 with spec rule 8 and cases 9–12: the gate is
-now `PASS — 18/18`** (12 cases, 18 assertions) in `persian-claude-gui/static/spec-test.html`. This
-file records what was **not** obvious from `claude-persian-rtl-spec.md`.
+Built and verified 2026-08-04. **Extended 2026-08-05 with spec rule 8 and cases 9–12; extended
+again 2026-08-06 with two layout guards: the gate is now `PASS — 20/20`** (12 cases, 20 assertions)
+in `persian-claude-gui/static/spec-test.html`. This file records what was **not** obvious from
+`claude-persian-rtl-spec.md`.
+
+## Three defects the spec gate could not see, found by driving the real app (2026-08-06)
+
+The §4/§5 acceptance pass on the author PC. All three are shell-layout bugs, and the harness is
+structurally blind to them: `spec-test.html` has no `.app` class, so it never builds the flex shell
+the real window uses.
+
+1. **The composer could never grow past one line.** `composer.js` sets
+   `input.style.height = scrollHeight`, but `#input { flex: 1 }` resolves to `flex-basis: 0%`, and
+   in a COLUMN flex box (`.comp-box`) the basis replaces the height property on the main axis. The
+   inline height was computed and discarded on every keystroke; a six-line Persian message stayed a
+   36 px box with a hidden scrollbar. Fixed with `flex: none` in `.comp-box #input`.
+2. **Every tool card was crushed to 2 px once the transcript scrolled.** `#log` is a column flex
+   box and `details.card` sets `overflow: hidden`, which zeroes a flex item's *automatic minimum
+   size* — so cards shrank freely while `.msg` bubbles (overflow visible) held their content size.
+   Short conversation: invisible. Long one: the summary line, the parameters and the tool output
+   all vanish behind a 2 px border, including in history replay. Fixed with `#log > * { flex: none }`
+   and guarded by the `flexShrink === "0"` assertion — the one thing about it that is
+   layout-independent enough for the harness to check.
+3. **Persian lines in an LTR box were RTL but left-aligned.** The spec's base block sets
+   `text-align: left` on `pre`/`.tool-output`, and that *inherits* into `linesAuto()`'s per-line
+   divs. Direction was right, alignment was not — M8-acceptance case 9/10 asks for right-aligned
+   Persian lines. `linesAuto()` now tags each line `.ln` and `.ln { text-align: start }` resolves
+   per line. A direct rule beats an inherited value from any layer, so the binding spec block is
+   untouched.
+
+A fourth, smaller one: `renderMarkdown()` now passes `breaks: true`, so the newlines a user types
+survive into the bubble. Without it six typed lines rendered as one run-on paragraph — harder to
+re-segment by eye in Persian than in Latin.
 
 ## Rule 8 — the containers that are LTR on purpose
 

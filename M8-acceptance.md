@@ -137,8 +137,15 @@ If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-e
 Plan §B-10 item 1. The automated harness covers the mechanics; this is the human check on a real
 machine with the colleague's own fonts and display scaling.
 
+> **Dry-run on the author PC, 2026-08-06** (browser-driven, ~2 paid turns): §4 and §5 both pass
+> now, but only after three shell-layout defects were fixed — see `wiki/rtl-rendering-notes.md`
+> §"Three defects the spec gate could not see". Still never exercised anywhere: the **folder
+> picker** and **attachment chips** (both open a native tkinter dialog that automation cannot
+> answer) and the **three-card home state** (needs a folder with no history). Check those by hand
+> on the target.
+
 - [ ] Open `/static/spec-test.html?t=<token>` (token from the address bar). Verdict bar reads
-      `PASS — 18/18`.
+      `PASS — 20/20`.
 - [ ] Then, in the **live chat**, send each case as a real message and eyeball it:
 
 | # | Send | Must look like |

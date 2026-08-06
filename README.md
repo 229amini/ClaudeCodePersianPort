@@ -95,7 +95,7 @@ mojibakes in the console.
 
 `smoke_test.py` drives the actual CLI, so **it spends a real turn of your Claude
 subscription** on every run. Run it at phase exits, not per commit. `run_spec_test.py`
-is the gate for anything touching `static/` — `PASS — 18/18`, exit 0.
+is the gate for anything touching `static/` — `PASS — 20/20`, exit 0.
 
 ### Security model
 

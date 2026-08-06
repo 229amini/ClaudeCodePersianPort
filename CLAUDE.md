@@ -53,6 +53,16 @@ caller without running its `catch`. Read `wiki/packaging.md` §"Two ways a never
 dies silently" before editing `setup.ps1`'s native calls. The not-logged-in branch is now executed
 and proven; **Python install, claude install and `-Payload` are still unexecuted anywhere.**
 
+**2026-08-06 — M8 §4/§5 run on the author PC (browser-driven).** The spec cases in live view *and*
+history replay, plus the chrome-path sweep. Every path site reads LTR, ZWNJ round-tripped composer
+→ CLI → disk, and allow/deny work. It found **three layout defects the spec gate is structurally
+blind to** — the composer could never grow past one line, every tool card was flex-shrunk to 2 px
+once the transcript scrolled, and Persian lines in tool params were RTL but left-aligned. All three
+fixed; the gate is now **`PASS — 20/20`** with two layout guards added. Read
+`wiki/rtl-rendering-notes.md` §"Three defects the spec gate could not see" before touching
+`#log`, `.comp-box` or `linesAuto()`, and `wiki/dev-environment.md` §5–8 before driving the app
+with the browser extension — one of those gotchas costs a paid turn every time.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -230,7 +240,7 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects a `result` event and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, and the session title read back out of the transcript. 9 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 18 assertions, so `PASS — 18/18` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 20 assertions, so `PASS — 20/20` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

@@ -53,6 +53,27 @@ Four things that will otherwise waste a session:
 4. `target="_blank"` navigations (the «راهنما» button) open a tab the extension cannot always
    address. Navigate the main tab to `/static/help.html?t=…` instead of chasing the popup.
 
+Four more, all measured 2026-08-06 during the §4/§5 acceptance pass:
+
+5. **Click coordinates are CSS-viewport pixels; screenshots are not.** The window reports
+   `innerWidth` 2032 but a screenshot comes back 1568 wide (~0.77×). Reading a button's position
+   off the screenshot and clicking it lands ~300 px away — silently, on the modal backdrop, with
+   no error. Always take the target from `getBoundingClientRect()` via `javascript_tool` and click
+   that. This burned one paid turn.
+6. **The permission dialog self-destructs in 110 s** (`PERMISSION_TIMEOUT`, server.py). Every
+   screenshot round-trip costs 5–30 s, so open→look→click→look blows the budget and the broker
+   auto-denies; the client then closes the dialog without ever calling `resolvePermission`, so
+   there is no `/api/permission/respond` in the log and it looks like the button did nothing.
+   Answer it from *inside* one `javascript_tool` call (poll for `#perm.open`, then
+   `#perm-allow.click()`), and take the screenshots for the visual check on a separate request.
+7. **The `hover` action does not produce `:hover`.** The session preview card checks
+   `row.matches(":hover, :focus")` after its 300 ms timer and never fired. `row.focus()` drives the
+   same code path. Note the card hides again on blur, which the next tool call triggers — pin it
+   with `Object.defineProperty(card, "hidden", {set(){}, get:()=>false})` before screenshotting.
+8. **`javascript_tool` refuses to return anything that looks like a token or a query string** —
+   `[BLOCKED: Cookie/query string data]`. Returning the log's `textContent` trips it. Return shapes
+   and computed styles, not raw page text.
+
 ## First author PC (`ladyg`) — historical, probed 2026-08-04
 
 Kept for the install-branch evidence (winget absence, the Store-stub trap, the exact Python and
