@@ -99,6 +99,9 @@ window.FA = {
   postureFailed: "تغییر سطح اجازه ممکن نشد",
   autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
+  autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
+  autoWhyRemembered: "چون گفتید دوباره نپرس",
+  autoWhyPosture: "سطح اجازه: خودکار",
 };
 
 window.STRINGS = window.FA;

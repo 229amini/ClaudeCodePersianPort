@@ -20,13 +20,18 @@ import {
 } from "./chrome.js";
 import { setBusy, setSlashCommands } from "./composer.js";
 import {
-  applyInitInfo, setModelResolved, setPostureState, setAutoCount,
+  applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
 } from "./controls.js";
 
 const FA = window.STRINGS;
 
 const log = document.getElementById("log");
 const statusline = document.getElementById("statusline");
+
+/* The CLI's own wording for a turn the user stopped, seen in both live events
+   and replayed transcripts: "[Request interrupted by user]" and
+   "[Request interrupted by user for tool use]". */
+const INTERRUPT_NOTE = /^\s*\[Request interrupted by user/;
 
 /* --- DOM builders --------------------------------------------------------- */
 
@@ -275,6 +280,13 @@ export function renderEvent(ev) {
         // (we do not pass --replay-user-messages), so the composer echoes them
         // via wrapper/user_echo instead — hence both paths exist.
         if (part.type === "text") {
+          // The CLI narrates an interrupt as a `user` turn whose text is
+          // "[Request interrupted by user]" (or "...for tool use"). Rendered as
+          // written it looks like the user typed an English sentence — and the
+          // stop is already reported in Persian by result/aborted_streaming
+          // below. Both sources carry it, so it is dropped here, at the one
+          // renderer they share.
+          if (INTERRUPT_NOTE.test(part.text ?? "")) continue;
           resetTurn();
           const el = bubble("user");
           el.append(...renderMarkdown(part.text ?? "").childNodes);
@@ -342,9 +354,13 @@ export function renderEvent(ev) {
         const note = label(ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
                            "meta");
         if (card) card.append(note);
-        // Approved by the wrapper's «خودکار» posture, not by the user: the
-        // count is the audit trail that keeps that posture honest.
-        if (ev.auto) setAutoCount(ev.auto_count);
+        // Approved by the wrapper rather than by the user — either the
+        // «خودکار» posture or an earlier «دوباره نپرس». The count, and the
+        // list behind it, are the audit trail that keeps both honest.
+        if (ev.auto) {
+          noteAutoAction(ev.tool_name, ev.why);
+          setAutoCount(ev.auto_count);
+        }
       } else if (ev.subtype === "init_info") {
         // Everything the CLI can do, answered at spawn and free
         // (wiki/control-protocol.md §1). Richer than system/init.

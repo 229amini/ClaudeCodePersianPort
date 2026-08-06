@@ -195,6 +195,12 @@ chrome must read left-to-right with separators in the right places:
 
 ## 6. Feature pass (plan §B-10 item 3)
 
+> **Dry-run on the author PC, 2026-08-06.** Everything below passes except the folder picker (its
+> native dialog cannot be driven by automation) — but only after four fixes, three of them in the
+> approval path (`wiki/approval-postures.md`). One trap for whoever repeats this: the CLI
+> auto-approves shell commands it classifies as read-only, so testing «ویرایش آزاد» with `echo`
+> shows no prompt and looks like a broken posture. Use something that mutates.
+
 - [ ] Persian prompt → reply streams in token by token.
 - [ ] **Reply comes back in Persian.** If it does not, that is the colleague's `~/.claude` config,
       not a wrapper bug — the wrapper inherits their real settings and hooks (found in M4). Fix

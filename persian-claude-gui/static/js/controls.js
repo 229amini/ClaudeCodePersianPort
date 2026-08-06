@@ -107,6 +107,15 @@ export function setPostureState(name, autoCount) {
   setAutoCount(autoCount);
 }
 
+/* What was approved without asking, so the counter can be opened and read.
+   Fed by permission_resolved events, which the SSE hub replays to a reloading
+   window — so the list survives a refresh exactly as far as the count does. */
+const autoActions = [];   // [{tool, why}]
+
+export function noteAutoAction(toolName, why) {
+  autoActions.push({ tool: toolName || "?", why });
+}
+
 /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
 export function setAutoCount(count) {
   if (!ui.autoChip) return;
@@ -193,6 +202,20 @@ export function initControls() {
     toggleMenu("posture", POSTURES.map((p) => ({
       key: p.key, title: p.title, note: p.note, selected: p.key === posture,
     })), pickPosture);
+  });
+
+  /* The count alone is a number with nothing behind it. Opening it is the
+     audit trail that makes «خودکار» — and a remembered tool — defensible.
+     No endpoint: the events that produced the count carry the tool name. */
+  ui.autoChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const rows = autoActions.length
+      ? autoActions.map((a) => ({
+          title: a.tool,
+          note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
+        }))
+      : [{ title: FA.autoActionsEmpty }];
+    toggleMenu("auto", rows);
   });
 
   // Click-anywhere and Escape close it — the popup is a menu, not a dialog.

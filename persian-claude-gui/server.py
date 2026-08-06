@@ -610,11 +610,19 @@ class PermissionBroker:
 
     def reset_posture(self) -> None:
         """A fresh CLI process spawns with --permission-mode default, so the
-        posture and its audit log are session-scoped and must not survive it."""
+        posture, its audit log and every "don't ask again" are session-scoped
+        and must not survive it.
+
+        session_allow used to be the exception, and it was the dangerous one:
+        the pill went back to «محتاط» on a project switch while a Write the
+        user had remembered for the PREVIOUS conversation was still approving
+        itself silently in the new folder.
+        """
         with self._lock:
             self.posture = "ask"
             self.auto_approve = False
             self.auto_log.clear()
+            self.session_allow.clear()
 
     def set_posture(self, posture: str, auto: bool) -> None:
         with self._lock:
@@ -635,23 +643,34 @@ class PermissionBroker:
                 suggestions: list | None = None) -> dict:
         if tool_name in AUTO_ALLOW:
             return {"decision": "allow", "reason": "auto-allow (read-only)"}
-        with self._lock:
-            if tool_name in self.session_allow:
-                return {"decision": "allow", "reason": "session allow-rule"}
 
         request_id = uuid.uuid4().hex
 
         with self._lock:
+            remembered = tool_name in self.session_allow
             auto = self.auto_approve
-            if auto:
-                self.auto_log.append({"tool_name": tool_name,
-                                      "at": time.time()})
+            if remembered or auto:
+                self.auto_log.append({"tool_name": tool_name, "at": time.time(),
+                                      "why": "remembered" if remembered else "posture"})
                 count = len(self.auto_log)
+
+        if remembered:
+            # «دوباره نپرس» is consent given once, not consent to go quiet. This
+            # used to return before publishing anything, so a remembered Write
+            # or PowerShell ran with NO trace in the window -- the same silent
+            # approval the postures exist to prevent, and it happened under
+            # «محتاط» too.
+            self._publish_resolved(request_id, tool_use_id, "allow", auto=True,
+                                   auto_count=count, tool_name=tool_name,
+                                   why="remembered")
+            return {"decision": "allow", "reason": "session allow-rule"}
+
         if auto:
             # Approved without asking, but never silently: the window shows a
             # running count and each tool card gets its "allowed" note.
             self._publish_resolved(request_id, tool_use_id, "allow",
-                                   auto=True, auto_count=count)
+                                   auto=True, auto_count=count,
+                                   tool_name=tool_name, why="posture")
             return {"decision": "allow", "reason": "auto-approve posture"}
 
         waiter = threading.Event()
@@ -682,15 +701,18 @@ class PermissionBroker:
         if not answered or decision not in ("allow", "deny"):
             # Timed out or the window went away. Deny: an unattended wrapper
             # must not approve a tool call on the user's behalf.
-            self._publish_resolved(request_id, tool_use_id, "deny")
+            self._publish_resolved(request_id, tool_use_id, "deny",
+                                   tool_name=tool_name)
             return {"decision": "deny", "reason": "timed out waiting for the user"}
 
-        self._publish_resolved(request_id, tool_use_id, decision)
+        self._publish_resolved(request_id, tool_use_id, decision,
+                               tool_name=tool_name)
         return {"decision": decision, "reason": "user decision"}
 
     def _publish_resolved(self, request_id: str, tool_use_id: str | None,
                           decision: str, auto: bool = False,
-                          auto_count: int = 0) -> None:
+                          auto_count: int = 0, tool_name: str | None = None,
+                          why: str | None = None) -> None:
         self.hub.publish({
             "type": "wrapper",
             "subtype": "permission_resolved",
@@ -699,6 +721,11 @@ class PermissionBroker:
             "decision": decision,
             "auto": auto,
             "auto_count": auto_count,
+            # The window's audit list names the tool and says which of the two
+            # silent paths approved it; the card cannot supply either when the
+            # card is not there yet.
+            "tool_name": tool_name,
+            "why": why,
         })
 
     def respond(self, request_id: str, decision: str, remember: bool,

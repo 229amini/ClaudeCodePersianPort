@@ -4,6 +4,35 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
+## 2026-08-06 — M8 §6 feature pass on the author PC (browser-driven)
+
+Everything in §6 that does not need the colleague's machine, driven through the real window.
+**Passing:** token streaming; «توقف» → «متوقف شد» with the session still usable; the permission
+dialog's allow / deny / «دوباره نپرس» / Escape-as-deny; the model picker (label follows the *next*
+turn — statusline read `claude-haiku-4-5-20251001` after the switch); all three postures with
+`acceptEdits` echoed back by `system/status`; «ویرایش آزاد» letting a Write through while
+PowerShell still prompts; pill snap-back on a 409 (fault-injected fetch); kill → relaunch →
+«نمایش» → «ادامه» keeping the **same** session id and the earlier context; the slash popup filter
+and accept; image attach (`[1 image]`, model named the colour) and non-image attach (`@path`, model
+read the Persian first line).
+
+**Four defects found and fixed** — the three permission ones matter most, and none were reachable
+from the automated gates:
+
+- «دوباره نپرس» approved **silently**: no card note, no counter, nothing (`approval-postures.md`).
+- «دوباره نپرس» **outlived its session** — remembered in one project, still auto-approving after a
+  switch to another while the pill claimed «محتاط».
+- The audit counter had **no click handler at all** (a `<span>`); §6's "click it and every
+  auto-approved action is listed" had never been built. Now a button that opens the list.
+- «توقف» rendered the CLI's English `[Request interrupted by user]` as a bubble attributed to the
+  user, next to the Persian «متوقف شد». Dropped at the shared renderer, guarded by a new assertion.
+
+**Not a defect, worth knowing:** the CLI auto-approves shell commands it classifies as read-only
+(`echo`) without ever asking the wrapper, so no dialog appears for them. Test posture behaviour with
+something that mutates (`New-Item`), or the result is misleading.
+
+Gates after: spec **21/21**, `smoke_test.py` **PASS** (9 checks), `test_transcript_path.py` PASS.
+
 ## 2026-08-06 — M8 §4/§5 dry run on the author PC (browser-driven)
 
 - Ran the acceptance checklist's spec pass and chrome-path sweep against the real window with the

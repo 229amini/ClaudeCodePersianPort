@@ -63,6 +63,15 @@ fixed; the gate is now **`PASS — 20/20`** with two layout guards added. Read
 `#log`, `.comp-box` or `linesAuto()`, and `wiki/dev-environment.md` §5–8 before driving the app
 with the browser extension — one of those gotchas costs a paid turn every time.
 
+**2026-08-06 — M8 §6 feature pass, also on the author PC.** Streaming, stop, the whole permission
+dialog, the model picker, all three postures, kill-and-resume, slash, attachments. **Four more
+defects, three of them in the approval path** — «دوباره نپرس» approved silently *and* survived into
+the next project, and the audit counter had no click handler at all. Read
+`wiki/approval-postures.md` §"What «دوباره نپرس» does" before touching `session_allow` or
+`_publish_resolved`. Gates: spec **21/21**, `smoke_test.py` PASS, `test_transcript_path.py` PASS.
+Note for anyone testing postures: the CLI silently auto-approves shell commands it judges read-only
+(`echo`), so use a mutating command or the test lies.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

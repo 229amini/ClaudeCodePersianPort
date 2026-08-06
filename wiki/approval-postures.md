@@ -41,10 +41,32 @@ Two measured reasons not to trust anything less:
 - Every other ack on this surface lies by omission: `set_model` and `rename_session` both answer
   `success` with an empty body whether or not anything happened.
 
+## What «دوباره نپرس» does — and the two ways it used to go quiet (fixed 2026-08-06)
+
+The remember tick adds the tool name to `PermissionBroker.session_allow`. Driving the real §6 pass
+found that set doing two things nobody intended:
+
+1. **It approved silently.** The `session_allow` check returned *before* `_publish_resolved()`, so a
+   remembered `Write` or `PowerShell` ran with no «اجازه داده شد» note, no counter, no trace of any
+   kind in the window. Under «محتاط», which is the posture that promises to ask. The claim above —
+   "nothing happens invisibly" — was false for exactly this path. It now publishes with
+   `auto: true`, `why: "remembered"`, so it lands in the same counter and the same audit list.
+2. **It outlived its session.** `reset_posture()` cleared the posture and the audit log on every
+   spawn but not `session_allow`, and nothing else ever cleared it. So a project switch or a resume
+   put the pill back at «محتاط» while a `Write` remembered for the *previous* conversation, in a
+   *different folder*, kept approving itself. `reset_posture()` now clears it too. Verified: after
+   «گفتگوی جدید» the same tool prompts again.
+
+The counter is also **clickable** as of the same day — it opens the list of what was approved and
+why (`«چون گفتید دوباره نپرس»` / `«سطح اجازه: خودکار»`). It was a `<span>` with a tooltip before,
+so M8-acceptance §6's "Click it: every auto-approved action is listed" had never been built. No
+endpoint was added: the `permission_resolved` events already carry `tool_name`, and the Hub replays
+them to a reconnecting window, so the list survives a refresh exactly as far as the count does.
+
 ## Session-scoped, and reset with the process
 
 `start()` calls `broker.reset_posture()`, so a project switch or a `--resume` comes back at
-«محتاط» with an empty audit log. That is deliberate: a new CLI process spawns with
+«محتاط» with an empty audit log and no remembered tools. That is deliberate: a new CLI process spawns with
 `--permission-mode default` regardless, so keeping the old pill would show a posture that is no
 longer in force. The posture is re-published right after `initialize`, which puts it in Hub history
 for any window that connects or reconnects later.
