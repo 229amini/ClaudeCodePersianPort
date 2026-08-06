@@ -91,7 +91,7 @@ mojibakes in the console.
 |---|---|---|
 | Rendering — the 12 spec cases through the shipping renderer, 18 assertions | `python persian-claude-gui\run_spec_test.py` | free |
 | Transcript path guard (id resolution + traversal) | `python persian-claude-gui\test_transcript_path.py` | free |
-| Transport + capability mirror, 9 checks | `python persian-claude-gui\smoke_test.py` | **one real CLI turn** |
+| Transport + capability mirror, 10 checks | `python persian-claude-gui\smoke_test.py` | **one real CLI turn** |
 
 `smoke_test.py` drives the actual CLI, so **it spends a real turn of your Claude
 subscription** on every run. Run it at phase exits, not per commit. `run_spec_test.py`
