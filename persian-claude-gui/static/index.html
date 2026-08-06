@@ -184,8 +184,10 @@
         </button>
 
         <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
-             on the user's behalf. Never hidden behind a menu. -->
-        <span id="auto-chip" class="chip-btn is-info" hidden></span>
+             on the user's behalf. Never hidden behind a menu. A button, not a
+             span: it opens the list of those approvals, so it has to be
+             clickable AND reachable from the keyboard. -->
+        <button type="button" id="auto-chip" class="chip-btn is-info" hidden></button>
 
         <span class="comp-spacer"></span>
 

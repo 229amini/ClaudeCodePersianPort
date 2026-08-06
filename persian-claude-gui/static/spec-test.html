@@ -254,6 +254,17 @@ check("tool cards cannot be flex-shrunk out of existence",
   getComputedStyle(card9 ?? document.body).flexShrink === "0",
   getComputedStyle(card9 ?? document.body).flexShrink);
 
+/* The CLI narrates a stopped turn as a `user` message reading "[Request
+   interrupted by user]". Rendered literally it reads as if the user typed an
+   English sentence, right next to the Persian «متوقف شد» that already says it. */
+const beforeInterrupt = specLog.querySelectorAll(".msg.user").length;
+window.renderEvent({ type: "user", message: { content: [
+  { type: "text", text: "[Request interrupted by user for tool use]" },
+] } });
+check("the CLI's English interrupt note never becomes a user bubble",
+  specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
+  specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
+
 const permBox = document.querySelectorAll("#perm-params .param-row .tool-output")[2];
 const permLine = permBox?.firstElementChild;
 check("case 10: permission dialog uses the same per-line builder",
