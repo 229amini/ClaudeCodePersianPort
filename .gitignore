@@ -7,6 +7,10 @@ persian-claude-gui/archived.json
 persian-claude-gui/setup-log.txt
 persian-claude-gui/run.vbs
 
+# Offline install payload — the folder and its README are tracked so
+# clean-machine-offline.wsb has something to map; the installers are not.
+payload/*.exe
+
 # Python
 __pycache__/
 *.pyc
