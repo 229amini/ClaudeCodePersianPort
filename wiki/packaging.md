@@ -148,19 +148,45 @@ desktop. Sandbox needs one elevated enable + reboot
 firmware virtualization for it. Read-only is deliberate — it also exercises the log's `%TEMP%`
 fallback. The checklist is `M8-acceptance.md` §0.5.
 
-## NOT verified here — needs a bare machine (M8)
+## Run A executed — clean sandbox, 2026-08-06/07
 
-These branches still have never executed anywhere, because this PC has both tools:
+Two of the three remaining branches are no longer theoretical. In a fresh Windows Sandbox
+(`clean-machine.wsb`, nothing installed, `probe` reported all seven tools NOT FOUND):
 
-- the **Python install** path (download, silent install, re-detect) — the three python.org URLs in
-  the fallback list were re-checked live on 2026-08-05 and all three still return 200
-- the **Claude Code install** path (now a child process, see above)
+- **Python install** — downloaded 3.12.10, installed silently to
+  `%LOCALAPPDATA%\Programs\Python\Python312`, and was **re-detected by path** on the next step.
+  The re-detect is load-bearing exactly as commented: the installer's `PrependPath=1` does not
+  reach the running script, and even a *later, brand-new* console still reported
+  `probe claude => NOT FOUND` (see below), so nothing here may lean on PATH.
+- **Claude Code install** — the child-process call worked, output echoed and logged, exit 0,
+  version 2.1.223 at `%USERPROFILE%\.local\bin\claude.exe`, and setup **continued past it**. The
+  vendor installer prints its own warning that `.local\bin` is not on PATH and it is right:
+  `Get-Command claude` still failed afterwards. Only the `$local` fallback in step 3 found it.
+  Deleting that fallback would break every fresh install while looking harmless on this PC.
+- Four consecutive runs, all idempotent: one shortcut, same deploy root, no prompts.
+
+**The defect Run A found: the smoke test passed while the CLI was not logged in.** A CLI with no
+credentials answers `result` with subtype **success**, `is_error` unset, cost 0 and the body
+`Not logged in · Please run /login`. `smoke_test.py`'s first check was `"turn completed": ok`,
+where `ok` only meant *a `result` event arrived* — so it printed `RESULT: PASS`, `setup.ps1` printed
+«آزمایش موفق بود», and the Persian login instructions never printed on a machine where the wrapper
+cannot work at all. That is the exact failure the 2026-08-05 stderr fix was supposed to expose; it
+was verified against a *stub* smoke test that exits 1, which the real one never did.
+Fixed 2026-08-07: the check now asserts the answer (`PONG` in the `result` body, `is_error` false),
+not the envelope. 10 checks now. **Rule: never gate on an event's arrival when its body carries the
+outcome** — the same class of lie as the control-protocol acks in `wiki/control-protocol.md`.
+
+## NOT verified anywhere — still needs a bare machine (M8)
+
 - the **`-Payload` offline** path. Note it covers **Python only**: Claude Code has no offline
   installer, `install.ps1` downloads its binary from `downloads.claude.ai` and has an explicit
   region check.
 
-The **not-logged-in** flow is no longer on this list — it was executed end to end on 2026-08-05
-against a stub smoke test that fails on stderr, which is how defect 1 above was found. Login itself
-still cannot be automated; that is the single manual step the plan allows.
+The **not-logged-in** flow is proven: re-run in the same not-logged-in sandbox right after the fix
+(2026-08-07), the real `smoke_test.py` failed, `setup.ps1` printed «آزمایش ناموفق بود» plus the
+three numbered Persian login steps, no English stack trace, and still ended with «نصب تمام شد».
+The 2026-08-05 run of this path used a *stub* smoke test that exits 1 — which is why the real
+one's false PASS survived two days. A stub proves the caller's error handling, never the check.
+Login itself still cannot be automated; that is the single manual step the plan allows.
 
 Do not claim M7 is proven end-to-end until it has run on a machine with nothing installed.

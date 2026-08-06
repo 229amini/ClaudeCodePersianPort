@@ -36,14 +36,20 @@ the Desktop, read-only. Enable Sandbox once, elevated, then reboot:
 DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All
 ```
 
-Status of the four branches as of 2026-08-05 (`wiki/packaging.md`):
+Status of the four branches as of 2026-08-07 (`wiki/packaging.md`):
 
 | branch | state |
 |---|---|
-| not-logged-in (smoke test fails) | **executed and fixed** — it used to die on a `NativeCommandError` |
-| Python install (download → silent install → re-detect) | never executed |
-| Claude Code install (`irm claude.ai/install.ps1 \| iex`) | never executed |
+| not-logged-in (smoke test fails) | **executed and passed with the real smoke test** — 2026-08-07, after the fix below. Before it, the test passed while not logged in |
+| Python install (download → silent install → re-detect) | **executed and passed** — Run A, clean sandbox, 2026-08-06 |
+| Claude Code install (`irm claude.ai/install.ps1 \| iex`) | **executed and passed** — 2.1.223 installed, setup continued; `claude` was **not** on PATH afterwards and only the `.local\bin` fallback found it |
 | `-Payload` offline | never executed |
+
+**What Run A found.** A CLI with no credentials answers `result` with subtype **success**, cost 0,
+body `Not logged in · Please run /login`. `smoke_test.py` only checked that a `result` event
+arrived, so it printed `PASS`, setup printed «آزمایش موفق بود», and the Persian login instructions
+never printed — on a machine where nothing worked. Fixed: the check now requires `PONG` in the
+result body. **Re-run `setup.bat` in a not-logged-in sandbox to prove the login path for real.**
 
 **Run A — online, nothing installed** (double-click `clean-machine.wsb`, then in the sandbox open
 `Desktop\pkg` and double-click `setup.bat`):
@@ -56,7 +62,9 @@ Status of the four branches as of 2026-08-05 (`wiki/packaging.md`):
       `Invoke-Expression`, an `exit 1` inside it kills setup silently.
 - [ ] Not-logged-in: the smoke test fails and the **Persian login instructions** print. No red
       English stack trace, and the script still ends with «نصب تمام شد».
-- [ ] `setup-log.txt` landed in `%TEMP%` (the mapped folder is read-only) and reads complete.
+- [ ] The log landed in `%TEMP%\persian-claude-setup-log.txt` (the mapped folder is read-only, so
+      it took the fallback path **and the fallback name** — it is not `setup-log.txt` there) and
+      reads complete.
 - [ ] Shortcut «کلاد فارسی» exists on the sandbox desktop and launches the window.
 - [ ] Re-run `setup.bat` — still clean, still one shortcut.
 
@@ -104,14 +112,18 @@ One more the plan's probe does not ask, and it silently breaks things:
 
 The whole point is that nothing else is needed.
 
-- [ ] Copy `persian-claude-gui/` to the machine. Double-click **`setup.bat`**. Nothing else.
+- [ ] Copy `persian-claude-gui/` to the machine — **from a fresh clone, or delete `setup-log.txt`,
+      `recents.json`, `archived.json` and `__pycache__/` first**. They are gitignored, so a clone is
+      clean, but a copy of the author's working folder carries the author's own project list and a
+      log full of `C:\Users\<author>` paths. (In the §0.5 sandbox that stale log was mistaken for
+      the run's own log.) Then double-click **`setup.bat`**. Nothing else.
 - [ ] Watch for Persian text rendering correctly in the console. Mojibake here means the
       UTF-8 BOM was lost from `setup.ps1` (see `wiki/packaging.md`).
 - [ ] Python install branch runs — **first execution ever**. Note any prompt or failure.
 - [ ] Claude Code install branch, if `claude` is absent — **first execution ever**.
 - [ ] If not logged in: setup prints Persian instructions. Run `claude` once, log in, re-run
       `setup.bat`.
-- [ ] Smoke test reports success (`آزمایش موفق بود`). It is 9 checks, one paid CLI turn — a
+- [ ] Smoke test reports success (`آزمایش موفق بود`). It is 10 checks, one paid CLI turn — a
       failure line names which check fell over.
 - [ ] Desktop shortcut «کلاد فارسی» exists, with the coral prompt mark (**not** Anthropic's Claude
       logo, and never the pre-rebrand «کلود» name — if that one is on the desktop too, the

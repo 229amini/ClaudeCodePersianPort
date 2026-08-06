@@ -3,8 +3,9 @@ M2 smoke test — boots server.py, drives one real turn through the CLI, asserts
 
     python smoke_test.py
 
-Passes when a `result` event comes back and a wrong token is rejected with 403.
-Costs one real CLI turn against the logged-in subscription.
+Passes when the CLI answers the prompt (the `result` body must contain PONG —
+an event alone is not proof, see the not-logged-in note below) and a wrong token
+is rejected with 403. Costs one real CLI turn against the logged-in subscription.
 
 The same turn also verifies the Phase-4 capability mirror, because these are
 exactly the claims whose acks lie (wiki/control-protocol.md): `set_model`
@@ -62,6 +63,7 @@ last: dict[str, dict] = {}     # "type/subtype" -> the most recent such event
 done = threading.Event()
 usage_done = threading.Event()
 init_ready = threading.Event()
+result_event: dict = {}
 
 PROMPT = "Reply with exactly: PONG"
 
@@ -86,6 +88,7 @@ def read_sse() -> None:
                 usage_done.set()
             elif event.get("type") == "result":
                 print("  result:", repr(event.get("result")))
+                result_event.update(event)
                 done.set()
 
 
@@ -157,6 +160,15 @@ ok = done.wait(timeout=120)
 # get_context_usage / get_usage / rename_session all run once the turn ends.
 usage_done.wait(timeout=30)
 
+# A `result` event arriving proves nothing. A CLI that is not logged in answers
+# `result` with subtype **success**, is_error unset, cost 0 and the body
+# "Not logged in · Please run /login" — so "a result came back" passed on a
+# machine where the wrapper cannot work at all, and setup.ps1 then printed
+# «آزمایش موفق بود» instead of the Persian login instructions. Measured in the
+# §0.5 clean sandbox, 2026-08-07. Assert the answer, not the envelope.
+result_text = str(result_event.get("result") or "")
+answered = "PONG" in result_text.upper() and not result_event.get("is_error")
+
 model_ok = "haiku" in str((last.get("system/init") or {}).get("model", ""))
 print("model this turn ran on:", (last.get("system/init") or {}).get("model"))
 
@@ -192,6 +204,7 @@ proc.kill()
 
 checks = {
     "turn completed": ok,
+    "the CLI actually answered (logged in)": answered,
     "bad token rejected": auth_ok,
     "initialize served models + commands": init_ok,
     "posture follows the CLI, not the click": posture_ok,
