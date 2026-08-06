@@ -126,7 +126,7 @@ C:\Users\ladyg\AppData\Local\Programs\Python\Python312\pythonw.exe
 
 **Use those absolute paths.** `PrependPath=1` does not help the current shell, and the Store stub
 still shadows `python` in any session whose PATH was resolved earlier — the exact reason
-CLAUDE.md requires an absolute interpreter path in `run.vbs`.
+CLAUDE.md requires an absolute interpreter path in the generated shortcut.
 
 3.12.9 and 3.12.8 also exist on the FTP mirror; 3.12.10 was the newest 3.12.x available and is
 what `setup.ps1` should pin (with a fallback loop, since python.org prunes old point releases).
@@ -152,8 +152,9 @@ Lands at `C:\Users\ladyg\AppData\Local\Programs\Git\cmd\git.exe` (2.55.0). **`Pa
 only affects new shells** — an already-running session still needs the absolute path, the same
 trap as Python.
 
-`CRLFCommitAsIs` matters here: `setup.ps1` must keep its UTF-8 BOM and `run.vbs` its UTF-16LE,
-and line-ending rewriting is the kind of thing that quietly breaks them. Verified after the first
+`CRLFCommitAsIs` matters here: `setup.ps1` must keep its UTF-8 BOM (`run.vbs` had a UTF-16LE rule
+too, until it was deleted 2026-08-07), and line-ending rewriting is the kind of thing that quietly
+breaks that. Verified after the first
 commit that the committed blob still carries `EF BB BF` and correct Farsi yeh (U+06CC), and that
 the fonts and icon are byte-identical.
 

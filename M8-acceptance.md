@@ -49,7 +49,14 @@ Status of the four branches as of 2026-08-07 (`wiki/packaging.md`):
 body `Not logged in · Please run /login`. `smoke_test.py` only checked that a `result` event
 arrived, so it printed `PASS`, setup printed «آزمایش موفق بود», and the Persian login instructions
 never printed — on a machine where nothing worked. Fixed: the check now requires `PONG` in the
-result body. **Re-run `setup.bat` in a not-logged-in sandbox to prove the login path for real.**
+result body, and re-running in the same not-logged-in sandbox produced the Persian login steps.
+
+**And the launcher did not run at all.** Clicking «کلاد فارسی» on the sandbox desktop raised
+«There is no script engine for file extension ".vbs"». VBScript is deprecated; its engine is a
+Feature-on-Demand that a current Windows image need not carry, and the shortcut went through a
+generated `run.vbs`. The shortcut now targets `pythonw.exe` directly (no console either way), and
+`run.vbs` is gone. Nothing on this PC could ever have shown it — the author's Windows still has the
+engine.
 
 **Run A — online, nothing installed** (double-click `clean-machine.wsb`, then in the sandbox open
 `Desktop\pkg` and double-click `setup.bat`):
@@ -103,8 +110,8 @@ answers; they decide what happens next.
 One more the plan's probe does not ask, and it silently breaks things:
 
 - [ ] **Is the username non-ASCII (e.g. Persian)?**
-      → `run.vbs` paths. It is written UTF-16LE for exactly this reason; verify the shortcut
-      actually launches rather than assuming.
+      → the paths baked into the shortcut's arguments. `WshShell.Save()` round-trips them through
+      the ANSI codepage, so verify the shortcut actually launches rather than assuming.
 
 ---
 

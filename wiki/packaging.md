@@ -1,7 +1,7 @@
 # Packaging and bootstrap (M7)
 
 Built and verified 2026-08-04. `setup.bat` → `setup.ps1` installs prerequisites, deploys the app,
-writes `run.vbs` and a desktop shortcut, and ends with a live smoke test.
+writes a desktop shortcut, and ends with a live smoke test.
 
 ```powershell
 .\setup.ps1                        # normal
@@ -23,10 +23,12 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
    $t = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8)
    [IO.File]::WriteAllText($f, $t, (New-Object Text.UTF8Encoding($true)))
    ```
-2. **`run.vbs` must be UTF-16LE WITH BOM.** `wscript` reads a BOM-less `.vbs` as ANSI. It does not
-   matter for the ASCII comment — it matters because the **baked-in paths** would mangle on a
-   machine whose Windows username is not ASCII, which for this project's audience is entirely
-   plausible.
+2. ~~`run.vbs` must be UTF-16LE WITH BOM.~~ **Gone 2026-08-07 — there is no `run.vbs` any more.**
+   The launcher was a one-line VBScript run through `wscript.exe`; on a clean Windows 11 image the
+   shortcut died with «There is no script engine for file extension ".vbs"», because VBScript is
+   deprecated and its engine is a Feature-on-Demand fresh installs need not carry. The shortcut now
+   targets `pythonw.exe` directly — a GUI-subsystem binary, so it allocates no console by itself,
+   which is all the VBScript ever bought. Rule kept here only so nobody reintroduces the file.
 3. **`.lnk` Description is ANSI-lossy.** Writing Persian there silently rewrites ی (U+06CC, Farsi
    yeh) as ي (U+064A, Arabic yeh) — subtly wrong Persian, the exact failure this project exists to
    avoid. The description is therefore ASCII.
@@ -62,8 +64,9 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
 
 ## Other decisions
 
-- **Shortcut targets `wscript.exe`** with the `.vbs` path as an argument, rather than pointing
-  `TargetPath` at the `.vbs` directly — more reliable across shell configurations.
+- **Shortcut targets `pythonw.exe`** with `server.py --cwd <project>` as its arguments
+  (2026-08-07). It used to target `wscript.exe` + a generated `run.vbs`; see rule 2 for why that
+  whole layer is gone. Read it back with `Shell.Application`, never `WScript.Shell`.
 - **Absolute interpreter path**, always. `python` on PATH is the Store alias stub, and a PATH
   change from an installer never reaches the already-running shell. `setup.ps1` re-detects the
   interpreter by filesystem path after installing rather than trusting `Get-Command`.
@@ -98,7 +101,7 @@ These are the whole reason M7 is fiddly. All three fail *quietly*.
 |---|---|
 | `setup.ps1` run twice back to back | idempotent, second run clean |
 | deployed tree | server, hook, smoke test, `static/` incl. fonts + vendor, `assets/` |
-| `run.vbs` launch | `pythonw` running, **0 console windows** |
+| shortcut launch | `pythonw` running, **0 console windows** (re-verified 2026-08-07 with the direct `pythonw.exe` target) |
 | Edge | `msedge.exe --app=http://127.0.0.1:<port>/?t=<token>` window opened |
 | close the window | server exited within 16 s, **no orphaned `claude` process** |
 | smoke test | passed — real CLI round-trip through the deployed copy |
@@ -175,6 +178,19 @@ was verified against a *stub* smoke test that exits 1, which the real one never 
 Fixed 2026-08-07: the check now asserts the answer (`PONG` in the `result` body, `is_error` false),
 not the envelope. 10 checks now. **Rule: never gate on an event's arrival when its body carries the
 outcome** — the same class of lie as the control-protocol acks in `wiki/control-protocol.md`.
+Re-run in the same not-logged-in sandbox: FAIL → Persian login steps → «نصب تمام شد».
+
+**The second defect Run A found: the shortcut could not launch anything.** Clicking «کلاد فارسی»
+on the sandbox desktop raised «There is no script engine for file extension ".vbs"». The launcher
+was a generated `run.vbs` executed by `wscript.exe`, and VBScript is deprecated — on current
+Windows images the engine is a Feature-on-Demand that need not be installed. It works on the
+author's PC and on any machine old enough to still carry the engine, which is precisely why seven
+milestones passed over it. `pythonw.exe` is a GUI-subsystem binary that allocates no console by
+itself, which was the VBScript's only job, so the shortcut now targets it directly with
+`server.py --cwd <project>` as arguments. Re-verified on the host: two idempotent installs into a
+test root, `Shell.Application` reads back `pythonw.exe` + the right arguments, the shortcut starts
+the server with **no** console window, Edge opens the app window, and closing it takes down both
+the server and its `claude` child.
 
 ## NOT verified anywhere — still needs a bare machine (M8)
 

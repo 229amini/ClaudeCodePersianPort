@@ -38,7 +38,7 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   injected envelopes, not the person.
 - [parity-chrome.md](parity-chrome.md) — the interrupt control message, slash commands, image
   blocks, statusLine passthrough, and the CLI features deliberately left unbuilt.
-- [packaging.md](packaging.md) — `setup.ps1`/`run.vbs`/shortcut, the three encoding rules that
+- [packaging.md](packaging.md) — `setup.ps1`/shortcut, the encoding rules that
   each silently corrupt Persian, and exactly which install branches are still unproven.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 

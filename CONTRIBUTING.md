@@ -43,7 +43,7 @@ mojibakes in the console.
 | anything in `static/` | `python persian-claude-gui\run_spec_test.py` — must print `PASS — 20/20` | free |
 | `transcript_path()`, session delete, replay | `python persian-claude-gui\test_transcript_path.py` | free |
 | the transport, control requests, the capability mirror | `python persian-claude-gui\smoke_test.py` | **one real subscription turn** |
-| `setup.ps1` / `run.vbs` | `setup.ps1 -DeployRoot <tmp> -ProjectDir <tmp> -ShortcutDir <tmp> -SkipSmokeTest`, twice — it must stay idempotent | free |
+| `setup.ps1` / the shortcut | `setup.ps1 -DeployRoot <tmp> -ProjectDir <tmp> -ShortcutDir <tmp> -SkipSmokeTest`, twice — it must stay idempotent | free |
 
 `smoke_test.py` spends a real turn of the Claude subscription every run. Phase exits, not
 per commit.
@@ -62,9 +62,9 @@ From `wiki/packaging.md`; all three fail quietly, none of them raises:
    $t = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8)
    [IO.File]::WriteAllText($f, $t, (New-Object Text.UTF8Encoding($true)))
    ```
-2. **The generated `run.vbs` must stay UTF-16LE with BOM.** `wscript` reads a BOM-less
-   `.vbs` as ANSI, which mangles the baked-in paths on any machine whose Windows username
-   is not ASCII.
+2. **Do not reintroduce a `.vbs` launcher.** There was one, generated as UTF-16LE with BOM to
+   protect its baked-in paths; on a clean Windows 11 image it failed outright — no script engine
+   for `.vbs`, VBScript being deprecated. The shortcut targets `pythonw.exe` directly now.
 3. **`.lnk` fields are ANSI-lossy.** The shortcut `Description` stays ASCII — written in
    Persian, ی (U+06CC) silently becomes ي (U+064A). The same applies to the *path*:
    `CreateShortcut()`/`Save()` on a Persian filename throws, so setup saves under an ASCII
