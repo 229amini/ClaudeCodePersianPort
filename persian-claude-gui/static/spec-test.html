@@ -236,8 +236,23 @@ check("rule 8: Persian line inside the LTR box resolves RTL",
 check("rule 8: Latin line in the same box stays LTR",
   dirOf(lines9[1]) === "ltr", lines9[1]?.textContent ?? "none");
 
+/* Direction alone was not enough: the container's `text-align: left` inherits
+   into the lines, so an RTL line stayed pinned to the left edge. Anything but
+   a left-forcing value means each line aligns to its own start. */
+check("rule 8: the RTL line aligns to its own start, not the box's left",
+  ["start", "right", "end"].includes(getComputedStyle(lines9[0] ?? document.body).textAlign),
+  getComputedStyle(lines9[0] ?? document.body).textAlign);
+
 check("rule 8: blank line survives as its own line box",
   lines9[2]?.firstElementChild?.tagName === "BR", lines9.length + " lines");
+
+/* Not a BiDi rule, but the same class of silent failure: #log is a column flex
+   box, and details.card sets overflow:hidden, which zeroes a flex item's
+   automatic minimum size. Without flex:none every tool card was crushed to its
+   border the moment the transcript got long enough to scroll. */
+check("tool cards cannot be flex-shrunk out of existence",
+  getComputedStyle(card9 ?? document.body).flexShrink === "0",
+  getComputedStyle(card9 ?? document.body).flexShrink);
 
 const permBox = document.querySelectorAll("#perm-params .param-row .tool-output")[2];
 const permLine = permBox?.firstElementChild;
