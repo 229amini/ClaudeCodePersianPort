@@ -726,7 +726,26 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   padding-block-start: 10px;
 }
 
-.tool-name { font-weight: 500; color: var(--fg); }
+/* The fallback label for a tool with no Persian verb — an identifier the CLI
+   chose, of any length. It ellipses rather than pushing the row to two lines. */
+.tool-name {
+  font-weight: 500;
+  color: var(--fg);
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which MCP server the tool came from: present, but not competing with it. */
+.tool-server {
+  color: var(--fg-muted);
+  font-size: .82em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+}
 
 .tool-output, .diff {
   display: block;
