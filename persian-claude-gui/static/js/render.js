@@ -21,6 +21,7 @@ import {
 import { setBusy, setSlashCommands, noteContext, contextFull } from "./composer.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
+  setEffortState,
 } from "./controls.js";
 
 const FA = window.STRINGS;
@@ -571,6 +572,9 @@ export function renderEvent(ev) {
         if (Array.isArray(ev.info?.commands)) setSlashCommands(ev.info.commands);
       } else if (ev.subtype === "posture") {
         setPostureState(ev.posture, ev.auto_count);
+      } else if (ev.subtype === "effort") {
+        // Read back out of get_settings, never taken from an ack.
+        setEffortState(ev.effort);
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — it
         // replaces the estimate the `result` branch computes below. Only the

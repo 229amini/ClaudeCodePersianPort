@@ -181,6 +181,16 @@
           <span id="model-chip-name" dir="auto"></span>
         </button>
 
+        <!-- Reasoning effort. Hidden unless the CURRENT model advertises
+             supportsEffort — Haiku does not (js/controls.js). -->
+        <button type="button" id="effort-chip" class="chip-btn" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13 2L4.5 13H11l-1 9 8.5-11H12z"/>
+          </svg>
+          <span id="effort-chip-name" dir="auto"></span>
+        </button>
+
         <button type="button" id="posture-chip" class="chip-btn" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

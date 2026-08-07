@@ -156,3 +156,60 @@ for free, no client-side arithmetic.
 `--permission-mode <mode>`, `--session-id <uuid>`, `--fork-session`, `--setting-sources`,
 `--disable-slash-commands`. Spawn flags still matter for the *initial* state; the control requests
 above are for changing it afterwards.
+
+## 6. Reasoning effort: there is no `set_effort`, and the ack is worse than useless (2026-08-07)
+
+Measured on **2.1.223**. The full control-subtype list, read out of the bundle:
+
+```
+set_model, set_permission_mode, interrupt, set_max_thinking_tokens, rename_session,
+set_color, mcp_authenticate, mcp_oauth_callback_url, mcp_reconnect,
+apply_flag_settings, side_question, reload_plugins
+```
+
+No effort subtype. The only route is **`apply_flag_settings {settings:{effortLevel: …}}`**, whose
+ack is `{}` — it reports `success` for a level it silently drops, exactly like §5 records for
+garbage keys.
+
+The honest read-back is **`get_settings`** (a real subtype, not in the list above — the SDK issues
+it). Its response has three parts, and only one of them is true:
+
+| key | what it is |
+|---|---|
+| `sources[0]` | the user's real `~/.claude/settings.json` — **never written** by this route |
+| `sources[1]` | a session-scoped overlay `apply_flag_settings` creates |
+| `applied.effort` | the last level **requested**. Not what is in force. Lies. |
+| `effective.effortLevel` | **the merged truth. Use this one.** |
+
+### The two lists disagree, and the CLI is on both sides of it
+
+`initialize` advertises `supportedEffortLevels: ["low","medium","high","xhigh","max"]` per model
+(Haiku advertises no effort support at all). The settings schema is
+`effortLevel: enum(["low","medium","high","xhigh"]).catch(undefined)`. So **`max` is offered by the
+CLI and refused by the CLI**: applying it acks success, `applied.effort` says `"max"`, and
+`effective.effortLevel` falls back to whatever the user's own settings.json says.
+
+Measured through `/api/effort`:
+
+```
+low  -> {"ok": true,  "effort": "low"}
+high -> {"ok": true,  "effort": "high"}
+max  -> {"ok": false, "effort": "xhigh"}     <- reverted to the user's own value
+wat  -> {"ok": false, "effort": "xhigh"}
+```
+
+`~/.claude/settings.json` was byte-identical before and after all four. That matters: the CLI's own
+`/effort` command **does** persist to userSettings (`Ni("userSettings", {effortLevel})`), so sending
+`/effort high` as message text would edit the colleague's real settings. `apply_flag_settings` does
+not. That difference is the only reason this route is acceptable — see the project rule that the
+wrapper never edits the user's settings.
+
+### Consequences for the wrapper
+
+- `apply_flag_settings` is **deliberately not in `CONTROL_ALLOWED`**. Its params are a free-form
+  settings blob, so whitelisting the subtype would let the page write any setting, permissions
+  included. `/api/effort` takes one level string instead.
+- The chip repaints from `effective`, never from the ack, and remembers a refused level so the user
+  meets that dead end at most once. Nothing about `max` is hardcoded — if a later CLI accepts it,
+  it starts working with no change here.
+- Gate: `smoke_test.py` asserts both halves (`low` sticks, `max` does not, settings.json untouched).

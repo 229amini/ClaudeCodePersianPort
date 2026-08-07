@@ -149,6 +149,26 @@ print("POST /api/posture ask ->", post("/api/posture", {"posture": "ask"}))
 back_ok = wait_for("wrapper/posture",
                    lambda e: e.get("posture") == "ask").get("posture") == "ask"
 
+# Reasoning effort. The point of this check is that apply_flag_settings acks an
+# EMPTY object for a level it then ignores, so only the get_settings read-back
+# means anything -- /api/effort reports that, never the ack. "max" is the live
+# proof: every model advertises it in supportedEffortLevels and the settings
+# schema (low/medium/high/xhigh) drops it. If this check ever starts failing on
+# "max", the CLI grew a fifth level and the chip will pick it up on its own.
+#
+# It must also never write the user's REAL settings file. The CLI's own /effort
+# persists to userSettings; apply_flag_settings only creates a session overlay,
+# and that difference is the whole reason this route is acceptable at all.
+user_settings = Path.home() / ".claude" / "settings.json"
+settings_before = user_settings.read_bytes() if user_settings.exists() else b""
+
+effort_low = post("/api/effort", {"level": "low"})
+effort_bad = post("/api/effort", {"level": "max"})
+print("POST /api/effort low ->", effort_low, " max ->", effort_bad)
+effort_ok = (effort_low.get("ok") and effort_low.get("effort") == "low"
+             and not effort_bad.get("ok") and effort_bad.get("effort") != "max")
+settings_kept = (user_settings.read_bytes() if user_settings.exists() else b"") == settings_before
+
 # Switch the model BEFORE the turn, so the turn itself is the proof.
 print("POST /api/control set_model haiku ->",
       post("/api/control", {"subtype": "set_model", "params": {"model": "haiku"}}))
@@ -214,6 +234,8 @@ checks = {
     "posture returns to the cautious one": back_ok,
     "system/status echoes the mode": echo_ok,
     "set_model applied to the next turn": model_ok,
+    "effort reports what is in force, not what was asked": effort_ok,
+    "effort never writes the user's own settings.json": settings_kept,
     "usage reported by the CLI": usage_ok,
     "session titled from its first prompt": title_ok,
 }
