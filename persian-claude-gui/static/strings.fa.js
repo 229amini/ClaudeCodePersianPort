@@ -142,6 +142,19 @@ window.FA = {
   modelTitle: "مدل",
   modelDefault: "مدل پیش‌فرض",
   modelFailed: "تغییر مدل ممکن نشد",
+  /* Reasoning effort. The CLI names the levels; these are their Persian
+     labels. A level not listed here falls back to its own name — the CLI's set
+     changes between versions and a wrong guess is worse than English. */
+  effortTitle: "میزان تفکر",
+  effortLevels: {
+    low: "کم",
+    medium: "متوسط",
+    high: "زیاد",
+    xhigh: "خیلی زیاد",
+    max: "بیشینه",
+  },
+  effortRefused: "این میزان روی این نسخه اعمال نمی‌شود",
+
   postureTitle: "سطح اجازه",
   postureAsk: "محتاط",
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",

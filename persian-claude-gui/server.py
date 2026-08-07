@@ -108,6 +108,11 @@ CONTROL_ALLOWED = frozenset({
     "set_model", "set_permission_mode", "set_max_thinking_tokens",
     "rename_session", "get_context_usage", "get_usage",
 })
+# `apply_flag_settings` is deliberately NOT in that list even though the effort
+# chip needs it. Its params are a free-form settings blob, so whitelisting the
+# subtype would let the page write ANY setting -- permissions included -- which
+# is the whole reason CONTROL_ALLOWED is a whitelist. /api/effort takes one
+# level string instead. See ClaudeSession.set_effort().
 
 # How long a control_request may take before the caller gives up. These are
 # local round-trips on an open pipe, so anything slow means trouble.
@@ -1253,6 +1258,54 @@ class ClaudeSession:
         # or reconnects later gets it out of Hub history instead of guessing.
         if self.broker:
             self.broker.publish_posture()
+        self.publish_effort()
+
+    # --- reasoning effort ---------------------------------------------------
+    #
+    # `initialize` advertises supportedEffortLevels PER MODEL, but there is no
+    # set_effort control subtype on this build -- the only route is
+    # apply_flag_settings, whose ack is an empty object and means nothing
+    # (measured: a garbage level acks "success" and changes nothing).
+    #
+    # The honest read-back is get_settings().response.effective.effortLevel:
+    #
+    #   sources[0]  the user's real ~/.claude/settings.json  -- never written
+    #   sources[1]  a session-scoped overlay apply_flag_settings creates
+    #   applied     the last level REQUESTED, not the one in force
+    #   effective   the merged truth
+    #
+    # This matters because the two lists disagree: models advertise five levels
+    # including "max", while the settings schema is a four-value enum
+    # (low/medium/high/xhigh) that silently drops anything else and falls back
+    # to the user's own value. So "max" is offered by the CLI and refused by the
+    # CLI. Never report success from the ack -- only from effective.
+
+    def effort(self) -> str | None:
+        response = self.control("get_settings", timeout=10.0)
+        if response.get("subtype") != "success":
+            return None
+        effective = ((response.get("response") or {}).get("effective") or {})
+        level = effective.get("effortLevel")
+        return level if isinstance(level, str) else None
+
+    def set_effort(self, level: str) -> str | None:
+        """Apply a level and return what is ACTUALLY in force afterwards.
+
+        The caller compares: a returned level that is not the requested one
+        means the CLI refused it, quietly, with a cheerful success.
+        """
+        self.control("apply_flag_settings", timeout=10.0,
+                     settings={"effortLevel": level})
+        return self.effort()
+
+    def publish_effort(self, level: str | None = None) -> None:
+        try:
+            current = level if level is not None else self.effort()
+        except RuntimeError:
+            return   # the process went away; nothing to report
+        if current:
+            self.hub.publish({"type": "wrapper", "subtype": "effort",
+                              "effort": current})
 
     def stop(self) -> None:
         if not self.proc or self.proc.poll() is not None:
@@ -1463,6 +1516,23 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK,
                             {"ok": True, "response": response.get("response") or {}})
+        elif parsed.path == "/api/effort":
+            # One level string, never a settings blob: apply_flag_settings takes
+            # arbitrary settings and must not be reachable from the page.
+            # The reply carries what is ACTUALLY in force, which is not always
+            # what was asked for -- see ClaudeSession.set_effort().
+            level = (body.get("level") or "").strip()
+            if not level or not level.isalpha():
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad level"})
+                return
+            try:
+                current = self.session.set_effort(level)
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self.session.publish_effort(current)
+            self._send_json(HTTPStatus.OK,
+                            {"ok": current == level, "effort": current})
         elif parsed.path == "/api/posture":
             # The approval posture is two settings at once (the CLI's permission
             # mode and the wrapper's auto-approve flag), so it is one endpoint

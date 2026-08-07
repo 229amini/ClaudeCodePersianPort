@@ -24,6 +24,8 @@ const ui = {
   postureChip: document.getElementById("posture-chip"),
   postureName: document.getElementById("posture-chip-name"),
   autoChip: document.getElementById("auto-chip"),
+  effortChip: document.getElementById("effort-chip"),
+  effortName: document.getElementById("effort-chip-name"),
 };
 
 /* The wrapper's three postures. The server maps each to a CLI permission mode
@@ -71,6 +73,8 @@ function paintModel() {
   const entry = modelEntry();
   ui.modelName.textContent = entry?.displayName ?? resolved ?? FA.modelDefault;
   ui.modelChip.title = entry?.description ?? "";
+  // The effort chip belongs to the model: switching to Haiku must retire it.
+  paintEffort();
 }
 
 async function pickModel(item) {
@@ -87,6 +91,72 @@ async function pickModel(item) {
     paintModel();
     console.error("set_model failed", err);
     openMenu("model", [{ title: FA.modelFailed }]);
+  }
+}
+
+/* --- reasoning effort ------------------------------------------------------
+
+   Mirrored like the model list: the levels come from the CURRENT model's
+   `supportedEffortLevels`, and a model that does not advertise `supportsEffort`
+   (Haiku) hides the chip entirely.
+
+   The write path is the one that needed measuring. There is no set_effort
+   control subtype; the only route is apply_flag_settings, and its ack is an
+   empty object that reports success for a level the CLI then ignores. So the
+   server applies and reads back, and this repaints from what came back rather
+   than from what was asked for. The two lists genuinely disagree — models
+   advertise "max", the settings schema does not accept it — so the refusal
+   path here is a real path, not defensive padding. */
+
+let effort = null;
+
+/* Levels the CLI advertised and then refused. Learned rather than hardcoded:
+   "max" is in every model's supportedEffortLevels on 2.1.223 and is not in the
+   settings schema, but that is the CLI's bug to fix, and a hardcoded exclusion
+   here would still be excluding it long after it starts working. The user meets
+   the dead end once. */
+const refused = new Set();
+
+export function setEffortState(level) {
+  if (level) effort = level;
+  paintEffort();
+}
+
+function effortLevels() {
+  const entry = modelEntry();
+  const levels = entry?.supportsEffort && Array.isArray(entry.supportedEffortLevels)
+    ? entry.supportedEffortLevels : [];
+  return levels.filter((level) => !refused.has(level));
+}
+
+function effortLabel(level) {
+  return FA.effortLevels?.[level] ?? level;
+}
+
+function paintEffort() {
+  if (!ui.effortChip) return;
+  const levels = effortLevels();
+  ui.effortChip.hidden = !levels.length || !effort;
+  if (ui.effortChip.hidden) return;
+  ui.effortName.textContent = effortLabel(effort);
+  ui.effortChip.title = FA.effortTitle;
+}
+
+async function pickEffort(item) {
+  closeMenu();
+  try {
+    const res = await api("/api/effort", { level: item.key });
+    // `effort` is what is really in force. A refused level comes back as the
+    // PREVIOUS one with ok:false — repaint to the truth and say so, rather
+    // than leaving a chip that claims a setting the CLI dropped.
+    if (res.effort) setEffortState(res.effort);
+    if (!res.ok) {
+      refused.add(item.key);
+      openMenu("effort", [{ title: FA.effortRefused }]);
+    }
+  } catch (err) {
+    console.error("set effort failed", err);
+    openMenu("effort", [{ title: FA.effortRefused }]);
   }
 }
 
@@ -139,7 +209,21 @@ async function pickPosture(item) {
 
 /* --- the shared popup ------------------------------------------------------ */
 
-function openMenu(owner, items, onPick) {
+/* The popup is pinned to the composer's start edge in CSS, which was fine while
+   two chips shared it and merely odd with three: every picker opened in the
+   same place, nowhere near the chip that was pressed. Line its start edge up
+   with the chip's instead. Physical `right` on purpose — the CSS `inset`
+   shorthand it overrides is physical too, and the shell is dir="rtl". */
+function positionMenu(anchor) {
+  const parent = ui.menu.offsetParent;
+  if (!anchor || !parent) return;
+  const box = parent.getBoundingClientRect();
+  const chip = anchor.getBoundingClientRect();
+  const offset = box.right - chip.right;
+  ui.menu.style.right = Math.max(0, Math.min(offset, box.width - 40)) + "px";
+}
+
+function openMenu(owner, items, onPick, anchor) {
   if (!ui.menu) return;
   ui.menu.replaceChildren();
   for (const item of items) {
@@ -167,18 +251,19 @@ function openMenu(owner, items, onPick) {
   }
   ui.menu.dataset.owner = owner;
   ui.menu.hidden = false;
+  positionMenu(anchor ?? document.getElementById(owner + "-chip"));
 }
 
 function closeMenu() {
   if (ui.menu) ui.menu.hidden = true;
 }
 
-function toggleMenu(owner, items, onPick) {
+function toggleMenu(owner, items, onPick, anchor) {
   if (!ui.menu.hidden && ui.menu.dataset.owner === owner) {
     closeMenu();
     return;
   }
-  openMenu(owner, items, onPick);
+  openMenu(owner, items, onPick, anchor);
 }
 
 /* --- init ------------------------------------------------------------------ */
@@ -195,6 +280,15 @@ export function initControls() {
       note: m.description || "",
       selected: m === current,
     })), pickModel);
+  });
+
+  ui.effortChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu("effort", effortLevels().map((level) => ({
+      key: level,
+      title: effortLabel(level),
+      selected: level === effort,
+    })), pickEffort);
   });
 
   ui.postureChip.addEventListener("click", (e) => {
