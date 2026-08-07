@@ -23,6 +23,7 @@ window.FA = {
   toolResult: "نتیجه",
   todos: "کارها",
   rawEvent: "رویداد ناشناخته",
+  diffTruncated: "{n} خط دیگر نشان داده نشد",
 
   /* What each CLI tool is called in the transcript. The audience is
      non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that

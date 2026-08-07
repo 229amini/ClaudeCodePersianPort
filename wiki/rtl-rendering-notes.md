@@ -169,3 +169,42 @@ not deprecated. Plan §B-2 explicitly permits either.
 Both survive the 2026-08-05 cascade-layer restructure untouched — `!important` beats normal
 declarations in any layer, and trap 2 is why every visual rule shares one `components` layer.
 See `frontend-modules.md`.
+
+## A fourth defect the spec gate could not see: "+2 −1" (2026-08-07)
+
+The diff count on a collapsed tool row rendered as **`1- 2+`**. `+` and `−` are BiDi-neutral, and
+in the RTL summary row they reordered to the far side of their own digits — each token individually
+flipped, so the row read backwards in a way that looks like a typo rather than a layout bug.
+
+What makes it worth recording is that the obvious check **cannot catch it**:
+
+```js
+stat.querySelector(".d-add").textContent === "+4"   // passes. Always.
+```
+
+`textContent` is logical order. It says `+4` no matter how the glyphs land on screen. The gate had
+this exact assertion and was green while the UI was wrong. Only the computed style sees it:
+
+```js
+dirOf(stat) === "ltr" && getComputedStyle(stat).unicodeBidi === "isolate"
+```
+
+Fix is spec rule 2 at the smallest possible scope — `direction: ltr; unicode-bidi: isolate` on
+`.diff-stat`, not on the row around it. The general lesson, and it applies to every future check
+here: **an assertion on text content is blind to every BiDi defect there is.** If a check does not
+read a computed style or a measured geometry, it is not a rendering check.
+
+## Diffs render in `.diff`, and rule 8 moved with them
+
+`Edit`/`Write`/`MultiEdit` no longer print `old_string`/`new_string`/`content` as parameter blobs —
+they render a real LCS line diff (`render.js` `lineDiff`), in both the tool card and the permission
+dialog, through one `renderToolDetail()` so the thing being approved is the thing being shown.
+
+Consequences for anyone touching spec cases 9 and 10: they assert rule 8 against `.diff .dt` now,
+not `.param-row .tool-output`. That is the same rule in a different element — an LTR container
+whose lines each carry `dir="auto"` — and the content under test is the identical
+Persian/Latin/blank mixture. `.tool-output` is still covered by cases 11–12 (Bash output), which is
+why both containers stay under test.
+
+Line numbers count **within the hunk**, not within the file. An `Edit`'s `old_string` is a fragment
+and the CLI never says where it sits, so numbering from the file's start would be a confident lie.

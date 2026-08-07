@@ -1204,6 +1204,46 @@ button.round {
   padding: 0;
 }
 
+/* --- diffs -------------------------------------------------------------------
+   .diff already carries direction:ltr + isolate + monospace + its own scroll box
+   from the spec's base CSS; this is only the rows inside it. Colour is never the
+   only signal — the +/− gutter says the same thing without it. */
+.diff { padding: 6px 0; }
+.dl {
+  display: grid;
+  grid-template-columns: 3ch 3ch 2ch 1fr;
+  gap: 0 4px;
+  padding-inline: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dl.add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.dl.del { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.dl.gap { height: 8px; }
+.dn { color: var(--fg-muted); opacity: .55; text-align: right; user-select: none; }
+.dm { user-select: none; font-weight: 700; }
+.dl.add .dm { color: var(--ok); }
+.dl.del .dm { color: var(--danger); }
+/* text-align:start so a Persian line in a diff aligns to its own side — the
+   box is LTR, the line is not (spec rule 8). */
+.dt { text-align: start; min-width: 0; }
+
+/* "+2 −1" sits in an RTL summary row, and + and − are BiDi-neutral: without an
+   isolate they swap to the far side of their own digits and the row reads
+   "1- 2+". Spec rule 2, in the smallest possible token. */
+.diff-stat {
+  display: inline-flex;
+  gap: 5px;
+  font-size: .85em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.d-add { color: var(--ok); }
+.d-del { color: var(--danger); }
+
+/* Inside the permission dialog the box already has one background. */
+#perm-params .diff { background: none; padding: 0; max-height: 18em; }
+
 /* --- context notice ----------------------------------------------------------
    Sits above the composer, in the flow — not a floating toast. This is a
    decision the user has to make before the conversation can continue, and a

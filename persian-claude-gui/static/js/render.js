@@ -163,7 +163,17 @@ function toolSummary(name, toolInput) {
     target.classList.add("tool-target");
     target.title = String(hint);
     nodes.push(target);
-  } else if (Array.isArray(toolInput?.questions)) {
+  }
+  // «+12 −3» on the collapsed row: the size of the change, without opening it.
+  // Latin digits — this abuts a technical value (spec rule 5).
+  const diff = diffOf(name, toolInput);
+  if (diff && (diff.added || diff.removed)) {
+    const stat = label("", "diff-stat");
+    if (diff.added) stat.append(label("+" + diff.added, "d-add"));
+    if (diff.removed) stat.append(label("−" + diff.removed, "d-del"));
+    nodes.push(stat);
+  }
+  if (!hint && Array.isArray(toolInput?.questions)) {
     // A question has no path to name, so the row carries its header. NOT
     // through pathEl: the header is prose the model wrote and may be Persian,
     // and forcing it LTR is the spec's first trap.
@@ -197,6 +207,143 @@ export function renderParamRows(toolInput) {
       : JSON.stringify(value, null, 2)));
     row.append(box);
     frag.append(row);
+  }
+  return frag;
+}
+
+/* --- diffs -----------------------------------------------------------------
+
+   An Edit carries old_string/new_string, a Write carries content. Rendering
+   those as two param blobs makes the reader diff them by eye, which is exactly
+   the job a computer should do — and the person doing it here is the one being
+   asked to APPROVE the change.
+
+   The line numbers count within the hunk, not within the file: an Edit's
+   old_string is a fragment and the CLI never says where it sits. Numbering it
+   from the file's start would be a confident lie.
+
+   `.diff` already exists in the spec's base CSS (LTR + isolate + monospace +
+   its own scroll box) — this fills it rather than inventing a container. */
+
+const DIFF_MAX_ROWS = 400;      // beyond this the box is scrolled, not read
+const DIFF_MAX_CELLS = 250000;  // the LCS table is O(n·m); a big Write skips it
+
+/* Which input keys the diff already speaks for, so they are not ALSO printed
+   underneath it as raw parameters. */
+const DIFF_KEYS = {
+  Write: ["content"],
+  Edit: ["old_string", "new_string"],
+  MultiEdit: ["edits"],
+};
+
+function lineDiff(beforeText, afterText) {
+  const a = beforeText ? beforeText.split("\n") : [];
+  const b = afterText ? afterText.split("\n") : [];
+  if (!a.length || !b.length || a.length * b.length > DIFF_MAX_CELLS) {
+    // Nothing to align — one side is empty (a Write) or the pair is big enough
+    // that the table costs more than the alignment is worth.
+    return [...a.map((text) => ({ type: "del", text })),
+            ...b.map((text) => ({ type: "add", text }))];
+  }
+
+  // Standard LCS length table, filled from the end so the walk below is
+  // forward — which keeps the output in file order without a reverse.
+  const n = a.length, m = b.length, w = m + 1;
+  const dp = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * w + j] = a[i] === b[j]
+        ? dp[(i + 1) * w + j + 1] + 1
+        : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+    }
+  }
+
+  const rows = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) rows.push({ type: "same", text: a[i++] }), j++;
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) rows.push({ type: "del", text: a[i++] });
+    else rows.push({ type: "add", text: b[j++] });
+  }
+  while (i < n) rows.push({ type: "del", text: a[i++] });
+  while (j < m) rows.push({ type: "add", text: b[j++] });
+  return rows;
+}
+
+/* The before/after pairs a tool call implies, or null when it implies none.
+   Unlisted tools fall through to plain parameters — never guess a shape. */
+function diffPairs(name, input) {
+  if (!input) return null;
+  if (name === "Write" && typeof input.content === "string") {
+    return [{ before: "", after: input.content }];
+  }
+  if (name === "Edit"
+      && typeof input.old_string === "string" && typeof input.new_string === "string") {
+    return [{ before: input.old_string, after: input.new_string }];
+  }
+  if (name === "MultiEdit" && Array.isArray(input.edits)) {
+    return input.edits
+      .filter((e) => typeof e?.old_string === "string")
+      .map((e) => ({ before: e.old_string, after: e.new_string ?? "" }));
+  }
+  return null;
+}
+
+export function diffOf(name, input) {
+  const pairs = diffPairs(name, input);
+  if (!pairs?.length) return null;
+  const rows = [];
+  for (const pair of pairs) {
+    if (rows.length) rows.push({ type: "gap" });
+    rows.push(...lineDiff(pair.before, pair.after));
+  }
+  return {
+    rows,
+    added: rows.filter((r) => r.type === "add").length,
+    removed: rows.filter((r) => r.type === "del").length,
+  };
+}
+
+function renderDiff(diff) {
+  const box = document.createElement("div");
+  box.className = "diff";
+  let oldNo = 0, newNo = 0;
+  for (const row of diff.rows.slice(0, DIFF_MAX_ROWS)) {
+    const line = document.createElement("div");
+    line.className = "dl " + row.type;
+    if (row.type === "gap") { box.append(line); continue; }
+    if (row.type !== "add") oldNo++;
+    if (row.type !== "del") newNo++;
+    line.append(label(row.type === "add" ? "" : String(oldNo), "dn"),
+                label(row.type === "del" ? "" : String(newNo), "dn"),
+                label(row.type === "add" ? "+" : row.type === "del" ? "−" : " ", "dm"));
+    // Per LINE, not per box: an Edit whose content is Persian must read
+    // right-to-left inside an LTR diff (spec rule 8, same as tool output).
+    const text = label(row.text, "dt");
+    text.setAttribute("dir", "auto");
+    line.append(text);
+    box.append(line);
+  }
+  if (diff.rows.length > DIFF_MAX_ROWS) {
+    box.append(label(FA.diffTruncated.replace("{n}", diff.rows.length - DIFF_MAX_ROWS),
+                     "dl meta"));
+  }
+  return box;
+}
+
+/* What a tool call shows once opened, and in the permission dialog. ONE
+   function for both so the thing being approved is the thing being shown —
+   the two used to differ, and the dialog's version was the worse one. */
+export function renderToolDetail(name, toolInput) {
+  const frag = document.createDocumentFragment();
+  const diff = diffOf(name, toolInput);
+  if (diff) {
+    frag.append(renderDiff(diff));
+    const rest = { ...toolInput };
+    for (const key of DIFF_KEYS[name] ?? []) delete rest[key];
+    frag.append(renderParamRows(rest));
+  } else {
+    frag.append(renderParamRows(toolInput));
   }
   return frag;
 }
@@ -427,7 +574,7 @@ export function renderEvent(ev) {
             state.toolCards.set(part.id, body);
           } else {
             const { body } = card("tool", toolSummary(part.name, part.input));
-            body.append(renderParamRows(part.input));
+            body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
           }
         }
