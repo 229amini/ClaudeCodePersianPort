@@ -100,6 +100,23 @@ verb and can never have one — the server set is per-machine — so the row fel
 LTR-isolated muted chip) and `.tool-name` finally ellipses instead of overflowing. Fallback only:
 do not add MCP names to `strings.fa.js`.
 
+**2026-08-07 — the user's first real pass over the shell, and plan mode.** Four defects, all of the
+same family: **state that belongs to one session surviving into the next.** The statusline kept the
+previous conversation's cost and context, the model picker kept `chosen`/`resolved` (picking Haiku
+once hid the effort chip forever after — it is the only model without `supportsEffort`), and the
+kebab menu's armed delete never disarmed, so a reopened menu showed a coral confirm slab waiting for
+an accidental click. All now reset at the one choke point every session swap goes through, the
+wrapper's `reset` event. The fifth was layout: `.comp-row` could not wrap, so once a session had a
+posture and an audit counter the row overflowed and pushed the effort chip out of the box.
+
+**«طرح‌ریزی» (plan) is now the fourth posture** — measured, not assumed: `set_permission_mode
+{"mode":"plan"}` is accepted and echoed as `system/status.permissionMode`, asserted in
+`smoke_test.py`. Read `wiki/approval-postures.md` §"Plan mode exits by itself" before touching
+`sync_cli_mode()`: plan is the one mode the CLI leaves **on its own** (when `ExitPlanMode` is
+approved), so the pill is bound to the engine's echo rather than to the user's click. The plan
+itself renders as markdown through `renderToolDetail()`, not as a `plan:` parameter blob. Gates:
+spec **40/40**, smoke **13/13**.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -278,8 +295,8 @@ Two checks exist:
 
 | Check | How | Asserts |
 |---|---|---|
-| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`). 12 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 38 assertions, so `PASS — 38/38` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode. 13 checks, still one subscription turn. |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 40 assertions, so `PASS — 40/40` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

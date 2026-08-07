@@ -3,15 +3,43 @@
 Built 2026-08-05 (rework Phase 4). Read `permission-transport.md` first: approvals arrive in-band
 as `can_use_tool` control requests because the spawn carries `--permission-prompt-tool stdio`.
 
-## The three postures
+## The four postures
 
-The pill in the composer row offers exactly three, and `server.py:POSTURES` is the whole mapping:
+`server.py:POSTURES` is the whole mapping:
 
 | pill | CLI permission mode | wrapper auto-approve |
 |---|---|---|
+| «طرح‌ریزی» `plan` | `plan` | no — the engine refuses edits itself (added 2026-08-07) |
 | «محتاط» `ask` | `default` | no — every non-`AUTO_ALLOW` tool asks |
 | «ویرایش آزاد» `acceptEdits` | `acceptEdits` | no — the CLI stops asking about edits |
 | «خودکار» `autoApprove` | `default` | **yes — the wrapper answers instantly and logs it** |
+
+## Plan mode exits by itself, so the pill has to follow the engine
+
+The other three postures only ever change because the user pressed the pill. `plan` does not: the
+model finishes planning, calls **`ExitPlanMode`**, and — once that call is approved — the CLI drops
+out of `plan` on its own. Nothing the wrapper did caused it, so nothing the wrapper knew would have
+repainted the pill, and it would have sat there reading «طرح‌ریزی» over an engine that was editing
+files. That is the same failure as the dead `PreToolUse` hook: a safety control that looks engaged
+and is not.
+
+`PermissionBroker.sync_cli_mode()` binds the posture to the CLI's own `system/status` echo, which
+is the only honest report of the mode in force (`set_permission_mode`'s ack returns modes nobody
+asked for). `default` is ambiguous — both `ask` and `autoApprove` map to it — so an echo of
+`default` that already agrees with the current posture is ignored, which is how «خودکار» survives
+its own status events.
+
+Two consequences worth knowing:
+
+- **`ExitPlanMode` is not in `AUTO_ALLOW`**, so the plan reaches the permission dialog like any
+  other tool call. Under «خودکار» it is auto-approved with everything else — but «خودکار» and
+  «طرح‌ریزی» are the same control, so the two cannot be on at once.
+- The plan itself is markdown written for a human to read, and `renderToolDetail()` renders it as
+  markdown rather than as a `plan:` parameter blob. Spec gate cases cover both halves.
+
+Measured 2026-08-07 on 2.1.223: `set_permission_mode {"mode":"plan"}` is accepted and echoed back as
+`system/status.permissionMode == "plan"` (`smoke_test.py`, "the CLI accepts plan mode"). The exit
+half is **not** covered by that test — it needs a real planning turn.
 
 ## Why the third one is not a CLI mode
 

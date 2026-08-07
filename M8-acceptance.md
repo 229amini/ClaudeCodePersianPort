@@ -237,8 +237,13 @@ correct behaviour, not a bug. What must hold:
 - [ ] **Model picker** («مدل») lists the models the CLI reported, with the current one marked.
       Pick another, send a turn → the reply actually comes from it (the statusline/model label
       follows the new turn, not the click).
-- [ ] **Posture pill** («سطح اجازه») offers exactly «محتاط» / «ویرایش آزاد» / «خودکار».
+- [ ] **Posture pill** («سطح اجازه») offers exactly «طرح‌ریزی» / «محتاط» / «ویرایش آزاد» / «خودکار».
       Switch to «ویرایش آزاد» → a file edit stops prompting; a shell command still prompts.
+- [ ] Switch to «طرح‌ریزی» and ask for a change → nothing is edited; the turn ends with a plan
+      card («طرح کار») whose body is **formatted text, not a `plan:` parameter blob**. Approve it →
+      the pill leaves «طرح‌ریزی» on its own (it follows the engine, which exits plan mode itself).
+      A pill still reading «طرح‌ریزی» while files are being written is the defect this item exists
+      for.
 - [ ] Switch to «خودکار» → nothing prompts, and the counter «N اقدام خودکار» climbs next to the
       pill. Click it: every auto-approved action is listed. **A silent full-auto mode is a defect** —
       the count and the per-card «اجازه داده شد» note are the whole justification for the posture.

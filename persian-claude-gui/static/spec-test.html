@@ -369,6 +369,30 @@ check("MCP tool row fits on one line, unclipped",
   Math.round(sumMcp?.getBoundingClientRect().height ?? 0) + "px, " +
   sumMcp?.scrollWidth + " vs " + sumMcp?.clientWidth);
 
+/* Plan mode: ExitPlanMode carries the plan the user is being asked to consent
+   to, written as markdown for a human. Through the ordinary parameter path it
+   arrives as a monospace `plan:` blob in an LTR box — which renders, passes any
+   textContent assertion, and nobody reads. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec-plan", name: "ExitPlanMode",
+    input: { plan: "## " + PERSIAN_LINE + "\n\n- گام اول\n- " + PERSIAN_LINE },
+  }] },
+});
+const planCard = [...specLog.querySelectorAll("details.card.tool")].at(-1);
+const planBody = planCard?.querySelector(".plan-body");
+check("a plan is rendered as markdown, not as a parameter blob",
+  !!planBody?.querySelector("h2") && planBody.querySelectorAll("li").length === 2 &&
+  !planCard.querySelector(".param-key"),
+  planBody ? "h2+" + planBody.querySelectorAll("li").length + "li" : "no .plan-body");
+
+check("the plan's Persian resolves RTL and the row names it in Persian",
+  dirOf(planBody?.querySelector("h2")) === "rtl" &&
+  planCard?.querySelector(".tool-verb")?.textContent === window.STRINGS.toolVerbs.ExitPlanMode,
+  (dirOf(planBody?.querySelector("h2")) ?? "none") + " / " +
+  (planCard?.querySelector(".tool-verb, .tool-name")?.textContent ?? "no label"));
+
 /* AskUserQuestion. It arrives over the permission pipe but is a QUESTION, and
    the two failure modes are invisible to a screenshot of a passing run: the
    dialog offering "don't ask again" for a question, and the option labels not

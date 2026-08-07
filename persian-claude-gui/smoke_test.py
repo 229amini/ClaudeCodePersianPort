@@ -145,6 +145,22 @@ echo = wait_for("system/status",
                 lambda e: e.get("permissionMode") == "acceptEdits").get("permissionMode")
 echo_ok = echo == "acceptEdits"
 print("system/status echo:", echo)
+
+# Plan mode is the CLI's own `plan`, so the only question worth asking is
+# whether the engine takes it -- set_permission_mode is documented to ack modes
+# nobody asked for (`manual` -> `default`), so the echo is the assertion, not
+# the ack. The exit half (approving ExitPlanMode drops the CLI back out of plan
+# by itself, and sync_cli_mode has to follow it) needs a real planning turn and
+# is not in this one-turn budget.
+last.pop("system/status", None)
+print("POST /api/posture plan ->", post("/api/posture", {"posture": "plan"}))
+plan_ok = wait_for("wrapper/posture",
+                   lambda e: e.get("posture") == "plan").get("posture") == "plan"
+plan_echo = wait_for("system/status",
+                     lambda e: e.get("permissionMode") == "plan").get("permissionMode")
+print("system/status echo:", plan_echo)
+plan_ok = plan_ok and plan_echo == "plan"
+
 print("POST /api/posture ask ->", post("/api/posture", {"posture": "ask"}))
 back_ok = wait_for("wrapper/posture",
                    lambda e: e.get("posture") == "ask").get("posture") == "ask"
@@ -233,6 +249,7 @@ checks = {
     "posture follows the CLI, not the click": posture_ok,
     "posture returns to the cautious one": back_ok,
     "system/status echoes the mode": echo_ok,
+    "the CLI accepts plan mode": plan_ok,
     "set_model applied to the next turn": model_ok,
     "effort reports what is in force, not what was asked": effort_ok,
     "effort never writes the user's own settings.json": settings_kept,

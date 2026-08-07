@@ -125,7 +125,7 @@ const TOOL_ICONS = {
   Bash: "run", BashOutput: "run", KillShell: "run",
   Glob: "find", Grep: "find",
   WebFetch: "web", WebSearch: "web",
-  Task: "task", Skill: "task", AskUserQuestion: "task",
+  Task: "task", Skill: "task", AskUserQuestion: "task", ExitPlanMode: "task",
 };
 
 function icon(kind) {
@@ -353,6 +353,17 @@ function renderDiff(diff) {
    the two used to differ, and the dialog's version was the worse one. */
 export function renderToolDetail(name, toolInput) {
   const frag = document.createDocumentFragment();
+  // The plan is the whole point of plan mode: it is what the person is being
+  // asked to consent to, and it is written as markdown for a human to read.
+  // Through renderParamRows it would arrive as a monospace `plan:` blob in an
+  // LTR box — technically correct and nobody reads it.
+  if (name === "ExitPlanMode" && typeof toolInput?.plan === "string") {
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant plan-body";
+    wrap.append(renderMarkdown(toolInput.plan));
+    frag.append(wrap);
+    return frag;
+  }
   const diff = diffOf(name, toolInput);
   if (diff) {
     frag.append(renderDiff(diff));

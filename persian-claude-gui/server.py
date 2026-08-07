@@ -124,10 +124,20 @@ CONTROL_TIMEOUT = 15.0
 # nothing left to show the user. The full-auto posture is therefore wrapper-side
 # -- the CLI still asks us, we answer instantly, and every answer is logged.
 POSTURES = {
+    # `plan` is the CLI's own mode: it refuses every edit and every command and
+    # answers with a plan instead, which the model then asks to leave through
+    # ExitPlanMode -- a normal can_use_tool request, so the plan arrives in the
+    # same dialog as any other approval and is NOT in AUTO_ALLOW.
+    "plan": ("plan", False),
     "ask": ("default", False),
     "acceptEdits": ("acceptEdits", False),
     "autoApprove": ("default", True),
 }
+
+# The reverse map, for a mode the CLI changed by itself -- approving a plan
+# leaves `plan` behind. `default` is deliberately absent: two postures map to
+# it, so an echo of `default` is ambiguous and handled in sync_cli_mode().
+CLI_MODE_POSTURE = {"plan": "plan", "acceptEdits": "acceptEdits"}
 
 # Longest session title we ask the CLI to store. Titles render in a narrow
 # sidebar; anything longer is truncated by CSS anyway.
@@ -760,6 +770,25 @@ class PermissionBroker:
             self.auto_log.clear()
             self.session_allow.clear()
 
+    def sync_cli_mode(self, mode: str) -> None:
+        """Follow a permission mode the CLI changed on its own.
+
+        Approving an ExitPlanMode call is the case that matters: the engine
+        leaves `plan` by itself, and a pill still reading «طرح» would be the
+        exact failure this project keeps writing down -- a safety control that
+        looks engaged and is not. Bound to the `system/status` echo, which is
+        the only honest report of the mode in force (the ack for
+        set_permission_mode returns modes nobody asked for).
+        """
+        with self._lock:
+            if POSTURES.get(self.posture, ("", False))[0] == mode:
+                return          # already agrees; also how autoApprove survives
+            posture = CLI_MODE_POSTURE.get(mode) or ("ask" if mode == "default" else None)
+            if posture is None or posture == self.posture:
+                return          # a mode the pill does not model (auto, dontAsk)
+            self.posture, self.auto_approve = posture, POSTURES[posture][1]
+        self.publish_posture()
+
     def set_posture(self, posture: str, auto: bool) -> None:
         with self._lock:
             self.posture = posture
@@ -1022,6 +1051,11 @@ class ClaudeSession:
                 # reason `_after_result` is: it runs someone else's script.
                 threading.Thread(target=self._publish_statusline,
                                  args=(event, generation), daemon=True).start()
+            # The CLI's own echo of the mode in force. It moves without being
+            # asked -- approving a plan leaves `plan` -- so the pill follows it.
+            if etype == "system" and isinstance(event.get("permissionMode"), str):
+                if self.broker:
+                    self.broker.sync_cli_mode(event["permissionMode"])
             if event.get("type") == "result":
                 # Off-thread: the statusline is someone else's script, and the
                 # usage/rename control requests wait on THIS reader thread for
