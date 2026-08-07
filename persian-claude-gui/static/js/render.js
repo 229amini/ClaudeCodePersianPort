@@ -18,7 +18,7 @@ import {
   setChrome, refreshProjects, setCurrentSession,
   showPermission, dismissPermission,
 } from "./chrome.js";
-import { setBusy, setSlashCommands } from "./composer.js";
+import { setBusy, setSlashCommands, noteContext, contextFull } from "./composer.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
 } from "./controls.js";
@@ -32,6 +32,13 @@ const statusline = document.getElementById("statusline");
    and replayed transcripts: "[Request interrupted by user]" and
    "[Request interrupted by user for tool use]". */
 const INTERRUPT_NOTE = /^\s*\[Request interrupted by user/;
+
+/* The CLI's own phrasings for "this conversation will not fit any more", read
+   out of the 2.1.223 bundle. Matched loosely on purpose: the numbers in the
+   real message are interpolated, and the wording drifts across versions —
+   missing it costs a notice, over-matching costs a dismissible one. */
+const CONTEXT_EXHAUSTED =
+  /context (exceeds|limit reached|low)|\/compact or \/clear|prompt is too long/i;
 
 /* --- DOM builders --------------------------------------------------------- */
 
@@ -292,6 +299,10 @@ function meter(pct) {
 
 export function setStatus(patch) {
   Object.assign(state.status, patch);
+  // One number, two readers: the meter below and the notice above the composer.
+  // Driving the notice from here means every source of a context figure (the
+  // CLI's own get_context_usage, and the `result` fallback) feeds it for free.
+  if (typeof patch.context === "number") noteContext(patch.context);
   statusline.replaceChildren();
   const s = state.status;
 
@@ -487,6 +498,11 @@ export function renderEvent(ev) {
         bubble("assistant", FA.stopped).classList.add("meta");
       } else if (ev.is_error) {
         bubble("error", ev.result ?? String(ev.subtype ?? "error"));
+        // The hard limit. The CLI's own wording for it, in English, in a turn
+        // that produced nothing: "Context exceeds the N-token limit by M tokens
+        // — run /compact or /clear to continue." No percentage arrives with it,
+        // so the meter-driven warning above cannot catch this case.
+        if (CONTEXT_EXHAUSTED.test(String(ev.result ?? ""))) contextFull();
       }
       resetTurn();
       setBusy(false);

@@ -128,6 +128,12 @@
 
   <div id="replay-banner" hidden></div>
 
+  <!-- Context is filling up. Built by js/composer.js, because both of its
+       actions are composer actions: /compact goes to the CLI as ordinary text
+       (it is NOT a control subtype on this build) and /clear presses the
+       "new chat" button that already owns that job. -->
+  <div id="context-notice" hidden></div>
+
   <form id="composer">
     <div class="comp-box">
       <!-- Slash-command autocomplete. Populated from system/init's

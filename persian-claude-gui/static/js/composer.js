@@ -5,7 +5,7 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble } from "./render.js";
+import { bubble, label } from "./render.js";
 
 const FA = window.STRINGS;
 
@@ -32,6 +32,98 @@ const base64Of = (blob) => new Promise((resolve, reject) => {
 export function setBusy(busy) {
   if (stopBtn) stopBtn.hidden = !busy;
   document.body.classList.toggle("busy", busy);
+}
+
+/* --- the context notice ----------------------------------------------------
+
+   The conversation fills up and the CLI starts telling the user — in English,
+   in a TUI they never see — to run /compact or /clear. This surfaces the same
+   decision in Persian, as the two buttons that actually do it.
+
+   The trigger is the context percentage the CLI itself measures
+   (get_context_usage, published as wrapper/usage every turn), not a string
+   scraped out of an event: that number already drives the statusline meter, so
+   there is nothing new to keep in sync and nothing to re-measure per CLI
+   version. `contextFull()` is the second door, for the hard limit, where the
+   turn fails outright and a percentage never arrives.
+
+   Both buttons press something that already exists — /compact reaches the CLI
+   as ordinary message text (it is NOT a control subtype, measured), and /clear
+   is the "new chat" button. No third implementation to keep in sync. */
+
+const WARN_AT = 85;      // % of the window used
+const NAG_STEP = 5;      // how much worse it must get before asking again
+
+const notice = document.getElementById("context-notice");
+let dismissedAt = null;
+let lastContext = 0;
+
+export function noteContext(pct) {
+  if (!notice || typeof pct !== "number") return;
+  lastContext = pct;
+  if (pct < WARN_AT) {
+    // A compact or a clear landed — re-arm so the next approach warns again.
+    dismissedAt = null;
+    notice.hidden = true;
+    return;
+  }
+  if (dismissedAt !== null && pct < dismissedAt + NAG_STEP) return;
+  paintNotice(FA.ctxTitle, FA.ctxBody.replace("{n}", Math.round(pct).toLocaleString("fa-IR")));
+}
+
+/* The context window is actually exhausted: the turn came back as an error and
+   there is nothing to do but compact or clear. Not dismissible-into-silence the
+   way the warning is — it re-shows on every failed turn, because it is the only
+   thing standing between the user and a conversation that answers nothing. */
+export function contextFull() {
+  if (!notice) return;
+  dismissedAt = null;
+  paintNotice(FA.ctxTitleFull, FA.ctxBodyFull, true);
+}
+
+function paintNotice(title, body, urgent = false) {
+  notice.replaceChildren();
+  notice.classList.toggle("urgent", urgent);
+
+  const head = document.createElement("div");
+  head.className = "ctx-head";
+  head.setAttribute("dir", "auto");
+  head.append(label(title, "ctx-title"), label(body, "ctx-body"));
+  notice.append(head);
+
+  const row = document.createElement("div");
+  row.className = "ctx-actions";
+  row.append(
+    ctxButton(FA.ctxCompact, FA.ctxCompactNote, "primary", () => {
+      // Through the composer's own submit path, so the user sees the command
+      // echoed like anything else they send. interceptLifecycle deliberately
+      // does not claim /compact.
+      input.value = "/compact";
+      composer.requestSubmit();
+      notice.hidden = true;
+    }),
+    ctxButton(FA.ctxClear, FA.ctxClearNote, "", () =>
+      document.getElementById("btn-new")?.click()),
+  );
+  if (!urgent) {
+    row.append(ctxButton(FA.ctxDismiss, "", "ghost", () => {
+      dismissedAt = lastContext;
+      notice.hidden = true;
+    }));
+  }
+  notice.append(row);
+  notice.hidden = false;
+}
+
+function ctxButton(text, note, cls, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ctx-btn " + cls;
+  button.setAttribute("dir", "auto");
+  button.append(label(text, "ctx-btn-text"));
+  if (note) button.append(label(note, "ctx-btn-note"));
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 /* --- attachments ---------------------------------------------------------- */
