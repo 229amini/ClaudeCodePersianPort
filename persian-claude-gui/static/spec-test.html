@@ -39,6 +39,10 @@
 
 <footer id="statusline"></footer>
 
+<!-- js/composer.js reads this at module-evaluation time; without it the context
+     notice silently no-ops, which is also what a broken one looks like. -->
+<div id="context-notice" hidden></div>
+
 <!-- Case 10 drives the REAL permission dialog through window.renderEvent, so the
      harness needs its markup verbatim from index.html. js/chrome.js reads these
      ids at module-evaluation time; without them showPermission() throws and the
@@ -373,6 +377,38 @@ check("ask: a Latin option label does not flip its Persian description",
 window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
                      request_id: "spec13", tool_use_id: "spec13",
                      decision: "allow" });
+
+/* The context notice. Driven by the number the CLI measures, so the check is
+   "does a usage event above the threshold produce the two actions" — and that
+   the percentage is written in Persian digits, since it is prose (rule 5). */
+const ctx = document.getElementById("context-notice");
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 40 });
+check("context notice stays away while there is room", ctx.hidden);
+
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 91 });
+const ctxBtns = [...ctx.querySelectorAll(".ctx-btn .ctx-btn-text")].map(b => b.textContent);
+check("context notice offers compact AND clear, plus a way out",
+  !ctx.hidden && ctxBtns.length === 3 &&
+  ctxBtns[0] === window.STRINGS.ctxCompact && ctxBtns[1] === window.STRINGS.ctxClear,
+  ctxBtns.join(" | ") || "no actions");
+check("context percentage is written in Persian digits (rule 5)",
+  ctx.querySelector(".ctx-body")?.textContent === "۹۱٪ از حافظه گفتگو استفاده شده است.",
+  ctx.querySelector(".ctx-body")?.textContent ?? "no body");
+
+// A compact or a clear drops the number; the notice must let go by itself.
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 12 });
+check("context notice clears itself once the conversation shrinks", ctx.hidden);
+
+// The hard limit arrives as a failed turn with no percentage at all.
+window.renderEvent({
+  type: "result", subtype: "error_during_execution", is_error: true,
+  result: "Context exceeds the 200000-token limit by 5000 tokens — run /compact or /clear to continue.",
+});
+check("the CLI's own English limit message raises the Persian notice",
+  !ctx.hidden && ctx.classList.contains("urgent") &&
+  ctx.querySelectorAll(".ctx-btn").length === 2,
+  ctx.hidden ? "hidden" : ctx.className + " / " + ctx.querySelectorAll(".ctx-btn").length + " actions");
+ctx.hidden = true;
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

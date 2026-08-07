@@ -1204,6 +1204,51 @@ button.round {
   padding: 0;
 }
 
+/* --- context notice ----------------------------------------------------------
+   Sits above the composer, in the flow — not a floating toast. This is a
+   decision the user has to make before the conversation can continue, and a
+   toast that times out would hide it. */
+#context-notice {
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+#context-notice[hidden] { display: none; }   /* beats the flex above */
+#context-notice.urgent { border-inline-start-color: var(--danger); }
+
+.ctx-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 16rem; min-width: 0; }
+.ctx-title { font-weight: 700; }
+.ctx-body { color: var(--fg-muted); font-size: .9em; }
+
+.ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ctx-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-side);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ctx-btn:hover { border-color: var(--accent); }
+.ctx-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ctx-btn.primary:hover { background: var(--accent-strong); }
+.ctx-btn.ghost { background: none; border-color: transparent; color: var(--fg-muted); }
+.ctx-btn.ghost:hover { color: var(--fg); border-color: var(--border); }
+.ctx-btn-text { font-weight: 600; font-size: .92em; }
+.ctx-btn-note { font-size: .78em; opacity: .8; }
+
 /* --- the dialog in ask mode (AskUserQuestion) --------------------------------
    Same <dialog>, different act: the model is asking, not requesting consent.
    So the tool name, the raw params and the "don't ask again" checkbox all go —

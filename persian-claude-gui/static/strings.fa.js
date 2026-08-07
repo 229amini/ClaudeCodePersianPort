@@ -114,6 +114,19 @@ window.FA = {
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
 
+  /* The conversation is filling up. Two actions, because the CLI's own advice
+     is «/compact or /clear» and they mean different things: compact keeps the
+     thread, clear starts over. The percentage is prose, so Persian digits. */
+  ctxTitle: "گفتگو دارد پر می‌شود",
+  ctxBody: "{n}٪ از حافظه گفتگو استفاده شده است.",
+  ctxTitleFull: "حافظه گفتگو پر شد",
+  ctxBodyFull: "برای ادامه، گفتگو را فشرده کنید یا یکی تازه شروع کنید.",
+  ctxCompact: "فشرده کردن گفتگو",
+  ctxCompactNote: "خلاصه می‌شود و همین گفتگو ادامه پیدا می‌کند",
+  ctxClear: "گفتگوی تازه",
+  ctxClearNote: "از نو شروع می‌شود",
+  ctxDismiss: "بعداً",
+
   slModel: "مدل",
   slFolder: "پوشه",
   slCost: "هزینه",
