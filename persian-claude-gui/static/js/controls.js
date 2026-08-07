@@ -26,6 +26,8 @@ const ui = {
   autoChip: document.getElementById("auto-chip"),
   effortChip: document.getElementById("effort-chip"),
   effortName: document.getElementById("effort-chip-name"),
+  styleChip: document.getElementById("style-chip"),
+  styleName: document.getElementById("style-chip-name"),
 };
 
 /* The wrapper's three postures. The server maps each to a CLI permission mode
@@ -48,7 +50,10 @@ let posture = "ask";
 /* From `initialize`, on every spawn. */
 export function applyInitInfo(info) {
   models = Array.isArray(info?.models) ? info.models : [];
+  styles = Array.isArray(info?.available_output_styles) ? info.available_output_styles : [];
+  if (typeof info?.output_style === "string") style = info.output_style;
   paintModel();
+  paintStyle();
 }
 
 /* system/init reports the model the turn actually ran on. That is the only
@@ -75,7 +80,15 @@ export function setModelResolved(id) {
 export function resetControls() {
   chosen = null;
   resolved = null;
+  // A style picked here lives in the settings overlay `apply_flag_settings`
+  // creates, and that overlay dies with the process — so the new session is
+  // back to whatever the machine's own settings say, and the init_info landing
+  // a moment from now names it. `effort` is deliberately NOT cleared for the
+  // same reason read the other way: its chip reads the merged value, which the
+  // CLI recomputes identically on the next spawn.
+  style = null;
   paintModel();
+  paintStyle();
 }
 
 function modelEntry() {
@@ -174,6 +187,50 @@ async function pickEffort(item) {
   } catch (err) {
     console.error("set effort failed", err);
     openMenu("effort", [{ title: FA.effortRefused }]);
+  }
+}
+
+/* --- output style ----------------------------------------------------------
+
+   Mirrored like everything else here: the set arrives as
+   `initialize.available_output_styles` and the current one as `output_style`.
+   A machine can add its own style file, so the list is never enumerated in
+   strings.fa.js — a name with no Persian label falls back to itself.
+
+   Unlike effort there is no refusal path, because there is nothing to refuse:
+   apply_flag_settings has no schema behind `outputStyle` and echoes any string
+   straight back through both read-backs (measured 2026-08-08). The server
+   rejects a name the CLI never offered; this only ever sends one of those, so
+   a failure here is a transport failure. */
+
+let styles = [];
+let style = null;
+
+export function setOutputStyle(name) {
+  if (name) style = name;
+  paintStyle();
+}
+
+function paintStyle() {
+  if (!ui.styleChip) return;
+  // One entry is not a choice — and every build has at least "default".
+  ui.styleChip.hidden = styles.length < 2 || !style;
+  if (ui.styleChip.hidden) return;
+  ui.styleName.textContent = FA.styleNames?.[style] ?? style;
+  ui.styleChip.title = FA.styleTitle;
+}
+
+async function pickStyle(item) {
+  closeMenu();
+  try {
+    const res = await api("/api/output-style", { style: item.key });
+    // What is in force, read back out of get_settings — never the ack, which
+    // is an empty object for a style the CLI may have dropped.
+    if (res.style) setOutputStyle(res.style);
+    if (!res.ok) throw new Error(res.error || "output style refused");
+  } catch (err) {
+    console.error("set output style failed", err);
+    openMenu("style", [{ title: FA.styleFailed }]);
   }
 }
 
@@ -306,6 +363,15 @@ export function initControls() {
       title: effortLabel(level),
       selected: level === effort,
     })), pickEffort);
+  });
+
+  ui.styleChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu("style", styles.map((name) => ({
+      key: name,
+      title: FA.styleNames?.[name] ?? name,
+      selected: name === style,
+    })), pickStyle);
   });
 
   ui.postureChip.addEventListener("click", (e) => {

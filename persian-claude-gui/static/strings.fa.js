@@ -157,6 +157,17 @@ window.FA = {
     max: "بیشینه",
   },
   effortRefused: "این میزان روی این نسخه اعمال نمی‌شود",
+  /* Output styles. The CLI advertises the set — «default» plus whatever style
+     files the machine has — so a name not listed here falls back to itself,
+     exactly like the effort levels and the MCP server names. */
+  styleTitle: "لحن پاسخ",
+  styleNames: {
+    default: "پیش‌فرض",
+    Proactive: "پیش‌دستانه",
+    Explanatory: "توضیحی",
+    Learning: "آموزشی",
+  },
+  styleFailed: "تغییر لحن پاسخ ممکن نشد",
 
   postureTitle: "سطح اجازه",
   posturePlan: "طرح‌ریزی",

@@ -21,7 +21,7 @@ import {
 import { setBusy, setSlashCommands, noteContext, contextFull } from "./composer.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
-  setEffortState, resetControls,
+  setEffortState, setOutputStyle, resetControls,
 } from "./controls.js";
 
 const FA = window.STRINGS;
@@ -160,6 +160,20 @@ function mcpName(name) {
   return m && { server: m[1], tool: m[2] };
 }
 
+/* Subagents, from `initialize.agents` — [{name, description, model?}]. Like the
+   MCP servers the set is per-machine (project agents, plugins), so it can never
+   live in strings.fa.js. There is no control subtype that PICKS one — the model
+   dispatches them itself — so this is a label, not a picker: it lets a Task row
+   say which agent ran instead of only «کار فرعی». */
+const agents = new Map();   // name -> description
+
+export function setAgents(list) {
+  agents.clear();
+  for (const agent of Array.isArray(list) ? list : []) {
+    if (agent?.name) agents.set(agent.name, agent.description || "");
+  }
+}
+
 function toolSummary(name, toolInput) {
   const verb = FA.toolVerbs?.[name];
   const mcp = verb ? null : mcpName(name);
@@ -172,13 +186,17 @@ function toolSummary(name, toolInput) {
     srv.classList.add("tool-server");
     nodes.push(srv);
   }
-  // The one parameter that identifies the call, LTR-isolated.
+  // The one parameter that identifies the call, LTR-isolated. Task and Skill
+  // name no file at all, so the agent or skill they dispatch is what tells the
+  // rows apart — without it every subagent is the same «کار فرعی» line.
   const hint = toolInput?.file_path ?? toolInput?.path ?? toolInput?.command
-            ?? toolInput?.pattern ?? toolInput?.url;
+            ?? toolInput?.pattern ?? toolInput?.url
+            ?? toolInput?.subagent_type ?? toolInput?.skill;
   if (hint) {
     const target = pathEl(targetText(hint));
     target.classList.add("tool-target");
-    target.title = String(hint);
+    // What an agent IS, when the CLI told us — otherwise the value itself.
+    target.title = agents.get(hint) || String(hint);
     nodes.push(target);
   }
   // «+12 −3» on the collapsed row: the size of the change, without opening it.
@@ -562,6 +580,9 @@ export function renderEvent(ev) {
         // The model this turn actually ran on: the only real confirmation that
         // a set_model took effect (its own ack is empty).
         setModelResolved(ev.model);
+        // Same class of evidence for the output style: this is the CLI naming
+        // what the turn ran under, not us reading back our own write.
+        setOutputStyle(ev.output_style);
       } else if (ev.subtype === "status" && ev.permissionMode) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.
@@ -759,6 +780,10 @@ export function renderEvent(ev) {
         // (wiki/control-protocol.md §1). Richer than system/init.
         applyInitInfo(ev.info);
         if (Array.isArray(ev.info?.commands)) setSlashCommands(ev.info.commands);
+        setAgents(ev.info?.agents);
+      } else if (ev.subtype === "output_style") {
+        // Published after a change only; the spawn value rode in on init_info.
+        setOutputStyle(ev.style);
       } else if (ev.subtype === "posture") {
         setPostureState(ev.posture, ev.auto_count);
       } else if (ev.subtype === "effort") {

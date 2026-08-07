@@ -10,6 +10,7 @@ import base64
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -128,6 +129,39 @@ if pending:
     broker2.respond(pending[0], "allow", False, "Write", answers="not-a-dict")
 thread2.join(timeout=5)
 check("a non-dict answers payload is dropped", holder2.get("r", {}).get("answers") is None)
+
+print("session_meta: opening a session must not reorder the sidebar")
+# The exact line shapes the CLI writes at SPAWN, before a word is exchanged --
+# plus the isMeta `user` line a SessionStart hook produces. If any of these
+# counted, clicking a session would bump it to the top of the list.
+OPEN_ONLY = [
+    '{"type":"mode","mode":"default","timestamp":"2026-08-08T12:00:00.000Z"}',
+    '{"type":"attachment","attachment":{},"timestamp":"2026-08-08T12:00:00.000Z"}',
+    '{"type":"file-history-snapshot","timestamp":"2026-08-08T12:00:00.000Z"}',
+    '{"type":"user","isMeta":true,"message":{"content":"hook output"},'
+    '"timestamp":"2026-08-08T12:00:00.000Z"}',
+]
+SPOKEN = ('{"type":"user","message":{"content":[{"type":"text","text":"سلام"}]},'
+          '"timestamp":"2026-08-01T09:00:00.000Z"}')
+
+with tempfile.TemporaryDirectory() as tmp:
+    transcript = Path(tmp) / "s.jsonl"
+    transcript.write_text("\n".join([SPOKEN, *OPEN_ONLY]) + "\n", encoding="utf-8")
+    first, _, spoken = server.session_meta(transcript)
+    check("the first prompt still reads", first == "سلام")
+    check("spawn-only lines do not count as activity",
+          spoken == server.iso_epoch("2026-08-01T09:00:00.000Z"))
+    # And the value it replaces really would have moved: mtime is now-ish.
+    check("mtime would have said otherwise",
+          transcript.stat().st_mtime - spoken > 3600)
+
+    empty = Path(tmp) / "e.jsonl"
+    empty.write_text("\n".join(OPEN_ONLY) + "\n", encoding="utf-8")
+    check("a transcript with nothing said falls back to mtime",
+          server.session_meta(empty)[2] is None)
+
+check("Z-suffixed ISO parses", server.iso_epoch("2026-08-01T09:00:00.000Z") > 0)
+check("garbage timestamp is dropped", server.iso_epoch("not-a-time") is None)
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)

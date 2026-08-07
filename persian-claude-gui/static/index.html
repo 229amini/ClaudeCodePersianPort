@@ -191,6 +191,17 @@
           <span id="effort-chip-name" dir="auto"></span>
         </button>
 
+        <!-- Output style. The set comes from `initialize.available_output_styles`
+             and is per-machine (a user can drop in their own), so nothing here
+             is hardcoded; hidden unless the CLI offers more than one. -->
+        <button type="button" id="style-chip" class="chip-btn" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span id="style-chip-name" dir="auto"></span>
+        </button>
+
         <button type="button" id="posture-chip" class="chip-btn" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

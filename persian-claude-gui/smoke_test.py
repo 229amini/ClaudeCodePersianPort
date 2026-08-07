@@ -183,6 +183,25 @@ effort_bad = post("/api/effort", {"level": "max"})
 print("POST /api/effort low ->", effort_low, " max ->", effort_bad)
 effort_ok = (effort_low.get("ok") and effort_low.get("effort") == "low"
              and not effort_bad.get("ok") and effort_bad.get("effort") != "max")
+# Output style, the same apply_flag_settings route with the opposite problem:
+# `outputStyle` has NO schema behind it (measured 2026-08-08), so a nonsense
+# name is accepted and echoed back by both read-backs. Nothing downstream can
+# catch a typo, which is why /api/output-style refuses a name the CLI never
+# advertised -- that 400 is the check below. Applied BEFORE the turn, because
+# system/init.output_style is the only proof the CLI itself agreed; reading
+# get_settings would just be reading back our own write.
+styles = info.get("available_output_styles") or []
+style_pick = next((name for name in styles if name != "default"), None)
+style_res = post("/api/output-style", {"style": style_pick}) if style_pick else {}
+print("POST /api/output-style", style_pick, "->", style_res)
+try:
+    post("/api/output-style", {"style": "nonsense-style"})
+    style_guard_ok = False
+except urllib.error.HTTPError as exc:
+    style_guard_ok = exc.code == 400
+print("unadvertised style rejected:", style_guard_ok)
+
+# Covers BOTH apply_flag_settings writes above: neither may touch the real file.
 settings_kept = (user_settings.read_bytes() if user_settings.exists() else b"") == settings_before
 
 # Switch the model BEFORE the turn, so the turn itself is the proof.
@@ -210,6 +229,10 @@ answered = "PONG" in result_text.upper() and not result_event.get("is_error")
 
 model_ok = "haiku" in str((last.get("system/init") or {}).get("model", ""))
 print("model this turn ran on:", (last.get("system/init") or {}).get("model"))
+
+turn_style = (last.get("system/init") or {}).get("output_style")
+print("output style this turn ran under:", turn_style)
+style_ok = bool(style_pick) and style_res.get("ok") and turn_style == style_pick
 
 usage = last.get("wrapper/usage") or {}
 usage_ok = isinstance(usage.get("context"), (int, float))
@@ -253,6 +276,8 @@ checks = {
     "set_model applied to the next turn": model_ok,
     "effort reports what is in force, not what was asked": effort_ok,
     "effort never writes the user's own settings.json": settings_kept,
+    "output style applied to the next turn": style_ok,
+    "a style the CLI never offered is rejected": style_guard_ok,
     "usage reported by the CLI": usage_ok,
     "session titled from its first prompt": title_ok,
 }
