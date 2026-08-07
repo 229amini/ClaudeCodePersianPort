@@ -93,3 +93,56 @@ Everything happens in-band on the pipe that is already open, ordered with the re
 remember set, SSE publish to the UI, blocking wait for the answer. Only the transport changes.
 `bypassPermissions` remains refused by the engine ("disabled by settings") and `auto` is gated, so
 the approval pill must still map to wrapper-owned policy rather than to those modes.
+
+## AskUserQuestion rides this same pipe — and is not a permission (2026-08-07)
+
+Measured on claude **2.1.223**, through the running wrapper. When the model calls
+`AskUserQuestion`, the CLI does **not** invent a new channel: it sends an ordinary inbound
+`can_use_tool` control request with `tool_name: "AskUserQuestion"` and
+`input.questions: [{header, question, multiSelect, options:[{label, description}]}]`. So it
+arrives in the GUI as `wrapper/permission_request` like any other tool, and before this was
+handled the colleague saw a permission dialog full of JSON.
+
+**The answer travels back in the allow reply's `updatedInput`,** under a key the tool schema
+documents as *"User answers collected by the permission component"*:
+
+```jsonc
+{"behavior": "allow",
+ "updatedInput": {"questions": [...],            // echoed unchanged
+                  "answers": {"<question text>": "<option label>"}}}
+```
+
+The CLI's own validator (read out of the bundle) fixes the shape exactly:
+
+- keyed by the **question text**, not by index and not by header;
+- a single choice is the option **label** as a string;
+- a multiSelect answer is an **array of labels**, or one string joined with `", "`;
+- free text is accepted — it just selects a softer wording of the tool_result
+  (*"The user answered: …"* instead of *"Your questions have been answered: …"*). Either way the
+  answer reaches the model, so an "other" box is safe to offer.
+
+What comes back is a `user` event whose `tool_use_result` is `{questions, answers}` — note that
+this sits on the **event**, not on the `tool_result` part. `part.content` holds only the
+model-facing English sentence, so rendering that instead is how a replayed question ends up
+showing English prose to a Persian user.
+
+### Three ways this fails silently, all now guarded in `server.py`
+
+1. **Allowing with the input unchanged answers nothing.** `answers` absent (or `{}`) comes back as
+   *"The user did not answer the questions."* — cheerful, no error. That is what the first probe
+   did, and it is indistinguishable from the user walking away.
+2. **The auto-approve posture ate the question.** «خودکار», and any tool remembered through
+   «دوباره نپرس», would approve `AskUserQuestion` without ever showing it — the model would then be
+   told nobody answered. `ASK_TOOL` is excluded from both silent paths, at the one place in
+   `PermissionBroker.request()` they are computed.
+3. **`PERMISSION_TIMEOUT` was the only thing killing questions.** The CLI's own
+   `askUserQuestionTimeout` setting defaults to **`"never"`**, so it waits forever; 110 s is not
+   long enough to read a question and decide. `ASK_TIMEOUT` is 900 s, and on expiry the broker
+   **allows with no answers** rather than denying — allow-with-nothing is what the CLI's own Skip
+   button sends, where a deny returns an `is_error` tool_result that reads to the model as a
+   tool failure.
+
+Verified end to end through the UI on 2026-08-07: a Persian question with three options (two
+Persian labels, one Latin) rendered in the dialog, «قهوه» was clicked, and the model replied
+«پاسخ شما «قهوه» بود.» Gate coverage is in `spec-test.html` (five `ask:` checks) and
+`test_units.py` (four `PermissionBroker` checks).

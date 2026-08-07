@@ -85,6 +85,47 @@ statusline script — which only reads a few of the fields. It is not verified f
 against what the real CLI passes. If a target machine's statusline shows blanks, that contract is
 the first suspect.
 
+### It never actually ran (fixed 2026-08-07)
+
+`run_statusline` used `subprocess.run(command, shell=True)`. On Windows that becomes
+`cmd /c <command>`, and **cmd strips the outer quote pair of a command that begins with a quoted
+exe path** — which is what every `statusLine` invoking node or python out of
+`"C:\Program Files\…"` looks like. The author PC's own statusline is exactly that shape:
+
+```
+"C:\Program Files\nodejs\node.exe" "C:/Users/…/statusline-command.js"
+```
+
+cmd reported `'"C:\Program Files' is not recognized`, exit 1, empty stdout — and `run_statusline`
+returns `None` on empty output, so §B-7 passthrough was **silently dead for the entire life of the
+feature**. Nothing logged, nothing rendered, and the built-in items still drew, so the bar looked
+merely sparse rather than broken.
+
+The fix is the documented cmd form, with `shell=False` so Python passes the string to
+`CreateProcess` verbatim:
+
+```python
+subprocess.run(f'{os.environ.get("COMSPEC", "cmd.exe")} /s /c "{command}"', …)
+```
+
+`/s` makes cmd strip exactly one outer pair and pass the rest through untouched. `test_units.py`
+pins it with a quoted-exe-path command.
+
+Two things landed with it:
+
+- **It publishes on `system/init`, not only on `result`.** The CLI shows its statusline from
+  startup; ours left the bar empty for the whole first turn. Off-thread, same reason
+  `_after_result` is.
+- **ANSI is parsed, not stripped.** A statusline encodes meaning in colour (which mode is on, how
+  full the context is); `ansi_segments()` turns SGR runs into `[{text, fg?, bg?, bold?, dim?,
+  italic?}]` and the client builds spans. Parsed in Python so nothing reaches the DOM as markup
+  and the client stays dumb. Supports basic/bright, `38;5;N`, `38;2;r;g;b`, and drops non-SGR
+  escapes. `text` is still published alongside as the plain fallback.
+
+**Rule this is the third instance of:** a helper that returns `None` on failure and has no caller
+that logs is indistinguishable from a machine with no statusline configured. Same shape as the
+launcher bug in `packaging.md` §"The launcher's third failure".
+
 It runs on a background thread: a statusline is someone else's script and must never stall the
 event pump. 10-second timeout.
 

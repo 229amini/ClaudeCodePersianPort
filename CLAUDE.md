@@ -72,6 +72,15 @@ the next project, and the audit counter had no click handler at all. Read
 Note for anyone testing postures: the CLI silently auto-approves shell commands it judges read-only
 (`echo`), so use a mutating command or the test lies.
 
+**2026-08-07 — the pythonw shortcut served nothing.** The first click after the `run.vbs` removal
+opened an Edge window on **ERR_EMPTY_RESPONSE** and logged nothing: `pythonw.exe` has no console,
+so `sys.stderr` is `None`, and the verbose `log_message` raised inside `send_response` before any
+byte reached the socket. Fixed at the one place `verbose` is computed. `test_no_console.py` is the
+free check that catches this whole class, and `setup.ps1` now runs it before the paid smoke test.
+Read `wiki/packaging.md` §"The launcher's third failure" — **the launcher is a different
+interpreter from the one every test uses**, which is why a 21/21 suite stayed green while the
+shipped app served nothing.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -251,10 +260,11 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, and the session title read back out of the transcript. 10 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 20 assertions, so `PASS — 20/20` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 24 assertions, so `PASS — 24/24` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
+| Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
 the console. There is no Playwright here (no node), and headless `--screenshot` renders blank on

@@ -192,6 +192,43 @@ test root, `Shell.Application` reads back `pythonw.exe` + the right arguments, t
 the server with **no** console window, Edge opens the app window, and closing it takes down both
 the server and its `claude` child.
 
+## The launcher's third failure: pythonw.exe has no stderr (2026-08-07)
+
+Replacing `run.vbs` with a direct `pythonw.exe` shortcut immediately produced the next
+launcher-only bug, and it was reported the same night: clicking «کلاد فارسی» opened an Edge window
+showing **ERR_EMPTY_RESPONSE** — the server accepted the TCP connection and closed it without
+writing a byte. Nothing was logged, because the thing that crashed *was* the logging.
+
+`pythonw.exe` is a GUI-subsystem binary with no console, so **`sys.stderr` is `None`**. The
+shortcut passes no `--quiet`, so the server ran with `verbose=True`, and `Handler.log_message`
+does a bare `sys.stderr.write`. `BaseHTTPRequestHandler.send_response` calls `log_request` →
+`log_message` *before* the status line is flushed, so the `AttributeError` killed the handler
+thread with zero bytes written. Every request died the same way, including the first `GET /`.
+
+Two details that make this class hard to see:
+
+- **`print()` is not affected.** CPython's `print` returns silently when `sys.stdout` is `None`,
+  so the two `[server]` startup prints never raised and never hinted at the problem. Only the
+  direct `.write` did.
+- **Every test in the repo ran the server under `python.exe`**, where stderr exists — `smoke_test.py`
+  spawns it with `sys.executable`. The 21/21 spec gate, the smoke test and the transcript guard were
+  all green while the shipped launcher served nothing at all.
+
+Fixed in `main()`, at the one place `verbose` is computed:
+`verbose=not args.quiet and sys.stderr is not None`. No console → no logging, and the whole
+verbose-gated path stays consistent instead of guarding one call site.
+
+`test_no_console.py` is the check that would have caught it, and it costs nothing: spawn
+`pythonw.exe server.py --no-window`, find the listening port via `netstat -ano` filtered by PID
+(there is no stdout to read the URL from — that is the point), and assert an unauthenticated
+`GET /` comes back **403**, not a dropped socket. Verified red against the pre-fix `server.py`
+(`RemoteDisconnected`) and green after. `setup.ps1` now runs it as step 5.5, before the paid smoke
+test and gating it: it is free, independent of login, and it is the only step that exercises the
+binary the colleague actually double-clicks.
+
+**Rule: the launcher is a separate interpreter from the one every test uses.** Two of the three
+launcher bugs so far were invisible to a fully green test suite for exactly that reason.
+
 ## NOT verified anywhere — still needs a bare machine (M8)
 
 - the **`-Payload` offline** path. Note it covers **Python only**: Claude Code has no offline

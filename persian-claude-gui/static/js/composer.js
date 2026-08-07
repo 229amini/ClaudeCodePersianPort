@@ -11,17 +11,27 @@ const FA = window.STRINGS;
 
 const input = document.getElementById("input");
 const composer = document.getElementById("composer");
-const sendBtn = document.getElementById("send");
 const stopBtn = document.getElementById("stop");
 const attachRow = document.getElementById("attachments");
 const slashPopup = document.getElementById("slash-popup");
 
-/* While a turn is running the send button is replaced by a stop button rather
-   than merely disabled — a non-technical user needs an obvious way out, and the
-   interrupt leaves the process (and the session) alive. */
+const base64Of = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+/* A running turn ADDS a stop button; it no longer hides send. Hiding it was a
+   lie: Enter has always sent mid-turn and the CLI queues the message fine, so
+   the only thing the swap achieved was Enter and the button doing different
+   things depending on invisible state — the exact trap the submit handler
+   below already had to be fixed for once. Stop stays prominent because a
+   non-technical user needs an obvious way out; the interrupt leaves the
+   process (and the session) alive. */
 export function setBusy(busy) {
-  if (sendBtn) sendBtn.hidden = busy;
   if (stopBtn) stopBtn.hidden = !busy;
+  document.body.classList.toggle("busy", busy);
 }
 
 /* --- attachments ---------------------------------------------------------- */
@@ -255,6 +265,28 @@ export function initComposer() {
       console.error("interrupt failed", err);
     } finally {
       stopBtn.disabled = false;
+    }
+  });
+
+  // Ctrl+V with an image on the clipboard. The clipboard hands over bytes with
+  // no path, so the server spills them to a temp file and we attach that —
+  // from here on it is an ordinary attachment. A text paste falls through
+  // untouched, which is why the guard runs before preventDefault().
+  input.addEventListener("paste", async (e) => {
+    const images = [...(e.clipboardData?.files ?? [])]
+      .filter((f) => f.type.startsWith("image/"));
+    if (!images.length) return;
+    e.preventDefault();
+    for (const file of images) {
+      try {
+        const { path } = await api("/api/attach/paste", {
+          media_type: file.type,
+          data: await base64Of(file),
+        });
+        if (path) setAttachments([...attachments, path]);
+      } catch (err) {
+        bubble("error", FA.pasteFailed);
+      }
     }
   });
 

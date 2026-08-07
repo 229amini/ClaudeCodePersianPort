@@ -620,40 +620,102 @@ body.home #statusline { align-self: end; }
 }
 
 /* --- tool cards, thinking, raw events -------------------------------------- */
+/* A tool call is a STEP, not a document. Boxing each one turned a five-step
+   turn into five stacked panels that outshouted the answer they were serving.
+   They are now quiet rows on a rail — icon, what happened, to what — that open
+   in place. The surface only appears once you ask for it, on [open].
+   `flex: none` is load-bearing: overflow:hidden zeroes a flex item's automatic
+   minimum size and #log is a column flex box, so without it every card is
+   crushed to nothing once the transcript scrolls (spec-test guards this). */
 details.card {
   align-self: stretch;
   max-width: none;
-  border: 1px solid var(--border);
+  flex: none;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: none;
   overflow: hidden;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
+details.card[open] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+/* The rail. Consecutive steps sit flush and share one continuous line through
+   the icon gutter, which is what makes a run of them read as a sequence rather
+   than a pile. Two halves, because CSS can only draw within an element: the
+   lower half is `::before` on a row that HAS a next card, the upper half is
+   `::after` on a row that FOLLOWS one. They meet at the icon's centre.
+   Decoration only — the sequence is already conveyed by document order. */
+#log > details.card + details.card { margin-block-start: 0; }
+
+#log > details.card:has(+ details.card):not([open]) > summary::before,
+#log > details.card + details.card:not([open]) > summary::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 19px;
+  border-inline-start: 1px solid var(--border);
+  pointer-events: none;
+}
+#log > details.card:has(+ details.card):not([open]) > summary::before { inset-block: 50% 0; }
+#log > details.card + details.card:not([open]) > summary::after { inset-block: 0 50%; }
+
 details.card > summary {
+  position: relative;
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 5px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
   list-style: none;
   color: var(--fg-muted);
   font-size: .92em;
-  min-height: 40px;
+  min-height: 30px;
+  border-radius: var(--radius);
+}
+
+details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius: 0; }
+
+.tool-icon {
+  inline-size: 15px;
+  block-size: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .8;
+}
+
+.tool-verb { color: var(--fg); }
+
+/* Pushed to the row's end: the tool that is still running says how long. */
+.tool-elapsed {
+  margin-inline-start: auto;
+  flex: none;
+  color: var(--fg-muted);
+  font-size: .82em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The filename, not the path — the row stays one line at any depth. */
+.tool-target {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  font-size: .95em;
 }
 details.card > summary::-webkit-details-marker { display: none; }
 
-/* The disclosure caret must point the RTL way, and flip on open. */
-details.card > summary::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-inline-end: 1.5px solid currentColor;
-  border-block-end: 1.5px solid currentColor;
-  transform: rotate(45deg);
-  transition: transform var(--dur) var(--ease);
-  flex: none;
-}
-details.card[open] > summary::before { transform: rotate(-135deg); }
+/* No disclosure caret. It used to sit ahead of the row and fight the tool icon
+   for the same job; <details>/<summary> already announces expanded state to a
+   screen reader, and hover plus the surface on [open] carry it visually. The
+   gutter it vacated is what the rail runs through. */
 
 details.card > summary:hover { background: var(--surface-2); }
 details.card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -975,20 +1037,90 @@ button.round {
   color: var(--accent);
 }
 
+/* --- row overflow menu (⋯) ---------------------------------------------------- */
+
+/* [popover] lives in the top layer, so the sidebar's own overflow cannot clip
+   it and no z-index arms race is needed. Its position is set inline on open.
+   Do NOT set `display` here — the UA sheet uses it to hide a closed popover. */
+.kebab-menu {
+  position: fixed;
+  margin: 0;
+  padding: 5px;
+  inline-size: max-content;
+  min-inline-size: 168px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .45);
+  overflow: visible;
+}
+.kebab-menu hr {
+  border: 0;
+  border-block-start: 1px solid var(--border);
+  margin: 4px 6px;
+}
+.kebab-item {
+  inline-size: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: .88em;
+  text-align: start;
+  cursor: pointer;
+}
+.kebab-item svg { flex: none; opacity: .8; }
+.kebab-item:hover, .kebab-item:focus-visible { background: var(--surface); outline: none; }
+.kebab-item.danger { color: var(--danger); }
+.kebab-item.danger[data-armed="true"] { background: var(--danger); color: #fff; }
+
+/* An open menu must keep its own trigger on screen — the hover rules above
+   would otherwise hide the button the menu is anchored to. */
+.proj-top:has(.kebab-menu:popover-open) .sess-act,
+.proj-sessions li:has(.kebab-menu:popover-open) .sess-act { display: inline-flex; }
+
 /* --- statusline -------------------------------------------------------------- */
 #statusline {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 4px 14px;
   align-items: center;
   justify-content: center;
-  padding: 3px 16px 7px;
+  padding: 5px 16px 8px;
   color: var(--fg-muted);
   font-size: .74em;
   line-height: 1.6;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-#statusline .sl-item { display: flex; gap: 6px; align-items: baseline; }
-#statusline .sl-label { opacity: .75; }
+#statusline .sl-item { display: flex; gap: 6px; align-items: center; }
+#statusline .sl-label { opacity: .7; }
+
+/* The percentages that mean something at a glance. <progress> is native, so
+   the value is announced without an aria dance; only the paint is ours. */
+#statusline .sl-meter { display: flex; gap: 6px; align-items: center; }
+#statusline progress {
+  appearance: none;
+  inline-size: 44px;
+  block-size: 4px;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+#statusline progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--fg-muted) 25%, transparent);
+}
+#statusline progress::-webkit-progress-value {
+  background: var(--fg-muted);
+  border-radius: 2px;
+  transition: inline-size .3s ease;
+}
+#statusline progress[data-level="warn"]::-webkit-progress-value { background: #d9a441; }
+#statusline progress[data-level="high"]::-webkit-progress-value { background: var(--accent); }
 
 /* cwd is a Windows path sitting inside RTL chrome — the exact regression
    plan §B-10 item 2 sweeps for. It must stay .path + <bdi>. */
@@ -999,6 +1131,17 @@ button.round {
   white-space: nowrap;
   background: none;
 }
+
+/* The machine's own statusline script. It is `.path`, so it already gets the
+   monospace stack and the LTR isolate — but NOT the 46 ch cap, which is meant
+   for the cwd and was chopping the script's last field to «claude-op…».
+   This must stay AFTER the rule above: same specificity, so source order is
+   the only thing deciding it. */
+#statusline .sl-custom {
+  max-width: none;
+  opacity: .95;
+}
+#statusline .sl-custom span:not(:empty) { padding-block: 1px; }
 
 /* --- permission dialog -------------------------------------------------------- */
 #perm {
@@ -1060,6 +1203,82 @@ button.round {
   margin: 0;
   padding: 0;
 }
+
+/* --- the dialog in ask mode (AskUserQuestion) --------------------------------
+   Same <dialog>, different act: the model is asking, not requesting consent.
+   So the tool name, the raw params and the "don't ask again" checkbox all go —
+   there is no tool to remember and nothing to approve. */
+#perm-ask { display: none; }
+#perm.asking #perm-ask { display: block; }
+#perm.asking #perm-tool,
+#perm.asking #perm-params,
+#perm.asking #perm-remember-row { display: none; }
+
+.ask-q {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px 12px;
+  min-inline-size: 0;   /* a fieldset defaults to min-content and would not shrink */
+}
+.ask-q legend {
+  padding-inline: 6px;
+  font-size: .8em;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+#perm .ask-text {
+  margin: 0 0 10px;
+  color: var(--fg);
+  font-size: 1em;
+  font-weight: 600;
+}
+.ask-hint { display: block; margin-block-end: 8px; font-size: .8em; color: var(--fg-muted); }
+
+.ask-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ask-opt:hover { background: var(--bg-side); }
+/* :has() lets the whole row show the checked state — this is Edge/Chromium
+   only, so no fallback is owed. */
+.ask-opt:has(input:checked) { border-color: var(--accent); background: var(--bg-side); }
+.ask-opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ask-opt input { margin-block-start: 2px; width: 16px; height: 16px; accent-color: var(--accent); }
+.ask-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-label { font-weight: 600; }
+.ask-desc { font-size: .85em; color: var(--fg-muted); }
+
+.ask-other { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 0; }
+.ask-free {
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: inherit;
+  font: inherit;
+  line-height: var(--lh-fa);
+}
+.ask-free:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* --- a question in the transcript -------------------------------------------
+   The record of the same exchange, and in history replay the ONLY rendering of
+   it — there is no dialog on a replayed turn. */
+.q-block + .q-block { margin-block-start: 12px; }
+.q-header { font-size: .8em; font-weight: 700; color: var(--fg-muted); }
+.q-text { margin: 2px 0 8px; font-weight: 600; }
+.q-options { margin: 0; padding-inline-start: 1.1em; display: flex; flex-direction: column; gap: 4px; }
+.q-options li { color: var(--fg-muted); }
+.q-label { font-weight: 600; color: var(--fg); }
+.q-desc { color: var(--fg-muted); }
+.q-desc::before { content: " — "; }
+.q-answer { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.q-picked { font-weight: 600; color: var(--accent); }
 
 .meta { color: var(--fg-muted); font-size: .85em; }
 .sr-only {

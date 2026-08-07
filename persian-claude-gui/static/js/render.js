@@ -101,12 +101,71 @@ export function resetTurn() {
   state.thinkingBody = null;
 }
 
+/* One-line stroke icons, keyed by what the tool DOES rather than by its name,
+   so an unlisted tool still lands on a sensible glyph. */
+const ICON_PATHS = {
+  edit: "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z",
+  read: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6",
+  run: "M4 17l6-5-6-5M12 19h8",
+  find: "M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16ZM21 21l-4.3-4.3",
+  web: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18",
+  task: "M9 11l3 3L20 6M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+};
+
+const TOOL_ICONS = {
+  Read: "read", Write: "edit", Edit: "edit", MultiEdit: "edit", NotebookEdit: "edit",
+  Bash: "run", BashOutput: "run", KillShell: "run",
+  Glob: "find", Grep: "find",
+  WebFetch: "web", WebSearch: "web",
+  Task: "task", Skill: "task", AskUserQuestion: "task",
+};
+
+function icon(kind) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "tool-icon");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", ICON_PATHS[kind] ?? ICON_PATHS.run);
+  svg.append(path);
+  return svg;
+}
+
+/* A tool row names the file, not the path to it — `MainActivity.kt`, not forty
+   characters of `D:\…`. The full value is one click away in the params below
+   and in the tooltip, which is where someone who needs it will look. A command
+   keeps its head instead: `git status` identifies the call, `git` does not. */
+function targetText(hint) {
+  const value = String(hint);
+  if (!/[\\/]/.test(value)) return value.slice(0, 60);
+  if (/\s/.test(value)) return value.slice(0, 60);   // a command line, not a path
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
+}
+
 function toolSummary(name, toolInput) {
-  const nodes = [label(name, "tool-name")];
-  // Show the one parameter that identifies the call, LTR-isolated.
+  const verb = FA.toolVerbs?.[name];
+  const nodes = [icon(TOOL_ICONS[name]),
+                 label(verb ?? name, verb ? "tool-verb" : "tool-name")];
+  // The one parameter that identifies the call, LTR-isolated.
   const hint = toolInput?.file_path ?? toolInput?.path ?? toolInput?.command
             ?? toolInput?.pattern ?? toolInput?.url;
-  if (hint) nodes.push(pathEl(String(hint)));
+  if (hint) {
+    const target = pathEl(targetText(hint));
+    target.classList.add("tool-target");
+    target.title = String(hint);
+    nodes.push(target);
+  } else if (Array.isArray(toolInput?.questions)) {
+    // A question has no path to name, so the row carries its header. NOT
+    // through pathEl: the header is prose the model wrote and may be Persian,
+    // and forcing it LTR is the spec's first trap.
+    const heads = toolInput.questions.map((q) => q.header).filter(Boolean);
+    if (heads.length) {
+      const el = label(heads.join("، "), "tool-target");
+      el.setAttribute("dir", "auto");
+      nodes.push(el);
+    }
+  }
   return nodes;
 }
 
@@ -134,6 +193,66 @@ export function renderParamRows(toolInput) {
   return frag;
 }
 
+/* AskUserQuestion, in the transcript. The dialog (chrome.js) is what the user
+   ANSWERS; this is the record of it, and in history replay it is the only thing
+   there is — so it has to read as a question rather than as a JSON dump.
+   Both halves live here because both are fed by the one renderer. */
+export function renderQuestionBody(questions) {
+  const frag = document.createDocumentFragment();
+  for (const q of questions ?? []) {
+    const wrap = document.createElement("div");
+    wrap.className = "q-block";
+    if (q.header) wrap.append(label(q.header, "q-header"));
+    const text = document.createElement("p");
+    text.className = "q-text";
+    text.setAttribute("dir", "auto");
+    text.textContent = q.question ?? "";
+    wrap.append(text);
+    const ul = document.createElement("ul");
+    ul.className = "q-options";
+    for (const option of q.options ?? []) {
+      const li = document.createElement("li");
+      li.setAttribute("dir", "auto");
+      // <bdi>, not a span: an option labelled "Sparkling water" would otherwise
+      // decide dir="auto" for the whole row and drag its Persian description
+      // left with it. dir="auto" skips descendants that carry their own
+      // direction, so isolating the label hands the decision to the prose —
+      // spec rule 2. A label with no description inherits the RTL shell.
+      const name = document.createElement("bdi");
+      name.className = "q-label";
+      name.textContent = option.label ?? "";
+      li.append(name);
+      if (option.description) li.append(label(option.description, "q-desc"));
+      ul.append(li);
+    }
+    if (ul.children.length) wrap.append(ul);
+    frag.append(wrap);
+  }
+  return frag;
+}
+
+/* The answer, keyed by question text exactly as the CLI stores it. An empty
+   `answers` is the skip case and says so rather than rendering nothing — a
+   blank card would read as a bug. */
+function renderAnswers(questions, answers) {
+  const frag = document.createDocumentFragment();
+  const asked = (questions ?? []).length ? questions : Object.keys(answers).map(
+    (question) => ({ question }));
+  for (const q of asked) {
+    const value = answers[q.question];
+    const row = document.createElement("div");
+    row.className = "q-answer";
+    row.setAttribute("dir", "auto");
+    row.append(label((q.header || q.question || "") + ":", "q-header"));
+    row.append(label(
+      Array.isArray(value) ? value.join("، ") : (value || FA.askNoAnswer),
+      "q-picked"));
+    frag.append(row);
+  }
+  if (!frag.childNodes.length) frag.append(label(FA.askSkipped, "meta"));
+  return frag;
+}
+
 function renderTodos(items) {
   const { body } = card("todos", [label(FA.todos, "tool-name")], { open: true });
   const ul = document.createElement("ul");
@@ -157,6 +276,20 @@ function renderRaw(event) {
 
 /* --- statusline ----------------------------------------------------------- */
 
+/* A percentage the user has to act on (context left, quota burned) reads far
+   faster as a bar than as digits. <progress> is the native element for it:
+   it carries the value accessibly and needs no JS to stay in sync. */
+function meter(pct) {
+  const wrap = document.createElement("span");
+  wrap.className = "sl-meter";
+  const bar = document.createElement("progress");
+  bar.max = 100;
+  bar.value = Math.max(0, Math.min(100, pct));
+  bar.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
+  wrap.append(bar, label(Math.round(pct) + "%", "mono"));
+  return wrap;
+}
+
 export function setStatus(patch) {
   Object.assign(state.status, patch);
   statusline.replaceChildren();
@@ -166,9 +299,9 @@ export function setStatus(patch) {
     [FA.slModel, s.model && label(s.model, "mono")],
     [FA.slFolder, s.cwd && pathEl(s.cwd)],
     [FA.slMode, s.mode && label(s.mode, "mono")],
-    [FA.slContext, s.context !== undefined && label(s.context + "%", "mono")],
+    [FA.slContext, s.context !== undefined && meter(s.context)],
     [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && label(s.quota + "%", "mono")],
+    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
     [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
   ];
 
@@ -181,12 +314,24 @@ export function setStatus(patch) {
   }
 
   // The machine's own statusLine command output, inherited rather than
-  // reimplemented (plan §B-7). It is terminal text: keep it LTR-isolated.
-  if (s.custom) {
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(pathEl(s.custom));
-    statusline.append(wrap);
+  // reimplemented (plan §B-7). It is terminal text: keep it LTR-isolated, and
+  // keep its colours — the script uses them to mean something (which mode is
+  // on, how full the context is). server.py parsed the SGR codes into runs;
+  // building spans from data is also why none of this can inject markup.
+  if (s.custom?.length) {
+    const bdi = pathEl("");
+    bdi.classList.add("sl-custom");
+    for (const seg of s.custom) {
+      const span = document.createElement("span");
+      span.textContent = seg.text;
+      if (seg.fg) span.style.color = seg.fg;
+      if (seg.bg) span.style.background = seg.bg;
+      if (seg.bold) span.style.fontWeight = "600";
+      if (seg.dim) span.style.opacity = ".65";
+      if (seg.italic) span.style.fontStyle = "italic";
+      bdi.append(span);
+    }
+    statusline.append(bdi);
   }
 }
 
@@ -261,6 +406,13 @@ export function renderEvent(ev) {
         } else if (part.type === "tool_use") {
           if (part.name === "TodoWrite") {
             renderTodos(part.input?.todos);
+          } else if (part.name === "AskUserQuestion"
+                     && Array.isArray(part.input?.questions)) {
+            // Open: a question the user is being asked must not start collapsed.
+            const { body } = card("tool ask", toolSummary(part.name, part.input),
+                                  { open: true });
+            body.append(renderQuestionBody(part.input.questions));
+            state.toolCards.set(part.id, body);
           } else {
             const { body } = card("tool", toolSummary(part.name, part.input));
             body.append(renderParamRows(part.input));
@@ -294,6 +446,16 @@ export function renderEvent(ev) {
         }
         if (part.type !== "tool_result") continue;
         const body = state.toolCards.get(part.tool_use_id);
+        // AskUserQuestion's structured result rides on the EVENT, not the part:
+        // {questions, answers}. Rendering `content` instead would show the
+        // model-facing English sentence ("The user answered: …").
+        const structured = ev.tool_use_result;
+        if (structured && Array.isArray(structured.questions)
+            && structured.answers && typeof structured.answers === "object") {
+          (body ?? log).append(renderAnswers(structured.questions,
+                                             structured.answers));
+          continue;
+        }
         const text = typeof part.content === "string"
           ? part.content
           : JSON.stringify(part.content, null, 2);
@@ -335,6 +497,28 @@ export function renderEvent(ev) {
     case "rate_limit_event":
       return;   // statusline-only; nothing user-facing yet
 
+    case "tool_progress": {
+      // A heartbeat the CLI sends while a tool runs long. As an unknown type it
+      // fell through to renderRaw, so a slow Bash buried the transcript under
+      // grey «رویداد ناشناخته» panels — one every 90 s, saying nothing.
+      // The one useful field is the elapsed time, and it belongs on the card of
+      // the tool actually running: the heartbeat's own id is synthetic
+      // (`…-heartbeat-2`), so look up parent_tool_use_id.
+      const seconds = ev.elapsed_time_seconds;
+      const body = state.toolCards.get(ev.parent_tool_use_id ?? ev.tool_use_id);
+      const summary = body?.parentElement?.querySelector("summary");
+      if (!summary || typeof seconds !== "number") return;
+      let el = summary.querySelector(".tool-elapsed");
+      if (!el) {
+        el = label("", "tool-elapsed");
+        summary.append(el);
+      }
+      el.textContent = seconds < 60
+        ? FA.elapsedSeconds.replace("{n}", Math.round(seconds))
+        : FA.elapsedMinutes.replace("{n}", Math.round(seconds / 60));
+      return;
+    }
+
     case "wrapper":
       if (ev.subtype === "user_echo") {
         // Derive busy from the stream, not from our own submit handler: a turn
@@ -351,8 +535,11 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "permission_resolved") {
         dismissPermission(ev.request_id);
         const card = state.toolCards.get(ev.tool_use_id);
-        const note = label(ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
-                           "meta");
+        // A question was answered, not "allowed" — same event, different act.
+        const note = label(
+          ev.tool_name === "AskUserQuestion" ? FA.askAnswered
+            : ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
+          "meta");
         if (card) card.append(note);
         // Approved by the wrapper rather than by the user — either the
         // «خودکار» posture or an earlier «دوباره نپرس». The count, and the
@@ -378,13 +565,14 @@ export function renderEvent(ev) {
         }
         setStatus(patch);
       } else if (ev.subtype === "statusline") {
-        setStatus({ custom: ev.text });
+        setStatus({ custom: ev.segments || (ev.text ? [{ text: ev.text }] : null) });
       } else if (ev.subtype === "reset") {
         // Project switched or session resumed: clear the view so the previous
         // conversation cannot bleed into the new one.
         log.replaceChildren();
         resetTurn();
         state.toolCards.clear();
+        setBusy(false);   // a reset means no turn is running, by definition
         refreshProjects();
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);

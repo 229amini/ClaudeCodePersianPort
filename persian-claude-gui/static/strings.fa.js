@@ -24,9 +24,35 @@ window.FA = {
   todos: "کارها",
   rawEvent: "رویداد ناشناخته",
 
+  /* What each CLI tool is called in the transcript. The audience is
+     non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that
+     is not listed falls back to its own name rather than to a wrong guess —
+     the CLI's tool set changes between versions. */
+  toolVerbs: {
+    Read: "خوانده شد",
+    Write: "نوشته شد",
+    Edit: "ویرایش شد",
+    MultiEdit: "ویرایش شد",
+    NotebookEdit: "ویرایش شد",
+    Bash: "اجرا شد",
+    BashOutput: "خروجی فرمان",
+    KillShell: "توقف فرمان",
+    Glob: "جست‌وجوی فایل",
+    Grep: "جست‌وجو در متن",
+    WebFetch: "دریافت از وب",
+    WebSearch: "جست‌وجوی وب",
+    Task: "کار فرعی",
+    Skill: "مهارت",
+    AskUserQuestion: "پرسش",
+  },
+
   connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
+  pasteFailed: "چسباندن تصویر ناموفق بود",
+  moreActions: "کارهای بیشتر",
+  elapsedSeconds: "{n} ثانیه",
+  elapsedMinutes: "{n} دقیقه",
   cliExited: "پردازش کلاد بسته شد",
   waiting: "در انتظار…",
 
@@ -73,6 +99,20 @@ window.FA = {
   permRemember: "تا پایان این نشست برای این ابزار دوباره نپرس",
   permAllowed: "اجازه داده شد",
   permDenied: "رد شد",
+
+  /* AskUserQuestion. Not an approval — the model is asking something and waits
+     for the answer, so the wording never says «اجازه». «رد کردن» skips the
+     question, which is what the CLI's own Skip button does. */
+  askTitle: "کلاد یک پرسش دارد",
+  askBody: "برای ادامه، پاسخ خود را انتخاب کنید.",
+  askOther: "پاسخ دیگر",
+  askOtherPlaceholder: "پاسخ خودتان را بنویسید…",
+  askSubmit: "ارسال پاسخ",
+  askSkip: "رد کردن",
+  askMulti: "می‌توانید چند مورد را انتخاب کنید",
+  askAnswered: "پاسخ داده شد",
+  askSkipped: "بدون پاسخ رد شد",
+  askNoAnswer: "—",
 
   slModel: "مدل",
   slFolder: "پوشه",

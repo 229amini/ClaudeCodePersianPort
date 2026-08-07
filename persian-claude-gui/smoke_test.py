@@ -96,12 +96,15 @@ def post(path: str, payload: dict) -> dict:
     request = urllib.request.Request(
         f"{base}{path}?t={token}", data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(request) as resp:
+    # Every wait below is bounded; these were not. setup.ps1 pipes this test
+    # and a blocked request froze the whole bootstrap with no Persian message
+    # (observed 2026-08-07 after the SSE thread died). Fail, never hang.
+    with urllib.request.urlopen(request, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
 def get(path: str) -> dict:
-    with urllib.request.urlopen(f"{base}{path}?t={token}") as resp:
+    with urllib.request.urlopen(f"{base}{path}?t={token}", timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -154,7 +157,7 @@ body = json.dumps({"text": PROMPT}).encode("utf-8")
 request = urllib.request.Request(f"{base}/api/message?t={token}", data=body,
                                  headers={"Content-Type": "application/json"},
                                  method="POST")
-print("POST /api/message ->", urllib.request.urlopen(request).status)
+print("POST /api/message ->", urllib.request.urlopen(request, timeout=30).status)
 
 ok = done.wait(timeout=120)
 # get_context_usage / get_usage / rename_session all run once the turn ends.
