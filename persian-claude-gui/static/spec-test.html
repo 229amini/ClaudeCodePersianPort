@@ -369,6 +369,33 @@ check("MCP tool row fits on one line, unclipped",
   Math.round(sumMcp?.getBoundingClientRect().height ?? 0) + "px, " +
   sumMcp?.scrollWidth + " vs " + sumMcp?.clientWidth);
 
+/* A subagent has no file, command or pattern to name it, so every Task row used
+   to read «کار فرعی» and nothing else — five identical rows for five different
+   agents. The agent set is per-machine, so it arrives with `initialize` and the
+   description behind it is the CLI's own, not a Persian guess. */
+window.renderEvent({
+  type: "wrapper", subtype: "init_info",
+  info: { agents: [{ name: "Explore", description: "جست‌وجوی فقط-خواندنی" }] },
+});
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec-task", name: "Task",
+    input: { subagent_type: "Explore", description: "بگرد", prompt: PERSIAN_LINE },
+  }] },
+});
+const sumTask = [...specLog.querySelectorAll("details.card.tool summary")].at(-1);
+const taskTarget = sumTask?.querySelector(".tool-target");
+check("a subagent row names the agent, described by the CLI",
+  taskTarget?.textContent === "Explore" &&
+  taskTarget?.title === "جست‌وجوی فقط-خواندنی",
+  (taskTarget?.textContent ?? "no target") + " / " + (taskTarget?.title ?? "no title"));
+
+// The name is a Latin identifier on an RTL row: rule 2, isolated like a path.
+check("the agent name is LTR-isolated inside the Persian row",
+  dirOf(taskTarget) === "ltr" && taskTarget?.tagName === "BDI",
+  (taskTarget?.tagName ?? "none") + " / " + (dirOf(taskTarget) ?? "none"));
+
 /* Plan mode: ExitPlanMode carries the plan the user is being asked to consent
    to, written as markdown for a human. Through the ordinary parameter path it
    arrives as a monospace `plan:` blob in an LTR box — which renders, passes any

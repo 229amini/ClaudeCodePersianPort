@@ -213,3 +213,59 @@ wrapper never edits the user's settings.
   meets that dead end at most once. Nothing about `max` is hardcoded — if a later CLI accepts it,
   it starts working with no change here.
 - Gate: `smoke_test.py` asserts both halves (`low` sticks, `max` does not, settings.json untouched).
+
+## 7. Output styles: the same route, with the opposite problem (2026-08-08)
+
+Measured on 2.1.223. `initialize` advertises `available_output_styles`
+(`["default","Proactive","Explanatory","Learning"]` here — extensible per machine) and the current
+one as `output_style`, a plain string.
+
+There is **no `set_output_style` subtype** (probed: `Unsupported control request subtype`), so the
+only route is `apply_flag_settings {settings:{outputStyle: …}}` again. Note the key is
+**`outputStyle`**, camelCase; `output_style` is *also* accepted and stored, because nothing
+validates the key either.
+
+**`outputStyle` has no schema behind it at all.** Where `effortLevel` is a four-value enum that
+silently drops `max`, `outputStyle` accepts anything:
+
+```
+apply outputStyle='Explanatory'    -> effective.outputStyle='Explanatory'    initialize.output_style='Explanatory'
+apply outputStyle='nonsense-style' -> effective.outputStyle='nonsense-style' initialize.output_style='nonsense-style'
+```
+
+So the effort chip's whole design — apply, read back, detect the refusal — **does not transfer**.
+There is no refusal to detect, and both read-backs will happily confirm a typo. The guard has to be
+at the door: `/api/output-style` rejects any name not in the *current* `init_info
+.available_output_styles`. `~/.claude/settings.json` stays byte-identical, same as effort.
+
+Two things worth keeping:
+
+- **`initialize` is re-callable mid-process**, and its `output_style` follows the overlay. That is a
+  free read-back of the CLI's own view, not just an echo of the settings blob.
+- **`system/init.output_style`** names the style the turn actually ran under — the same class of
+  evidence as `system/init.model` for `set_model`, and the only proof that costs nothing extra.
+  `smoke_test.py` applies a style *before* its one turn and asserts that field.
+
+## 8. `ultracode` and fast mode — measured 2026-08-08, deliberately NOT built
+
+`get_settings.applied` is `{model, effort, advisor, ultracode}`, and two of those look like more
+picker material. They were probed rather than guessed:
+
+| flag | result |
+|---|---|
+| `apply_flag_settings {ultracode: true}` | **works** — `applied.ultracode` follows, both ways, and `~/.claude/settings.json` is untouched |
+| `apply_flag_settings {advisor: "opus"}` | acked, `applied.advisor` stays `null` — wrong value shape, or refused |
+| fast mode | not a flag at all: `initialize` answers `fast_mode_state:"off"` with `fast_mode_disabled_reason:"sdk_opt_in_required"` — **the CLI says it is unavailable in this transport**, so there is nothing to mirror |
+
+And ultracode is not a no-op here: one probe turn confirmed `system/init.tools` (35 tools) contains
+`Workflow` alongside the whole `Task*` family, so the machinery it turns on really is present in
+`-p --input-format stream-json`.
+
+**It is still not in the UI, on purpose.** The wrapper's rule is to mirror what the CLI advertises,
+and the CLI does not advertise this one: there is no `/ultracode` among the 59 entries in
+`initialize.commands` (only `ultrareview`, `agents`, `__remote-workflow`,
+`workflow-launch-exec`), and the bundle's own symbols are `ultracodeActive` and
+**`ultracodeKeywordTrigger`** — it is turned on by a word in the prompt. A chip would therefore be
+*more* prominent than the affordance it mirrors, and it would hand a non-technical user a
+one-click way to spend a five-hour quota on a task they thought was small. Typing the keyword
+already works, because prompt text passes through untouched.

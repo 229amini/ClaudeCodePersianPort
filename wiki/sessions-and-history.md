@@ -2,6 +2,21 @@
 
 Built and verified 2026-08-04 against `claude` 2.1.221.
 
+## The sidebar cannot sort on st_mtime (2026-08-08)
+
+Clicking a session made it jump to the top of the list before a word was exchanged. Cause: the CLI
+rewrites a transcript **at spawn** — `mode`, `attachment` and `file-history-snapshot` lines go in
+immediately, and any `SessionStart` hook adds an `isMeta` `user` line on top — so `st_mtime` moves
+the instant you open one. Opening was indistinguishable from talking.
+
+`session_meta()` now returns a third value: the timestamp of the last `user`/`assistant` line that
+is **not** `isMeta` — the one thing an open cannot fabricate. `_sessions_in` sorts on that and falls
+back to mtime only for a transcript with no message in it at all. The «۲ ساعت پیش» label rides the
+same field, so it got more honest for free.
+
+Measured here: transcripts whose last real message was 6–12 hours old were carrying an mtime from
+minutes ago. Guarded by `test_units.py` (free) with the exact spawn-line shapes.
+
 ## B-9.8 — `--resume` after a kill: PASS
 
 Spiked before building anything on it. Turn 1 told the CLI a codeword and the process was

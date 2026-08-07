@@ -117,6 +117,31 @@ approved), so the pill is bound to the engine's echo rather than to the user's c
 itself renders as markdown through `renderToolDetail()`, not as a `plan:` parameter blob. Gates:
 spec **40/40**, smoke **13/13**.
 
+**2026-08-08 — the last two picker-shaped parity gaps.** An **output-style chip** («لحن پاسخ»)
+mirrors `initialize.available_output_styles`. Read `wiki/control-protocol.md` §7 before touching
+it: it uses the same `apply_flag_settings` route as effort **and the effort chip's design does not
+transfer** — `outputStyle` has no schema at all, so a typo is accepted and confirmed by both
+read-backs. The guard is at the door (`/api/output-style` refuses a name the CLI never advertised),
+and the proof is `system/init.output_style` on the next turn. The **subagent picker was not built**:
+there is no `set_agent` subtype and the model dispatches agents itself, so a picker would be a lie.
+`initialize.agents` is used as a label instead — a `Task` row now names the agent and carries the
+CLI's own description, where before every subagent rendered as the same «کار فرعی» line.
+Gates: spec **42/42**, smoke **15/15**.
+
+`ultracode` was measured at the same time and **deliberately left out of the UI** — see
+`wiki/control-protocol.md` §8. It is a real live flag and `Workflow` really is in `system/init
+.tools` headless, but the CLI exposes it as a *prompt keyword*, not a command, so a chip would be
+more prominent than the thing it mirrors and would hand a non-technical user a one-click quota
+burn. Fast mode answers itself: `fast_mode_disabled_reason: "sdk_opt_in_required"`.
+
+**2026-08-08 — the sidebar reordered itself when you clicked it.** `_sessions_in` sorted on
+`st_mtime`, and the CLI rewrites a transcript at **spawn** (`mode`/`attachment`/
+`file-history-snapshot`, plus an `isMeta` `user` line from any `SessionStart` hook) — so opening a
+session bumped it to the top before a word was exchanged. `session_meta()` now also returns the
+last **non-`isMeta`** `user`/`assistant` timestamp and the list sorts on that; mtime is the
+fallback for a transcript with nothing said in it. Read `wiki/sessions-and-history.md` §"The
+sidebar cannot sort on st_mtime". Guarded free in `test_units.py`.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -295,8 +320,8 @@ Two checks exist:
 
 | Check | How | Asserts |
 |---|---|---|
-| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode. 13 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 40 assertions, so `PASS — 40/40` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). 15 checks, still one subscription turn. |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 42 assertions, so `PASS — 42/42` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

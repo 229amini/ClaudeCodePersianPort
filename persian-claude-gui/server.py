@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import json
 import os
 import queue
@@ -291,10 +292,13 @@ def _sessions_in(folder: Path) -> list[dict]:
             mtime = transcript.stat().st_mtime
         except OSError:
             continue
-        preview, title = session_meta(transcript)
+        preview, title, spoken = session_meta(transcript)
         sessions.append({
             "session_id": transcript.stem,
-            "modified": mtime,
+            # When the conversation last SAID something, not when the file was
+            # last touched -- see session_meta(). mtime only stands in for a
+            # transcript with no message in it at all.
+            "modified": spoken or mtime,
             "preview": (preview or "")[:160],
             "title": title,
         })
@@ -376,8 +380,11 @@ def user_prompt_text(content) -> str | None:
     return text
 
 
-def session_meta(path: Path) -> tuple[str | None, str | None]:
-    """(first user text, session title) from one pass over a transcript.
+TIMESTAMP_RE = re.compile(r'"timestamp":"([^"]+)"')
+
+
+def session_meta(path: Path) -> tuple[str | None, str | None, float | None]:
+    """(first user text, session title, last spoken time) in one pass.
 
     `rename_session` persists a title by APPENDING
     {"type":"custom-title","customTitle":…} to the session's own transcript --
@@ -385,11 +392,30 @@ def session_meta(path: Path) -> tuple[str | None, str | None]:
     wins, so the file has to be read to the end; json.loads runs only on the
     lines that can possibly matter, because a long transcript is thousands of
     lines and the sidebar re-reads every session on each refresh.
+
+    The third value is why the sidebar does not sort on st_mtime. MERELY OPENING
+    a session rewrites its transcript: the CLI appends `mode`, `attachment` and
+    `file-history-snapshot` lines at spawn, and any SessionStart hook adds an
+    isMeta `user` line on top of that. So mtime moves the instant you click --
+    the clicked session jumps to the top of the list under the cursor, before a
+    single word has been exchanged. Measured on this machine: transcripts whose
+    last real message was six hours old carried an mtime from a minute ago.
+
+    A `user`/`assistant` line that is not isMeta is the one thing an open cannot
+    fabricate, so its timestamp is what "recent" has to mean. Matched as raw
+    text, not parsed: these files run to thousands of lines and every session in
+    the sidebar is re-read on each refresh.
     """
     first = title = None
+    spoken = None
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
+                if ('"type":"user"' in line or '"type":"assistant"' in line) \
+                        and '"isMeta":true' not in line:
+                    stamp = TIMESTAMP_RE.search(line)
+                    if stamp:
+                        spoken = stamp.group(1)
                 if '"custom-title"' in line:
                     try:
                         event = json.loads(line)
@@ -407,7 +433,19 @@ def session_meta(path: Path) -> tuple[str | None, str | None]:
                     first = user_prompt_text(event.get("message", {}).get("content"))
     except OSError:
         pass
-    return first, title
+    return first, title, iso_epoch(spoken)
+
+
+def iso_epoch(stamp: str | None) -> float | None:
+    """Transcript timestamps are UTC ISO-8601 with a literal Z, which
+    fromisoformat only accepts from 3.11 on -- and the target PC's Python is
+    whatever setup.ps1 found there."""
+    if not stamp:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def transcript_path(cwd: Path, session_id: str) -> Path | None:
@@ -1341,6 +1379,53 @@ class ClaudeSession:
             self.hub.publish({"type": "wrapper", "subtype": "effort",
                               "effort": current})
 
+    # --- output style -------------------------------------------------------
+    #
+    # Same route as effort -- apply_flag_settings, ack still an empty object --
+    # with one difference measured 2026-08-08 on 2.1.223: `outputStyle` has no
+    # schema behind it at all. "nonsense-style" is accepted, lands in
+    # effective.outputStyle, AND is echoed back by a second `initialize`. So
+    # unlike effortLevel there is no refusal to detect, and the read-back cannot
+    # vet a name. The guard goes at the door instead: only a style the CLI
+    # itself advertised in initialize.available_output_styles gets through
+    # (see the /api/output-style handler).
+    #
+    # There is no set_output_style control subtype -- probed, "Unsupported
+    # control request subtype" -- and the CLI's own /output-style command writes
+    # the user's real settings.json, which this wrapper never does.
+
+    def output_style(self) -> str | None:
+        response = self.control("get_settings", timeout=10.0)
+        if response.get("subtype") == "success":
+            effective = ((response.get("response") or {}).get("effective") or {})
+            name = effective.get("outputStyle")
+            if isinstance(name, str):
+                return name
+        # Nothing applied on this process yet, so the settings overlay is empty
+        # and the spawn-time value is the truth.
+        name = (self.init_info or {}).get("output_style")
+        return name if isinstance(name, str) else None
+
+    def set_output_style(self, name: str) -> str | None:
+        self.control("apply_flag_settings", timeout=10.0,
+                     settings={"outputStyle": name})
+        return self.output_style()
+
+    def publish_output_style(self, name: str | None = None) -> None:
+        """Fired after a change only: init_info already carries the spawn value.
+
+        A window that reloads replays Hub history, where this lands *after* the
+        init_info that named the old style -- so the chip repaints to the new
+        one rather than to the stale spawn value.
+        """
+        try:
+            current = name if name is not None else self.output_style()
+        except RuntimeError:
+            return   # the process went away; nothing to report
+        if current:
+            self.hub.publish({"type": "wrapper", "subtype": "output_style",
+                              "style": current})
+
     def stop(self) -> None:
         if not self.proc or self.proc.poll() is not None:
             return
@@ -1567,6 +1652,25 @@ class Handler(BaseHTTPRequestHandler):
             self.session.publish_effort(current)
             self._send_json(HTTPStatus.OK,
                             {"ok": current == level, "effort": current})
+        elif parsed.path == "/api/output-style":
+            # One style name, never a settings blob -- same reason as /api/effort.
+            # Validated against what the CLI advertised, because nothing
+            # downstream will: apply_flag_settings takes any string as
+            # outputStyle and both read-backs echo a typo happily.
+            name = (body.get("style") or "").strip()
+            offered = (self.session.init_info or {}).get("available_output_styles")
+            if not isinstance(offered, list) or name not in offered:
+                self._send_json(HTTPStatus.BAD_REQUEST,
+                                {"error": f"unknown output style: {name}"})
+                return
+            try:
+                current = self.session.set_output_style(name)
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self.session.publish_output_style(current)
+            self._send_json(HTTPStatus.OK,
+                            {"ok": current == name, "style": current})
         elif parsed.path == "/api/posture":
             # The approval posture is two settings at once (the CLI's permission
             # mode and the wrapper's auto-approve flag), so it is one endpoint
