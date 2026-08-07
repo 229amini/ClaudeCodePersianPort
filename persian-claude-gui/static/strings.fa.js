@@ -45,6 +45,7 @@ window.FA = {
     Task: "کار فرعی",
     Skill: "مهارت",
     AskUserQuestion: "پرسش",
+    ExitPlanMode: "طرح کار",
   },
 
   connecting: "در حال اتصال…",
@@ -158,6 +159,8 @@ window.FA = {
   effortRefused: "این میزان روی این نسخه اعمال نمی‌شود",
 
   postureTitle: "سطح اجازه",
+  posturePlan: "طرح‌ریزی",
+  posturePlanNote: "فقط بررسی می‌کند و طرح کار را می‌نویسد؛ تا وقتی طرح را نپذیرید چیزی را تغییر نمی‌دهد",
   postureAsk: "محتاط",
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
   postureAcceptEdits: "ویرایش آزاد",

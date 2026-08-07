@@ -32,6 +32,7 @@ const ui = {
    plus its own auto-approve flag (server.py POSTURES) — the UI only names
    them, in plain Persian, so the user can tell what they are agreeing to. */
 const POSTURES = [
+  { key: "plan", title: FA.posturePlan, note: FA.posturePlanNote },
   { key: "ask", title: FA.postureAsk, note: FA.postureAskNote },
   { key: "acceptEdits", title: FA.postureAcceptEdits, note: FA.postureAcceptEditsNote },
   { key: "autoApprove", title: FA.postureAutoApprove, note: FA.postureAutoApproveNote },
