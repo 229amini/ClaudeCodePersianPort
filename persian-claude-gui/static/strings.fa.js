@@ -70,6 +70,7 @@ window.FA = {
   newChat: "گفتگوی جدید",
   projects: "پروژه‌ها",
   removeProject: "حذف پروژه و گفتگوهایش",
+  projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",
   archiveProject: "بایگانی",
   unarchiveProject: "خروج از بایگانی",
   archiveSection: "بایگانی",

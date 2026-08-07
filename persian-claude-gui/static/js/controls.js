@@ -61,6 +61,22 @@ export function setModelResolved(id) {
   paintModel();
 }
 
+/* A new session inherits no picker state. `chosen` is an optimistic value
+   waiting for a turn that will never come now, and `resolved` describes a
+   process that no longer exists — both survived a restart and pinned the chips
+   to the previous session's model. The worst shape of that: picking Haiku in
+   one session hid the effort chip in every session after it, because Haiku is
+   the one model that does not advertise supportsEffort. The new process
+   re-announces both within a few hundred ms.
+
+   `effort` is deliberately NOT cleared: it lives in the settings overlay, not
+   in the session, and survives the restart in the CLI too. */
+export function resetControls() {
+  chosen = null;
+  resolved = null;
+  paintModel();
+}
+
 function modelEntry() {
   return models.find((m) => m.value === chosen)
       ?? models.find((m) => m.resolvedModel === resolved)
