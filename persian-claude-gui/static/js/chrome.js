@@ -16,7 +16,7 @@ import { api, token } from "./api.js";
    two sources". Nothing below runs at module-evaluation time; initChrome() is
    called from app.js once every module is live. */
 import {
-  bubble, label, renderEvent, renderParamRows, resetTurn, state, setStatus,
+  bubble, label, renderEvent, renderToolDetail, resetTurn, state, setStatus,
 } from "./render.js";
 
 const FA = window.STRINGS;
@@ -627,7 +627,7 @@ function nextPermission() {
   } else {
     perm.ask?.replaceChildren();
     perm.tool?.replaceChildren(label(perm.current.tool_name ?? "?", "mono"));
-    renderParams(perm.current.tool_input ?? {});
+    renderParams(perm.current.tool_name, perm.current.tool_input ?? {});
   }
   if (perm.remember) perm.remember.checked = false;
   if (!perm.dialog.open) perm.dialog.showModal();
@@ -723,12 +723,15 @@ function collectAnswers() {
    (render.js). They used to differ, and the dialog's version forced every
    string LTR through pathEl — so a Persian Write.content or Edit.new_string
    was unreadable exactly at the moment of consent. Spec rule 8. */
-function renderParams(toolInput) {
+function renderParams(toolName, toolInput) {
   if (!Object.keys(toolInput ?? {}).length) {
     perm.params?.replaceChildren("—");
     return;
   }
-  perm.params?.replaceChildren(renderParamRows(toolInput));
+  // renderToolDetail, not renderParamRows: an Edit shows as a real diff here
+  // too. This is the moment of consent — making the reader diff old_string
+  // against new_string by eye is the worst possible place to do it.
+  perm.params?.replaceChildren(renderToolDetail(toolName, toolInput));
 }
 
 async function resolvePermission(decision) {

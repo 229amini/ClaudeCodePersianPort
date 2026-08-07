@@ -226,13 +226,18 @@ check("rule 6: ZWNJ survives in the composer value",
 /* --- rule 8: LTR containers, per-line direction ---------------------------- */
 const dirOf = (el) => el && getComputedStyle(el).direction;
 
+/* A Write's content is rendered as a DIFF now, not as a parameter blob — so
+   rule 8's contract ("LTR container, direction decided per line") has to hold
+   in `.diff` instead of in `.tool-output`. Same rule, different element; these
+   checks moved with it rather than being dropped, because the content under
+   test is exactly the same Persian/Latin/blank mixture. */
 const card9 = [...specLog.querySelectorAll("details.card.tool")]
-  .find(c => c.querySelector(".param-key")?.textContent === "file_path");
-const box9 = card9?.querySelectorAll(".param-row .tool-output")[1];
-const lines9 = box9 ? [...box9.children] : [];
+  .find(c => c.querySelector(".diff"));
+const box9 = card9?.querySelector(".diff");
+const lines9 = box9 ? [...box9.querySelectorAll(".dt")] : [];
 
-check("rule 8: tool-card param box stays LTR",
-  dirOf(box9) === "ltr", dirOf(box9) ?? "no param box");
+check("rule 8: tool-card diff box stays LTR",
+  dirOf(box9) === "ltr", dirOf(box9) ?? "no diff box");
 
 check("rule 8: Persian line inside the LTR box resolves RTL",
   lines9[0]?.getAttribute("dir") === "auto" && dirOf(lines9[0]) === "rtl",
@@ -248,8 +253,27 @@ check("rule 8: the RTL line aligns to its own start, not the box's left",
   ["start", "right", "end"].includes(getComputedStyle(lines9[0] ?? document.body).textAlign),
   getComputedStyle(lines9[0] ?? document.body).textAlign);
 
-check("rule 8: blank line survives as its own line box",
-  lines9[2]?.firstElementChild?.tagName === "BR", lines9.length + " lines");
+check("rule 8: every line of the content survives, blank one included",
+  lines9.length === 4 && lines9[2]?.textContent === "",
+  lines9.length + " lines");
+
+/* The diff itself: a Write is all additions, and the count on the collapsed row
+   is what tells the user how big the change is before they open it. */
+check("a Write renders as an all-additions diff",
+  box9?.querySelectorAll(".dl.add").length === 4 &&
+  box9?.querySelectorAll(".dl.del").length === 0,
+  (box9?.querySelectorAll(".dl.add").length ?? 0) + " added, " +
+  (box9?.querySelectorAll(".dl.del").length ?? 0) + " removed");
+/* textContent is LOGICAL order and says "+4" no matter how it renders, so it
+   cannot see this: + and − are BiDi-neutral, and in the RTL summary row they
+   reorder to the far side of their digits — "+2 −1" reads "1- 2+" on screen.
+   Only the computed direction catches it. Rule 2, smallest possible token. */
+const stat9 = card9?.querySelector(".diff-stat");
+check("the collapsed row's +/- count is LTR-isolated, not just Latin",
+  stat9?.querySelector(".d-add")?.textContent === "+4" &&
+  dirOf(stat9) === "ltr" && getComputedStyle(stat9).unicodeBidi === "isolate",
+  (stat9?.textContent ?? "no count") + " -> " + (dirOf(stat9) ?? "none") +
+  " / " + (stat9 ? getComputedStyle(stat9).unicodeBidi : "none"));
 
 /* Not a BiDi rule, but the same class of silent failure: #log is a column flex
    box, and details.card sets overflow:hidden, which zeroes a flex item's
@@ -288,11 +312,15 @@ check("the CLI's English interrupt note never becomes a user bubble",
   specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
   specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
 
-const permBox = document.querySelectorAll("#perm-params .param-row .tool-output")[2];
-const permLine = permBox?.firstElementChild;
-check("case 10: permission dialog uses the same per-line builder",
-  dirOf(permBox) === "ltr" && dirOf(permLine) === "rtl",
-  (permLine?.textContent ?? "no dialog params") + " -> " + (dirOf(permLine) ?? "none"));
+/* Case 10 is the moment of consent, and it is now a real diff: the person
+   approving an Edit sees the change, not two blobs to compare by eye. The BiDi
+   contract is unchanged — the box is LTR, the Persian line inside it is not. */
+const permBox = document.querySelector("#perm-params .diff");
+const permLine = permBox?.querySelector(".dl.add .dt");
+check("case 10: the permission dialog shows an Edit as a diff, per-line direction",
+  dirOf(permBox) === "ltr" && dirOf(permLine) === "rtl" &&
+  permBox.querySelectorAll(".dl.del").length === 1,
+  (permLine?.textContent ?? "no dialog diff") + " -> " + (dirOf(permLine) ?? "none"));
 
 // Dismiss before the DOM dump so the modal backdrop does not sit over #verdict.
 window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
