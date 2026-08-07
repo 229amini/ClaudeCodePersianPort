@@ -90,9 +90,15 @@ An **effort chip** mirrors `initialize` and writes through `apply_flag_settings`
 `wiki/control-protocol.md` §6 first: there is no `set_effort`, the ack is worthless, `initialize`
 advertises a `max` level the settings schema refuses, and the CLI's own `/effort` would edit the
 user's real `settings.json`. **Edit/Write/MultiEdit render real diffs**, in the tool card and in the
-permission dialog, through one `renderToolDetail()`. Gates: spec **36/36**, smoke **12/12**.
+permission dialog, through one `renderToolDetail()`. Gates: spec **38/38**, smoke **12/12**.
 `wiki/rtl-rendering-notes.md` gained the rule that pays for itself: **a `textContent` assertion is
 blind to every BiDi defect** — the diff count rendered `1- 2+` while its check passed.
+
+**2026-08-07 — MCP tool rows (`pcg-9jx`).** A tool named `mcp__<server>__<tool>` has no Persian
+verb and can never have one — the server set is per-machine — so the row fell through to the raw
+40-character identifier and clipped. `toolSummary()` now splits it (tool as the name, server as an
+LTR-isolated muted chip) and `.tool-name` finally ellipses instead of overflowing. Fallback only:
+do not add MCP names to `strings.fa.js`.
 
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
@@ -273,7 +279,7 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`). 12 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 36 assertions, so `PASS — 36/36` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 38 assertions, so `PASS — 38/38` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

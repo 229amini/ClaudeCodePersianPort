@@ -301,6 +301,7 @@ check("tool row stays on one line",
   (sum9?.getBoundingClientRect().height ?? 99) < 40,
   Math.round(sum9?.getBoundingClientRect().height ?? 0) + "px");
 
+
 /* The CLI narrates a stopped turn as a `user` message reading "[Request
    interrupted by user]". Rendered literally it reads as if the user typed an
    English sentence, right next to the Persian «متوقف شد» that already says it. */
@@ -341,6 +342,32 @@ check("case 12: Latin digits stay inside their Persian line",
   digitLine?.textContent === "\u0645\u0642\u062F\u0627\u0631 42 \u062A\u0646\u0638\u06CC\u0645 \u0634\u062F" &&
   digitLine.children.length === 0 && dirOf(digitLine) === "rtl",
   (digitLine?.textContent ?? "none") + " -> " + (dirOf(digitLine) ?? "none"));
+
+/* An MCP tool has no Persian verb and never will — its name arrives as
+   mcp__<server>__<tool>, long enough to fill the rail on its own. The row must
+   split it, and the width guard is the point: a textContent check passes just
+   as happily on a label that renders clipped.
+   Rendered AFTER the checks above, because two of them read `.at(-1)` of the
+   tool cards and a new card at the end silently steals their subject. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec-mcp", name: "mcp__claude-in-chrome__tabs_context_mcp",
+    input: {},
+  }] },
+});
+const sumMcp = [...specLog.querySelectorAll("details.card.tool summary")].at(-1);
+check("MCP tool row names the tool and its server separately",
+  sumMcp?.querySelector(".tool-name")?.textContent === "tabs_context_mcp" &&
+  sumMcp?.querySelector(".tool-server")?.textContent === "claude-in-chrome",
+  (sumMcp?.querySelector(".tool-name")?.textContent ?? "no name") + " @ " +
+  (sumMcp?.querySelector(".tool-server")?.textContent ?? "no server"));
+
+check("MCP tool row fits on one line, unclipped",
+  (sumMcp?.getBoundingClientRect().height ?? 99) < 40 &&
+  sumMcp?.scrollWidth <= sumMcp?.clientWidth + 1,
+  Math.round(sumMcp?.getBoundingClientRect().height ?? 0) + "px, " +
+  sumMcp?.scrollWidth + " vs " + sumMcp?.clientWidth);
 
 /* AskUserQuestion. It arrives over the permission pipe but is a QUESTION, and
    the two failure modes are invisible to a screenshot of a passing run: the

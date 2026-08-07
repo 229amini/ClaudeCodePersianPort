@@ -151,10 +151,27 @@ function targetText(hint) {
   return value.split(/[\\/]/).filter(Boolean).pop() || value;
 }
 
+/* An MCP tool arrives as `mcp__<server>__<tool>` and will never have a verb:
+   the server set is per-machine, so strings.fa.js cannot enumerate it. Split
+   the identifier instead of dumping all forty characters into the rail — the
+   tool names the action, the server says where it came from. Fallback only. */
+function mcpName(name) {
+  const m = /^mcp__(.+?)__(.+)$/.exec(name);
+  return m && { server: m[1], tool: m[2] };
+}
+
 function toolSummary(name, toolInput) {
   const verb = FA.toolVerbs?.[name];
+  const mcp = verb ? null : mcpName(name);
   const nodes = [icon(TOOL_ICONS[name]),
-                 label(verb ?? name, verb ? "tool-verb" : "tool-name")];
+                 label(mcp ? mcp.tool : (verb ?? name),
+                       verb ? "tool-verb" : "tool-name")];
+  if (mcp) {
+    // Latin identifier in an RTL row: isolate it, same as any path (rule 2).
+    const srv = pathEl(mcp.server);
+    srv.classList.add("tool-server");
+    nodes.push(srv);
+  }
   // The one parameter that identifies the call, LTR-isolated.
   const hint = toolInput?.file_path ?? toolInput?.path ?? toolInput?.command
             ?? toolInput?.pattern ?? toolInput?.url;
