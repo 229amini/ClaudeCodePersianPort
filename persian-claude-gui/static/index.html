@@ -219,6 +219,10 @@
     <p id="perm-body" dir="auto"></p>
     <div id="perm-tool"></div>
     <pre id="perm-params"></pre>
+    <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes
+         the model's question over the same can_use_tool pipe, so it arrives as
+         a "permission" but is nothing of the sort (js/chrome.js). -->
+    <div id="perm-ask"></div>
     <label id="perm-remember-row">
       <input type="checkbox" id="perm-remember">
       <span id="perm-remember-label"></span>

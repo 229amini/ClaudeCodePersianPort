@@ -196,7 +196,7 @@ if ($claude) {
 Step "کپی برنامه"
 
 New-Item -ItemType Directory -Force -Path $DeployRoot | Out-Null
-foreach ($item in @('server.py', 'smoke_test.py', 'static', 'assets')) {
+foreach ($item in @('server.py', 'smoke_test.py', 'test_no_console.py', 'static', 'assets')) {
     $src = Join-Path $Here $item
     if (-not (Test-Path $src)) { Die "فایل $item پیدا نشد — بسته نصب ناقص است" }
     Copy-Item -Path $src -Destination $DeployRoot -Recurse -Force
@@ -262,8 +262,37 @@ if (Test-Path $legacy) { Remove-Item $legacy -Force; Log '  removed pre-rebrand 
 Ok "میان‌بر «کلاد فارسی» روی دسکتاپ ساخته شد"
 Log "  shortcut => $shortcut"
 
+# ------------------------------------------------------- 5.5 launcher check
+# The shortcut runs pythonw.exe, and nothing else here ever does. Both launcher
+# bugs so far (the missing VBScript engine, then sys.stderr being None under
+# pythonw) were invisible to every check that came before and shipped a window
+# showing an error page. Free, no CLI turn, and independent of login — so it
+# runs before the paid smoke test and gates it.
+Step "آزمایش اجرای برنامه"
+
+$env:PYTHONIOENCODING = 'utf-8'
+$eap = $ErrorActionPreference           # native stderr is terminating under Stop
+$ErrorActionPreference = 'Continue'
+& $python (Join-Path $DeployRoot 'test_no_console.py') 2>&1 |
+    ForEach-Object { Log "  launcher: $_" }
+$launcherOk = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $eap
+
+if ($launcherOk) {
+    Ok "برنامه بدون پنجره خط فرمان اجرا شد"
+} else {
+    Warn "برنامه اجرا نشد"
+    Write-Host ""
+    Write-Host "  میان‌بر ساخته شد ولی برنامه بالا نیامد." -ForegroundColor Yellow
+    Write-Host "  لطفاً این فایل گزارش را برای سازنده بفرستید:" -ForegroundColor Yellow
+    Write-Host "    $LogFile" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 # ---------------------------------------------------------------- 6. smoke
-if ($SkipSmokeTest) {
+if (-not $launcherOk) {
+    Step "آزمایش نهایی رد شد"
+} elseif ($SkipSmokeTest) {
     Step "آزمایش نهایی رد شد"
 } else {
     Step "آزمایش نهایی"

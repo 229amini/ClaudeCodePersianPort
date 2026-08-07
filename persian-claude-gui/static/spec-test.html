@@ -49,6 +49,7 @@
     <p id="perm-body" dir="auto"></p>
     <div id="perm-tool"></div>
     <pre id="perm-params"></pre>
+    <div id="perm-ask"></div>
     <label id="perm-remember-row">
       <input type="checkbox" id="perm-remember">
       <span id="perm-remember-label"></span>
@@ -254,6 +255,24 @@ check("tool cards cannot be flex-shrunk out of existence",
   getComputedStyle(card9 ?? document.body).flexShrink === "0",
   getComputedStyle(card9 ?? document.body).flexShrink);
 
+/* The tool row is the transcript's most repeated element, so its two silent
+   failure modes are worth pinning: an unlisted tool must still say SOMETHING
+   (falling through to the raw name, never to an empty row), and the target
+   must be the file name — a full Windows path wraps and the row stops being
+   one line, which is the whole point of the rail. */
+const sum9 = card9?.querySelector("summary");
+check("tool row names the action in Persian",
+  sum9?.querySelector(".tool-verb")?.textContent === window.STRINGS.toolVerbs.Write,
+  sum9?.querySelector(".tool-verb, .tool-name")?.textContent ?? "no label");
+
+check("tool row shows the file name, not the whole path",
+  sum9?.querySelector(".tool-target")?.textContent === "note.md",
+  sum9?.querySelector(".tool-target")?.textContent ?? "no target");
+
+check("tool row stays on one line",
+  (sum9?.getBoundingClientRect().height ?? 99) < 40,
+  Math.round(sum9?.getBoundingClientRect().height ?? 0) + "px");
+
 /* The CLI narrates a stopped turn as a `user` message reading "[Request
    interrupted by user]". Rendered literally it reads as if the user typed an
    English sentence, right next to the Persian «متوقف شد» that already says it. */
@@ -290,6 +309,70 @@ check("case 12: Latin digits stay inside their Persian line",
   digitLine?.textContent === "\u0645\u0642\u062F\u0627\u0631 42 \u062A\u0646\u0638\u06CC\u0645 \u0634\u062F" &&
   digitLine.children.length === 0 && dirOf(digitLine) === "rtl",
   (digitLine?.textContent ?? "none") + " -> " + (dirOf(digitLine) ?? "none"));
+
+/* AskUserQuestion. It arrives over the permission pipe but is a QUESTION, and
+   the two failure modes are invisible to a screenshot of a passing run: the
+   dialog offering "don't ask again" for a question, and the option labels not
+   reaching the inputs' value — that value is the wire format the CLI matches
+   against, so a cosmetic-looking change there silently sends the wrong answer. */
+const ASK_QUESTIONS = [{
+  header: "نوشیدنی",
+  question: "چای یا قهوه؟ " + PERSIAN_LINE,
+  multiSelect: true,
+  options: [{ label: "Tea", description: "چای داغ" }, { label: "قهوه", description: "" }],
+}];
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec13", name: "AskUserQuestion",
+    input: { questions: ASK_QUESTIONS },
+  }] },
+});
+window.renderEvent({
+  type: "wrapper", subtype: "permission_request", request_id: "spec13",
+  tool_name: "AskUserQuestion", tool_use_id: "spec13",
+  tool_input: { questions: ASK_QUESTIONS },
+});
+
+const permDialog = document.getElementById("perm");
+check("ask: a question is not an approval — no 'remember this tool' offered",
+  permDialog.classList.contains("asking") &&
+  getComputedStyle(document.getElementById("perm-remember-row")).display === "none",
+  permDialog.className + " / " +
+  getComputedStyle(document.getElementById("perm-remember-row")).display);
+
+const askOpts = [...document.querySelectorAll("#perm-ask .ask-opt input")];
+check("ask: multiSelect renders checkboxes carrying the option label as value",
+  askOpts.length === 2 && askOpts.every(i => i.type === "checkbox") &&
+  askOpts.map(i => i.value).join("|") === "Tea|قهوه",
+  askOpts.map(i => i.type + ":" + i.value).join(", ") || "no options");
+
+const askText = document.querySelector("#perm-ask .ask-text");
+check("ask: a Persian question resolves RTL inside the dialog",
+  dirOf(askText) === "rtl" && !!document.querySelector("#perm-ask .ask-free"),
+  (dirOf(askText) ?? "none") + " / free-text " +
+  (document.querySelector("#perm-ask .ask-free") ? "present" : "MISSING"));
+
+// The transcript half — the only rendering that exists in history replay.
+const askCard = specLog.querySelector("details.card.ask .q-options");
+check("ask: the transcript shows the options, not raw JSON",
+  [...(askCard?.children ?? [])].length === 2 &&
+  askCard.textContent.includes("Tea") && !askCard.textContent.includes("{"),
+  askCard?.textContent.trim() ?? "no question card");
+
+/* Rule 2 where it actually bites: a Latin option label sitting above a Persian
+   description. Without the <bdi> the label wins dir="auto" for the whole row and
+   drags the Persian text left — which is the exact defect this list would show
+   for any English-labelled choice (model names, file names, commands). */
+const latinOpt = askCard?.children[0];
+check("ask: a Latin option label does not flip its Persian description",
+  dirOf(latinOpt) === "rtl" && latinOpt?.querySelector("bdi.q-label")?.textContent === "Tea",
+  (dirOf(latinOpt) ?? "none") + " / " +
+  (latinOpt?.querySelector("bdi.q-label") ? "isolated" : "NOT isolated"));
+
+window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
+                     request_id: "spec13", tool_use_id: "spec13",
+                     decision: "allow" });
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

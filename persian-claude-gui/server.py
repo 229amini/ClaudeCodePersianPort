@@ -27,6 +27,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -52,6 +53,23 @@ AUTO_ALLOW = frozenset({"Read", "Glob", "Grep", "NotebookRead", "TodoWrite"})
 # denies on its own. The CLI blocks on that turn until we reply, so this is
 # also how long a walked-away-from window stalls the conversation.
 PERMISSION_TIMEOUT = 110.0
+
+# AskUserQuestion is not a permission at all. The CLI routes the model's
+# question to us over this same can_use_tool pipe and reads the answer back out
+# of the ALLOW reply's `updatedInput.answers`, keyed by question TEXT (measured
+# 2026-08-07 -- wiki/permission-transport.md). Three consequences, each a silent
+# failure if missed:
+#   * it must never be auto-approved. An allow carrying no `answers` is
+#     answered "The user did not answer the questions." -- the posture would
+#     eat the question and the user would never see it.
+#   * it needs its own deadline. The CLI's own askUserQuestionTimeout defaults
+#     to "never", so PERMISSION_TIMEOUT is the ONLY thing ending a question,
+#     and 110 s is not long enough to read one and decide.
+#   * that deadline must ALLOW with no answers, never deny. Allow-with-nothing
+#     is exactly what the CLI's own Skip button sends; a deny comes back as an
+#     is_error tool_result and reads to the model as a failure.
+ASK_TOOL = "AskUserQuestion"
+ASK_TIMEOUT = 900.0
 
 # --verbose is mandatory: without it the CLI exits with
 # "When using --print, --output-format=stream-json requires --verbose".
@@ -433,6 +451,16 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+NON_SGR_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-ln-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+# xterm-256 index -> #rrggbb. 0-15 is the terminal's own palette (these are the
+# Windows Terminal / VS Code values); 16-231 is the 6x6x6 cube, 232-255 the
+# greyscale ramp. Both formulas are the standard ones.
+BASE16 = ("#3b3b3b", "#cd3131", "#0dbc79", "#e5e510", "#3b8eea", "#bc3fbc",
+          "#11a8cd", "#cccccc", "#666666", "#f14c4c", "#23d18b", "#f5f543",
+          "#6ab0ff", "#d670d6", "#29b8db", "#ffffff")
+CUBE = (0, 95, 135, 175, 215, 255)
 
 
 def statusline_command() -> str | None:
@@ -452,24 +480,127 @@ def statusline_command() -> str | None:
     return None
 
 
-def run_statusline(command: str, payload: dict) -> str | None:
+def xterm_color(n: int) -> str:
+    if n < 16:
+        return BASE16[n]
+    if n < 232:
+        n -= 16
+        return "#%02x%02x%02x" % (CUBE[n // 36], CUBE[n // 6 % 6], CUBE[n % 6])
+    v = 8 + 10 * (n - 232)
+    return "#%02x%02x%02x" % (v, v, v)
+
+
+def apply_sgr(style: dict, params: str) -> dict:
+    """Fold one SGR escape into the running style. Unknown codes are ignored."""
+    codes = [int(p) for p in params.split(";") if p != ""] or [0]
+    style = dict(style)
+    i = 0
+    while i < len(codes):
+        c = codes[i]
+        if c == 0:
+            style = {}
+        elif c in (1, 2, 3):
+            style[{1: "bold", 2: "dim", 3: "italic"}[c]] = True
+        elif c == 22:
+            style.pop("bold", None), style.pop("dim", None)
+        elif c == 23:
+            style.pop("italic", None)
+        elif c == 39:
+            style.pop("fg", None)
+        elif c == 49:
+            style.pop("bg", None)
+        elif 30 <= c <= 37:
+            style["fg"] = BASE16[c - 30]
+        elif 90 <= c <= 97:
+            style["fg"] = BASE16[c - 82]
+        elif 40 <= c <= 47:
+            style["bg"] = BASE16[c - 40]
+        elif 100 <= c <= 107:
+            style["bg"] = BASE16[c - 92]
+        elif c in (38, 48):
+            key = "fg" if c == 38 else "bg"
+            if codes[i + 1:i + 2] == [5] and len(codes) > i + 2:
+                style[key] = xterm_color(codes[i + 2])
+                i += 2
+            elif codes[i + 1:i + 2] == [2] and len(codes) > i + 4:
+                style[key] = "#%02x%02x%02x" % tuple(codes[i + 2:i + 5])
+                i += 4
+        i += 1
+    return style
+
+
+def ansi_segments(text: str) -> list[dict]:
+    """Split terminal output into styled runs: [{text, fg?, bg?, bold?, …}].
+
+    A statusline encodes meaning in colour — which mode is active, whether the
+    context bar is near full. The window used to strip ANSI and show grey text,
+    which threw that channel away. Parsed here rather than in JS so the client
+    only has to build spans, and so nothing ever reaches the DOM as markup.
+    """
+    text = NON_SGR_RE.sub("", text)
+    segments: list[dict] = []
+    style: dict = {}
+    pos = 0
+    for m in SGR_RE.finditer(text):
+        run = text[pos:m.start()]
+        if run:
+            segments.append({"text": run, **style})
+        style = apply_sgr(style, m.group(1))
+        pos = m.end()
+    if text[pos:]:
+        segments.append({"text": text[pos:], **style})
+    return segments
+
+
+def run_statusline(command: str, payload: dict) -> list[dict] | None:
+    # NOT shell=True. That becomes `cmd /c <command>`, and cmd strips the outer
+    # quote pair of a command that starts with a quoted exe path — which is
+    # exactly what every statusLine running node or python out of
+    # "C:\Program Files\…" looks like. It failed with rc=1 and empty stdout,
+    # and this function swallowed it, so plan §B-7 passthrough was silently
+    # dead. `/s /c "<command>"` is the documented form: strip one outer pair,
+    # pass the rest through verbatim.
+    comspec = os.environ.get("COMSPEC", "cmd.exe")
     try:
         done = subprocess.run(
-            command, shell=True, input=json.dumps(payload, ensure_ascii=False),
+            f'{comspec} /s /c "{command}"',
+            input=json.dumps(payload, ensure_ascii=False),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    # Statuslines are written for a terminal and emit ANSI colour codes; strip
-    # them rather than trying to reproduce terminal colouring in the window.
-    return ANSI_RE.sub("", (done.stdout or "")).strip() or None
+    return ansi_segments((done.stdout or "").strip()) or None
 
 
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 IMAGE_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                      ".gif": "image/gif", ".webp": "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+PASTE_DIR = Path(tempfile.gettempdir()) / "persian-claude-gui-paste"
+
+
+def save_pasted_image(media_type: str, data: str) -> str | None:
+    """Spill a clipboard image to disk and hand back its path.
+
+    Ctrl+V in the CLI attaches an image; in the window the clipboard gives us
+    bytes with no path, and every downstream step here (the chip row,
+    build_message_blocks, the size cap) is written against paths. Writing one
+    temp file reuses all of it instead of growing a second attachment shape.
+    """
+    suffix = next((s for s, m in IMAGE_MEDIA_TYPES.items() if m == media_type), None)
+    if suffix is None:
+        return None
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (ValueError, TypeError):
+        return None
+    if not raw or len(raw) > MAX_IMAGE_BYTES:
+        return None
+    PASTE_DIR.mkdir(parents=True, exist_ok=True)
+    target = PASTE_DIR / f"paste-{uuid.uuid4().hex[:12]}{suffix}"
+    target.write_bytes(raw)
+    return str(target)
 
 
 def build_message_blocks(text: str, attachments: list[str]) -> list[dict]:
@@ -646,9 +777,14 @@ class PermissionBroker:
 
         request_id = uuid.uuid4().hex
 
+        # A question is never "approved" -- see ASK_TOOL. Both silent paths are
+        # skipped here rather than at their two call sites, so a future third
+        # auto-approver cannot reintroduce the swallow.
+        asking = tool_name == ASK_TOOL
+
         with self._lock:
-            remembered = tool_name in self.session_allow
-            auto = self.auto_approve
+            remembered = not asking and tool_name in self.session_allow
+            auto = not asking and self.auto_approve
             if remembered or auto:
                 self.auto_log.append({"tool_name": tool_name, "at": time.time(),
                                       "why": "remembered" if remembered else "posture"})
@@ -693,12 +829,18 @@ class PermissionBroker:
             "suggestions": suggestions or [],
         })
 
-        answered = waiter.wait(timeout=PERMISSION_TIMEOUT)
+        answered = waiter.wait(timeout=ASK_TIMEOUT if asking else PERMISSION_TIMEOUT)
         with self._lock:
             entry = self._pending.pop(request_id, None)
         decision = (entry or {}).get("decision")
 
         if not answered or decision not in ("allow", "deny"):
+            if asking:
+                # An unanswered question is a skip, not a refusal: allow with
+                # no answers is what the CLI's own Skip button sends.
+                self._publish_resolved(request_id, tool_use_id, "allow",
+                                       tool_name=tool_name)
+                return {"decision": "allow", "answers": {}}
             # Timed out or the window went away. Deny: an unattended wrapper
             # must not approve a tool call on the user's behalf.
             self._publish_resolved(request_id, tool_use_id, "deny",
@@ -707,7 +849,8 @@ class PermissionBroker:
 
         self._publish_resolved(request_id, tool_use_id, decision,
                                tool_name=tool_name)
-        return {"decision": decision, "reason": "user decision"}
+        return {"decision": decision, "reason": "user decision",
+                "answers": (entry or {}).get("answers")}
 
     def _publish_resolved(self, request_id: str, tool_use_id: str | None,
                           decision: str, auto: bool = False,
@@ -729,12 +872,18 @@ class PermissionBroker:
         })
 
     def respond(self, request_id: str, decision: str, remember: bool,
-                tool_name: str | None) -> bool:
+                tool_name: str | None, answers: dict | None = None) -> bool:
         with self._lock:
             entry = self._pending.get(request_id)
             if entry is None:
                 return False
             entry["decision"] = decision
+            # AskUserQuestion's payload. Keyed by question text; the value is an
+            # option label, a list of labels, or free text. Validated by the CLI,
+            # not here -- a value it does not recognise is still a real answer
+            # and is passed through as typed.
+            if isinstance(answers, dict):
+                entry["answers"] = answers
             if remember and decision == "allow" and tool_name:
                 self.session_allow.add(tool_name)
             entry["event"].set()
@@ -862,6 +1011,12 @@ class ClaudeSession:
             if etype == "system" and event.get("subtype") == "init":
                 self.session_id = event.get("session_id")
                 self.model = event.get("model")
+                # The CLI shows its statusline from the moment it starts, not
+                # from the first answer. Publishing only on `result` left the
+                # bar empty for the whole first turn. Off-thread for the same
+                # reason `_after_result` is: it runs someone else's script.
+                threading.Thread(target=self._publish_statusline,
+                                 args=(event, generation), daemon=True).start()
             if event.get("type") == "result":
                 # Off-thread: the statusline is someone else's script, and the
                 # usage/rename control requests wait on THIS reader thread for
@@ -928,7 +1083,7 @@ class ClaudeSession:
         command = statusline_command()
         if not command:
             return
-        text = run_statusline(command, {
+        segments = run_statusline(command, {
             "session_id": self.session_id,
             "cwd": str(self.cwd),
             "model": {"id": self.model, "display_name": self.model},
@@ -940,8 +1095,10 @@ class ClaudeSession:
                 "total_duration_ms": result.get("duration_ms"),
             },
         })
-        if text and generation == self._generation:
-            self.hub.publish({"type": "wrapper", "subtype": "statusline", "text": text})
+        if segments and generation == self._generation:
+            self.hub.publish({"type": "wrapper", "subtype": "statusline",
+                              "segments": segments,
+                              "text": "".join(s["text"] for s in segments)})
 
     def _read_stderr(self, proc: subprocess.Popen, generation: int) -> None:
         for line in proc.stderr:
@@ -1053,7 +1210,12 @@ class ClaudeSession:
             return   # session restarted while the user was deciding
 
         if answer.get("decision") == "allow":
-            body = {"behavior": "allow", "updatedInput": tool_input}
+            updated = dict(tool_input)
+            # The one place an AskUserQuestion answer can travel. Absent for
+            # every other tool, so the input goes back byte-identical.
+            if isinstance(answer.get("answers"), dict):
+                updated["answers"] = answer["answers"]
+            body = {"behavior": "allow", "updatedInput": updated}
         else:
             body = {"behavior": "deny",
                     "message": answer.get("reason") or "denied by the user",
@@ -1327,12 +1489,20 @@ class Handler(BaseHTTPRequestHandler):
                                             "mode": mode})
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
+        elif parsed.path == "/api/attach/paste":
+            path = save_pasted_image(str(body.get("media_type") or ""),
+                                     str(body.get("data") or ""))
+            if path is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not an image"})
+                return
+            self._send_json(HTTPStatus.OK, {"path": path})
         elif parsed.path == "/api/permission/respond":
             ok = self.broker.respond(
                 body.get("request_id") or "",
                 body.get("decision") or "deny",
                 bool(body.get("remember")),
                 body.get("tool_name"),
+                body.get("answers") if isinstance(body.get("answers"), dict) else None,
             )
             self._send_json(HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND,
                             {"ok": ok})
@@ -1554,9 +1724,14 @@ def main() -> None:
     parser.add_argument("--quiet", action="store_true", help="suppress console logging")
     args = parser.parse_args()
 
+    # The desktop shortcut runs pythonw.exe, a GUI-subsystem binary with no
+    # console: sys.stderr is None there. print() is a silent no-op in that
+    # case, but log_message's sys.stderr.write is not — it raises inside
+    # send_response, before a single byte reaches the socket, so the window
+    # gets ERR_EMPTY_RESPONSE instead of the UI. No console -> no logging.
     serve(cwd=Path(args.cwd).resolve(),
           open_window=not args.no_window,
-          verbose=not args.quiet)
+          verbose=not args.quiet and sys.stderr is not None)
 
 
 if __name__ == "__main__":

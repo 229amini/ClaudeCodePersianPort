@@ -40,6 +40,7 @@ let currentCwd = "";
 let currentSession = null;
 let lastSession = null;   // newest OTHER session here: {id, path, label}
 const expanded = new Set();   // lowercased project paths open in the sidebar
+let autoExpanded = null;      // the project `expanded` was last auto-opened for
 
 /* The renderer owns the session id as of every system/init, but the sidebar
    owns the highlight, so the value lives here. Nullish input keeps the old
@@ -58,6 +59,7 @@ const SVG = {
   archive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4"/></svg>',
   unarchive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M12 18v-5M9.5 15.5L12 13l2.5 2.5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
 };
 
 function basename(p) {
@@ -163,7 +165,15 @@ let archOpen = false;   // the «بایگانی» section, collapsed by default
 
 function renderProjects(projects) {
   ui.projects.replaceChildren();
-  expanded.add(currentCwd.toLowerCase());
+  // Open the active project when you ARRIVE at it, not on every refresh. Any
+  // event redraws the sidebar, so the unconditional add used to undo the user's
+  // collapse a moment after they clicked — the active project could never be
+  // shut. Re-arming on change keeps the original "switching opens it" feel.
+  const activeKey = currentCwd.toLowerCase();
+  if (autoExpanded !== activeKey) {
+    expanded.add(activeKey);
+    autoExpanded = activeKey;
+  }
 
   // The open project always renders as active, even if its archived flag is
   // still set (opened via the picker while archived).
@@ -216,7 +226,9 @@ function projEl(proj, projects) {
   });
 
   // New chat in THIS project (restarts the CLI there) — an explicit action,
-  // so browsing the list can never kill the live session by accident.
+  // so browsing the list can never kill the live session by accident. It stays
+  // outside the menu because it is the one thing you come to a project row to
+  // do; everything rarer moved into the ⋯.
   const open = actionButton(SVG.plus, FA.newChat);
   open.addEventListener("click", () => switchProject(proj.path));
 
@@ -224,22 +236,29 @@ function projEl(proj, projects) {
 
   // Archive keeps the transcripts; remove deletes them. Neither ever touches
   // the folder on disk. The open project gets neither — same live-state rule
-  // as the current session's missing delete button.
+  // as the current session's missing delete action.
   if (!isCurrent) {
-    const arch = actionButton(proj.archived ? SVG.unarchive : SVG.archive,
-      proj.archived ? FA.unarchiveProject : FA.archiveProject);
-    arch.addEventListener("click", async () => {
-      try {
-        await api("/api/project/archive",
-          { path: proj.path, archived: !proj.archived });
-      } catch (err) {
-        return;
-      }
-      loadProjects();
-    });
-    const remove = armedDelete(FA.removeProject,
-      () => api("/api/project/remove", { path: proj.path }));
-    top.append(arch, remove);
+    top.append(...kebabMenu([
+      {
+        icon: proj.archived ? SVG.unarchive : SVG.archive,
+        text: proj.archived ? FA.unarchiveProject : FA.archiveProject,
+        run: async () => {
+          await api("/api/project/archive",
+            { path: proj.path, archived: !proj.archived });
+          loadProjects();
+        },
+      },
+      null,
+      {
+        icon: SVG.trash,
+        text: FA.removeProject,
+        danger: true,
+        run: async () => {
+          await api("/api/project/remove", { path: proj.path });
+          loadProjects();
+        },
+      },
+    ]));
   }
   wrap.append(top);
 
@@ -286,16 +305,25 @@ function sessionRow(sess, projPath, isCurrent) {
   btn.addEventListener("mouseleave", hidePreview);
   btn.addEventListener("blur", hidePreview);
 
-  const view = actionButton(SVG.eye, FA.viewSession);
-  view.addEventListener("click", () => replaySession(sess.session_id, projPath));
-
-  li.append(btn, view);
-  // The live process keeps writing its own transcript, so it cannot be
-  // deleted; the server refuses it too.
-  if (!isCurrent) {
-    li.append(armedDelete(FA.deleteSession, () =>
-      api("/api/session/delete", { session_id: sess.session_id, path: projPath })));
-  }
+  // The live process keeps writing its own transcript, so the current session
+  // cannot be deleted; the server refuses it too.
+  li.append(btn, ...kebabMenu([
+    {
+      icon: SVG.eye,
+      text: FA.viewSession,
+      run: () => replaySession(sess.session_id, projPath),
+    },
+    ...(isCurrent ? [] : [null, {
+      icon: SVG.trash,
+      text: FA.deleteSession,
+      danger: true,
+      run: async () => {
+        await api("/api/session/delete",
+          { session_id: sess.session_id, path: projPath });
+        loadProjects();
+      },
+    }]),
+  ]));
   return li;
 }
 
@@ -416,28 +444,65 @@ function actionButton(svg, title) {
   return btn;
 }
 
-/* Two-click confirm instead of confirm(): a browser modal would be LTR and
-   outside our RTL discipline, and this keeps the answer where the eye is. */
-function armedDelete(titleText, onDelete) {
-  const btn = actionButton(SVG.trash, titleText);
-  btn.addEventListener("click", async () => {
-    if (btn.dataset.armed !== "true") {
-      btn.dataset.armed = "true";
-      btn.classList.add("armed");
-      btn.textContent = FA.confirmDelete;
-      return;
+/* The row's overflow menu. One `⋯` replaces the three-to-four hover buttons a
+   row used to carry — the same actions, the same endpoints, just not all
+   shouting at once.
+
+   `popover` does the hard parts natively: top layer (so the sidebar's
+   overflow cannot clip it), light dismiss on an outside click, and Escape.
+   Position is assigned on open rather than with CSS anchor positioning, which
+   is newer than the Edge we are guaranteed on the target machine.
+
+   `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
+function kebabMenu(items) {
+  const btn = actionButton(SVG.dots, FA.moreActions);
+  const menu = document.createElement("div");
+  menu.className = "kebab-menu";
+  menu.popover = "auto";
+
+  for (const item of items) {
+    if (!item) {
+      menu.append(document.createElement("hr"));
+      continue;
     }
-    btn.disabled = true;
-    try {
-      await onDelete();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = FA.deleteFailed;
-      return;
-    }
-    loadProjects();
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "kebab-item" + (item.danger ? " danger" : "");
+    row.innerHTML = item.icon;
+    row.append(label(item.text));
+    row.addEventListener("click", async () => {
+      // Destructive actions arm on the first click and fire on the second.
+      // A confirm() would be an LTR browser modal, outside this app's RTL
+      // discipline, and it would put the question away from the eye.
+      if (item.danger && row.dataset.armed !== "true") {
+        row.dataset.armed = "true";
+        row.replaceChildren(label(FA.confirmDelete));
+        return;
+      }
+      menu.hidePopover();
+      try {
+        await item.run();
+      } catch (err) {
+        return;   // the list reloads on the next event either way
+      }
+    });
+    menu.append(row);
+  }
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();   // the row underneath must not also activate
+    const rect = btn.getBoundingClientRect();
+    menu.showPopover();
+    // Measured only once it is in the top layer, so a menu near the bottom
+    // of a long sidebar flips above its button instead of off-screen.
+    const height = menu.offsetHeight;
+    const below = rect.bottom + 4;
+    menu.style.top = (below + height > innerHeight ? rect.top - height - 4 : below) + "px";
+    menu.style.insetInlineStart = "";
+    menu.style.left = Math.max(6, Math.min(rect.left, innerWidth - menu.offsetWidth - 6)) + "px";
   });
-  return btn;
+
+  return [btn, menu];
 }
 
 /* Read-only view of an old conversation. Goes through renderEvent exactly as
@@ -513,10 +578,28 @@ const perm = {
   form: document.getElementById("perm-form"),
   tool: document.getElementById("perm-tool"),
   params: document.getElementById("perm-params"),
+  ask: document.getElementById("perm-ask"),
   remember: document.getElementById("perm-remember"),
+  title: document.getElementById("perm-title"),
+  text: document.getElementById("perm-body"),
+  allow: document.getElementById("perm-allow"),
+  deny: document.getElementById("perm-deny"),
   queue: [],
   current: null,
 };
+
+/* AskUserQuestion travels over the permission pipe but is NOT a permission: the
+   model is asking the user something and the answer rides back in the allow
+   reply's `updatedInput.answers` (server.py ASK_TOOL). So the dialog has two
+   modes, and the difference is not cosmetic — in ask mode there is nothing to
+   "allow", the remember checkbox is meaningless, and dismissing must skip the
+   question rather than refuse a tool call. */
+const ASK_TOOL = "AskUserQuestion";
+
+function askQuestions(req) {
+  const list = req?.tool_name === ASK_TOOL && req.tool_input?.questions;
+  return Array.isArray(list) && list.length ? list : null;
+}
 
 export function showPermission(req) {
   perm.queue.push(req);
@@ -527,11 +610,113 @@ function nextPermission() {
   perm.current = perm.queue.shift() ?? null;
   if (!perm.current) return;
 
-  perm.tool.replaceChildren(label(perm.current.tool_name ?? "?", "mono"));
-  renderParams(perm.current.tool_input ?? {});
-  perm.remember.checked = false;
+  /* Optional chaining throughout: spec-test.html carries this markup as a copy,
+     and a missing element must degrade, not take the whole renderer down with
+     it — which is exactly what an unguarded replaceChildren() did once. */
+  const questions = askQuestions(perm.current);
+  perm.dialog.classList.toggle("asking", !!questions);
+  if (perm.title) perm.title.textContent = questions ? FA.askTitle : FA.permTitle;
+  if (perm.text) perm.text.textContent = questions ? FA.askBody : FA.permBody;
+  if (perm.allow) perm.allow.textContent = questions ? FA.askSubmit : FA.permAllow;
+  if (perm.deny) perm.deny.textContent = questions ? FA.askSkip : FA.permDeny;
+
+  if (questions) {
+    perm.tool?.replaceChildren();
+    perm.params?.replaceChildren();
+    perm.ask?.replaceChildren(renderQuestions(questions));
+  } else {
+    perm.ask?.replaceChildren();
+    perm.tool?.replaceChildren(label(perm.current.tool_name ?? "?", "mono"));
+    renderParams(perm.current.tool_input ?? {});
+  }
+  if (perm.remember) perm.remember.checked = false;
   if (!perm.dialog.open) perm.dialog.showModal();
-  document.getElementById("perm-deny").focus();   // safe default has focus
+  // A permission defaults to the safe answer (deny). A question has no unsafe
+  // answer, so focus goes to the first option instead of to Skip.
+  (questions ? perm.ask?.querySelector("input") : perm.deny)?.focus();
+}
+
+/* Built from the tool's own payload, so a question the model invents at runtime
+   renders without any list here to keep in sync. Radio for a single choice,
+   checkbox for multiSelect — the native controls carry keyboard support, group
+   semantics and the checked state for free. */
+function renderQuestions(questions) {
+  const frag = document.createDocumentFragment();
+  questions.forEach((q, index) => {
+    const set = document.createElement("fieldset");
+    set.className = "ask-q";
+    set.dataset.question = q.question ?? "";
+
+    if (q.header) {
+      const legend = document.createElement("legend");
+      legend.setAttribute("dir", "auto");
+      legend.textContent = q.header;
+      set.append(legend);
+    }
+    const text = document.createElement("p");
+    text.className = "ask-text";
+    text.setAttribute("dir", "auto");
+    text.textContent = q.question ?? "";
+    set.append(text);
+    if (q.multiSelect) set.append(label(FA.askMulti, "ask-hint"));
+
+    for (const option of q.options ?? []) {
+      const row = document.createElement("label");
+      row.className = "ask-opt";
+      const box = document.createElement("input");
+      box.type = q.multiSelect ? "checkbox" : "radio";
+      box.name = "ask-" + index;
+      box.value = option.label ?? "";
+      row.append(box);
+      const stack = document.createElement("span");
+      stack.className = "ask-opt-text";
+      stack.setAttribute("dir", "auto");
+      // <bdi> so a Latin label ("Sparkling water") isolates instead of deciding
+      // the direction of the Persian description under it — spec rule 2.
+      const name = document.createElement("bdi");
+      name.className = "ask-label";
+      name.textContent = option.label ?? "";
+      stack.append(name);
+      if (option.description) stack.append(label(option.description, "ask-desc"));
+      row.append(stack);
+      set.append(row);
+    }
+
+    /* The tool always offers a free-text answer, so the dialog must too —
+       otherwise a question whose real answer is none of the options can only be
+       skipped. Typing here does not clear the boxes: the CLI accepts both. */
+    const other = document.createElement("label");
+    other.className = "ask-other";
+    other.append(label(FA.askOther, "ask-label"));
+    const field = document.createElement("input");
+    field.type = "text";
+    field.className = "ask-free";
+    field.setAttribute("dir", "auto");
+    field.placeholder = FA.askOtherPlaceholder;
+    other.append(field);
+    set.append(other);
+
+    frag.append(set);
+  });
+  return frag;
+}
+
+/* Keyed by the question TEXT and valued with option labels — the CLI's own
+   validator reads it that way (measured; wiki/permission-transport.md). A
+   multiSelect answer may be an array, a single choice must be a string. */
+function collectAnswers() {
+  const answers = {};
+  for (const set of perm.ask.querySelectorAll(".ask-q")) {
+    const key = set.dataset.question;
+    if (!key) continue;
+    const picked = [...set.querySelectorAll("input:checked")].map((i) => i.value);
+    const free = set.querySelector(".ask-free")?.value.trim();
+    if (free) picked.push(free);
+    if (!picked.length) continue;
+    const multi = set.querySelector('input[type="checkbox"]');
+    answers[key] = multi ? picked : picked[0];
+  }
+  return answers;
 }
 
 /* The dialog and the tool card render parameters with the SAME function
@@ -540,14 +725,17 @@ function nextPermission() {
    was unreadable exactly at the moment of consent. Spec rule 8. */
 function renderParams(toolInput) {
   if (!Object.keys(toolInput ?? {}).length) {
-    perm.params.replaceChildren("—");
+    perm.params?.replaceChildren("—");
     return;
   }
-  perm.params.replaceChildren(renderParamRows(toolInput));
+  perm.params?.replaceChildren(renderParamRows(toolInput));
 }
 
 async function resolvePermission(decision) {
   const req = perm.current;
+  const asking = !!askQuestions(req);
+  // Read the form before anything closes or the queue moves on.
+  const answers = asking && decision === "allow" && perm.ask ? collectAnswers() : {};
   perm.current = null;
   if (perm.dialog.open) perm.dialog.close();
   if (!req) return;
@@ -557,10 +745,14 @@ async function resolvePermission(decision) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        // Skipping a question is still an "allow" with an empty answer set —
+        // the CLI reads that as "the user did not answer", where a deny would
+        // reach the model as a tool failure.
         request_id: req.request_id,
-        decision,
-        remember: perm.remember.checked,
+        decision: asking ? "allow" : decision,
+        remember: !asking && perm.remember.checked,
         tool_name: req.tool_name,
+        ...(asking ? { answers } : {}),
       }),
     });
   } catch (err) {
@@ -633,14 +825,13 @@ export function initChrome() {
   }
 
   if (perm.dialog) {
-    document.getElementById("perm-title").textContent = FA.permTitle;
-    document.getElementById("perm-body").textContent = FA.permBody;
+    // Title, body and both button labels are set per request instead: they
+    // differ between an approval and a question (nextPermission).
     document.getElementById("perm-remember-label").textContent = FA.permRemember;
-    document.getElementById("perm-allow").textContent = FA.permAllow;
-    document.getElementById("perm-deny").textContent = FA.permDeny;
 
     // Escape / backdrop dismissal must resolve as deny. Closing a window is not
     // consent, and leaving it unanswered would block the CLI until the timeout.
+    // In ask mode resolvePermission turns that same deny into a skip.
     perm.dialog.addEventListener("cancel", (e) => {
       e.preventDefault();
       resolvePermission("deny");
