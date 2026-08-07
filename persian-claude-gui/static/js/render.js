@@ -21,7 +21,7 @@ import {
 import { setBusy, setSlashCommands, noteContext, contextFull } from "./composer.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
-  setEffortState,
+  setEffortState, resetControls,
 } from "./controls.js";
 
 const FA = window.STRINGS;
@@ -462,6 +462,20 @@ function meter(pct) {
   return wrap;
 }
 
+/* Everything in the statusline except the folder belongs to ONE conversation:
+   the session id, what it cost, how full its context is, and the machine's own
+   statusLine output. Carrying them into the next session is a lie that looks
+   like data — a fresh chat showing the previous one's cost. Called from the
+   `reset` event, which is the single place a session is swapped (project
+   switch, new chat and resume all restart the CLI through it). */
+export function resetStatus() {
+  state.status = { cwd: state.status.cwd };
+  setStatus({});
+  // The «context is filling up» notice is the same number in another shape. A
+  // new session starts empty, so it has to go with the meter that raised it.
+  noteContext(0);
+}
+
 export function setStatus(patch) {
   Object.assign(state.status, patch);
   // One number, two readers: the meter below and the notice above the composer.
@@ -755,6 +769,8 @@ export function renderEvent(ev) {
         // conversation cannot bleed into the new one.
         log.replaceChildren();
         resetTurn();
+        resetStatus();
+        resetControls();
         state.toolCards.clear();
         setBusy(false);   // a reset means no turn is running, by definition
         refreshProjects();

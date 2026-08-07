@@ -235,31 +235,31 @@ function projEl(proj, projects) {
   top.append(head, open);
 
   // Archive keeps the transcripts; remove deletes them. Neither ever touches
-  // the folder on disk. The open project gets neither — same live-state rule
-  // as the current session's missing delete action.
-  if (!isCurrent) {
-    top.append(...kebabMenu([
-      {
-        icon: proj.archived ? SVG.unarchive : SVG.archive,
-        text: proj.archived ? FA.unarchiveProject : FA.archiveProject,
-        run: async () => {
-          await api("/api/project/archive",
-            { path: proj.path, archived: !proj.archived });
-          loadProjects();
-        },
+  // the folder on disk. The OPEN project keeps its menu — hiding the ⋯ entirely
+  // made a working action (archive) look missing — but not the delete: the CLI
+  // is writing into that folder's transcript right now and the server refuses
+  // it with a 409. The menu says which one it is instead of going quiet.
+  top.append(...kebabMenu([
+    {
+      icon: proj.archived ? SVG.unarchive : SVG.archive,
+      text: proj.archived ? FA.unarchiveProject : FA.archiveProject,
+      run: async () => {
+        await api("/api/project/archive",
+          { path: proj.path, archived: !proj.archived });
+        loadProjects();
       },
-      null,
-      {
-        icon: SVG.trash,
-        text: FA.removeProject,
-        danger: true,
-        run: async () => {
-          await api("/api/project/remove", { path: proj.path });
-          loadProjects();
-        },
+    },
+    null,
+    isCurrent ? { note: FA.projectOpenNote } : {
+      icon: SVG.trash,
+      text: FA.removeProject,
+      danger: true,
+      run: async () => {
+        await api("/api/project/remove", { path: proj.path });
+        loadProjects();
       },
-    ]));
-  }
+    },
+  ]));
   wrap.append(top);
 
   if (expanded.has(key)) {
@@ -459,24 +459,45 @@ function kebabMenu(items) {
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
   menu.popover = "auto";
+  const disarmers = [];
 
   for (const item of items) {
     if (!item) {
       menu.append(document.createElement("hr"));
       continue;
     }
+    // A line of explanation where an action cannot be offered. Not a disabled
+    // button: a control you can press and nothing happens is worse than a
+    // sentence saying why it is not there.
+    if (item.note) {
+      const note = label(item.note, "kebab-note");
+      note.setAttribute("dir", "auto");
+      menu.append(note);
+      continue;
+    }
     const row = document.createElement("button");
     row.type = "button";
     row.className = "kebab-item" + (item.danger ? " danger" : "");
     row.innerHTML = item.icon;
-    row.append(label(item.text));
+    const text = label(item.text);
+    row.append(text);
+
+    // Arming swaps the LABEL and keeps the row: a rebuilt row loses its icon,
+    // and — the actual defect — nothing ever put it back, so a menu reopened
+    // an hour later still showed a red «مطمئنید؟» waiting to be answered by
+    // the first click that landed on it. Disarmed on every open, below.
+    disarmers.push(() => {
+      delete row.dataset.armed;
+      text.textContent = item.text;
+    });
+
     row.addEventListener("click", async () => {
       // Destructive actions arm on the first click and fire on the second.
       // A confirm() would be an LTR browser modal, outside this app's RTL
       // discipline, and it would put the question away from the eye.
       if (item.danger && row.dataset.armed !== "true") {
         row.dataset.armed = "true";
-        row.replaceChildren(label(FA.confirmDelete));
+        text.textContent = FA.confirmDelete;
         return;
       }
       menu.hidePopover();
@@ -492,6 +513,7 @@ function kebabMenu(items) {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();   // the row underneath must not also activate
     const rect = btn.getBoundingClientRect();
+    for (const disarm of disarmers) disarm();
     menu.showPopover();
     // Measured only once it is in the top layer, so a menu near the bottom
     // of a long sidebar flips above its button instead of off-screen.

@@ -805,8 +805,14 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 }
 .comp-box:focus-within { border-color: #57544e; }
 
+/* Wraps. Five chips of user-determined length (folder name, model name, effort,
+   posture, the auto counter) plus two buttons do not fit one line in a narrow
+   window, and a non-wrapping flex row does not warn you — it just pushes the
+   last chips out of the box. The effort chip was the one that vanished, since
+   it only shares the row once a session has a posture and an audit count. */
 .comp-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -901,6 +907,14 @@ button.round {
   cursor: pointer;
 }
 .chip-btn:hover { background: var(--surface-2); color: var(--fg); }
+/* A chip is one line and gives up characters, never height: a model name that
+   wraps turns the whole composer row into two. */
+.chip-btn > span, .chip-btn > bdi {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chip-btn .path {
   background: none;
   padding: 0;
@@ -1094,9 +1108,26 @@ button.round {
   cursor: pointer;
 }
 .kebab-item svg { flex: none; opacity: .8; }
+.kebab-note {
+  display: block;
+  padding: 6px 9px;
+  max-inline-size: 15rem;
+  color: var(--fg-muted);
+  font-size: .8em;
+  line-height: 1.7;
+}
 .kebab-item:hover, .kebab-item:focus-visible { background: var(--surface); outline: none; }
 .kebab-item.danger { color: var(--danger); }
-.kebab-item.danger[data-armed="true"] { background: var(--danger); color: #fff; }
+
+/* Armed, not alarming. A full-bleed coral fill was the loudest thing in the
+   whole app and read as a broken block rather than as a question; the tinted
+   surface the error bubble already uses says "this one is destructive" in the
+   app's own voice, and the ring is what changed since the last click. */
+.kebab-item.danger[data-armed="true"] {
+  background: var(--danger-bg);
+  box-shadow: inset 0 0 0 1px var(--danger);
+  font-weight: 600;
+}
 
 /* An open menu must keep its own trigger on screen — the hover rules above
    would otherwise hide the button the menu is anchored to. */
