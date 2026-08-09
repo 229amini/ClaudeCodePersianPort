@@ -233,6 +233,7 @@ class Hub:
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 RECENTS_FILE = HERE / "recents.json"
 ARCHIVED_FILE = HERE / "archived.json"
+PINNED_FILE = HERE / "pinned.json"
 MAX_RECENTS = 10
 
 
@@ -341,9 +342,14 @@ def list_projects() -> list[dict]:
         if Path(recent).is_dir():
             entry_for(recent)
     archived = {a.lower() for a in load_archived()}
-    result = sorted(projects.values(), key=lambda p: p["modified"], reverse=True)
+    pinned = {p.lower() for p in load_pinned()}
+    # Pinned first, then most recent. Two keys in one sort rather than two
+    # passes: `modified` is a float, so negating it reverses only that half.
+    result = sorted(projects.values(),
+                    key=lambda p: (p["path"].lower() not in pinned, -p["modified"]))
     for entry in result:
         entry["archived"] = entry["path"].lower() in archived
+        entry["pinned"] = entry["path"].lower() in pinned
     return result
 
 
@@ -464,6 +470,38 @@ def transcript_path(cwd: Path, session_id: str) -> Path | None:
     return transcript
 
 
+def _normalize_transcript_event(event: dict) -> dict | None:
+    """One transcript line -> the `{type, message}` shape the renderer wants,
+    or None to drop it. Shared by `read_session()` and the per-agent
+    transcript view (`read_agent_events()`) — an agent's own `.jsonl` is
+    written in the identical record format (wiki/background-agents.md), so
+    the normalisation is the same; only the caller-side `isSidechain` check
+    differs, because an agent file is entirely sidechain by definition.
+    """
+    if event.get("type") not in ("user", "assistant"):
+        return None
+    message = event.get("message", {})
+    if event["type"] == "user" and isinstance(message.get("content"), str):
+        raw = message["content"]
+        if raw.lstrip().startswith("<task-notification>"):
+            # A real event, not the CLI talking to itself like the envelopes
+            # below — must survive replay so the completion card can render.
+            # Passed through BEFORE user_prompt_text(): its CLI_ENVELOPE_RE
+            # matches "<task-notification>" too (same shape as the noise it
+            # exists to drop), so this has to jump the filter, not pass it.
+            message = {"content": [{"type": "text", "text": raw}]}
+        else:
+            # A typed prompt from a session started outside the wrapper.
+            # Normalised to the block shape the renderer already handles, so
+            # "one renderer, two sources" keeps holding, and filtered so the
+            # CLI's own envelopes never replay as the person's words.
+            text = user_prompt_text(raw)
+            if text is None:
+                return None
+            message = {"content": [{"type": "text", "text": text}]}
+    return {"type": event["type"], "message": message}
+
+
 def read_session(cwd: Path, session_id: str) -> list[dict]:
     """Replayable events for one session.
 
@@ -484,22 +522,352 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if event.get("type") not in ("user", "assistant"):
+            if event.get("isMeta"):
+                # The CLI's own UI never shows these, and a skill load injects
+                # its ENTIRE SKILL.md as ordinary block-shaped content under
+                # this flag -- session_meta() already treats isMeta as "not
+                # real activity" for sort purposes; this is that same flag,
+                # gating replay instead. A task-notification user message
+                # carries no isMeta key, so this cannot eat one.
                 continue
             if event.get("isSidechain"):
                 continue
-            message = event.get("message", {})
-            if event["type"] == "user" and isinstance(message.get("content"), str):
-                # A typed prompt from a session started outside the wrapper.
-                # Normalised to the block shape the renderer already handles, so
-                # "one renderer, two sources" keeps holding, and filtered so the
-                # CLI's own envelopes never replay as the person's words.
-                text = user_prompt_text(message["content"])
-                if text is None:
-                    continue
-                message = {"content": [{"type": "text", "text": text}]}
-            events.append({"type": event["type"], "message": message})
+            normalized = _normalize_transcript_event(event)
+            if normalized is not None:
+                events.append(normalized)
     return events
+
+
+# --- Background agents ---------------------------------------------------
+#
+# wiki/background-agents.md is the measured contract. Registry state comes
+# ONLY from the main transcript file on disk, never from the live stdout
+# stream: whether the task-notification actually reaches stream-json stdout
+# in `-p` mode is unmeasured (the session the contract was measured against
+# ran the interactive TUI), but the CLI demonstrably WRITES both the launch
+# ack and every notification to the transcript, live and in replay alike.
+# One parser, one source of truth, no leaning on an unverified stream shape.
+
+AGENT_ID_RE = re.compile(r"^[0-9a-f]{6,40}$")
+TASK_NOTIFICATION_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.DOTALL)
+ASYNC_AGENT_ID_RE = re.compile(r"agentId:\s*([0-9a-f]{6,40})")
+
+
+def subagents_dir(cwd: Path, session_id: str) -> Path | None:
+    r"""`<transcript-dir>\<session-id>\subagents\` for one session, or None.
+
+    Routed through `transcript_path()` first, so a session id that fails
+    ITS traversal/existence guard can never reach here either.
+    """
+    transcript = transcript_path(cwd, session_id)
+    if transcript is None:
+        return None
+    folder = transcript.parent / session_id / "subagents"
+    return folder if folder.is_dir() else None
+
+
+def agent_file_path(cwd: Path, session_id: str, agent_id: str, suffix: str) -> Path | None:
+    """`agent-<agent_id>.<suffix>` inside one session's subagents folder, or
+    None. Same choke-point discipline as `transcript_path()`: the id must
+    match the CLI's own hex-id shape AND the resolved path must stay inside
+    the folder — every caller that touches an agent file by id goes through
+    here.
+    """
+    if not AGENT_ID_RE.match(agent_id):
+        return None
+    folder = subagents_dir(cwd, session_id)
+    if folder is None:
+        return None
+    target = (folder / f"agent-{agent_id}.{suffix}").resolve()
+    if folder.resolve() not in target.parents or not target.is_file():
+        return None
+    return target
+
+
+def _xml_unescape(text: str) -> str:
+    """task-notification content escapes &, < and > (wiki/background-agents
+    .md) — undo it before a tag's value reaches a caller."""
+    return (text.replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", '"').replace("&apos;", "'")
+                .replace("&amp;", "&"))
+
+
+def _tag(body: str, name: str) -> str | None:
+    match = re.search(rf"<{name}>(.*?)</{name}>", body, re.DOTALL)
+    return _xml_unescape(match.group(1).strip()) if match else None
+
+
+def _tool_result_text(content) -> str:
+    """Plain text out of a `tool_result`'s own `content`, which is either a
+    bare string or the usual `[{"type": "text", ...}]` blocks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(part.get("text", "") for part in content
+                        if isinstance(part, dict) and part.get("type") == "text")
+    return ""
+
+
+def _tail_lines(path: Path, offset: int) -> tuple[list[str], int]:
+    """Complete lines appended after byte `offset`, and the new offset.
+
+    A trailing partial line (the CLI still mid-write) is left unconsumed —
+    parsing it now would silently drop it on a JSON error, and the offset
+    would already be past it, losing it for good. So the offset only
+    advances past the last full line; the partial one is read whole on the
+    next poll.
+    """
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        chunk = handle.read()
+    if not chunk:
+        return [], offset
+    cut = chunk.rfind(b"\n")
+    if cut == -1:
+        return [], offset
+    lines = chunk[:cut].decode("utf-8", errors="replace").split("\n")
+    return lines, offset + cut + 1
+
+
+def _scan_agent_launch(line: str, pending: dict) -> None:
+    """`assistant` event, `tool_use` named "Agent" -> stash description +
+    agentType under the tool_use id, awaiting the launch ack (the join key,
+    wiki/background-agents.md)."""
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    for part in (event.get("message", {}).get("content") or []):
+        if not (isinstance(part, dict) and part.get("type") == "tool_use"
+                and part.get("name") == "Agent"):
+            continue
+        tool_use_id = part.get("id")
+        if not tool_use_id:
+            continue
+        inp = part.get("input") or {}
+        # A synchronous agent (run_in_background: false) never acks, so this
+        # entry is simply never claimed — harmless, not worth pruning for the
+        # lifetime of one project's cache entry.
+        pending[tool_use_id] = {
+            "description": inp.get("description"),
+            "agentType": inp.get("subagent_type"),
+        }
+
+
+def _scan_agent_ack(line: str, registry: dict, pending: dict) -> None:
+    """`user` event carrying the `tool_result` for an `Agent` tool_use ->
+    create the registry entry. Two data sources, per wiki/background-agents
+    .md: the sibling `toolUseResult` field when present, else the
+    `tool_result` TEXT (what actually streams live), parsed as a fallback.
+    """
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    if event.get("type") != "user":
+        return
+    content = event.get("message", {}).get("content")
+    if not isinstance(content, list):
+        return
+    for part in content:
+        if not (isinstance(part, dict) and part.get("type") == "tool_result"):
+            continue
+        tool_use_id = part.get("tool_use_id")
+        launch = pending.pop(tool_use_id, None) if tool_use_id else None
+        tur = event.get("toolUseResult")
+        agent_id = model = description = None
+        if isinstance(tur, dict) and tur.get("isAsync") and tur.get("status") == "async_launched":
+            agent_id = tur.get("agentId")
+            model = tur.get("resolvedModel")
+            description = tur.get("description")
+        else:
+            text = _tool_result_text(part.get("content"))
+            if "Async agent launched" not in text:
+                continue
+            match = ASYNC_AGENT_ID_RE.search(text)
+            if not match:
+                continue
+            agent_id = match.group(1)
+        if not agent_id:
+            continue
+        entry = registry.setdefault(agent_id, {"completed": False, "finishedAt": None, "summary": None})
+        entry["id"] = agent_id
+        entry["kind"] = "agent"
+        entry["description"] = description or (launch or {}).get("description")
+        entry["agentType"] = (launch or {}).get("agentType")
+        entry["model"] = model
+        entry["startedAt"] = iso_epoch(event.get("timestamp"))
+
+
+def _scan_notification(line: str, registry: dict) -> None:
+    """A `<task-notification>` block, as either a `queue-operation` record
+    or the `user` message the CLI auto-submits from it (wiki/background-
+    agents.md) — both carry the same tags, and the same task-id can appear
+    twice, so this always overwrites rather than appending.
+
+    A task-id with no matching registry entry is a background COMMAND
+    (`Bash` with `run_in_background`): it has no Agent launch/ack to join
+    to and no subagents files, so its notification IS the whole record.
+    """
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    etype = event.get("type")
+    if etype == "queue-operation":
+        content = event.get("content")
+    elif etype == "user":
+        content = event.get("message", {}).get("content")
+    else:
+        return
+    if not isinstance(content, str):
+        return
+    match = TASK_NOTIFICATION_RE.search(content)
+    if not match:
+        return
+    body = match.group(1)
+    task_id = _tag(body, "task-id")
+    if not task_id:
+        return
+    timestamp = iso_epoch(event.get("timestamp"))
+    entry = registry.get(task_id)
+    if entry is None:
+        entry = {
+            "id": task_id, "kind": "command", "description": None,
+            "agentType": None, "model": None, "startedAt": timestamp,
+        }
+        registry[task_id] = entry
+    entry["finishedAt"] = timestamp
+    entry["summary"] = _tag(body, "summary")
+    entry["completed"] = True
+
+
+_AGENT_CACHE: dict[str, dict] = {}
+_AGENT_CACHE_LOCK = threading.Lock()
+
+
+def build_agent_registry(transcript: Path) -> dict[str, dict]:
+    """Agents and background commands launched from one transcript, keyed by
+    id.
+
+    Cached per transcript path: a request re-stats the file and parses only
+    the bytes appended since the last call — the CLI only appends, so the
+    common case is a handful of new lines, not a multi-thousand-line re-read
+    on every poll. A file that got SHORTER than the cached offset (rotated,
+    or a stale cache from a deleted+recreated session) forces a full rescan
+    rather than reading from a now-bogus offset.
+
+    Returns a shallow copy so a caller iterating the result cannot collide
+    with another thread's concurrent scan mutating the live cache —
+    ThreadingHTTPServer means two /api/agents polls for the same session can
+    race.
+    """
+    key = str(transcript)
+    with _AGENT_CACHE_LOCK:
+        try:
+            size = transcript.stat().st_size
+        except OSError:
+            return {}
+        cached = _AGENT_CACHE.get(key)
+        if cached is None or cached["offset"] > size:
+            offset, registry, pending = 0, {}, {}
+        else:
+            offset, registry, pending = cached["offset"], cached["registry"], cached["pending"]
+        lines, new_offset = _tail_lines(transcript, offset)
+        for line in lines:
+            if not line.strip():
+                continue
+            if '"name":"Agent"' in line:
+                _scan_agent_launch(line, pending)
+            elif '"tool_result"' in line and '"type":"user"' in line:
+                _scan_agent_ack(line, registry, pending)
+            elif "task-notification" in line:
+                _scan_notification(line, registry)
+        _AGENT_CACHE[key] = {"offset": new_offset, "registry": registry, "pending": pending}
+        return {agent_id: dict(entry) for agent_id, entry in registry.items()}
+
+
+def _agent_status(entry: dict, live: bool, spawned_at: float | None) -> str:
+    """"completed" once any task-notification was seen, else "running" only
+    if this is the wrapper's currently live CLI session AND the entry's ack
+    (`startedAt`) is not older than that process's own `spawned_at`.
+
+    `--resume` keeps `session_id` stable across a kill (B-9.8), so `live`
+    alone cannot tell a genuinely running agent from one orphaned by a PRIOR
+    process: killing the CLI kills every agent it launched too, but writes no
+    task-notification, so nothing ever marks that entry completed. Without
+    the age check, --resume makes `live` true again and the orphan reports
+    "running" forever. An entry with no `startedAt` (unparseable timestamp)
+    is given the benefit of the doubt rather than assumed orphaned.
+    """
+    if entry.get("completed"):
+        return "completed"
+    if not live:
+        return "stopped"
+    started = entry.get("startedAt")
+    if spawned_at is not None and started is not None and started < spawned_at:
+        return "stopped"
+    return "running"
+
+
+def _enrich_agent_meta(folder: Path | None, entry: dict) -> None:
+    """Fill agentType/model from `agent-<id>.meta.json` when it exists —
+    written once per agent and more precise than the launch/ack (wiki/
+    background-agents.md: meta's `model` is the short name, e.g. "opus",
+    where the ack's `resolvedModel` is the full id)."""
+    agent_id = entry.get("id") or ""
+    if folder is None or entry.get("kind") != "agent" or not AGENT_ID_RE.match(agent_id):
+        return
+    try:
+        meta = json.loads((folder / f"agent-{agent_id}.meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if meta.get("agentType"):
+        entry["agentType"] = meta["agentType"]
+    if meta.get("model"):
+        entry["model"] = meta["model"]
+
+
+def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int]:
+    """Replayable events from one agent's own transcript, same `{type,
+    message}` shape as `read_session()` — the file is the identical record
+    format (wiki/background-agents.md), but every line is `isSidechain:
+    true` (the file IS the sidechain), so that flag is not a drop signal
+    here the way it is for the main transcript.
+
+    `after` and the returned int are LINE indices into the raw file, not
+    event counts (most lines are bookkeeping the caller never sees), so the
+    client can pass the returned value back verbatim as the next `after`.
+
+    Same straggler discipline as `_tail_lines()`: text-mode iteration still
+    yields a trailing line with no newline yet (the CLI mid-write on it), so
+    a line missing its terminator is never counted into `total` -- doing so
+    would put the client's cursor past a record that doesn't exist yet, and
+    once the CLI finished writing it the line would be skipped forever.
+    """
+    events: list[dict] = []
+    total = 0
+    with agent_file.open("r", encoding="utf-8", errors="replace") as handle:
+        for total, line in enumerate(handle, start=1):
+            if total <= after:
+                continue
+            if not line.endswith("\n"):
+                total -= 1
+                break
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("isMeta"):
+                # Same flag, same reason as read_session()'s isMeta guard --
+                # a skill load injects its whole SKILL.md under this flag, and
+                # unlike there, _normalize_transcript_event() drops isMeta
+                # entirely, so it must be checked on the raw event.
+                continue
+            normalized = _normalize_transcript_event(event)
+            if normalized is not None:
+                events.append(normalized)
+    return events, total
 
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
@@ -763,11 +1131,23 @@ def load_archived() -> list[str]:
     return _load_paths(ARCHIVED_FILE)
 
 
+def load_pinned() -> list[str]:
+    return _load_paths(PINNED_FILE)
+
+
+def toggle_in_list(file: Path, raw: str, on: bool) -> None:
+    """Add or remove one path in a path-list file, case-insensitively."""
+    items = [i for i in _load_paths(file) if i.lower() != raw.lower()]
+    if on:
+        items.insert(0, raw)
+    _save_paths(file, items)
+
+
 def drop_project_from_lists(*variants: str) -> None:
-    """Forget a path in recents and archived (case-insensitive)."""
+    """Forget a path in recents, archived and pinned (case-insensitive)."""
     gone = {v.lower() for v in variants}
-    _save_paths(RECENTS_FILE, [i for i in load_recents() if i.lower() not in gone])
-    _save_paths(ARCHIVED_FILE, [i for i in load_archived() if i.lower() not in gone])
+    for file in (RECENTS_FILE, ARCHIVED_FILE, PINNED_FILE):
+        _save_paths(file, [i for i in _load_paths(file) if i.lower() not in gone])
 
 
 class PermissionBroker:
@@ -973,6 +1353,7 @@ class ClaudeSession:
         self.claude_bin = claude_bin
         self.proc: subprocess.Popen | None = None
         self.session_id: str | None = None
+        self.spawned_at: float | None = None  # set in start(); see _agent_status()
         self.model: str | None = None
         self._write_lock = threading.Lock()
         self._generation = 0   # stale reader threads check this before publishing
@@ -1018,6 +1399,11 @@ class ClaudeSession:
             bufsize=1,
             creationflags=creationflags,
         )
+        # This process's own incarnation, not the session's: --resume keeps
+        # session_id stable across a kill (B-9.8), so session_id alone can't
+        # tell a live agent from one orphaned by a prior, now-dead process --
+        # _agent_status() needs this to tell the two apart.
+        self.spawned_at = time.time()
         proc = self.proc
         self.init_info = None
         # Only a session started from scratch gets an auto-title: a resumed one
@@ -1546,6 +1932,73 @@ class Handler(BaseHTTPRequestHandler):
                 "session_id": session_id,
                 "events": read_session(cwd, session_id),
             })
+        elif parsed.path == "/api/agents":
+            # Background-agents panel, one round-trip per poll. Same id/cwd
+            # convention as /api/session -- any project's history, not just
+            # the open one.
+            session_id = params.get("id", [""])[0]
+            if not session_id:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing id"})
+                return
+            cwd_raw = params.get("cwd", [""])[0]
+            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
+            transcript = transcript_path(cwd, session_id)
+            if transcript is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
+                return
+            live = session_id == self.session.session_id
+            folder = subagents_dir(cwd, session_id)
+            agents = []
+            for entry in build_agent_registry(transcript).values():
+                _enrich_agent_meta(folder, entry)
+                agents.append({
+                    "id": entry["id"], "kind": entry["kind"],
+                    "description": entry.get("description"),
+                    "agentType": entry.get("agentType"),
+                    "model": entry.get("model"),
+                    "status": _agent_status(entry, live, self.session.spawned_at),
+                    "startedAt": entry.get("startedAt"),
+                    "finishedAt": entry.get("finishedAt"),
+                    "summary": entry.get("summary"),
+                })
+            agents.sort(key=lambda a: a["startedAt"] or 0)
+            self._send_json(HTTPStatus.OK, {"agents": agents})
+        elif parsed.path == "/api/agent":
+            # One agent's own transcript, incrementally: `after` is the line
+            # offset the client already has (see read_agent_events()).
+            session_id = params.get("id", [""])[0]
+            agent_id = params.get("agent", [""])[0]
+            if not session_id or not agent_id:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing id"})
+                return
+            cwd_raw = params.get("cwd", [""])[0]
+            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
+            transcript = transcript_path(cwd, session_id)
+            if transcript is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
+                return
+            agent_file = agent_file_path(cwd, session_id, agent_id, "jsonl")
+            if agent_file is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such agent"})
+                return
+            try:
+                after = max(0, int(params.get("after", ["0"])[0]))
+            except ValueError:
+                after = 0
+            events, next_line = read_agent_events(agent_file, after)
+            entry = build_agent_registry(transcript).get(agent_id, {})
+            _enrich_agent_meta(subagents_dir(cwd, session_id), entry)
+            live = session_id == self.session.session_id
+            self._send_json(HTTPStatus.OK, {
+                "events": events,
+                "next": next_line,
+                "running": _agent_status(entry, live, self.session.spawned_at) == "running",
+                "meta": {
+                    "description": entry.get("description"),
+                    "agentType": entry.get("agentType"),
+                    "model": entry.get("model"),
+                },
+            })
         elif parsed.path == "/favicon.ico":
             # Edge asks for this on its own; the auth cookie is already set by
             # the time it does. Same icon the desktop shortcut uses.
@@ -1735,11 +2188,37 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing path"})
                 return
             flag = bool(body.get("archived"))
-            items = [i for i in load_archived() if i.lower() != raw.lower()]
-            if flag:
-                items.insert(0, raw)
-            _save_paths(ARCHIVED_FILE, items)
+            toggle_in_list(ARCHIVED_FILE, raw, flag)
             self._send_json(HTTPStatus.OK, {"ok": True, "archived": flag})
+        elif parsed.path == "/api/project/pin":
+            # Sticks a project to the top of the sidebar. Same shape as archive
+            # — a path list on disk — so the sort in list_projects() is the only
+            # thing that has to know the difference.
+            raw = (body.get("path") or "").strip()
+            if not raw:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing path"})
+                return
+            flag = bool(body.get("pinned"))
+            toggle_in_list(PINNED_FILE, raw, flag)
+            self._send_json(HTTPStatus.OK, {"ok": True, "pinned": flag})
+        elif parsed.path == "/api/project/reveal":
+            # Opens the project folder in Explorer. `startfile` on a directory is
+            # what the shell does for a double-click, so the user's own file
+            # associations decide — we are not naming explorer.exe.
+            # The existence check is the trust boundary: this hands a string to
+            # the Windows shell, so it opens FOLDERS THAT EXIST and nothing else
+            # — never a file, which would run whatever is associated with it.
+            raw = (body.get("path") or "").strip()
+            target = Path(raw).expanduser() if raw else None
+            if target is None or not target.is_dir():
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
+                return
+            try:
+                os.startfile(str(target.resolve()))   # noqa: S606 — Windows-only by design
+            except OSError as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True})
         elif parsed.path == "/api/project/remove":
             # Deletes the project's TRANSCRIPTS and list entries. Never touches
             # the project folder itself — those are the user's files.

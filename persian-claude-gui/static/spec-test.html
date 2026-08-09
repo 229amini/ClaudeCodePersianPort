@@ -77,6 +77,11 @@
 <script src="/static/vendor/marked.min.js"></script>
 <script type="module" src="/static/js/app.js"></script>
 <script type="module">
+/* The agents drawer's render seam has no window alias (nothing else needs one),
+   so the harness imports it. Module scripts execute in document order, so
+   js/app.js has already evaluated this module — the import reuses it. */
+import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
+
 /* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
    copy, so a regression in the renderer fails here. Cases match
    claude-persian-rtl-spec.md §"Test cases" exactly. */
@@ -231,7 +236,7 @@ const dirOf = (el) => el && getComputedStyle(el).direction;
    in `.diff` instead of in `.tool-output`. Same rule, different element; these
    checks moved with it rather than being dropped, because the content under
    test is exactly the same Persian/Latin/blank mixture. */
-const card9 = [...specLog.querySelectorAll("details.card.tool")]
+const card9 = [...specLog.querySelectorAll("details.card.tool:not(.group)")]
   .find(c => c.querySelector(".diff"));
 const box9 = card9?.querySelector(".diff");
 const lines9 = box9 ? [...box9.querySelectorAll(".dt")] : [];
@@ -328,7 +333,7 @@ window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
                      request_id: "spec10", tool_use_id: "spec10-tool",
                      decision: "deny" });
 
-const out11 = [...specLog.querySelectorAll("details.card.tool")]
+const out11 = [...specLog.querySelectorAll("details.card.tool:not(.group)")]
   .at(-1)?.querySelector(".card-body > .tool-output");
 const lines11 = out11 ? [...out11.children] : [];
 check("case 11: tool_result mixes directions line by line",
@@ -343,6 +348,28 @@ check("case 12: Latin digits stay inside their Persian line",
   digitLine.children.length === 0 && dirOf(digitLine) === "rtl",
   (digitLine?.textContent ?? "none") + " -> " + (dirOf(digitLine) ?? "none"));
 
+/* Spec rule 3's `line-height: 1.9` is a MINIMUM for Persian, and tool output is
+   the one box where it was costing a screen and a half per file listing. It is
+   now tightened for the box and restored per line by `:dir(rtl)` — which means
+   the floor is no longer a constant anyone can read off the stylesheet, so it
+   has to be asserted where it applies: on a real Persian line, next to a real
+   Latin one. Ratios, not pixels: this box sets its own font-size. */
+const lh = (el) => parseFloat(getComputedStyle(el).lineHeight)
+                 / parseFloat(getComputedStyle(el).fontSize);
+check("rule 3: a Persian output line keeps the 1.9 floor, a Latin one does not",
+  lh(lines11[0]) >= 1.9 && lh(lines11[1]) < 1.9,
+  "fa " + lh(lines11[0]).toFixed(2) + " / en " + lh(lines11[1]).toFixed(2));
+
+/* Same rule, the diff box: renderDiff() puts dir="auto" on `.dt` (the text
+   span), never on `.dl` (the row) — a selector written against `.dl:dir()`
+   has no dir attribute of its own to resolve and silently matches every row
+   via the RTL <html> shell instead, regardless of the row's real content.
+   `lines9` (from the rule 8 block above) mixes a real Persian line with a
+   real Latin one, which is exactly what this needs. */
+check("rule 3: a diff's Persian line keeps the 1.9 floor, a Latin one does not",
+  lh(lines9[0]) >= 1.9 && lh(lines9[1]) < 1.9,
+  "fa " + lh(lines9[0]).toFixed(2) + " / en " + lh(lines9[1]).toFixed(2));
+
 /* An MCP tool has no Persian verb and never will — its name arrives as
    mcp__<server>__<tool>, long enough to fill the rail on its own. The row must
    split it, and the width guard is the point: a textContent check passes just
@@ -356,7 +383,7 @@ window.renderEvent({
     input: {},
   }] },
 });
-const sumMcp = [...specLog.querySelectorAll("details.card.tool summary")].at(-1);
+const sumMcp = [...specLog.querySelectorAll("details.card.tool:not(.group) summary")].at(-1);
 check("MCP tool row names the tool and its server separately",
   sumMcp?.querySelector(".tool-name")?.textContent === "tabs_context_mcp" &&
   sumMcp?.querySelector(".tool-server")?.textContent === "claude-in-chrome",
@@ -384,7 +411,7 @@ window.renderEvent({
     input: { subagent_type: "Explore", description: "بگرد", prompt: PERSIAN_LINE },
   }] },
 });
-const sumTask = [...specLog.querySelectorAll("details.card.tool summary")].at(-1);
+const sumTask = [...specLog.querySelectorAll("details.card.tool:not(.group) summary")].at(-1);
 const taskTarget = sumTask?.querySelector(".tool-target");
 check("a subagent row names the agent, described by the CLI",
   taskTarget?.textContent === "Explore" &&
@@ -407,7 +434,7 @@ window.renderEvent({
     input: { plan: "## " + PERSIAN_LINE + "\n\n- گام اول\n- " + PERSIAN_LINE },
   }] },
 });
-const planCard = [...specLog.querySelectorAll("details.card.tool")].at(-1);
+const planCard = [...specLog.querySelectorAll("details.card.tool:not(.group)")].at(-1);
 const planBody = planCard?.querySelector(".plan-body");
 check("a plan is rendered as markdown, not as a parameter blob",
   !!planBody?.querySelector("h2") && planBody.querySelectorAll("li").length === 2 &&
@@ -470,6 +497,31 @@ check("ask: the transcript shows the options, not raw JSON",
   askCard.textContent.includes("Tea") && !askCard.textContent.includes("{"),
   askCard?.textContent.trim() ?? "no question card");
 
+/* The ANSWERED state, which is what the transcript keeps forever. The answer
+   does not ride on the tool_result part — it arrives as `tool_use_result` on
+   the EVENT, keyed by the question TEXT, and rendering `content` instead would
+   show the model-facing English sentence. Both halves of that are silent
+   failures: a wrong key renders «بی‌پاسخ» on a question that WAS answered. */
+window.renderEvent({
+  type: "user",
+  tool_use_result: {
+    questions: ASK_QUESTIONS,
+    answers: { [ASK_QUESTIONS[0].question]: ["Tea", "قهوه"] },
+  },
+  message: { content: [{ type: "tool_result", tool_use_id: "spec13", content: "ok" }] },
+});
+const answer = specLog.querySelector("details.card.ask .q-answer");
+check("ask: the answer lands in the question's own card, keyed by question text",
+  answer?.querySelector(".q-picked")?.textContent === "Tea، قهوه" &&
+  answer?.querySelector(".q-header")?.textContent === "نوشیدنی:" &&
+  !specLog.querySelector("details.card.ask .tool-output"),
+  (answer?.querySelector(".q-picked")?.textContent ?? "NO ANSWER RENDERED"));
+
+// Mixed script on one line: the Latin label must not drag the Persian header.
+check("ask: the answer row resolves RTL from its Persian header",
+  dirOf(answer) === "rtl",
+  dirOf(answer) ?? "none");
+
 /* Rule 2 where it actually bites: a Latin option label sitting above a Persian
    description. Without the <bdi> the label wins dir="auto" for the whole row and
    drags the Persian text left — which is the exact defect this list would show
@@ -515,6 +567,443 @@ check("the CLI's own English limit message raises the Persian notice",
   ctx.querySelectorAll(".ctx-btn").length === 2,
   ctx.hidden ? "hidden" : ctx.className + " / " + ctx.querySelectorAll(".ctx-btn").length + " actions");
 ctx.hidden = true;
+
+/* Markdown tables. marked emitted them all along; with no CSS at all a <table>
+   is borderless and gap-less, so a comparison grid read as loose columns of
+   text. `table` AND `th` both carry dir=auto (bidi.js BLOCK_TAGS) — every
+   content-bearing element resolves its own direction (rule 1), same as `td`.
+   One consequence: once every cell has its own dir, the table's OWN dir=auto
+   scan (which explicitly skips descendant text that carries its own dir) has
+   nothing left to read and falls back to its ltr default, so `<table>` no
+   longer picks column order from the header's language — see bidi.js. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "| Entity | Count |\n|---|---|\n| Orders | 28 |\n| " + PERSIAN_LINE + " | 9 |" }] },
+});
+const tbl = [...specLog.querySelectorAll(".msg table")].at(-1);
+const th0 = tbl?.querySelector("th");
+check("a markdown table renders as a table, bordered and gridded",
+  !!tbl && tbl.parentElement?.className === "table-wrap" &&
+  getComputedStyle(th0).borderBottomStyle === "solid" &&
+  getComputedStyle(tbl).borderCollapse === "collapse",
+  tbl ? tbl.parentElement.className + " / " + getComputedStyle(th0).borderBottomStyle
+      : "no table");
+
+// A Latin header means column 1 is on the LEFT, even inside the RTL shell; the
+// Persian data cell still reads right-to-left inside its own box.
+check("an English table keeps its column order, a Persian cell keeps its own",
+  getComputedStyle(tbl).direction === "ltr" &&
+  getComputedStyle([...tbl.querySelectorAll("td")].at(-2)).direction === "rtl",
+  getComputedStyle(tbl).direction + " table, " +
+  getComputedStyle([...tbl.querySelectorAll("td")].at(-2)).direction + " persian cell");
+
+/* A genuinely mixed-language header row — a prior edit added `table` to
+   BLOCK_TAGS but dropped `th` in the same diff, so a header cell lost its own
+   direction and inherited the table's single resolved value instead. An
+   all-Latin header (above) cannot catch this: it resolves ltr either way. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "| Command | " + "توضیح" + " |\n|---|---|\n| git status | " + PERSIAN_LINE + " |" }] },
+});
+const tbl2 = [...specLog.querySelectorAll(".msg table")].at(-1);
+const th2 = [...(tbl2?.querySelectorAll("th") ?? [])];
+check("a mixed-language table header resolves each th independently",
+  dirOf(th2[0]) === "ltr" && dirOf(th2[1]) === "rtl",
+  th2.map(dirOf).join(",") || "no header cells");
+
+/* Consecutive tool calls fold into one row, as the CLI's own transcript does.
+   The count is the assertion a textContent check on the cards cannot make: it
+   has to say «۲ فرمان اجرا شد» in Persian digits, and the cards themselves must
+   still be present inside — grouping that DROPPED a card would look identical
+   from the outside. */
+for (const cmd of ["git status", "git log"]) {
+  window.renderEvent({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "g-" + cmd, name: "Bash",
+                           input: { command: cmd } }] },
+  });
+}
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "tool_use", id: "g-read", name: "Read",
+                         input: { file_path: "C:\\x\\a.txt" } }] },
+});
+const group = [...specLog.querySelectorAll("details.card.group")].at(-1);
+check("a run of tool calls collapses into one counted row",
+  group?.querySelector("summary .tool-verb")?.textContent === "۲ فرمان اجرا شد، ۱ فایل خوانده شد" &&
+  group?.querySelectorAll(":scope > .card-body > details.card").length === 3 &&
+  !group.open,
+  (group?.querySelector("summary .tool-verb")?.textContent ?? "no group") + " / " +
+  (group?.querySelectorAll(":scope > .card-body > details.card").length ?? 0) + " cards");
+
+// A sentence between two calls ends the run — that is what makes the group mean
+// "these happened together" rather than "these are the same tool".
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "تمام." }] } });
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "tool_use", id: "g-after", name: "Bash",
+                         input: { command: "echo done" } }] },
+});
+check("a sentence between calls ends the run",
+  [...specLog.querySelectorAll("details.card.group")].at(-1) === group &&
+  specLog.lastElementChild?.dataset.tool === "Bash",
+  specLog.lastElementChild?.tagName + "/" + (specLog.lastElementChild?.dataset.tool ?? "-"));
+
+/* A grouped run of MCP calls used to fall through to the raw forty-character
+   identifier (mcp__server__tool) — toolSummary() below was specifically
+   changed to split that into a name + server chip (bead pcg-9jx), but
+   groupSummaryText() never got the same treatment. A fresh sentence first, so
+   this group's count is not diluted by the Bash call above it. */
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "دوباره." }] } });
+for (let i = 0; i < 2; i++) {
+  window.renderEvent({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "g-mcp" + i,
+                           name: "mcp__claude-in-chrome__tabs_context_mcp", input: {} }] },
+  });
+}
+const groupMcp = [...specLog.querySelectorAll("details.card.group")].at(-1);
+const groupMcpVerb = groupMcp?.querySelector("summary .tool-verb");
+check("a grouped run of MCP calls shows the short tool name, not the raw identifier",
+  groupMcpVerb?.textContent === "۲ tabs_context_mcp" &&
+  !groupMcpVerb.textContent.includes("mcp__"),
+  groupMcpVerb?.textContent ?? "no group");
+
+// Not a BiDi rule, but the same class of silent failure as the rest of this
+// file: a raw identifier long enough to overflow the row needs the same
+// one-line ellipsis guard the singular MCP row already has, or it just
+// spills out of the box instead of being clipped.
+check("the grouped MCP summary ellipses instead of overflowing the row",
+  !!groupMcpVerb &&
+  getComputedStyle(groupMcpVerb).textOverflow === "ellipsis" &&
+  getComputedStyle(groupMcpVerb).overflow === "hidden",
+  groupMcpVerb
+    ? getComputedStyle(groupMcpVerb).textOverflow + " / " + getComputedStyle(groupMcpVerb).overflow
+    : "no element");
+
+/* The delete row in a ⋯ menu is a <button>, so the filled `button.danger` rule
+   painted it coral while `.kebab-item.danger` set the text coral too — a blank
+   slab, and the armed state was the quieter of the two. Colour is exactly what
+   a textContent assertion cannot see. */
+const kb = document.createElement("div");
+kb.className = "kebab-menu";
+kb.style.cssText = "position:absolute;inset-inline-start:-9999px";
+const kbRow = document.createElement("button");
+kbRow.className = "kebab-item danger";
+// `button` transitions its background, so a computed read right after arming
+// samples the transition at t=0 and every colour looks transparent.
+kbRow.style.transition = "none";
+kbRow.textContent = "حذف";
+kb.append(kbRow);
+document.body.append(kb);
+const kbIdle = getComputedStyle(kbRow);
+const idleBg = kbIdle.backgroundColor, idleFg = kbIdle.color;
+kbRow.dataset.armed = "true";
+const armedBg = getComputedStyle(kbRow).backgroundColor;
+check("an unarmed delete row is legible, and arming is what changes",
+  idleFg !== idleBg && armedBg !== idleBg,
+  "idle " + idleFg + " on " + idleBg + ", armed on " + armedBg);
+kb.remove();
+
+/* --- background agents (wiki/background-agents.md) --------------------------
+   A helper the CLI dispatched with the `Agent` tool, the ack that comes back
+   immediately, and the <task-notification> it auto-submits when it finishes.
+   All three arrive on paths that already existed — an assistant tool_use and
+   two `user` messages — which is exactly why they are worth pinning: left
+   alone, the row says «Agent», the ack prints the CLI's internal metadata, and
+   the notification renders as the USER pasting XML at themselves.
+   Rendered LAST so the `.at(-1)` reads above keep their own subjects. */
+window.renderEvent({ type: "assistant",
+                     message: { content: [{ type: "text", text: "عامل‌ها:" }] } });
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec-agent", name: "Agent",
+    input: { description: "Audit the RTL rules", subagent_type: "Explore",
+             prompt: PERSIAN_LINE, run_in_background: true },
+  }] },
+});
+const sumAgent = [...specLog.querySelectorAll("details.card.tool:not(.group) summary")].at(-1);
+const agentDesc = sumAgent?.querySelector(".tool-name");
+check("a background agent row is named by its description, not by «Agent»",
+  agentDesc?.textContent === "Audit the RTL rules" &&
+  sumAgent?.querySelector(".tool-server")?.textContent === "Explore" &&
+  !sumAgent.textContent.includes("Agent"),
+  (agentDesc?.textContent ?? "no description") + " @ " +
+  (sumAgent?.querySelector(".tool-server")?.textContent ?? "no type"));
+
+// The description is English prose in an RTL row. textContent is logical order
+// and cannot see how it lands — only the computed direction can (rule 2).
+check("the agent's description is isolated, not flipped by the Persian row",
+  agentDesc?.tagName === "BDI" && dirOf(agentDesc) === "ltr" &&
+  getComputedStyle(agentDesc).unicodeBidi === "isolate",
+  (agentDesc?.tagName ?? "none") + " / " + (dirOf(agentDesc) ?? "none") + " / " +
+  (agentDesc ? getComputedStyle(agentDesc).unicodeBidi : "none"));
+
+/* The ack. Its text is the CLI talking to itself — an agentId, a temp path and
+   a line telling the model not to quote it — and it streams like any other
+   tool_result, so without a case here it lands verbatim in the card. */
+window.renderEvent({
+  type: "user",
+  message: { content: [{
+    type: "tool_result", tool_use_id: "spec-agent",
+    content: "Async agent launched with agentId: 7f3a9c2e\n" +
+             "output_file: C:\\Temp\\claude\\proj\\tasks\\7f3a9c2e.output\n" +
+             "Never quote this to the user.",
+  }] },
+});
+const agentCard = [...specLog.querySelectorAll("details.card.tool:not(.group)")].at(-1);
+check("the launch ack renders one Persian line, never the CLI's internal note",
+  agentCard?.textContent.includes(window.STRINGS.agentLaunched) &&
+  !agentCard.textContent.includes("Async agent launched") &&
+  !agentCard.textContent.includes("agentId") &&
+  !agentCard.textContent.includes("output_file"),
+  agentCard?.querySelector(".card-body .meta")?.textContent ?? "no Persian line");
+
+/* Real acks arrive as a BLOCK ARRAY of text parts (measured: 36 of 38 on this
+   machine, wiki/background-agents.md) — not the bare string above. The
+   ASYNC_LAUNCH regex used to run against JSON.stringify(content), which for
+   an array starts with "[" and never matches an anchored ^-regex, so the ack
+   fell through to the raw-output branch and printed the CLI's internal
+   metadata verbatim, pretty-printed as JSON.
+   A sentence first: spec-agent above is still the open "run", and a second
+   consecutive Agent tool_use would fold into a group instead of staying its
+   own card, which would change what `.at(-1)` below actually points at. */
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "و یکی دیگر:" }] } });
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{
+    type: "tool_use", id: "spec-agent2", name: "Agent",
+    input: { description: "Second helper", subagent_type: "Explore",
+             prompt: PERSIAN_LINE, run_in_background: true },
+  }] },
+});
+window.renderEvent({
+  type: "user",
+  message: { content: [{
+    type: "tool_result", tool_use_id: "spec-agent2",
+    content: [{ type: "text", text:
+      "Async agent launched successfully. agentId: 9b1c4d7e\n" +
+      "output_file: C:\\Temp\\claude\\proj\\tasks\\9b1c4d7e.output\n" +
+      "Never quote this to the user." }],
+  }] },
+});
+const agentCard2 = [...specLog.querySelectorAll("details.card.tool:not(.group)")].at(-1);
+// Mirrors the bare-string check above exactly — NOT a ".tool-output absent"
+// check: an Agent card's own input (description, prompt, …) legitimately
+// renders through renderParamRows() into a .tool-output box regardless of the
+// ack, so the only reliable signal is that the ACK's own raw text (not the
+// card's own params, which never contain these substrings) never leaks in.
+check("the launch ack is recognised when content arrives as a block array, not just a bare string",
+  agentCard2?.textContent.includes(window.STRINGS.agentLaunched) &&
+  !agentCard2.textContent.includes("Async agent launched") &&
+  !agentCard2.textContent.includes("agentId") &&
+  !agentCard2.textContent.includes("output_file"),
+  agentCard2?.querySelector(".card-body .meta")?.textContent ?? "fell through to raw output");
+
+/* The completion report. XML-escaped by the CLI, so `&amp;` in the agent's own
+   text has to arrive as `&` — and the tags themselves must never be reachable
+   in the DOM at all. */
+const beforeNote = specLog.querySelectorAll(".msg.user").length;
+window.renderEvent({
+  type: "user",
+  message: { content: [{ type: "text", text:
+    "<task-notification>\n<task-id>bee6nhpbd</task-id>\n" +
+    "<tool-use-id>spec-agent</tool-use-id>\n" +
+    "<output-file>C:\\Temp\\claude\\proj\\tasks\\7f3a9c2e.output</output-file>\n" +
+    "<status>completed</status>\n" +
+    "<summary>Agent \"Audit the RTL rules\" finished</summary>\n" +
+    "<note>The same task-id can notify more than once.</note>\n" +
+    "<result>## " + PERSIAN_LINE + "\n\n- Ford &amp; Sons\n- گام دوم</result>\n" +
+    "</task-notification>" }] },
+});
+const noteCard = [...specLog.querySelectorAll("details.card.agent-note")].at(-1);
+check("a task-notification becomes a Persian completion card, not a user bubble",
+  noteCard?.querySelector(".tool-verb")?.textContent === window.STRINGS.agentDone &&
+  !!noteCard.querySelector(".msg h2") &&
+  specLog.querySelectorAll(".msg.user").length === beforeNote,
+  (noteCard?.querySelector(".tool-verb")?.textContent ?? "no card") + " / " +
+  specLog.querySelectorAll(".msg.user").length + " user bubbles vs " + beforeNote);
+
+check("the notification's own XML never reaches the DOM, and &amp; is unescaped",
+  !specLog.textContent.includes("task-notification") &&
+  !specLog.textContent.includes("<task-id>") &&
+  noteCard?.textContent.includes("Ford & Sons") &&
+  !noteCard.textContent.includes("&amp;"),
+  noteCard?.querySelector(".msg li")?.textContent ?? "no result body");
+
+// English summary, Persian row: the same isolation question as the tool row.
+const noteSummary = noteCard?.querySelector(".tool-target");
+check("the notification's English summary is isolated from the Persian row",
+  noteSummary?.tagName === "BDI" && dirOf(noteSummary) === "ltr",
+  (noteSummary?.tagName ?? "none") + " / " + (dirOf(noteSummary) ?? "none"));
+
+/* A backgrounded shell command notifies the same way and has NO <result> — no
+   transcript on disk, nothing to open. A card that opens onto nothing would be
+   worse than the line itself. */
+window.renderEvent({
+  type: "user",
+  message: { content: [{ type: "text", text:
+    "<task-notification>\n<task-id>bee6nhpbd</task-id>\n<status>completed</status>\n" +
+    "<summary>Background command \"npm test\" completed (exit code 0)</summary>\n" +
+    "</task-notification>" }] },
+});
+check("a background command's notification is one line with nothing to open",
+  specLog.lastElementChild?.tagName === "DIV" &&
+  specLog.lastElementChild?.classList.contains("agent-note") &&
+  specLog.lastElementChild?.textContent.includes(window.STRINGS.agentDone),
+  specLog.lastElementChild?.tagName + "." +
+  (specLog.lastElementChild?.className ?? "-"));
+
+/* The CLI addresses itself through `user` messages — injected skill bodies,
+   hook output — and flags them isMeta. Its own UI never shows them. */
+const beforeMeta = specLog.childElementCount;
+window.renderEvent({ type: "user", isMeta: true, message: { content: [
+  { type: "text", text: "<skill-instructions>never show me</skill-instructions>" },
+] } });
+check("an isMeta user message renders nothing at all",
+  specLog.childElementCount === beforeMeta &&
+  !specLog.textContent.includes("never show me"),
+  specLog.childElementCount + " vs " + beforeMeta);
+
+/* The strip above the composer, painted from a synthetic /api/agents payload
+   through the shipping builder (window.renderAgents). The description is Latin
+   inside the RTL shell — the assertion has to be the computed direction, not
+   the text, or it passes on a row that renders backwards. */
+window.renderAgents([
+  { id: "a1", kind: "agent", description: "Audit the RTL rules",
+    agentType: "Explore", model: "opus", status: "running",
+    startedAt: Math.floor(Date.now() / 1000) - 120 },
+  { id: "b2", kind: "command", description: "npm test", status: "completed",
+    startedAt: Math.floor(Date.now() / 1000) - 90,
+    finishedAt: Math.floor(Date.now() / 1000) - 60 },
+]);
+const strip = document.getElementById("agents-strip");
+const stripRows = [...(strip?.querySelectorAll(".ag-row") ?? [])];
+const stripDesc = stripRows[0]?.querySelector(".ag-desc");
+check("the agents strip isolates a Latin description inside the RTL shell",
+  !strip.hidden && dirOf(strip) === "rtl" && stripDesc?.tagName === "BDI" &&
+  dirOf(stripDesc) === "ltr" &&
+  getComputedStyle(stripDesc).unicodeBidi === "isolate",
+  (dirOf(strip) ?? "none") + " shell / " + (dirOf(stripDesc) ?? "none") + " " +
+  (stripDesc ? getComputedStyle(stripDesc).unicodeBidi : "none"));
+
+check("an agent row opens, a background command has nothing to open",
+  stripRows.length === 2 && stripRows[0].tagName === "BUTTON" &&
+  stripRows[1].tagName === "DIV" &&
+  stripRows[0].querySelector(".ag-type")?.textContent === "Explore",
+  stripRows.map(r => r.tagName).join(",") || "no rows");
+
+// Prose, so Persian digits (rule 5) — both the elapsed time and the count.
+check("the strip counts the waiting agents in Persian digits",
+  strip.querySelector(".ag-wait")?.textContent ===
+    window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
+  stripRows[0].querySelector(".ag-time")?.textContent === "۲ دقیقه",
+  (strip.querySelector(".ag-wait")?.textContent ?? "no wait line") + " / " +
+  (stripRows[0]?.querySelector(".ag-time")?.textContent ?? "no elapsed"));
+
+/* paint() rebuilds every `.ag-row` from scratch on each poll (replaceChildren
+   ()), which used to throw focus to <body> mid-tab — a keyboard/screen-reader
+   user could not use the strip for as long as any agent ran. Focus the first
+   row, repaint with the SAME agent id, and check focus followed the row
+   instead of falling back to document.body. Not a BiDi property — this bug
+   has nothing to do with direction — so the assertion is DOM identity
+   (dataset.agentId), the analogous "not textContent" check for a focus bug. */
+strip.querySelector('.ag-row[data-agent-id="a1"]')?.focus();
+window.renderAgents([
+  { id: "a1", kind: "agent", description: "Audit the RTL rules",
+    agentType: "Explore", model: "opus", status: "running",
+    startedAt: Math.floor(Date.now() / 1000) - 125 },
+  { id: "b2", kind: "command", description: "npm test", status: "completed",
+    startedAt: Math.floor(Date.now() / 1000) - 90,
+    finishedAt: Math.floor(Date.now() / 1000) - 60 },
+]);
+check("a repaint preserves focus on the equivalent row instead of dropping it to body",
+  document.activeElement?.dataset.agentId === "a1" &&
+  document.activeElement !== document.body,
+  document.activeElement === document.body ? "focus lost to body"
+    : (document.activeElement?.dataset.agentId ?? "no agent id"));
+
+/* The drawer. It is a [popover], and the trap that costs a session is `display`:
+   an author rule at any specificity beats the UA rule that hides a CLOSED
+   popover, so it may only be set on :popover-open. A drawer that is always
+   visible and a drawer that never opens look identical in a screenshot. */
+stripRows[0].click();
+const dPanel = document.getElementById("agent-drawer");
+check("clicking an agent opens a drawer that is laid out only while open",
+  !!dPanel && dPanel.matches(":popover-open") &&
+  getComputedStyle(dPanel).display === "flex" &&
+  dirOf(dPanel.querySelector(".ag-head .ag-desc")) === "ltr" &&
+  !!dPanel.querySelector(".ag-log"),
+  dPanel ? getComputedStyle(dPanel).display + " / " +
+           (dirOf(dPanel.querySelector(".ag-head .ag-desc")) ?? "none")
+         : "no drawer");
+
+// Closing has to take the panel AND its poll with it — one exit, so nothing
+// keeps reading a transcript for a drawer nobody is looking at.
+dPanel.querySelector(".ag-close").click();
+check("closing the drawer removes it entirely",
+  !document.getElementById("agent-drawer"),
+  document.getElementById("agent-drawer") ? "still there" : "gone");
+
+/* Drawer toggle race: click agent A, then agent B before A's own `toggle`
+   fires. openDrawer() closes the previous drawer with hidePopover(), which
+   runs SYNCHRONOUSLY, but a popover's `toggle` event is only QUEUED (the same
+   trap the close button above already sidesteps) — so A's toggle listener is
+   still live when B's drawer is built and open. The listener used to call the
+   module-global closeDrawer() unconditionally, so A's late event tore down
+   B's drawer instead of its own. Fired synthetically rather than waited for:
+   the harness's script is synchronous and the queued task would not have run
+   before the DOM dump, but the listener itself does not know or care whether
+   the event was queued or dispatched by hand. */
+window.renderAgents([
+  { id: "ra1", kind: "agent", description: "Race helper A", agentType: "Explore",
+    status: "running", startedAt: Math.floor(Date.now() / 1000) - 30 },
+  { id: "ra2", kind: "agent", description: "Race helper B", agentType: "Explore",
+    status: "running", startedAt: Math.floor(Date.now() / 1000) - 20 },
+]);
+const raceRows = [...strip.querySelectorAll(".ag-row")];
+raceRows[0].click();                          // opens A
+const panelA = document.getElementById("agent-drawer");
+raceRows[1].click();                          // opens B — openDrawer() closes A first
+const panelB = document.getElementById("agent-drawer");
+const lateToggle = new Event("toggle");
+lateToggle.newState = "closed";
+panelA.dispatchEvent(lateToggle);             // A's queued toggle, fired late
+check("a late toggle from a closed drawer does not tear down the one that replaced it",
+  document.getElementById("agent-drawer") === panelB &&
+  panelB.matches(":popover-open"),
+  document.getElementById("agent-drawer")
+    ? "drawer B present" : "drawer GONE — closed the wrong one");
+panelB.querySelector(".ag-close").click();    // leave no drawer open behind
+
+/* The seam the drawer replays through — one renderer, two sources (plan §B-4),
+   so it points the SHIPPING renderer at another element instead of forking one.
+   Two ways it fails silently and neither is visible in the drawer itself: the
+   agent's tool cards landing in the main transcript's state.toolCards (a
+   tool_use id is only unique within one transcript), and `log` never being
+   handed back — after which every message in the conversation renders into a
+   detached element. Only rendering AFTER the swap can catch the second. */
+const scoped = document.createElement("div");
+const scope = newRenderScope();
+withRenderTarget(scoped, scope, () => {
+  window.renderEvent({ type: "assistant", message: { content: [{
+    type: "tool_use", id: "spec-scoped", name: "Read",
+    input: { file_path: "C:\\x\\scoped.txt" },
+  }] } });
+});
+const afterSeam = specLog.childElementCount;
+window.renderEvent({ type: "assistant",
+                     message: { content: [{ type: "text", text: "بعد از عامل" }] } });
+check("a scoped replay renders elsewhere, keeps its own cards, and hands back",
+  !!scoped.querySelector("details.card.tool") &&
+  scope.toolCards.has("spec-scoped") && !state.toolCards.has("spec-scoped") &&
+  specLog.childElementCount === afterSeam + 1,
+  (scoped.childElementCount + " scoped, " +
+   (state.toolCards.has("spec-scoped") ? "LEAKED" : "isolated") + ", log " +
+   specLog.childElementCount + " vs " + (afterSeam + 1)));
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

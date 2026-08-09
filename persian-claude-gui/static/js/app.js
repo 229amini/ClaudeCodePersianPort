@@ -9,6 +9,7 @@
      render.js    renderEvent: stream events -> DOM
      chrome.js    sidebar, home state, replay, permission dialog
      composer.js  input, ZWNJ, send/stop, attachments, slash
+     agents.js    background-agents strip + per-agent drawer
      app.js       this file
 
    LOAD ORDER. render.js and chrome.js import each other on purpose (the
@@ -29,12 +30,16 @@ import { renderEvent, setStatus } from "./render.js";
 import { initChrome } from "./chrome.js";
 import { initComposer } from "./composer.js";
 import { initControls } from "./controls.js";
+import { initAgents, applyAgents } from "./agents.js";
 import { token } from "./api.js";
 
 // Reused by history replay and by spec-test.html, so the acceptance tests
 // exercise the shipping code path rather than a copy of it.
 window.renderEvent = renderEvent;
 window.renderMarkdown = renderMarkdown;
+// Same seam for the agents strip: the harness paints it from a synthetic
+// /api/agents payload, through the shipping builder rather than a copy.
+window.renderAgents = applyAgents;
 
 initChrome();
 
@@ -67,3 +72,4 @@ if (events) events.onerror = () => setStatus({});
 
 initComposer();
 initControls();
+initAgents();
