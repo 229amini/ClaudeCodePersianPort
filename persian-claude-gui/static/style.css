@@ -877,6 +877,64 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 
 .thinking .card-body { color: var(--fg-muted); font-style: normal; }
 
+/* A thought is the quietest step on the rail: it reports no action and names no
+   file, so its label drops to the muted weight the targets use and the opening
+   clause of the thought — the only part that differs between two of them — gets
+   the rest of the row. `min-inline-size: 0` is what lets the preview's ellipsis
+   engage at all inside the flex summary. */
+.thinking > summary .tool-verb { color: var(--fg-muted); font-weight: 400; }
+.thinking > summary .tool-target { min-inline-size: 0; }
+.thinking > summary .tool-icon { opacity: .55; }
+
+/* --- the turn's pulse -------------------------------------------------------
+   The CLI's «✻ Sketching… (4m 35s · ↓ 10.9k tokens)», as a transcript entry.
+   `order: 1` is what pins it last while the turn runs: #log is a flex column,
+   so a reorder needs no DOM move and nothing appended after it can race ahead.
+   The class comes off at the end of the turn and it settles where it was
+   appended — that turn's own closing line, kept in the history.
+   `flex: none` for the same reason every card carries it: #log is a scrolling
+   flex column and an automatic minimum size crushes its entries. */
+.pulse {
+  align-self: stretch;
+  max-width: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  min-height: 30px;
+  color: var(--fg-muted);
+  font-size: .92em;
+}
+
+.pulse.live { order: 1; }
+
+/* Sized to `.tool-icon`, so the line stands in the same gutter the rail runs
+   through instead of half a character off it. The glyph is the only thing that
+   moves — a sentence that rewrites itself every half second is noise. */
+.pulse-glyph {
+  inline-size: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--accent);
+}
+
+.pulse.live .pulse-glyph { animation: pulse-breathe 2s var(--ease) infinite; }
+@keyframes pulse-breathe { 50% { opacity: .3; } }
+
+.pulse-verb { color: var(--fg); }
+
+/* tabular-nums so a ticking counter does not jiggle the line it sits on. */
+.pulse-meta {
+  color: var(--fg-muted);
+  font-size: .85em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse.live .pulse-glyph { animation: none; }
+}
+
 /* --- todos ------------------------------------------------------------------ */
 .todos { align-self: stretch; max-width: none; }
 .todos ul { list-style: none; padding: 0; margin: 0; }
@@ -1542,6 +1600,12 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
   inset-block: 8vh;
   inset-inline-end: 28px;   /* opens away from the sidebar, on the RTL end side */
   inline-size: min(44rem, 64vw);
+  /* The UA popover sheet sets `height: fit-content`, and an absolutely
+     positioned box with a non-auto height ignores its own `inset-block-end`.
+     So the drawer grew downward off the bottom of the screen, `.ag-log`'s
+     `flex: 1` never had a bounded height to fill, and a long agent transcript
+     could not be scrolled to at all. `auto` is what makes both insets apply. */
+  block-size: auto;
   margin: 0;
   padding: 0;
   overflow: hidden;

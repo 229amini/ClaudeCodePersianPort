@@ -19,6 +19,26 @@ window.FA = {
   hintZwnj: "نیم‌فاصله: Shift+Space",
 
   thinking: "در حال فکر کردن",
+
+  /* The turn's live line. The CLI answers "is it still working?" with one
+     changing sentence — a whimsical gerund, how long, how much it has written —
+     and the whimsy is the point: a turn that takes four minutes needs a line
+     that is not the same four words for four minutes.
+
+     These are masdars (verbal nouns) because ONE word has to read in both
+     frames: «در حال بافتن…» while it runs, «بافتن — ۵ دقیقه و ۳۲ ثانیه» once it
+     is done. A conjugated past tense would need a second list. */
+  pulseVerbs: [
+    "بافتن", "جوشاندن", "سنجیدن", "ورز دادن", "کندوکاو", "چیدن", "تراشیدن",
+    "گره زدن", "پختن", "رصد کردن", "صیقل دادن", "ریسیدن", "نقشه کشیدن",
+    "پروراندن", "غربال کردن", "کاویدن", "دم کردن", "جوش خوردن",
+  ],
+  pulseRunning: "در حال {verb}…",
+  pulseDone: "{verb} — {time}",
+  pulseTokens: "↓ {n} توکن",
+  thousands: "{n} هزار",
+  elapsedMinSec: "{m} دقیقه و {s} ثانیه",
+
   tool: "ابزار",
   toolResult: "نتیجه",
   todos: "کارها",

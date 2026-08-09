@@ -85,8 +85,38 @@ export function isolateTechnicalTokens(root) {
 const BLOCK_TAGS = "p,li,h1,h2,h3,h4,h5,h6,blockquote,table,td,th,dd,dt,figcaption";
 
 export function applyDirection(root) {
+  /* `dir="auto"` reads the first strong character of the block, and its scan
+     skips exactly two things: <bdi>/<script>/<style>, and any subtree that
+     carries its own `dir` attribute. An inline <code> carries neither, so a
+     block OPENING with a code span — «`seasonOf(ts)` یک تابع خالصه» — resolved
+     LTR off the code's Latin letters, and through the list's own dir="auto"
+     that dragged every sibling item LTR with it. Measured in Edge: without
+     this line `ul:ltr li:[ltr,ltr,ltr]`, with it `ul:rtl li:[rtl,rtl,rtl]`.
+     Code is already `direction: ltr` in the spec base CSS — this only makes
+     the DOM say what the stylesheet says, which is what takes it out of the
+     scan. Fixes p/li/h2/td alike, so it runs before every other pass. */
+  for (const el of root.querySelectorAll("pre,code")) el.setAttribute("dir", "ltr");
+
   for (const el of root.querySelectorAll(BLOCK_TAGS)) {
     el.setAttribute("dir", "auto");
+  }
+  /* A list is ONE block, not N. Per-`li` dir="auto" let a bullet that opens
+     with a Latin token — a file name, a product name, a flag — resolve LTR
+     while its Persian siblings stayed RTL: markers down both sides of the same
+     list and the trailing «.» of a Persian sentence stranded on the wrong end.
+     That is the "scrambled ul", and it is the same first-strong-character
+     heuristic the table comment above describes, just applied at a scope too
+     small to be meaningful — a list decides its direction once, for all of its
+     items, the way a paragraph decides for all of its lines.
+     dir="auto" skips descendant text that carries its own dir, so the items
+     have to give theirs up for the list to be able to read them at all — same
+     mechanism as the table, opposite trade, because unlike a table's columns
+     the items of one list are one run of prose. Outermost list only: a nested
+     one inherits from the list it hangs off. */
+  for (const list of root.querySelectorAll("ul,ol")) {
+    if (list.closest("li")) continue;
+    for (const el of list.querySelectorAll("li,p,ul,ol")) el.removeAttribute("dir");
+    list.setAttribute("dir", "auto");
   }
 }
 

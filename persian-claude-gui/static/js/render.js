@@ -100,9 +100,18 @@ function append(el, { stick = true } = {}) {
    `.ask` is excluded because a question the user must answer can never be
    folded shut, and the group itself is built by hand rather than through
    card(): card() appends, append() calls this, and a `.card.tool` group would
-   route itself straight back in. */
+   route itself straight back in.
+
+   `.thinking` IS part of the run. With interleaved thinking the model thinks
+   between every call, so a thinking card that ENDED the run shattered a
+   fifteen-step turn into fifteen groups of one, separated by fifteen identical
+   content-free «در حال فکر کردن» rows — the ladder the user reported. It joins
+   the run instead, and is deliberately not counted in the summary: the row says
+   what HAPPENED, and thinking is not one of the things that happened. */
 function isRunnable(el) {
-  return el.classList?.contains("tool") && !el.classList.contains("ask")
+  if (!el.classList) return false;
+  if (el.classList.contains("thinking")) return true;
+  return el.classList.contains("tool") && !el.classList.contains("ask")
          && !el.classList.contains("group");
 }
 
@@ -127,8 +136,8 @@ function toolHome(el) {
     return log;
   }
   const run = state.run ??= { first: null, group: null, counts: new Map() };
-  const name = el.dataset.tool || "?";
-  run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
+  const name = el.dataset.tool;
+  if (name) run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
 
   if (!run.group) {
     if (!run.first) {          // first of a possible run: stays inline
@@ -147,7 +156,10 @@ function toolHome(el) {
     body.append(run.first);
     run.group = { details, body, text: summary.lastChild };
   }
-  run.group.text.textContent = groupSummaryText(run.counts);
+  // A run of nothing but thinking has no action to count; it still needs a row
+  // that says something, so it names itself.
+  run.group.text.textContent = run.counts.size
+    ? groupSummaryText(run.counts) : FA.thinking;
   return run.group.body;
 }
 
@@ -198,6 +210,8 @@ export const state = {
   streamBubble: null,    // assistant bubble currently receiving text deltas
   streamText: "",        // raw markdown accumulated during streaming
   thinkingBody: null,
+  thinkingPeek: null,    // the collapsed row's one-line preview of that thought
+  pulse: null,           // the live "still working" line for the turn in flight
   toolCards: new Map(),  // tool_use_id -> body element
   run: null,             // the consecutive-tool-call group being filled
   status: {},
@@ -207,7 +221,105 @@ export function resetTurn() {
   state.streamBubble = null;
   state.streamText = "";
   state.thinkingBody = null;
+  state.thinkingPeek = null;
   state.run = null;
+  clearPulse();
+}
+
+/* --- the turn's pulse -------------------------------------------------------
+
+   "Is it still working?" had exactly one answer in this window: the stop button
+   appeared. Four minutes of a subagent reading files looked identical to a
+   hung process. The CLI answers it with one live line — a turning glyph, a word
+   for what it is doing, how long it has been at it, how much it has written —
+   and this is that line.
+
+   It is a transcript ENTRY, not chrome. While the turn runs `order: 1` pins it
+   last (a flex reorder, so nothing appended after it can race it and no DOM
+   move is needed); when the turn ends the class comes off and it settles where
+   it was appended, as that turn's own record — «بافتن — ۵ دقیقه و ۳۲ ثانیه»
+   stays in the history the way the CLI's closing line does.
+
+   The verb is drawn once per turn, not re-drawn on a timer. The CLI rotates it;
+   here the glyph carries the motion and a sentence that rewrites itself every
+   few seconds is the opposite of what this window is for. */
+const PULSE_GLYPHS = ["✻", "✽", "✢", "·", "✢", "✽"];
+
+const STILL = matchMedia("(prefers-reduced-motion: reduce)");
+
+function faNum(n) {
+  return n.toLocaleString("fa-IR");
+}
+
+/* «۳۲ ثانیه» / «۵ دقیقه و ۳۲ ثانیه». The existing elapsed strings round a turn
+   to whole minutes, which is the one thing this line must not do — a counter
+   that sits on «۵ دقیقه» for sixty seconds reads as frozen. */
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return FA.elapsedSeconds.replace("{n}", faNum(s));
+  return FA.elapsedMinSec.replace("{m}", faNum(Math.floor(s / 60)))
+                         .replace("{s}", faNum(s % 60));
+}
+
+function fmtTokens(n) {
+  const value = n < 1000 ? faNum(n)
+    : FA.thousands.replace("{n}", faNum(Math.round(n / 100) / 10));
+  return FA.pulseTokens.replace("{n}", value);
+}
+
+function paintPulse(p) {
+  // Under reduced motion the glyph holds still; the counters below are
+  // information, not animation, so they keep ticking.
+  if (!STILL.matches) p.glyph.textContent = PULSE_GLYPHS[p.frame++ % PULSE_GLYPHS.length];
+  const parts = [fmtDuration(Date.now() - p.started)];
+  const tokens = p.base + p.live;
+  if (tokens) parts.push(fmtTokens(tokens));
+  p.meta.textContent = parts.join(" · ");
+}
+
+function clearPulse() {
+  if (state.pulse) clearInterval(state.pulse.timer);
+  state.pulse = null;
+}
+
+function startPulse() {
+  clearPulse();
+  const el = document.createElement("div");
+  el.className = "pulse live";
+  const glyph = label(PULSE_GLYPHS[0], "pulse-glyph");
+  glyph.setAttribute("aria-hidden", "true");
+  const verb = FA.pulseVerbs[Math.floor(Math.random() * FA.pulseVerbs.length)];
+  const text = label(FA.pulseRunning.replace("{verb}", verb), "pulse-verb");
+  // The counters abut Persian prose and are written in Persian digits, so they
+  // are prose too — dir="auto" resolves them against their own content rather
+  // than being forced LTR, which is the spec's first trap (rule 1).
+  const meta = label("", "pulse-meta");
+  meta.setAttribute("dir", "auto");
+  el.append(glyph, text, meta);
+  // A screen reader should hear the outcome, not sixty ticks of a stopwatch.
+  el.setAttribute("aria-live", "off");
+  append(el);
+  const p = state.pulse =
+    { el, glyph, text, meta, verb, started: Date.now(), base: 0, live: 0, frame: 0 };
+  p.timer = setInterval(() => paintPulse(p), 500);
+  paintPulse(p);
+}
+
+function settlePulse() {
+  const p = state.pulse;
+  if (!p) return;
+  clearPulse();
+  p.glyph.textContent = PULSE_GLYPHS[0];
+  p.text.textContent = FA.pulseDone.replace("{verb}", p.verb)
+                                   .replace("{time}", fmtDuration(Date.now() - p.started));
+  const tokens = p.base + p.live;
+  p.meta.textContent = tokens ? fmtTokens(tokens) : "";
+  // `order: 1` only made it LOOK last; in the DOM it is still sitting where the
+  // turn began, ahead of everything the turn produced. Dropping the class
+  // without this would snap the closing line back above its own turn.
+  p.el.parentElement?.append(p.el);
+  p.el.classList.remove("live");   // stops being "now", becomes this turn's record
+  if (atBottom()) log.scrollTop = log.scrollHeight;
 }
 
 /* --- rendering somewhere other than the transcript --------------------------
@@ -227,7 +339,8 @@ export function resetTurn() {
    can carry reaches setStatus in the first place. */
 export function newRenderScope() {
   return { streamBubble: null, streamText: "", thinkingBody: null,
-           toolCards: new Map(), run: null, status: {} };
+           thinkingPeek: null, pulse: null, toolCards: new Map(),
+           run: null, status: {} };
 }
 
 export function withRenderTarget(target, scope, fn) {
@@ -253,6 +366,9 @@ const ICON_PATHS = {
   find: "M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16ZM21 21l-4.3-4.3",
   web: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18",
   task: "M9 11l3 3L20 6M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  // The CLI's own ✻, as a stroke: thinking is a step on the same rail as the
+  // calls around it, so it needs a glyph in the same gutter or the rail breaks.
+  think: "M12 4v16M4.9 8l14.2 8M19.1 8L4.9 16",
 };
 
 const TOOL_ICONS = {
@@ -810,6 +926,16 @@ export function renderEvent(ev) {
 
     case "stream_event": {
       const inner = ev.event;
+      // The API's own running total for the message being written — the only
+      // LIVE token source there is. The `assistant` event below carries the
+      // settled figure, and neither alone is right: this one resets to zero at
+      // every message boundary, that one arrives only after the message ends.
+      if (inner?.type === "message_delta") {
+        if (state.pulse && typeof inner.usage?.output_tokens === "number") {
+          state.pulse.live = inner.usage.output_tokens;
+        }
+        return;
+      }
       if (inner?.type !== "content_block_delta") return;
       const delta = inner.delta ?? {};
       if (typeof delta.text === "string") {
@@ -821,11 +947,21 @@ export function renderEvent(ev) {
         if (atBottom()) log.scrollTop = log.scrollHeight;
       } else if (typeof delta.thinking === "string") {
         if (!state.thinkingBody) {
+          state.thinkingPeek = label("", "tool-target");
+          // The thought is the model's own prose — usually English, sometimes
+          // not. Never pathEl(): forcing LTR on prose is the spec's first trap.
+          state.thinkingPeek.setAttribute("dir", "auto");
           state.thinkingBody = card("thinking",
-            [label(FA.thinking, "tool-name")]).body;
+            [icon("think"), label(FA.thinking, "tool-verb"),
+             state.thinkingPeek]).body;
           state.thinkingBody.setAttribute("dir", "auto");
         }
         state.thinkingBody.textContent += delta.thinking;
+        // Shut, the row used to carry nothing but the word «فکر» — the same
+        // label on every one of them. Its opening clause says what THIS thought
+        // is about, which is the only thing that tells two of them apart.
+        state.thinkingPeek.textContent =
+          state.thinkingBody.textContent.replace(/\s+/g, " ").trim().slice(0, 100);
       }
       return;
     }
@@ -861,14 +997,32 @@ export function renderEvent(ev) {
         }
       }
       state.thinkingBody = null;
+      state.thinkingPeek = null;
+      // This message is closed, so its count is final: bank it and let the next
+      // message's message_delta start from zero again. Falling back to the live
+      // figure keeps the total honest on a build that sends no usage here.
+      if (state.pulse) {
+        state.pulse.base += ev.message?.usage?.output_tokens ?? state.pulse.live;
+        state.pulse.live = 0;
+      }
       return;
     }
 
     case "user": {
       // The CLI addresses itself through `user` messages too — an injected
-      // skill body, a hook's output — and flags every one of them isMeta. Its
-      // own UI never shows them, and neither does this one.
-      if (ev.isMeta) return;
+      // skill body, a hook's output — and flags every one of them. Its own UI
+      // never shows them, and neither does this one.
+      //
+      // TWO NAMES FOR ONE FLAG, and only the transcript uses `isMeta`. Read out
+      // of the 2.1.223 bundle, every stream-json `user` event is built as
+      // `isSynthetic: isMeta || isVisibleInTranscriptOnly || isCompactSummary`
+      // and carries no isMeta key at all — so the live stream sailed straight
+      // past this guard and a `/skill` invocation rendered the whole SKILL.md
+      // as a user bubble the length of a document. Replay was fixed server-side
+      // (read_session, bead pcg-e5q); this is the live half of the same defect.
+      // `<task-notification>`, the one injected message that MUST render, sets
+      // none of the three (measured across real transcripts).
+      if (ev.isMeta || ev.isSynthetic) return;
       // Replay is always block-shaped: a transcript's bare-string prompt is
       // normalised (and envelope-filtered) by read_session before it gets
       // here — but that guarantee is replay-only. Whether a live
@@ -964,6 +1118,9 @@ export function renderEvent(ev) {
         // so the meter-driven warning above cannot catch this case.
         if (CONTEXT_EXHAUSTED.test(String(ev.result ?? ""))) contextFull();
       }
+      // Before resetTurn(), which clears the pulse rather than settling it: a
+      // stopped turn earns the same closing line as a finished one.
+      settlePulse();
       resetTurn();
       setBusy(false);
       refreshProjects();   // the turn changed this session's preview/mtime
@@ -1008,6 +1165,9 @@ export function renderEvent(ev) {
         const el = bubble("user");
         el.append(...renderMarkdown(ev.text ?? "").childNodes);
         if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
+        // After the bubble, so the line reads as an answer to what was just
+        // asked. resetTurn() above has already cleared any stale one.
+        startPulse();
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
