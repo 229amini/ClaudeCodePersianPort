@@ -191,8 +191,12 @@ check("base CSS: pre is direction:ltr + isolate",
   getComputedStyle(anyPre).unicodeBidi === "isolate",
   getComputedStyle(anyPre).direction + " / " + getComputedStyle(anyPre).unicodeBidi);
 
+// Outside a list, because a list is one block and its items deliberately give
+// up their own dir so the list can read them — see the list checks below.
 check("rule 1: block elements carry dir=auto",
-  [...specLog.querySelectorAll(".msg p")].every(p => p.getAttribute("dir") === "auto"));
+  [...specLog.querySelectorAll(".msg p")]
+    .filter(p => !p.closest("li"))
+    .every(p => p.getAttribute("dir") === "auto"));
 
 const case3 = bubbles[2];
 const bdi = case3.querySelector("bdi.path");
@@ -613,6 +617,64 @@ check("a mixed-language table header resolves each th independently",
   dirOf(th2[0]) === "ltr" && dirOf(th2[1]) === "rtl",
   th2.map(dirOf).join(",") || "no header cells");
 
+/* Lists, where the same rule 1 heuristic bites at a scope too small to mean
+   anything. dir="auto" per <li> resolved each bullet on its OWN first strong
+   character, so one item opening with an inline `code` span went LTR while its
+   Persian siblings stayed RTL — markers down both sides of one list and the
+   Persian sentence's final «.» stranded on the wrong end. The list is the
+   block that decides (bidi.js). Computed direction only: textContent is
+   logical order and reads identically either way. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "- " + PERSIAN_LINE + "\n- `wp/v2/brand` وجود ندارد\n- ۴۰۴ هم همین‌طور" }] },
+});
+const faList = [...specLog.querySelectorAll(".msg ul")].at(-1);
+const faItems = [...(faList?.querySelectorAll("li") ?? [])];
+check("a Persian list keeps one direction, even where an item opens in Latin",
+  dirOf(faList) === "rtl" && faItems.length === 3 &&
+  faItems.every(li => dirOf(li) === "rtl" && !li.hasAttribute("dir")),
+  (dirOf(faList) ?? "no list") + " list / " + faItems.map(dirOf).join(","));
+
+/* The half the check above could not see: the code-opening item in FIRST
+   position. The list's own dir="auto" scans in tree order and does not skip a
+   <code> subtree, so the opening Latin token decided for the whole list and
+   every item went LTR — the user's report, with a green gate. <code dir="ltr">
+   is what removes it from the scan (bidi.js). */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "- `seasonOf(ts)` " + PERSIAN_LINE + "\n- " + PERSIAN_LINE + "\n- ۴۰۴ هم همین‌طور" }] },
+});
+const codeFirst = [...specLog.querySelectorAll(".msg ul")].at(-1);
+const codeFirstItems = [...(codeFirst?.querySelectorAll("li") ?? [])];
+check("a Persian list whose FIRST item opens with `code` still reads right-to-left",
+  dirOf(codeFirst) === "rtl" && codeFirstItems.length === 3 &&
+  codeFirstItems.every(li => dirOf(li) === "rtl"),
+  (dirOf(codeFirst) ?? "no list") + " list / " + codeFirstItems.map(dirOf).join(","));
+
+// A paragraph is the same block with the same scan: it opens with a code span
+// far more often than a list does, and it broke the same silent way.
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text: "`foldSessions()` " + PERSIAN_LINE }] },
+});
+const codePara = [...specLog.querySelectorAll(".msg p")].at(-1);
+check("a Persian paragraph opening with `code` resolves RTL, not off the code",
+  dirOf(codePara) === "rtl", dirOf(codePara) ?? "no paragraph");
+
+// The other half of that trade, and the reason this is `dir="auto"` on the list
+// rather than the `direction: rtl` it would be tempting to hardcode: an English
+// list inside the RTL shell still has to read left-to-right (spec's first trap).
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text: "- first item\n- " + PERSIAN_LINE }] },
+});
+const enList = [...specLog.querySelectorAll(".msg ul")].at(-1);
+check("an English list still reads left-to-right — the list decides, nothing is forced",
+  dirOf(enList) === "ltr" && enList !== faList,
+  dirOf(enList) ?? "no list");
+
 /* Consecutive tool calls fold into one row, as the CLI's own transcript does.
    The count is the assertion a textContent check on the cards cannot make: it
    has to say «۲ فرمان اجرا شد» in Persian digits, and the cards themselves must
@@ -682,6 +744,76 @@ check("the grouped MCP summary ellipses instead of overflowing the row",
   groupMcpVerb
     ? getComputedStyle(groupMcpVerb).textOverflow + " / " + getComputedStyle(groupMcpVerb).overflow
     : "no element");
+
+/* Interleaved thinking: the model thinks between every call, so a thinking card
+   that ENDED the run shattered a fifteen-step turn into fifteen groups of one,
+   each separated by an identical, content-free «در حال فکر کردن» row. Thinking
+   joins the run instead — and must NOT be counted in the summary, which reports
+   actions. Both halves are invisible to a textContent check on the cards: a
+   thinking card that broke the run and one that joined it hold the same text. */
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "شروع." }] } });
+const thought = (t) => window.renderEvent(
+  { type: "stream_event", event: { type: "content_block_delta", delta: { thinking: t } } });
+thought("First I check the repo state.");
+window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
+  id: "th-1", name: "Bash", input: { command: "git status" } }] } });
+thought("Now the log.");
+window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
+  id: "th-2", name: "Bash", input: { command: "git log" } }] } });
+const thGroup = [...specLog.querySelectorAll("details.card.group")].at(-1);
+const thVerb = thGroup?.querySelector(":scope > summary .tool-verb")?.textContent;
+check("thinking joins the run instead of shattering it into one group per call",
+  thGroup !== groupMcp && thVerb === "۲ فرمان اجرا شد" &&
+  thGroup?.querySelectorAll(":scope > .card-body > details.card").length === 4 &&
+  specLog.querySelectorAll(":scope > details.card.thinking").length === 0,
+  (thVerb ?? "no group") + " / " +
+  (thGroup?.querySelectorAll(":scope > .card-body > details.card").length ?? 0) + " inside / " +
+  specLog.querySelectorAll(":scope > details.card.thinking").length + " loose");
+
+// Shut, every thinking row carried the same word and nothing else. The opening
+// clause of the thought is the only thing that tells two of them apart.
+const thPeek = thGroup?.querySelector(".thinking > summary .tool-target")?.textContent;
+check("a collapsed thinking row previews its own thought, not just the word",
+  thPeek?.startsWith("First I check the repo state."),
+  thPeek ?? "no preview");
+
+/* The turn's pulse. Three things here are invisible to a textContent read and
+   each one has already been a defect class in this file: that the line is
+   LAST while the turn runs (it is appended FIRST — only `order: 1` puts it at
+   the end, and a settle that forgets to move it snaps the closing line back
+   above its own turn), that its counters are written in Persian digits inside
+   Persian prose (rule 5), and that it settles rather than lingering as a
+   stopwatch nobody stopped. */
+window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+const pulse = specLog.querySelector(".pulse");
+const pulseCard = (() => {
+  window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
+    id: "p-1", name: "Bash", input: { command: "sleep 1" } }],
+    usage: { output_tokens: 10_900 } } });
+  return specLog.lastElementChild;
+})();
+check("the pulse is pinned last while the turn runs, though it was appended first",
+  !!pulse && pulse.classList.contains("live") &&
+  getComputedStyle(pulse).order === "1" && getComputedStyle(pulseCard).order === "0" &&
+  pulse.compareDocumentPosition(pulseCard) === Node.DOCUMENT_POSITION_FOLLOWING,
+  pulse ? "order " + getComputedStyle(pulse).order + " vs card "
+          + getComputedStyle(pulseCard).order : "no pulse");
+
+// Persian prose, so Persian digits — and the token figure is the CLI's own, not
+// a guess: 10 900 has to read «۱۰٫۹ هزار», not «10.9k».
+window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+const pulseText = pulse?.textContent ?? "";
+check("the pulse settles into the turn's closing line, counted in Persian digits",
+  !pulse.classList.contains("live") &&
+  /^[^۰-۹]*—\s*[۰-۹]/.test(pulse.querySelector(".pulse-verb").textContent) &&
+  pulseText.includes("۱۰٫۹ هزار توکن") && !/[0-9]/.test(pulseText),
+  pulseText.replace(/\s+/g, " ").trim() || "empty");
+
+// Settled, it is the LAST thing in the turn — the record of what just happened,
+// not a header sitting above the work it describes.
+check("the settled line ends the turn instead of snapping back above it",
+  specLog.lastElementChild === pulse && getComputedStyle(pulse).order === "0",
+  specLog.lastElementChild?.className + " / order " + getComputedStyle(pulse).order);
 
 /* The delete row in a ⋯ menu is a <button>, so the filled `button.danger` rule
    painted it coral while `.kebab-item.danger` set the text coral too — a blank
@@ -868,6 +1000,20 @@ check("an isMeta user message renders nothing at all",
   !specLog.textContent.includes("never show me"),
   specLog.childElementCount + " vs " + beforeMeta);
 
+/* Same flag, other name — and the name above is the one the LIVE stream never
+   sends. Every stream-json `user` event is built with `isSynthetic`, no isMeta
+   key at all, so a `/skill` invocation walked past the guard and rendered the
+   entire SKILL.md as a user bubble the length of a document. Replay was fixed
+   server-side; this is the live half of the same defect. */
+const beforeSynth = specLog.childElementCount;
+window.renderEvent({ type: "user", isSynthetic: true, message: { content: [
+  { type: "text", text: "# Update Config Skill\n\nnor this one" },
+] } });
+check("the live stream spells the same flag isSynthetic, and it is obeyed too",
+  specLog.childElementCount === beforeSynth &&
+  !specLog.textContent.includes("nor this one"),
+  specLog.childElementCount + " vs " + beforeSynth);
+
 /* The strip above the composer, painted from a synthetic /api/agents payload
    through the shipping builder (window.renderAgents). The description is Latin
    inside the RTL shell — the assertion has to be the computed direction, not
@@ -940,6 +1086,23 @@ check("clicking an agent opens a drawer that is laid out only while open",
   dPanel ? getComputedStyle(dPanel).display + " / " +
            (dirOf(dPanel.querySelector(".ag-head .ag-desc")) ?? "none")
          : "no drawer");
+
+/* The popover UA sheet sets `height: fit-content`, and an absolutely positioned
+   box whose height is not `auto` ignores its own `inset-block-end` — so the
+   drawer grew downward off the bottom of the window, `.ag-log`'s `flex: 1` had
+   no bounded height to fill, and a long agent transcript could not be scrolled
+   to at all. Only a drawer holding MORE than fits can see it, hence the filler:
+   an empty drawer is inside the window either way. */
+const dLog = dPanel.querySelector(".ag-log");
+const filler = document.createElement("div");
+filler.style.blockSize = "400vh";
+dLog.append(filler);
+check("the drawer stays inside the window and scrolls its own transcript",
+  dPanel.getBoundingClientRect().bottom <= innerHeight + 1 &&
+  dLog.scrollHeight > dLog.clientHeight + 1,
+  Math.round(dPanel.getBoundingClientRect().bottom) + "px bottom / " + innerHeight +
+  "px window, log " + dLog.scrollHeight + " in " + dLog.clientHeight);
+filler.remove();
 
 // Closing has to take the panel AND its poll with it — one exit, so nothing
 // keeps reading a transcript for a drawer nobody is looking at.

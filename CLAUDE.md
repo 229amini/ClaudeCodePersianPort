@@ -142,6 +142,28 @@ last **non-`isMeta`** `user`/`assistant` timestamp and the list sorts on that; m
 fallback for a transcript with nothing said in it. Read `wiki/sessions-and-history.md` §"The
 sidebar cannot sort on st_mtime". Guarded free in `test_units.py`.
 
+**2026-08-10 — three defects from the user's second pass, one per layer.** The agents drawer opened
+but could not be scrolled: the `[popover]` UA sheet sets `height: fit-content`, and a non-`auto`
+height makes an absolutely positioned box ignore its own `inset-block-end`, so `inset-block: 8vh`
+only pinned the top and the panel grew off the bottom of the window (`block-size: auto` is the
+whole fix — `wiki/rtl-rendering-notes.md`). A `/skill` invocation dumped the entire SKILL.md into
+the transcript: **the live stream spells `isMeta` as `isSynthetic`** and sends no `isMeta` at all,
+so the guard that already fixed replay never fired live — read out of the binary, recorded in
+`wiki/sessions-and-history.md`. And **a markdown list is one block, not N**: `dir="auto"` per `li`
+let a bullet opening with an inline `code` span go LTR while its Persian siblings stayed RTL, which
+is the "scrambled ul". The list decides once and its items give up their own `dir` so it can read
+them (`bidi.js`); an English list still resolves LTR, which is the assertion that stops anyone
+"fixing" this with `direction: rtl`. Gate: spec **80/80**.
+
+**2026-08-10 — the same list, reported again, one layer down.** Making the list decide was correct
+and insufficient: `dir="auto"`'s scan skips only `<bdi>` and subtrees carrying their own `dir`, so
+an inline `<code>` — LTR in CSS, silent in the DOM — still voted, and a bullet **opening** with a
+code span flipped the whole list LTR. `applyDirection()` now sets `dir="ltr"` on `pre,code`; that
+one line fixes `p`, `li`, `h2` and `td` together. The gate had been blind because its list case put
+the code-opening item *second*, and only the first strong character votes — see
+`wiki/rtl-rendering-notes.md` §"An inline `<code>` at the start of a block flips it LTR" before
+adding any guard for a first-strong-character rule. Gate: spec **82/82**.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

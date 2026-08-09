@@ -218,3 +218,21 @@ pcg-e5q). The CLI's own UI never displays `isMeta` messages — that is what the
 one bare-string user message that must survive replay, `<task-notification>` (carries no `isMeta`
 key), is special-cased before the envelope filter — see `_normalize_transcript_event()` and
 wiki/background-agents.md.
+
+**The live stream spells that flag `isSynthetic`, and sends no `isMeta` at all (2026-08-10).**
+The fix above covered replay only, so a `/skill` invocation still dumped the entire SKILL.md into
+the LIVE transcript as a user bubble the length of a document — the same defect, on the other
+source. Read out of the 2.1.223 binary, every stream-json `user` event is built as:
+
+```js
+{type:"user", message, parent_tool_use_id, session_id, uuid, timestamp,
+ isSynthetic: y6t(msg), tool_use_result, ...}
+function y6t(e){ return e.isMeta || e.isVisibleInTranscriptOnly || e.isCompactSummary || void 0 }
+```
+
+So `isSynthetic` is the union of three transcript flags and is the only one of the four names that
+ever reaches stdout. `render.js` now drops `ev.isMeta || ev.isSynthetic` at its one `user` case,
+which covers both sources through the single renderer (plan §B-4) — do not add a second filter in
+`server.py`'s live path. `<task-notification>`, the one injected `user` message that MUST render,
+sets none of the three (checked across every transcript on this machine); it carries
+`origin: {kind: "task-notification"}` instead. Guarded in the spec harness.

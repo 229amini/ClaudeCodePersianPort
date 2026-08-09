@@ -297,3 +297,47 @@ two lessons worth pinning:
   alone leaves the panel (and its poll timer) alive for a task after `hidePopover()`. The close
   button calls the teardown directly; `toggle` only backstops Escape/light-dismiss. This cost one
   failing spec run before it was found.
+
+### A third one: the UA sheet's `height: fit-content` eats `inset-block-end` (2026-08-10)
+
+The drawer was positioned with `inset-block: 8vh` and no `block-size`, which reads as "top and
+bottom are both 8vh from the edge" and is *not* what happens. The `[popover]` UA sheet sets
+`height: fit-content`, and in absolute positioning a non-`auto` height makes the box **ignore its
+own `inset-block-end`** — so the panel grew downward past the bottom of the window, `.ag-log`'s
+`flex: 1` never had a bounded height to fill, and a long agent transcript could not be scrolled to
+at all. The user reported it as "it opened but I couldn't scroll and it didn't sit right".
+
+`block-size: auto` is the whole fix: it is what makes both insets apply. The same trap is waiting
+for any future `[popover]` sized by insets rather than by an explicit height.
+
+**The guard needs content.** An empty drawer fits inside the window either way, so the spec check
+appends a `400vh` filler to `.ag-log` first and asserts two things a screenshot of the empty panel
+cannot: the panel's `getBoundingClientRect().bottom` is inside `innerHeight`, and `.ag-log`
+actually scrolls (`scrollHeight > clientHeight`).
+
+## An inline `<code>` at the start of a block flips it LTR (2026-08-10)
+
+`dir="auto"` decides from the first strong character, and its scan skips exactly two things:
+`<bdi>`/`<script>`/`<style>`, and any subtree **carrying its own `dir` attribute**. An inline
+`<code>` carries neither — it is LTR only in CSS, and CSS is invisible to that scan. So a Persian
+paragraph or bullet that OPENS with a code span resolved off the code's Latin letters:
+
+```
+firstItemOpensWithCode  <code> has no dir  ->  ul:ltr  li:[ltr,ltr,ltr]     (measured, Edge)
+firstItemOpensWithCode  <code dir="ltr">   ->  ul:rtl  li:[rtl,rtl,rtl]
+```
+
+Because a list decides once for all its items (see the list rule in `bidi.js`), one such opening
+bullet dragged the **entire list** LTR. The user reported it twice and fixed it by hand with
+`direction: rtl` on the `li` — the right symptom, the wrong layer: the items were only obeying the
+list, and the list was only obeying the code span.
+
+The fix is one line in `applyDirection()`: `pre,code` get an explicit `dir="ltr"`, which says in the
+DOM what the spec base CSS already says in the stylesheet and takes them out of the scan. It fixes
+`p`, `li`, `h2` and `td` in the same stroke — do not patch this per block type.
+
+**Why the gate stayed green through two reports:** the existing list check put the code-opening item
+in position *two*. Position two changes nothing — only the first strong character in tree order
+votes. Guards for a first-strong-character rule must place the offending token **first**, or they
+assert nothing. Both new cases are in `spec-test.html`; removing the fix turns them, and only them,
+red (`FAIL — 80/82`).
