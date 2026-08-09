@@ -60,6 +60,9 @@ const SVG = {
   unarchive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M12 18v-5M9.5 15.5L12 13l2.5 2.5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   dots: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/></svg>',
+  unpin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M4 4l16 16"/></svg>',
+  explorer: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M14 11h4v4"/><path d="M18 11l-5 5"/></svg>',
 };
 
 function basename(p) {
@@ -220,6 +223,14 @@ function projEl(proj, projects) {
   name.textContent = basename(proj.path);
   name.title = proj.path;
   head.append(name);
+  // Why this project is at the top. Without it the sort looks like a bug the
+  // first time a pinned project outranks one used five minutes ago.
+  if (proj.pinned) {
+    const mark = label("", "proj-pin");
+    mark.innerHTML = SVG.pin;
+    mark.title = FA.pinnedProject;
+    head.append(mark);
+  }
   head.addEventListener("click", () => {
     if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
     renderProjects(projects);
@@ -240,6 +251,23 @@ function projEl(proj, projects) {
   // is writing into that folder's transcript right now and the server refuses
   // it with a 409. The menu says which one it is instead of going quiet.
   top.append(...kebabMenu([
+    {
+      icon: proj.pinned ? SVG.unpin : SVG.pin,
+      text: proj.pinned ? FA.unpinProject : FA.pinProject,
+      run: async () => {
+        await api("/api/project/pin", { path: proj.path, pinned: !proj.pinned });
+        loadProjects();
+      },
+    },
+    {
+      // The one action here that is about the FOLDER rather than about the
+      // conversation. The server opens it through the shell, so whatever the
+      // user has set as their file manager is what appears.
+      icon: SVG.explorer,
+      text: FA.openInExplorer,
+      run: () => api("/api/project/reveal", { path: proj.path }),
+    },
+    null,
     {
       icon: proj.archived ? SVG.unarchive : SVG.archive,
       text: proj.archived ? FA.unarchiveProject : FA.archiveProject,

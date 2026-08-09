@@ -7,6 +7,7 @@ Both of these guard failure modes that produce no error message at all —
 takes bytes straight off a POST body.
 """
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -162,6 +163,362 @@ with tempfile.TemporaryDirectory() as tmp:
 
 check("Z-suffixed ISO parses", server.iso_epoch("2026-08-01T09:00:00.000Z") > 0)
 check("garbage timestamp is dropped", server.iso_epoch("not-a-time") is None)
+
+# --- background agents -------------------------------------------------------
+# wiki/background-agents.md: registry state comes ONLY from the main
+# transcript on disk. These lines are the synthetic shape of the three
+# markers that contract describes, not a copy of a real transcript.
+
+
+def _line(obj) -> str:
+    # Compact, no spaces -- the real CLI writes jsonl this tight, and
+    # build_agent_registry's cheap pre-filters (e.g. '"name":"Agent"') assume it.
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def _launch(tool_use_id, description, subagent_type="general-purpose", ts="2026-08-09T10:00:00.000Z"):
+    return _line({
+        "type": "assistant", "timestamp": ts,
+        "message": {"role": "assistant", "content": [{
+            "type": "tool_use", "id": tool_use_id, "name": "Agent",
+            "input": {"description": description, "subagent_type": subagent_type},
+        }]},
+    })
+
+
+def _ack_with_result(tool_use_id, agent_id, description, ts="2026-08-09T10:00:05.000Z"):
+    # The toolUseResult sibling field -- present when the CLI's own record
+    # carries it (wiki: authoritative source #1).
+    return _line({
+        "type": "user", "timestamp": ts,
+        "toolUseResult": {"isAsync": True, "status": "async_launched",
+                          "agentId": agent_id, "description": description,
+                          "resolvedModel": "claude-fable-5"},
+        "message": {"role": "user", "content": [{
+            "tool_use_id": tool_use_id, "type": "tool_result",
+            "content": [{"type": "text", "text": "Async agent launched successfully."}],
+        }]},
+    })
+
+
+def _ack_text_only(tool_use_id, agent_id, ts="2026-08-09T10:01:05.000Z"):
+    # No toolUseResult at all -- what actually streams live (wiki:
+    # authoritative source #2, the fallback).
+    text = ("Async agent launched successfully. (internal metadata)\n"
+            f"agentId: {agent_id} (internal ID - do not mention to user.)")
+    return _line({
+        "type": "user", "timestamp": ts,
+        "message": {"role": "user", "content": [{
+            "tool_use_id": tool_use_id, "type": "tool_result",
+            "content": [{"type": "text", "text": text}],
+        }]},
+    })
+
+
+def _notification(task_id, tool_use_id, summary, ts, as_queue_op, with_result=True):
+    content = (f"<task-notification>\n<task-id>{task_id}</task-id>\n"
+              f"<tool-use-id>{tool_use_id}</tool-use-id>\n<status>completed</status>\n"
+              f"<summary>{summary}</summary>\n")
+    if with_result:
+        content += "<result>the deliverable, with an escaped &amp; in it</result>\n"
+    content += "</task-notification>"
+    if as_queue_op:
+        return _line({"type": "queue-operation", "operation": "enqueue",
+                     "timestamp": ts, "content": content})
+    return _line({"type": "user", "timestamp": ts, "message": {"role": "user", "content": content}})
+
+
+print("build_agent_registry: the three markers, from synthetic transcript lines")
+AGENT_A = "aaaaaaaaaaaaaaaa"     # toolUseResult-carrying ack
+AGENT_B = "bbbbbbbbbbbbbbbb"     # text-only ack (no toolUseResult)
+CMD_ID = "cmd0123456"           # a background COMMAND's short task-id
+
+lines = [
+    _launch("toolu_A", "Do the async thing"),
+    _ack_with_result("toolu_A", AGENT_A, "Do the async thing"),
+    _launch("toolu_B", "Do the other thing"),
+    _ack_text_only("toolu_B", AGENT_B),
+    _notification(AGENT_A, "toolu_A", 'Agent "Do the async thing" finished',
+                 "2026-08-09T10:05:00.000Z", as_queue_op=True),
+    _notification(CMD_ID, "toolu_C", 'Background command "echo hi" completed (exit code 0)',
+                 "2026-08-09T10:06:00.000Z", as_queue_op=True, with_result=False),
+]
+
+with tempfile.TemporaryDirectory() as tmp:
+    transcript = Path(tmp) / "reg.jsonl"
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    registry = server.build_agent_registry(transcript)
+    check("both agent launches are registered", set(registry) >= {AGENT_A, AGENT_B, CMD_ID})
+    check("toolUseResult-carrying ack resolves kind+model",
+          registry[AGENT_A]["kind"] == "agent" and registry[AGENT_A]["model"] == "claude-fable-5")
+    check("toolUseResult-carrying ack's startedAt is the ack's own timestamp",
+          registry[AGENT_A]["startedAt"] == server.iso_epoch("2026-08-09T10:00:05.000Z"))
+    check("text-only ack still resolves the agentId",
+          registry[AGENT_B]["kind"] == "agent" and registry[AGENT_B]["description"] == "Do the other thing")
+    check("notification marks the agent completed with its summary",
+          registry[AGENT_A]["completed"] is True
+          and registry[AGENT_A]["summary"] == 'Agent "Do the async thing" finished')
+    check("an unmatched task-id becomes a kind:command entry",
+          registry[CMD_ID]["kind"] == "command" and registry[CMD_ID]["completed"] is True)
+    check("a still-running agent (no notification yet) is not completed",
+          registry[AGENT_B]["completed"] is False)
+
+    # Duplicate notification for the SAME task-id -- last one wins, no new entry.
+    before = len(registry)
+    dup = _notification(AGENT_A, "toolu_A", 'Agent "Do the async thing" finished AGAIN',
+                        "2026-08-09T10:07:00.000Z", as_queue_op=False)
+    transcript.write_text(transcript.read_text(encoding="utf-8") + dup + "\n", encoding="utf-8")
+    registry2 = server.build_agent_registry(transcript)
+    check("a duplicate notification does not add an entry", len(registry2) == before)
+    check("a duplicate notification overwrites (last one wins)",
+          registry2[AGENT_A]["summary"] == 'Agent "Do the async thing" finished AGAIN')
+
+print("build_agent_registry: incremental parsing only reads appended bytes")
+offsets = []
+orig_tail = server._tail_lines
+
+
+def _spy(path, offset):
+    offsets.append(offset)
+    return orig_tail(path, offset)
+
+
+server._tail_lines = _spy
+try:
+    with tempfile.TemporaryDirectory() as tmp:
+        transcript = Path(tmp) / "inc.jsonl"
+        transcript.write_text(_launch("toolu_X", "first") + "\n"
+                              + _ack_with_result("toolu_X", "c" * 16, "first") + "\n",
+                              encoding="utf-8")
+        server.build_agent_registry(transcript)
+        check("first parse starts at offset 0", offsets[-1] == 0)
+        size_after_first = transcript.stat().st_size
+
+        with transcript.open("a", encoding="utf-8") as handle:
+            handle.write(_launch("toolu_Y", "second") + "\n"
+                         + _ack_with_result("toolu_Y", "d" * 16, "second") + "\n")
+        registry3 = server.build_agent_registry(transcript)
+        check("second parse resumes from where the first left off, not 0",
+              offsets[-1] == size_after_first)
+        check("both agents are visible after the incremental parse",
+              {"c" * 16, "d" * 16} <= set(registry3))
+
+        # Shrunk file (rotated/truncated) -- must fall back to a full rescan.
+        transcript.write_text(_launch("toolu_Z", "third") + "\n"
+                              + _ack_with_result("toolu_Z", "e" * 16, "third") + "\n",
+                              encoding="utf-8")
+        registry4 = server.build_agent_registry(transcript)
+        check("a shrunk file rescans from 0", offsets[-1] == 0)
+        check("a shrunk file's registry does not carry over stale agents",
+              set(registry4) == {"e" * 16})
+finally:
+    server._tail_lines = orig_tail
+
+print("agent_file_path: traversal guard")
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    cwd = root / "proj"
+    cwd.mkdir()
+    old_projects_dir = server.PROJECTS_DIR
+    server.PROJECTS_DIR = root / "projects"
+    folder = server.PROJECTS_DIR / str(cwd).replace(":", "-").replace("\\", "-").replace("/", "-")
+    folder.mkdir(parents=True)
+    (folder / "sess.jsonl").write_text("{}\n", encoding="utf-8")
+    subagents = folder / "sess" / "subagents"
+    subagents.mkdir(parents=True)
+    good_id = "abcdef0123456789"
+    (subagents / f"agent-{good_id}.jsonl").write_text("{}\n", encoding="utf-8")
+    outside = root / "projects" / "secret.jsonl"
+    outside.write_text("{}\n", encoding="utf-8")
+
+    try:
+        check("a real agent id resolves inside the subagents folder",
+              server.agent_file_path(cwd, "sess", good_id, "jsonl")
+              == (subagents / f"agent-{good_id}.jsonl").resolve())
+        for escape in ("../../secret", "..\\..\\secret", good_id + "/../../../secret"):
+            check(f"traversal-shaped id is rejected: {escape}",
+                  server.agent_file_path(cwd, "sess", escape, "jsonl") is None)
+        for bad in ("ABCDEF0123456789", "abc", "not-hex-at-all!", ""):
+            check(f"bad-charset/length id is rejected: {bad!r}",
+                  server.agent_file_path(cwd, "sess", bad, "jsonl") is None)
+        check("outside file was never touched", outside.is_file())
+        check("an id with no matching file is rejected",
+              server.agent_file_path(cwd, "sess", "f" * 16, "jsonl") is None)
+    finally:
+        server.PROJECTS_DIR = old_projects_dir
+
+print("read_session: a bare-string <task-notification> survives replay")
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    cwd = root / "proj2"
+    cwd.mkdir()
+    old_projects_dir = server.PROJECTS_DIR
+    server.PROJECTS_DIR = root / "projects"
+    folder = server.PROJECTS_DIR / str(cwd).replace(":", "-").replace("\\", "-").replace("/", "-")
+    folder.mkdir(parents=True)
+    notif = _notification("aaaa1111", "toolu_Q", "Agent finished",
+                          "2026-08-09T10:08:00.000Z", as_queue_op=False)
+    queue_op = _notification("aaaa1111", "toolu_Q", "Agent finished",
+                             "2026-08-09T10:07:59.000Z", as_queue_op=True)
+    # A skill load (pcg-e5q): the CLI injects the whole SKILL.md as ordinary
+    # BLOCK-shaped content under isMeta:true -- shape modelled on the real
+    # line in a04d070b-7743-41f0-9b4c-9c34756e0a78.jsonl. The CLI's own UI
+    # never shows this; replaying it was one giant user bubble.
+    skill_meta = _line({
+        "type": "user", "isMeta": True, "timestamp": "2026-08-09T10:07:00.000Z",
+        "message": {"role": "user", "content": [
+            {"type": "text", "text": "Base directory for this skill: C:\\fake\\path\n\n"
+                                     "# Some Skill\n\nlong SKILL.md body here..."},
+        ]},
+    })
+    (folder / "s2.jsonl").write_text(
+        queue_op + "\n" + skill_meta + "\n" + notif + "\n", encoding="utf-8")
+
+    try:
+        events = server.read_session(cwd, "s2")
+        check("isMeta + queue-operation both stay filtered -- one event replays",
+              len(events) == 1)
+        check("it is a text block carrying the raw <task-notification> string",
+              events[0]["message"]["content"][0]["type"] == "text"
+              and events[0]["message"]["content"][0]["text"].startswith("<task-notification>"))
+        check("the isMeta skill body never made it into replay",
+              "SKILL.md" not in str(events))
+        # Proof this needed a special case: today's envelope filter alone
+        # WOULD have dropped it -- "task-notification" matches CLI_ENVELOPE_RE
+        # the same as the noise it exists to drop.
+        check("user_prompt_text alone (no special-case) would have dropped it",
+              server.user_prompt_text(json.loads(notif)["message"]["content"]) is None)
+    finally:
+        server.PROJECTS_DIR = old_projects_dir
+
+print("read_agent_events: after/next offset behaviour")
+with tempfile.TemporaryDirectory() as tmp:
+    agent_file = Path(tmp) / "agent-f00d.jsonl"
+    agent_lines = [
+        _line({"type": "user", "isSidechain": True,
+              "message": {"role": "user", "content": "the agent's own prompt"}}),
+        _line({"type": "attachment", "isSidechain": True, "attachment": {}}),
+        _line({"type": "assistant", "isSidechain": True,
+              "message": {"role": "assistant", "content": [{"type": "text", "text": "working..."}]}}),
+    ]
+    agent_file.write_text("\n".join(agent_lines) + "\n", encoding="utf-8")
+
+    events, next1 = server.read_agent_events(agent_file, 0)
+    check("isSidechain does not drop lines from an agent's own file",
+          len(events) == 2 and events[0]["type"] == "user" and events[1]["type"] == "assistant")
+    check("next counts raw lines, including the dropped attachment line", next1 == 3)
+
+    events2, next2 = server.read_agent_events(agent_file, next1)
+    check("polling again with after=next yields nothing new", events2 == [] and next2 == 3)
+
+    with agent_file.open("a", encoding="utf-8") as handle:
+        handle.write(_line({"type": "assistant", "isSidechain": True,
+                            "message": {"role": "assistant",
+                                       "content": [{"type": "text", "text": "done"}]}}) + "\n")
+    events3, next3 = server.read_agent_events(agent_file, next1)
+    check("after=<previous next> returns only the newly appended event",
+          len(events3) == 1 and events3[0]["message"]["content"][0]["text"] == "done")
+    check("next advances by exactly the appended line", next3 == 4)
+
+print("read_agent_events: a half-written trailing line is not counted into next")
+# Same straggler class _tail_lines() was written to avoid: the CLI is still
+# mid-write on the transcript's last line when the poll lands.
+with tempfile.TemporaryDirectory() as tmp:
+    agent_file = Path(tmp) / "agent-half.jsonl"
+    first = _line({"type": "assistant", "isSidechain": True,
+                  "message": {"role": "assistant",
+                             "content": [{"type": "text", "text": "first"}]}})
+    second_full = _line({"type": "assistant", "isSidechain": True,
+                        "message": {"role": "assistant",
+                                   "content": [{"type": "text", "text": "second"}]}})
+    truncated = second_full[:-8]   # cut mid-record, no trailing newline yet
+    agent_file.write_text(first + "\n" + truncated, encoding="utf-8")
+
+    events, next1 = server.read_agent_events(agent_file, 0)
+    check("only the complete line is returned",
+          len(events) == 1 and events[0]["message"]["content"][0]["text"] == "first")
+    check("the truncated trailing line is NOT counted into next", next1 == 1)
+
+    # The CLI finishes writing the record.
+    with agent_file.open("a", encoding="utf-8") as handle:
+        handle.write(second_full[len(truncated):] + "\n")
+    events2, next2 = server.read_agent_events(agent_file, next1)
+    check("re-reading from the same `next` now returns the completed line",
+          len(events2) == 1 and events2[0]["message"]["content"][0]["text"] == "second")
+    check("next advances past it once complete", next2 == 2)
+
+print("read_agent_events: isMeta lines are dropped before normalisation, same as read_session")
+with tempfile.TemporaryDirectory() as tmp:
+    agent_file = Path(tmp) / "agent-meta.jsonl"
+    # Shape modelled on the real skill-load line (pcg-e5q) -- block content
+    # under isMeta:true, which _normalize_transcript_event() cannot filter
+    # because it discards the isMeta flag on its way out.
+    skill_meta = _line({
+        "type": "user", "isSidechain": True, "isMeta": True,
+        "message": {"role": "user", "content": [
+            {"type": "text", "text": "Base directory for this skill: C:\\fake\\path\n\n"
+                                     "# Some Skill\n\nlong SKILL.md body here..."},
+        ]},
+    })
+    normal = _line({"type": "assistant", "isSidechain": True,
+                    "message": {"role": "assistant",
+                               "content": [{"type": "text", "text": "working..."}]}})
+    agent_file.write_text(skill_meta + "\n" + normal + "\n", encoding="utf-8")
+
+    events, next1 = server.read_agent_events(agent_file, 0)
+    check("the isMeta skill-load line never reaches the agent drawer",
+          len(events) == 1 and events[0]["type"] == "assistant")
+    check("next still counts the isMeta line -- it's complete, just filtered", next1 == 2)
+
+print("_agent_status: an agent orphaned by a killed-then-resumed process reports stopped")
+# --resume keeps session_id stable across a kill (B-9.8), so `live` alone
+# can't distinguish this process's agents from a prior, now-dead process's.
+OLD_ACK = server.iso_epoch("2026-08-09T10:00:00.000Z")
+NEW_SPAWN = server.iso_epoch("2026-08-09T10:05:00.000Z")
+NEW_ACK = server.iso_epoch("2026-08-09T10:06:00.000Z")
+orphan = {"completed": False, "startedAt": OLD_ACK}
+fresh = {"completed": False, "startedAt": NEW_ACK}
+check("an ack from BEFORE the current process's spawn is stopped, not running",
+      server._agent_status(orphan, True, NEW_SPAWN) == "stopped")
+check("an ack from AFTER the current process's spawn is still running",
+      server._agent_status(fresh, True, NEW_SPAWN) == "running")
+check("completed wins regardless of age", server._agent_status(
+    {"completed": True, "startedAt": OLD_ACK}, True, NEW_SPAWN) == "completed")
+check("not live is stopped regardless of age",
+      server._agent_status(fresh, False, NEW_SPAWN) == "stopped")
+check("no spawned_at falls back to the live-only check",
+      server._agent_status(orphan, True, None) == "running")
+
+# --- pinned / archived path lists -------------------------------------------
+# Both toggles and the "forget this project" sweep are the same few lines of
+# case-insensitive matching — exactly the kind of thing that works on the path
+# you typed and fails on the one Windows handed you.
+with tempfile.TemporaryDirectory() as tmp:
+    store = Path(tmp) / "pinned.json"
+    server.toggle_in_list(store, r"C:\Users\Lion\Proj", True)
+    check("pin writes the path", server._load_paths(store) == [r"C:\Users\Lion\Proj"])
+    server.toggle_in_list(store, r"c:\users\lion\proj", True)
+    check("pinning the same path in another case does not duplicate it",
+          server._load_paths(store) == [r"c:\users\lion\proj"])
+    server.toggle_in_list(store, r"C:\USERS\LION\PROJ", False)
+    check("unpin matches case-insensitively", server._load_paths(store) == [])
+
+    # drop_project_from_lists sweeps all three files; it used to name only two,
+    # so a removed project would come back pinned the next time it was opened.
+    olds = (server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE)
+    try:
+        server.RECENTS_FILE = Path(tmp) / "r.json"
+        server.ARCHIVED_FILE = Path(tmp) / "a.json"
+        server.PINNED_FILE = Path(tmp) / "p.json"
+        for f in (server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE):
+            server.toggle_in_list(f, r"D:\Work\App", True)
+        server.drop_project_from_lists(r"d:\work\app")
+        check("removing a project forgets it in recents, archived AND pinned",
+              not any(server._load_paths(f) for f in
+                      (server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE)))
+    finally:
+        server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE = olds
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)

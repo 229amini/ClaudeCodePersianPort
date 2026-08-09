@@ -67,7 +67,22 @@ export function isolateTechnicalTokens(root) {
 /* Paragraph-level direction: a Persian paragraph and an English paragraph in
    one message each align correctly. Let the browser detect from the first
    strong character — never compute it in JS. Spec rule 1. */
-const BLOCK_TAGS = "p,li,h1,h2,h3,h4,h5,h6,blockquote,td,th,dd,dt,figcaption";
+/* `th` belongs in this list exactly like `td` does: every content-bearing
+   element resolves its own direction (rule 1), and a table header row mixing
+   an English and a Persian column ("| Command | توضیح |") must let each `th`
+   read correctly on its own. A prior pass added `table` here but dropped
+   `th` in the same edit — the project's own highest-frequency defect class,
+   state bleeding across what should be independent — and left a comment
+   claiming the drop was deliberate ("skips every descendant that carries its
+   own dir" would blind the table's own dir=auto to the header) which is true
+   as far as it goes: once every td/th carries dir=auto, `<table dir=auto>`'s
+   own scan (which explicitly excludes text under a descendant that has its
+   own dir attribute) finds nothing to read and falls back to its ltr default,
+   so a table no longer picks column order from its header's language. That
+   trade is the right one — a header cell silently losing its own direction is
+   the bug this project keeps re-discovering; a table always laying out
+   left-to-right is not. */
+const BLOCK_TAGS = "p,li,h1,h2,h3,h4,h5,h6,blockquote,table,td,th,dd,dt,figcaption";
 
 export function applyDirection(root) {
   for (const el of root.querySelectorAll(BLOCK_TAGS)) {
@@ -84,6 +99,14 @@ export function renderMarkdown(text) {
   host.innerHTML = typeof parse === "function" ? parse(text, { breaks: true }) : "";
   isolateTechnicalTokens(host);
   applyDirection(host);
+  // A table wider than the bubble has to scroll itself; left alone it widens the
+  // whole transcript, which the spec's no-horizontal-scroll guard forbids.
+  for (const table of host.querySelectorAll("table")) {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    table.replaceWith(wrap);
+    wrap.append(table);
+  }
   return host;
 }
 

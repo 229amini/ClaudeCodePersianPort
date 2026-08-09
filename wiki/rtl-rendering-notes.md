@@ -208,3 +208,92 @@ why both containers stay under test.
 
 Line numbers count **within the hunk**, not within the file. An `Edit`'s `old_string` is a fragment
 and the CLI never says where it sits, so numbering from the file's start would be a confident lie.
+
+## A `.kebab-item` is a `<button>`, so `button.danger` paints it (2026-08-08)
+
+The ⋯ menu's delete row rendered as a **blank coral slab** — no icon, no text — and looked armed
+before anyone clicked it. Nothing was wrong with the arming logic (`chrome.js:kebabMenu`
+disarms every row on open, correctly). It was the cascade:
+
+```
+button.danger              (0,1,1)  background: var(--danger); color: #fff
+.kebab-item                (0,1,0)  background: none            <- loses on background
+.kebab-item.danger         (0,2,0)  color: var(--danger)        <- wins on colour
+```
+
+So the *unarmed* row got a coral fill from the generic filled-button rule and coral text from the
+kebab rule: `#e5695a` on `#e5695a`. The armed rule `(0,3,0)` was the only one setting a quiet
+`--danger-bg`, which meant the two states were **inverted** — arming made it calmer.
+
+Rule: any `<button>` that is styled as a menu row, chip or bare icon must opt **out** of the
+generic `button.*` fills explicitly, and the opt-out must be declared **before** the `:hover`
+rule of the same specificity or hover stops repainting it. Fixed as
+`.kebab-item.danger { color: var(--danger); background: none; }` above `.kebab-item:hover`.
+
+Guarded in `spec-test.html` ("an unarmed delete row is legible, and arming is what changes"):
+it asserts idle `color !== background-color`, which is precisely what `textContent` cannot see.
+
+**Writing that guard has its own trap.** `button` carries `transition: background`, so a
+`getComputedStyle()` read taken immediately after setting `data-armed` samples the transition at
+t=0 and reports `rgba(0,0,0,0)` — a correct rule looks broken. Set `style.transition = "none"` on
+the probe element first. Cost me two runs to see it, because the box-shadow from the *same* rule
+read fine (box-shadow was not in the transition list).
+
+## Density pass, and the one lever that is locked (2026-08-08)
+
+The transcript was costing more scroll than it needed to. Measured on the spec harness (same
+content, same JS, CSS swapped): **2511 px → 2226 px, −11%**, before the tool-call grouping is
+counted on top.
+
+**`--lh-fa: 1.9` is not a preference and was not touched.** The spec states it as a *minimum* for
+Persian text (`claude-persian-rtl-spec.md` line 92) because Persian ascenders and descenders clip
+and diacritics collide at the usual 1.5. It is the single biggest lever in the file and it is
+closed. Everything below is what is left once you accept that.
+
+Where the space actually was:
+
+- **`.msg p` had no margin rule at all**, so it inherited the browser's `1em` — and at 1.9 leading
+  that stacks a full blank line between paragraphs on top of a gap that already reads as a break.
+  Now `.45em`. Biggest single win, and it only shows on multi-paragraph answers, which is why it
+  survived every earlier screenshot.
+- **`.tool-output` / `.diff` inherited 1.9** although they are terminal transcripts. Now 1.55, with
+  the floor restored per line by `:is(.ln, .dl):dir(rtl)`. `:dir()` is the only way to ask —
+  direction is decided by `dir="auto"` at render time and rule 1 forbids computing it in JS. If a
+  browser lacks `:dir()` the rule drops and everything keeps 1.9, so the failure mode is safe.
+  Guarded: "rule 3: a Persian output line keeps the 1.9 floor, a Latin one does not" asserts the
+  *ratio* on a real Persian line next to a real Latin one, in the same box.
+- `.msg.assistant` was carrying 10 px of block padding with no surface to sit on — it is the most
+  repeated element in the app, so that is 20 px per turn for nothing.
+
+**The rail was never continuous, and no `margin-block-start: 0` could have fixed it.** `#log` is a
+flex column with a `gap`, and a gap is not a margin. Consecutive collapsed cards now pull back by
+`calc(-1 * var(--log-gap))` — which is what the token exists for. Gated on **both** cards being
+shut, matching the condition the rail draws under: two open cards are two bordered surfaces and
+need the gap to stay two things.
+
+## `dir="auto"` on a diff row sits on the text span, not the row (2026-08-09)
+
+A line-height fix for `.tool-output`/`.diff` assumed `renderDiff()` set `dir="auto"` on `.dl`
+(the row) the same way `bidi.js`'s `linesAuto()` sets it on `.ln` (a plain tool-output line) — it
+doesn't. `renderDiff()` sets it on the child `.dt` (the text span) only. A `.dl:dir(rtl)` selector
+therefore has no `dir` attribute of its own to read on `.dl` and silently resolves off whichever
+ancestor has one — the RTL `<html>` shell — so it matches every diff row regardless of content,
+in every browser, not just ones that don't support `:dir()`. The fix targets `.dt`, not `.dl`.
+Lesson: two elements that look like siblings in the same rendering pass (`.ln` vs `.dl`) can carry
+`dir="auto"` at different depths — always grep the actual builder (`renderDiff()`,
+`linesAuto()`), never assume parallel structure implies parallel attribute placement.
+
+## Two `popover` traps from the agent drawer (2026-08-09)
+
+`#agent-drawer` (background-agents panel) is a `[popover]`, like the kebab menu, and it re-taught
+two lessons worth pinning:
+
+- **`display` on a `[popover]` defeats the UA rule that hides it when closed.** The UA sheet hides
+  a closed popover with `display: none`; any authored `display` on the bare `[popover]` selector
+  overrides that and the "closed" panel stays painted. Layout styles must sit under
+  `:popover-open` only. Already true of `.kebab-menu`, now guarded by a spec assertion ("drawer is
+  laid out only while open").
+- **`popover`'s `toggle` event is queued, not synchronous.** Tearing down in the `toggle` handler
+  alone leaves the panel (and its poll timer) alive for a task after `hidePopover()`. The close
+  button calls the teardown directly; `toggle` only backstops Escape/light-dismiss. This cost one
+  failing spec run before it was found.

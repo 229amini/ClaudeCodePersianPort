@@ -182,3 +182,39 @@ The idle watchdog kills the server ~10 s after the last SSE client disconnects. 
 script gets `ConnectionRefusedError` partway through for that reason — it is the shutdown feature
 working, not a bug. `m5_api_test.py` holds an SSE connection open in a background thread, which is
 also a more faithful simulation of a real window.
+
+## Pin, and «باز کردن پوشه پروژه» (2026-08-08)
+
+Two items the user asked for after comparing the sidebar against Claude Code desktop's project menu.
+
+**Pin is `archived.json` again.** `pinned.json` is the same path-list file, written through the same
+`toggle_in_list()` both toggles now share, and the only thing that knows the difference is the sort
+in `list_projects()`: `(not pinned, -modified)` — one key, because `modified` is a float and
+negating it reverses only that half. `drop_project_from_lists()` sweeps all three files; it named
+two before, so a removed project would have come back pinned the next time it was opened. Guarded
+in `test_units.py`, which is where the case-insensitive matching is actually checked — every one of
+these paths arrives from Windows in whatever case Windows felt like.
+
+The sidebar shows a muted pin glyph on a pinned row. Not decoration: without it the sort looks like
+a bug the first time a pinned project outranks one used five minutes ago.
+
+**`/api/project/reveal` is the one endpoint that hands a string to the Windows shell.**
+`os.startfile()` is deliberate — it is what a double-click does, so the user's own file manager
+opens rather than a hardcoded `explorer.exe`. The guard is `is_dir()`, and it is load-bearing:
+`startfile` on a FILE runs whatever is associated with it. Refusal of a file, a missing folder and
+an empty path is proven, and so is the success branch — this repo has already been bitten twice by
+install branches that were never executed anywhere (`wiki/packaging.md`).
+
+**«Create permanent worktree» and «Edit project» were deliberately not built.** The audience is a
+non-technical Persian speaker who must never touch a terminal; a git worktree has no meaning for
+them, and there is nothing about a project to edit here — the folder IS the project.
+
+**`isMeta: true` means "the CLI talking to itself" — replay drops it wholesale (2026-08-09).**
+The sort logic above already treated `isMeta` as not-real-activity; `read_session` now applies the
+same flag to replay, because the envelope filter alone was never enough: a skill load injects the
+ENTIRE SKILL.md as an `isMeta` user message with **block-shaped** content, which the bare-string
+envelope filter never saw, and it replayed as a user bubble the length of a document (bead
+pcg-e5q). The CLI's own UI never displays `isMeta` messages — that is what the flag is for. The
+one bare-string user message that must survive replay, `<task-notification>` (carries no `isMeta`
+key), is special-cased before the envelope filter — see `_normalize_transcript_event()` and
+wiki/background-agents.md.

@@ -46,7 +46,45 @@ window.FA = {
     Skill: "مهارت",
     AskUserQuestion: "پرسش",
     ExitPlanMode: "طرح کار",
+    // `Agent` dispatches a helper that keeps working in the background. The row
+    // is normally named by the model's own description of the work; this is the
+    // fallback for a launch that arrived without one.
+    Agent: "عامل پس‌زمینه",
   },
+
+  /* Counted form, for the row that collapses a run of consecutive calls:
+     «۱ فایل خوانده شد، ۱۱ فرمان اجرا شد». The verbs above read as a label on
+     one card; after a number they need their noun back, or «۱۱ اجرا شد» says
+     eleven of nothing. Unlisted tools fall back to the verb, then to the name. */
+  toolGroupNouns: {
+    Read: "فایل خوانده شد",
+    Write: "فایل نوشته شد",
+    Edit: "ویرایش",
+    MultiEdit: "ویرایش",
+    NotebookEdit: "ویرایش",
+    Bash: "فرمان اجرا شد",
+    Glob: "جست‌وجوی فایل",
+    Grep: "جست‌وجو در متن",
+    WebFetch: "دریافت از وب",
+    WebSearch: "جست‌وجوی وب",
+    Task: "کار فرعی",
+    Skill: "مهارت",
+    Agent: "عامل پس‌زمینه اجرا شد",
+  },
+
+  /* Background agents. The CLI dispatches helpers that keep working after the
+     turn ends; the strip above the composer is where they live. Nothing here
+     names a specific agent — the set is per-machine, exactly like the MCP
+     servers and the subagent list. */
+  agentRow: "عامل پس‌زمینه",
+  agentLaunched: "عامل در پس‌زمینه اجرا شد",
+  agentDone: "عامل پس‌زمینه تمام شد",
+  agentEnded: "عامل پس‌زمینه پایان یافت",
+  agentRunning: "در حال اجرا",
+  agentOpen: "دیدن کاری که این عامل انجام می‌دهد",
+  agentClose: "بستن",
+  agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
+  agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
 
   connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
@@ -74,6 +112,12 @@ window.FA = {
   projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",
   archiveProject: "بایگانی",
   unarchiveProject: "خروج از بایگانی",
+  pinProject: "سنجاق به بالای فهرست",
+  unpinProject: "برداشتن سنجاق",
+  pinnedProject: "سنجاق‌شده",
+  // «پوشه», not «فایل‌اکسپلورر»: the audience knows what a folder is and the
+  // server opens it through the shell, so the file manager is whatever theirs is.
+  openInExplorer: "باز کردن پوشه پروژه",
   archiveSection: "بایگانی",
   chooseProject: "انتخاب پروژه",
   greetMorning: "صبح بخیر! امروز چه کنیم؟",

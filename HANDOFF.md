@@ -1,98 +1,67 @@
-# HANDOFF — 2026-08-07, overnight session
+# Handoff — 2026-08-09, usage cap hit (resets 07:10 Tehran)
 
-The four beads the previous handoff left as REMAINING (`pcg-vnv`, `pcg-zj1`,
-`pcg-52j`, `pcg-2jy`) are **done, committed and verified in the running app**.
-Read `CLAUDE.md` first; this file only covers what is not yet in it.
+## Where we are
 
-Everything is committed on `rework/phases-0-3`. Nothing is pushed.
+The **background-agents feature is landed and verified** (bead `pcg-70f`, closed) plus the
+**isMeta skill-flood fix** (`pcg-e5q`, closed). Everything is in the working tree,
+**uncommitted**, on branch `rework/phases-0-3` — the diff also still contains earlier
+uncommitted work that predates this session.
 
-## Gates, all re-run at the end of this session
+Built by two delegated agents (Sonnet: server, Opus: frontend) to the measured contract in
+`wiki/background-agents.md` — read that first; it is the whole CLI contract (launch ack,
+`<task-notification>`, `subagents/agent-*.jsonl` + meta.json, and why agent state must come
+from the transcript file, never the stdout stream).
 
-| Check | Result |
-|---|---|
-| `run_spec_test.py` | **PASS — 36/36** (was 24; 12 added) |
-| `smoke_test.py` | **PASS — 12/12** (was 10; 2 added) — costs one turn |
-| `test_units.py` | PASS (4 broker checks added) |
-| `test_no_console.py` | PASS |
-| `test_transcript_path.py` | PASS |
+What exists now:
 
-```
-cd persian-claude-gui
-C:\Python314\python.exe run_spec_test.py
-C:\Python314\python.exe test_units.py
-C:\Python314\python.exe test_no_console.py
-C:\Python314\python.exe test_transcript_path.py
-```
+- `server.py`: `build_agent_registry()` (incremental byte-offset cache + lock),
+  `GET /api/agents?id=&cwd=` and `GET /api/agent?id=&agent=&after=&cwd=` (conventions mirror
+  `/api/session`; epoch-float timestamps), `agent_file_path()` traversal guard,
+  `_normalize_transcript_event()` shared by session and agent replay, `read_session` drops
+  `isMeta` and passes `<task-notification>` through (it must jump `user_prompt_text` — the
+  envelope regex would eat it).
+- `static/js/agents.js` (new): strip above composer, per-agent drawer (popover), 3 s poll while
+  running, full teardown on wrapper `reset`. `render.js`: Agent rows named by description,
+  «عامل در پس‌زمینه اجرا شد» instead of the internal ack text, task-notification completion
+  cards, and the `newRenderScope()`/`withRenderTarget()` seam so the drawer replays through the
+  ONE renderer without colliding with `state.toolCards`.
 
-## What landed (one commit each — read the commit messages, they carry the why)
+## Verified (all re-run independently, not just agent-claimed)
 
-- `5667abc` **AskUserQuestion** as a real question dialog.
-- `30d4891` **Context notice** — /compact and /clear as two Persian buttons.
-- `8fe5891` **Effort chip** — mirrored from `initialize`, written through the
-  one honest read-back.
-- `a08fc64` **Real diffs** for Edit/Write/MultiEdit, in the card *and* in the
-  permission dialog.
+- `C:\Python314\python.exe persian-claude-gui\test_units.py` → 63/63 PASS
+- `C:\Python314\python.exe persian-claude-gui\run_spec_test.py` → **PASS — 64/64**, exit 0
+- `C:\Python314\python.exe persian-claude-gui\test_transcript_path.py` → PASS
+- Live E2E against real history (`D:\Project\GameNet`, session `18e44a29-…`): 11 background
+  tasks listed (8 agents enriched from meta.json + 3 commands), 366-event agent replay with
+  stable `after`/`next`, traversal + bogus-session + bad-token all reject. Script:
+  scratchpad `e2e_agents.py` of session `05888798-b356-47fc-8f23-ce6a27a58b61` (throwaway;
+  boots server, sends no CLI turn, free).
 
-Note `5667abc` also swept in the previous session's 15 uncommitted files (tool
-rail, kebab menu, statusline meters, clipboard paste). Its message describes
-only the AskUserQuestion work — if you are archaeology-ing that history later,
-that is why the diff is bigger than the message.
+## REMAINING — in order
 
-## Measurements this session cost real turns to get — do not re-derive
+1. **The final xhigh review pass never ran** (bead `pcg-eja`): all 7 finder agents died on the
+   usage cap, so the workflow's "no findings" is meaningless. After reset, either re-run
+   `/code-review xhigh` on the diff, or resume the cached workflow:
+   `Workflow({scriptPath: "C:\Users\Lion\.claude\projects\D--projects-Claude\05888798-b356-47fc-8f23-ce6a27a58b61\workflows\scripts\code-review-wf_0c9c4a07-a0d.js", resumeFromRunId: "wf_0c9c4a07-a0d"})`
+   (same args; completed agents replay from cache). Then call ReportFindings per the host
+   instructions in that session.
+2. One manual pass of the drawer's **live** polling against a session with a currently-running
+   agent (the only path E2E could not exercise — every real agent was already finished). Cheap
+   way: open the GUI, ask for a background `ping -n 60 127.0.0.1` Bash task, watch the strip.
+3. Commit — user approval required (conservative profile). Suggested: one commit for the
+   background-agents feature + isMeta fix; wiki edits ride along
+   (`wiki/background-agents.md` new, README index line, appends to `rtl-rendering-notes.md`
+   and `sessions-and-history.md`).
 
-All on **claude 2.1.223**. Full write-ups are in the wiki; the one-line versions:
+## Hard-won facts not written anywhere else
 
-- **AskUserQuestion travels over the `can_use_tool` pipe** and its answer rides
-  back in the allow reply's `updatedInput.answers`, keyed by question TEXT.
-  → `wiki/permission-transport.md` §AskUserQuestion.
-- **There is no `set_effort` control subtype.** The full subtype list is in
-  `wiki/control-protocol.md` §6, along with why only
-  `get_settings().effective.effortLevel` can be trusted, and the fact that
-  `initialize` advertises a `max` level the settings schema refuses.
-- **The CLI's own `/effort` writes the user's real `~/.claude/settings.json`**;
-  `apply_flag_settings` only makes a session overlay. That difference is the
-  only reason the chip is acceptable. The smoke test asserts the file stays
-  byte-identical.
-- **`diagnostics.cache_miss_reason` is real but useless as a trigger** — it
-  fires on the first turn of every resumed session.
-- **The CLI's "Context low" / "% until auto-compact" warnings are Ink
-  components and never reach stream-json.** Only the hard-limit message does.
-
-## Hard-won, and the one worth internalising
-
-**An assertion on `textContent` is blind to every BiDi defect there is.** The
-diff count rendered `1- 2+` on screen while `textContent === "+4"` passed. If a
-check does not read a computed style or a measured geometry, it is not a
-rendering check. Written up in `wiki/rtl-rendering-notes.md`.
-
-Also: the spec gate is now the place where a behaviour change *shows up* rather
-than a thing to route around. Cases 9 and 10 legitimately failed when Edit/Write
-started rendering as diffs; they were retargeted to `.diff .dt`, not deleted.
-`.tool-output` stays covered by cases 11–12.
-
-## Environment notes for the next session
-
-- Probes are **much** cheaper against a scratch cwd. The first AskUserQuestion
-  probe cost **$3.00** because the wrapper resumed this repo's own 283k-token
-  session; the same probe against an empty temp folder cost $0.13.
-- A dev-run helper that boots the server, holds an SSE client open (so the idle
-  watchdog cannot kill it) and prints the URL lives in the session scratchpad.
-  It is 30 lines — rewrite it rather than hunting for it; the pattern is in
-  `run_spec_test.py`.
-- **Spawning `claude.exe` directly from Bash is blocked by the tool classifier.**
-  Drive the running server's own endpoints instead — same measurement, and it
-  exercises the real path.
-- `server.py` changes need a server restart; client changes only need a page
-  reload. Two rounds of screenshots were wasted on this last session.
-
-## REMAINING
-
-`bd ready` is the source of truth. Open now:
-
-- `pcg-9jx` (P3) — MCP tool names render raw and overflow the tool row
-  (`mcp__claude-in-chrome__tabs_context_mcp`). Fix in the fallback, not in
-  `strings.fa.js` — the MCP tool set is per-machine.
-- **M8 acceptance on the colleague's PC** is still the only milestone left, and
-  still cannot be done from this machine. `M8-acceptance.md` is the checklist.
-  The three never-executed install branches (Python install, claude install,
-  `-Payload`) remain unexecuted anywhere.
+- Session `18e44a29-e168-402f-b150-c8bc7c3ebfdc` under
+  `C:\Users\Lion\.claude\projects\D--Project-GameNet\` is the reference fixture: 8 real agents
+  + 3 background commands, meta.json for all agents, one agent transcript >1 MB.
+- Frontend/server param drift almost shipped: the brief said "mirror /api/session" and one
+  agent still wrote `?session=`. The contract is `id=`. Both endpoints take optional `cwd`.
+- `popover` gotchas and the isMeta rule are recorded in `wiki/rtl-rendering-notes.md` (tail)
+  and `wiki/sessions-and-history.md` (tail).
+- Supervisor pattern that worked: brief → mid-flight acceptance-criteria message → agents
+  report → verifier re-runs every gate. The one defect found (param drift) was caught because
+  the agent was required to state deviations.

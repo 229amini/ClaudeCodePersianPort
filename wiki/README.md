@@ -38,6 +38,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   injected envelopes, not the person.
 - [parity-chrome.md](parity-chrome.md) — the interrupt control message, slash commands, image
   blocks, statusLine passthrough, and the CLI features deliberately left unbuilt.
+- [background-agents.md](background-agents.md) — the measured background-agent lifecycle on
+  2.1.226: launch ack shape, `<task-notification>`, `subagents/agent-*.jsonl` + meta.json, and
+  why agent state must come from the transcript file, never the stdout stream.
 - [packaging.md](packaging.md) — `setup.ps1`/shortcut, the encoding rules that
   each silently corrupt Persian, and exactly which install branches are still unproven.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.

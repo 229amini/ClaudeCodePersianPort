@@ -102,3 +102,41 @@ beats normal declarations regardless of layer.
 Unlayered CSS beats **all** layers. `spec-test.html` and `help.html` both carry inline `<style>`
 blocks; they won before by source order and win now by being unlayered, so nothing changed. Keep
 that in mind before adding an inline block anywhere else.
+
+## A run of tool calls is one row (2026-08-08)
+
+`render.js:toolHome()` is the choke point: **every** node added to `#log` goes through `append()`,
+and `append()` asks `toolHome()` where it belongs. A plain tool card joins the current run; anything
+else (a sentence, a question, a todo list, the result line) sets `state.run = null` and ends it.
+That is what makes the group mean *these happened together* rather than *these are the same tool*.
+
+Three things that are load-bearing and will look like arbitrary detail later:
+
+- **The group forms on the SECOND card.** The first card is appended to the log normally and is
+  `replaceWith()`-ed into the group only when a second one follows, so a lone `Bash` call still
+  reads as itself rather than as «۱ فرمان اجرا شد».
+- **The group element is built by hand, not by `card()`.** `card()` calls `append()`, `append()`
+  calls `toolHome()`, and a `<details class="card tool">` group would route itself straight back
+  into itself. `isRunnable()` also excludes `.group` as a second belt.
+- **`card()` sets `dataset.tool` before appending**, because that is the only thing `toolHome()`
+  can count by.
+
+`.ask` never joins a run: a question the user has to answer cannot start folded shut.
+
+Anything selecting tool cards must now say `details.card.tool:not(.group)` — the group is itself a
+`.card.tool`, and five existing spec assertions that read `.at(-1)` silently retargeted onto it.
+
+## Markdown tables (2026-08-08)
+
+`marked` emitted `<table>` all along; there was **no CSS for it at all**, so a comparison grid
+rendered as four columns of loose text. Fixed in `style.css` (`.msg table`) plus a `.table-wrap`
+scroll box added in `renderMarkdown()` — `overflow-x` on the table itself clips its own borders,
+and without a wrapper a wide table widens the transcript and trips the spec's
+no-horizontal-scroll guard.
+
+**`th` is deliberately missing from `bidi.js`'s `BLOCK_TAGS`.** A table needs one direction for the
+whole grid (it decides which side column 1 sits on), `dir=auto` computes that from the first strong
+character, and the algorithm *skips every descendant that carries its own `dir`*. Marking the
+header cells would blind the table to the only text that can answer the question and it would fall
+back to `ltr`, mirroring every Persian table. Left bare, the header row supplies the character,
+`th` renders in the direction it just chose, and each `td` still decides for itself.

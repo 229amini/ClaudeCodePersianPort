@@ -77,6 +77,11 @@
   --radius: 10px;
   --radius-lg: 16px;
   --gap: 12px;
+  /* Distance between two entries in the transcript. Its own token because the
+     rail has to cancel it exactly: consecutive tool cards pull back by this
+     much so the line through the icon gutter is continuous instead of broken
+     once per card. */
+  --log-gap: 8px;
 
   /* Persian needs more leading than Latin: taller ascenders, deeper
      descenders. 1.9 is the spec rule 4 floor, not a preference. */
@@ -271,6 +276,16 @@ pre, code, .path, .diff, .tool-output, .mono {
   white-space: nowrap;
 }
 
+/* Sits after the name, so a long name ellipses into it rather than pushing it
+   off the row. Muted: it explains the sort, it is not an action. */
+.proj-pin {
+  flex: none;
+  display: inline-flex;
+  align-self: center;
+  color: var(--fg-muted);
+  opacity: .75;
+}
+
 .proj-sessions {
   list-style: none;
   margin: 0;
@@ -337,13 +352,6 @@ pre, code, .path, .diff, .tool-output, .mono {
 .proj-sessions li:hover .sess-act,
 .proj-sessions li:focus-within .sess-act { display: inline-flex; }
 .sess-act:hover { background: var(--surface-2); color: var(--fg); }
-.sess-act.armed {
-  display: inline-flex;
-  width: auto;
-  padding: 0 8px;
-  background: var(--danger);
-  color: #fff;
-}
 
 .arch-head {
   width: 100%;
@@ -542,17 +550,17 @@ body.home #statusline { align-self: end; }
      is visible, kept their content size. Invisible in a short conversation and
      total in a long one. */
   /* Centered reading column, claude.ai-style. */
-  padding: 8px max(20px, calc((100% - 50rem) / 2)) 16px;
+  padding: 6px max(20px, calc((100% - 50rem) / 2)) 14px;
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
+  gap: var(--log-gap);
   scroll-behavior: smooth;
 }
 #log > * { flex: none; }
 
 .msg {
   max-width: 62ch;          /* readable measure; Persian counts the same */
-  padding: 10px 16px;
+  padding: 7px 14px;
   border-radius: 14px;
   overflow-wrap: anywhere;
 }
@@ -565,10 +573,14 @@ body.home #statusline { align-self: end; }
   background: var(--surface-2);
 }
 
+/* The assistant is plain text on the page, not a bubble — it has no surface to
+   sit inside, so its padding is doing nothing but adding height. This is the
+   most repeated element in the transcript; every pixel here is paid per turn. */
 .msg.assistant {
   align-self: stretch;
   max-width: none;
   background: transparent;
+  padding-block: 1px;
   padding-inline: 2px;
 }
 
@@ -586,11 +598,19 @@ body.home #statusline { align-self: end; }
 /* Markdown inside a bubble. Every block-level child also carries dir="auto"
    (set in app.js) so mixed-language messages align per paragraph. */
 .msg p, .msg li { line-height: var(--lh-fa); }
-.msg h1, .msg h2, .msg h3 { font-weight: 700; line-height: 1.4; margin: .8em 0 .4em; }
-.msg ul, .msg ol { padding-inline-start: 1.4em; margin: .5em 0; }
+
+/* `line-height: 1.9` is a spec MINIMUM for Persian text (spec rule 3) and stays
+   exactly where it is — but the browser's default `1em` paragraph margin is
+   not, and at this leading it stacks a whole blank line between paragraphs on
+   top of one that already reads as a break. Halved: the leading separates the
+   paragraphs, the margin only has to group them. */
+.msg p { margin: .45em 0; }
+.msg h1, .msg h2, .msg h3 { font-weight: 700; line-height: 1.4; margin: .7em 0 .25em; }
+.msg ul, .msg ol { padding-inline-start: 1.4em; margin: .35em 0; }
 .msg blockquote {
   border-inline-start: 3px solid var(--border);
   padding-inline-start: .8em;
+  margin-block: .45em;
   margin-inline: 0;
   color: var(--fg-muted);
 }
@@ -606,11 +626,35 @@ body.home #statusline { align-self: end; }
   background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px 12px;
+  padding: 8px 11px;
+  margin-block: .45em;
   overflow-x: auto;         /* long lines scroll, page never does */
-  line-height: 1.6;         /* code is Latin: the Persian floor does not apply */
+  line-height: 1.55;        /* code is Latin: the Persian floor does not apply */
 }
 .msg pre code { background: none; padding: 0; }
+
+/* GFM tables. marked emits them and always has; with no rules at all the
+   browser's default <table> is borderless and gap-less, so a comparison grid
+   read as four columns of loose text — "not even shown as a table".
+   The wrapper is what makes a wide table scroll ITSELF: `overflow-x` on the
+   table would clip its own borders, and without either the page grows a
+   horizontal scrollbar and breaks the layout guard. */
+.msg .table-wrap { overflow-x: auto; margin: .5em 0; }
+.msg table {
+  border-collapse: collapse;
+  inline-size: max-content;
+  max-inline-size: 100%;
+  font-size: .95em;
+}
+.msg th, .msg td {
+  border: 1px solid var(--border);
+  padding: 4px 9px;
+  text-align: start;       /* never `left`: the cell's own dir decides — spec */
+  vertical-align: top;
+  line-height: var(--lh-fa);
+}
+.msg th { background: var(--surface-2); font-weight: 600; }
+.msg tbody tr:nth-child(even) td { background: rgb(255 255 255 / .022); }
 
 /* Bare Windows paths / URLs / versions found in prose (spec rule 2). */
 .path {
@@ -648,24 +692,55 @@ details.card[open] {
    than a pile. Two halves, because CSS can only draw within an element: the
    lower half is `::before` on a row that HAS a next card, the upper half is
    `::after` on a row that FOLLOWS one. They meet at the icon's centre.
-   Decoration only — the sequence is already conveyed by document order. */
-#log > details.card + details.card { margin-block-start: 0; }
+   Decoration only — the sequence is already conveyed by document order.
+   Descendant, not child, so the rail also runs down the cards nested inside a
+   collapsed tool group — that is the one place a run of steps is densest.
 
-#log > details.card:has(+ details.card):not([open]) > summary::before,
-#log > details.card + details.card:not([open]) > summary::after {
+   The rail could not actually be continuous before: `#log` is a flex column
+   with a `gap`, and a gap is not a margin — no `margin-block-start: 0` can
+   close it, so the line broke once per card. Cards cancel the gap instead.
+   Only the DIRECT children: inside a group's body there is no flex gap, and a
+   negative margin there would overlap the cards. Only when BOTH are shut, which
+   is the same condition the rail itself draws under — two OPEN cards are two
+   surfaces with their own borders and need the gap to stay two things. */
+#log > details.card:not([open]) + details.card:not([open]) {
+  margin-block-start: calc(-1 * var(--log-gap));
+}
+
+#log details.card:has(+ details.card):not([open]) > summary::before,
+#log details.card + details.card:not([open]) > summary::after {
   content: "";
   position: absolute;
   inset-inline-start: 19px;
   border-inline-start: 1px solid var(--border);
   pointer-events: none;
 }
-#log > details.card:has(+ details.card):not([open]) > summary::before { inset-block: 50% 0; }
-#log > details.card + details.card:not([open]) > summary::after { inset-block: 0 50%; }
+#log details.card:has(+ details.card):not([open]) > summary::before { inset-block: 50% 0; }
+#log details.card + details.card:not([open]) > summary::after { inset-block: 0 50%; }
+
+/* A run of consecutive tool calls, folded into one row. The summary is the
+   only part that is chrome; everything inside is the ordinary cards, so the
+   body gives them back the gutter the rail needs and nothing else. */
+details.card.group > .card-body { padding: 4px 0 6px 6px; }
+/* A grouped run can fall back to an MCP tool's own (unbounded-length) name —
+   groupSummaryText() in render.js — so this row needs the same one-line
+   ellipsis guard `.tool-name`/`.tool-target` already carry. min-inline-size:0
+   is required for the ellipsis to ever engage: `summary` is a flex row, and a
+   flex item's default min-width is `auto`, which refuses to shrink below its
+   own content size. */
+details.card.group > summary .tool-verb {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+details.card.group[open] > summary .tool-verb { color: var(--fg); }
 
 details.card > summary {
   position: relative;
   cursor: pointer;
-  padding: 5px 12px;
+  padding: 3px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -721,9 +796,9 @@ details.card > summary:hover { background: var(--surface-2); }
 details.card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .card-body {
-  padding: 0 12px 10px;
+  padding: 0 12px 8px;
   border-block-start: 1px solid var(--border);
-  padding-block-start: 10px;
+  padding-block-start: 8px;
 }
 
 /* The fallback label for a tool with no Persian verb — an identifier the CLI
@@ -747,6 +822,17 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   background: none;
 }
 
+/* var(--lh-fa) (1.9) is the box default — the safe floor a Persian line needs
+   (spec rule 3). Terminal output is Latin far more often than not, so a
+   confirmed-LTR line is compacted to 1.55 below instead of the reverse: at
+   1.9 a forty-line file listing scrolls for a screen and a half, but getting
+   there must never cost the Persian floor. `:dir()` is the only thing that
+   can ask; a line's direction is decided by `dir="auto"` at render time and
+   JS must never compute it (rule 1). Unsupported `:dir()` now genuinely drops
+   harmlessly: nothing overrides the default and every line keeps 1.9. (A
+   prior version based this the other way around — 1.55 default, restore to
+   1.9 for `:dir(rtl)` — which meant an unsupported `:dir()` left everyone at
+   1.55, the opposite of the safe fallback the old comment claimed.) */
 .tool-output, .diff {
   display: block;
   white-space: pre-wrap;
@@ -755,8 +841,20 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   overflow-y: auto;
   background: var(--bg-side);
   border-radius: 6px;
-  padding: 8px 10px;
+  line-height: var(--lh-fa);
+  padding: 7px 9px;
 }
+
+/* Targets `.dt`, not `.dl`: renderDiff() (render.js) sets dir="auto" on the
+   text span (.dt), never on the row (.dl) — a `.dl:dir()` selector has no dir
+   attribute of its own to read, so it resolves off whichever ancestor
+   actually has one (the RTL <html> shell) and matches every row regardless of
+   its real content. `.ln` (bidi.js linesAuto()) already carries dir="auto"
+   per line, so it needs no such correction. `:dir(ltr)` sits INSIDE :is()'s
+   forgiving selector list — not chained after it — so a browser that does not
+   recognise `:dir()` at all drops only this one list item, leaving the rest
+   of the stylesheet, and the safe 1.9 default above, untouched. */
+:is(.ln:dir(ltr), .dt:dir(ltr)) { line-height: 1.55; }
 
 /* Tool parameters (card + permission dialog, one builder — spec rule 8). The
    key is chrome and follows the shell; the value box stays LTR and its lines
@@ -1116,8 +1214,12 @@ button.round {
   font-size: .8em;
   line-height: 1.7;
 }
+/* `background` must be opted out of explicitly: this is a <button>, so the
+   filled `button.danger` above wins over `.kebab-item`'s `background: none`,
+   and coral text on a coral fill rendered the row as a blank slab. Declared
+   BEFORE :hover so hover still repaints it. */
+.kebab-item.danger { color: var(--danger); background: none; }
 .kebab-item:hover, .kebab-item:focus-visible { background: var(--surface); outline: none; }
-.kebab-item.danger { color: var(--danger); }
 
 /* Armed, not alarming. A full-bleed coral fill was the loudest thing in the
    whole app and read as a broken block rather than as a question; the tinted
@@ -1338,6 +1440,171 @@ button.round {
 .ctx-btn.ghost:hover { color: var(--fg); border-color: var(--border); }
 .ctx-btn-text { font-weight: 600; font-size: .92em; }
 .ctx-btn-note { font-size: .78em; opacity: .8; }
+
+/* --- background agents --------------------------------------------------------
+   A slim strip in the composer's own column, above it, next to where the
+   context notice sits: what the CLI has working in the background, and for how
+   long. Quiet by construction — these rows are status, not conversation, and
+   the whole strip disappears when there is nothing out. */
+#agents-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+}
+#agents-strip[hidden] { display: none; }   /* beats the flex above */
+
+.ag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .82em;
+  text-align: start;
+  cursor: pointer;
+}
+/* A `command` row is a <div> — there is no transcript to open for it. */
+div.ag-row { cursor: default; }
+/* This is a <button>, so the generic filled `button:hover` (0,1,1) outranks
+   `.ag-row`'s background (0,1,0) and would paint the row coral. Same
+   specificity, declared later: the opt-out that the ⋯ menu learned the hard
+   way (wiki/rtl-rendering-notes.md). */
+button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); color: var(--fg); }
+
+.ag-dot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+/* Running is the only state that moves, and it breathes rather than blinks;
+   the reduced-motion rule in the tokens layer stops it outright. */
+.ag-row[data-status="running"] .ag-dot,
+.ag-head[data-status="running"] .ag-dot {
+  background: var(--accent);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+.ag-row[data-status="completed"] .ag-dot {
+  inline-size: auto;
+  background: none;
+  color: var(--ok);
+}
+.ag-row[data-status="stopped"] .ag-dot {
+  inline-size: auto;
+  background: none;
+  color: var(--fg-muted);
+}
+@keyframes ag-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* The model's own line about the work: it gives up characters, never height —
+   a wrapped description turns the strip into a paragraph. */
+.ag-desc {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* .path from pathEl: keeps the LTR isolate, drops the chip background. */
+.ag-type {
+  flex: none;
+  max-inline-size: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  opacity: .8;
+}
+.ag-time { flex: none; opacity: .8; font-variant-numeric: tabular-nums; }
+
+/* The CLI's own "Waiting for N background agents", in Persian. */
+.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: .8em; }
+
+/* One agent's transcript. [popover] puts it in the top layer and brings light
+   dismiss and Escape with it — the same reasoning as the ⋯ menu, and the same
+   trap: `display` must only be set on :popover-open, or an author rule defeats
+   the UA rule that hides a closed popover. */
+#agent-drawer {
+  position: fixed;
+  inset-block: 8vh;
+  inset-inline-end: 28px;   /* opens away from the sidebar, on the RTL end side */
+  inline-size: min(44rem, 64vw);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
+}
+#agent-drawer:popover-open { display: flex; flex-direction: column; }
+#agent-drawer::backdrop { background: rgb(0 0 0 / .45); }
+
+.ag-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 12px 14px;
+  border-block-end: 1px solid var(--border);
+  font-size: .9em;
+}
+.ag-head .ag-desc { color: var(--fg); font-weight: 600; }
+.ag-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+button.ag-close {
+  flex: none;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 1.2em;
+  line-height: 1;
+}
+button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
+
+/* The render target. `flex: none` on the children is the same load-bearing rule
+   #log carries: details.card sets overflow:hidden, which zeroes a flex item's
+   automatic minimum size, and every card would be crushed to its own border the
+   moment this box scrolled. */
+.ag-log {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--log-gap);
+  padding: 10px 14px 16px;
+}
+.ag-log > * { flex: none; }
+
+/* A background agent reporting back, in the transcript. Not a tool card: it is
+   the report, so it never joins a run of tool calls. */
+.msg.agent-note { display: flex; align-items: center; gap: 8px; }
 
 /* --- the dialog in ask mode (AskUserQuestion) --------------------------------
    Same <dialog>, different act: the model is asking, not requesting consent.

@@ -23,16 +23,45 @@ import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
   setEffortState, setOutputStyle, resetControls,
 } from "./controls.js";
+/* Cyclic for the same reason chrome.js is: the agents drawer replays a
+   background agent's transcript back through this renderer. Same invariant —
+   nothing crosses the edge until event time. */
+import { refreshAgents, resetAgents } from "./agents.js";
 
 const FA = window.STRINGS;
 
-const log = document.getElementById("log");
+/* `let`, not `const`: withRenderTarget() below points it somewhere else for the
+   length of one replay. Every append in this file goes through it. */
+let log = document.getElementById("log");
 const statusline = document.getElementById("statusline");
 
 /* The CLI's own wording for a turn the user stopped, seen in both live events
    and replayed transcripts: "[Request interrupted by user]" and
    "[Request interrupted by user for tool use]". */
 const INTERRUPT_NOTE = /^\s*\[Request interrupted by user/;
+
+/* A finished background agent reports itself as a <task-notification> block
+   that the CLI then auto-submits as an ordinary `user` message — so left alone
+   it renders as the USER pasting forty lines of XML at themselves, in both the
+   live stream and history replay. The launch ack is the mirror image: its text
+   is internal metadata (agentId, output_file) and it says so itself.
+   Both measured — wiki/background-agents.md. */
+const TASK_NOTE = /^\s*<task-notification>/;
+const ASYNC_LAUNCH = /^\s*Async agent launched/;
+
+/* Plain text out of a tool_result's own `content` — either a bare string or
+   the usual [{"type": "text", ...}] block array. Measured: 36 of 38 real
+   launch acks on this machine arrive as the block-array shape, so testing
+   ASYNC_LAUNCH against JSON.stringify(content) (an array, so it starts with
+   "[") never matched and the ack fell through to the raw-output branch.
+   Mirrors server.py's _tool_result_text — same shape, same fallback. */
+function toolResultText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.filter((p) => p?.type === "text").map((p) => p.text ?? "").join(" ");
+  }
+  return "";
+}
 
 /* The CLI's own phrasings for "this conversation will not fit any more", read
    out of the 2.1.223 bundle. Matched loosely on purpose: the numbers in the
@@ -49,9 +78,77 @@ function atBottom() {
 
 function append(el, { stick = true } = {}) {
   const wasAtBottom = atBottom();
-  log.append(el);
+  toolHome(el).append(el);
   if (stick && wasAtBottom) log.scrollTop = log.scrollHeight;
   return el;
+}
+
+/* A run of consecutive tool calls collapses into ONE row — «۱ فایل خوانده شد،
+   ۱۱ فرمان اجرا شد» — the way the CLI's own transcript does it. Eleven cards
+   between two sentences is noise, and the whole point of this window is that a
+   non-technical reader can follow the conversation; the group keeps every card
+   exactly one click away instead of hiding it.
+
+   Two deliberate limits:
+   - The group forms on the SECOND card. A lone Bash call reads better as
+     itself than as «۱ فرمان اجرا شد», so the first card goes in the log and is
+     pulled into the group only if a second one follows it.
+   - Anything that is not a plain tool card ends the run: a sentence, a
+     question, a todo list, the result line. That is what makes the grouping
+     mean "these happened together" rather than "these are the same tool".
+
+   `.ask` is excluded because a question the user must answer can never be
+   folded shut, and the group itself is built by hand rather than through
+   card(): card() appends, append() calls this, and a `.card.tool` group would
+   route itself straight back in. */
+function isRunnable(el) {
+  return el.classList?.contains("tool") && !el.classList.contains("ask")
+         && !el.classList.contains("group");
+}
+
+function groupSummaryText(counts) {
+  const parts = [];
+  for (const [name, n] of counts) {
+    // An MCP name has no Persian noun and never will (the server set is
+    // per-machine) — falling back to `name` reintroduces the forty-character
+    // mcp__<server>__<tool> identifier that toolSummary() below was
+    // specifically split apart for (bead pcg-9jx). mcpName() is the same
+    // split, reused rather than duplicated.
+    const mcp = mcpName(name);
+    const noun = FA.toolGroupNouns?.[name] ?? FA.toolVerbs?.[name] ?? (mcp ? mcp.tool : name);
+    parts.push(n.toLocaleString("fa-IR") + " " + noun);
+  }
+  return parts.join("، ");
+}
+
+function toolHome(el) {
+  if (!isRunnable(el)) {
+    state.run = null;
+    return log;
+  }
+  const run = state.run ??= { first: null, group: null, counts: new Map() };
+  const name = el.dataset.tool || "?";
+  run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
+
+  if (!run.group) {
+    if (!run.first) {          // first of a possible run: stays inline
+      run.first = el;
+      return log;
+    }
+    const details = document.createElement("details");
+    details.className = "card tool group";
+    const summary = document.createElement("summary");
+    summary.append(icon("run"), label("", "tool-verb"));
+    details.append(summary);
+    const body = document.createElement("div");
+    body.className = "card-body";
+    details.append(body);
+    run.first.replaceWith(details);   // takes the first card's place in the log
+    body.append(run.first);
+    run.group = { details, body, text: summary.lastChild };
+  }
+  run.group.text.textContent = groupSummaryText(run.counts);
+  return run.group.body;
 }
 
 export function bubble(kind, text) {
@@ -62,10 +159,12 @@ export function bubble(kind, text) {
   return append(el);
 }
 
-function card(kind, summaryNodes, { open = false } = {}) {
+function card(kind, summaryNodes, { open = false, tool = "" } = {}) {
   const details = document.createElement("details");
   details.className = "card " + kind;
   details.open = open;
+  // Read by toolHome() below, so it has to be set before append() runs.
+  if (tool) details.dataset.tool = tool;
 
   const summary = document.createElement("summary");
   summary.append(...summaryNodes);
@@ -100,6 +199,7 @@ export const state = {
   streamText: "",        // raw markdown accumulated during streaming
   thinkingBody: null,
   toolCards: new Map(),  // tool_use_id -> body element
+  run: null,             // the consecutive-tool-call group being filled
   status: {},
 };
 
@@ -107,6 +207,41 @@ export function resetTurn() {
   state.streamBubble = null;
   state.streamText = "";
   state.thinkingBody = null;
+  state.run = null;
+}
+
+/* --- rendering somewhere other than the transcript --------------------------
+
+   The agents drawer shows one background agent's own transcript, and plan §B-4
+   forbids a second history path for it — it has to be THIS renderer. Everything
+   here writes to exactly two module-level things: `log` and `state`. So the
+   seam is to swap both for the length of a replay and give them back after.
+
+   The caller owns the scope, which is the point: a drawer that polls keeps its
+   own tool cards across chunks, and they can never collide with the main
+   transcript's state.toolCards (a tool_use id is only unique within one
+   transcript, and both sides are streaming).
+
+   The statusline is deliberately NOT swapped: /api/agent returns the same
+   user+assistant filtered event shape /api/session does, so nothing a replay
+   can carry reaches setStatus in the first place. */
+export function newRenderScope() {
+  return { streamBubble: null, streamText: "", thinkingBody: null,
+           toolCards: new Map(), run: null, status: {} };
+}
+
+export function withRenderTarget(target, scope, fn) {
+  const savedLog = log;
+  const savedState = { ...state };
+  log = target;
+  Object.assign(state, scope);
+  try {
+    fn();
+  } finally {
+    Object.assign(scope, state);   // what the replay built stays with the scope
+    log = savedLog;
+    Object.assign(state, savedState);
+  }
 }
 
 /* One-line stroke icons, keyed by what the tool DOES rather than by its name,
@@ -126,6 +261,7 @@ const TOOL_ICONS = {
   Glob: "find", Grep: "find",
   WebFetch: "web", WebSearch: "web",
   Task: "task", Skill: "task", AskUserQuestion: "task", ExitPlanMode: "task",
+  Agent: "task",
 };
 
 function icon(kind) {
@@ -175,6 +311,30 @@ export function setAgents(list) {
 }
 
 function toolSummary(name, toolInput) {
+  /* `Agent` dispatches a background helper, and its NAME says nothing — five
+     helpers would be five identical «Agent» rows. What tells them apart is the
+     one line the model wrote about the work (input.description); the subagent
+     type, or the model it runs on, is where it came from — the same split as
+     the MCP row below. */
+  if (name === "Agent") {
+    const nodes = [icon("task")];
+    // The model usually writes it in English, and it is sitting in an RTL row:
+    // isolate it (spec rule 2). <bdi dir="auto"> rather than a forced LTR,
+    // because the same field in Persian must still read right-to-left.
+    const desc = document.createElement("bdi");
+    desc.className = "tool-name";
+    desc.setAttribute("dir", "auto");
+    desc.textContent = toolInput?.description || FA.toolVerbs.Agent;
+    nodes.push(desc);
+    const origin = toolInput?.subagent_type || toolInput?.model;
+    if (origin) {
+      const chip = pathEl(String(origin));
+      chip.classList.add("tool-server");
+      chip.title = agents.get(origin) || String(origin);
+      nodes.push(chip);
+    }
+    return nodes;
+  }
   const verb = FA.toolVerbs?.[name];
   const mcp = verb ? null : mcpName(name);
   const nodes = [icon(TOOL_ICONS[name]),
@@ -454,6 +614,56 @@ function renderAnswers(questions, answers) {
   return frag;
 }
 
+/* --- a background agent reporting back ------------------------------------- */
+
+/* The block is XML-escaped by the CLI, so unescape after extracting — and `&`
+   LAST, or a literal "&amp;lt;" in the agent's own output turns into "<". */
+function xmlText(source, tag) {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(source);
+  return match
+    ? match[1].trim()
+        .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    : "";
+}
+
+/* What the user actually wants to know: that the helper finished, which one,
+   and what it came back with. The task-id, tool-use-id, output-file and note
+   are plumbing — the CLI writes them for itself. */
+function renderTaskNote(text) {
+  const summary = xmlText(text, "summary");
+  const result = xmlText(text, "result");
+  const nodes = [icon("task"),
+                 label(xmlText(text, "status") === "completed"
+                       ? FA.agentDone : FA.agentEnded, "tool-verb")];
+  if (summary) {
+    // The CLI writes the summary in English: isolate it rather than letting it
+    // flip the Persian row around it (spec rule 2).
+    const el = document.createElement("bdi");
+    el.className = "tool-target";
+    el.setAttribute("dir", "auto");
+    el.textContent = summary;
+    nodes.push(el);
+  }
+  if (!result) {
+    // A backgrounded shell command notifies the same way and has no transcript
+    // and no result — the line IS the event, and a card that opens onto
+    // nothing is worse than no card.
+    const row = document.createElement("div");
+    row.className = "msg assistant meta agent-note";
+    row.append(...nodes);
+    append(row);
+    return;
+  }
+  // Not a `.tool` card: it is a report, not a step, so it never joins a run of
+  // tool calls. The body is the agent's final text, written as markdown for a
+  // human — through renderMarkdown like every other message (spec rules 1-2).
+  const { body } = card("agent-note", nodes);
+  const wrap = document.createElement("div");
+  wrap.className = "msg assistant";
+  wrap.append(renderMarkdown(result));
+  body.append(wrap);
+}
+
 function renderTodos(items) {
   const { body } = card("todos", [label(FA.todos, "tool-name")], { open: true });
   const ul = document.createElement("ul");
@@ -574,6 +784,13 @@ export function renderEvent(ev) {
         setCurrentSession(ev.session_id);
         setChrome(ev.cwd);
         refreshProjects();
+        // session_id is genuinely known only from here — agents.js's own
+        // reset (below, wrapper/reset) fires this too early: it runs right
+        // after resetStatus() clears state.status.sessionId, and the server
+        // hard-requires `id` on /api/agents, so that refresh was provably
+        // always a 400. A resumed session may already have helpers out; this
+        // is what picks them up.
+        refreshAgents();
         // The CLI is authoritative about what commands exist on this machine
         // (custom skills, plugins) — never scan skill directories ourselves.
         if (Array.isArray(ev.slash_commands)) setSlashCommands(ev.slash_commands);
@@ -636,7 +853,8 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
-            const { body } = card("tool", toolSummary(part.name, part.input));
+            const { body } = card("tool", toolSummary(part.name, part.input),
+                                  { tool: part.name });
             body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
           }
@@ -647,13 +865,33 @@ export function renderEvent(ev) {
     }
 
     case "user": {
-      // Always block-shaped: a transcript's bare-string prompt is normalised
-      // (and envelope-filtered) by read_session before it gets here.
-      for (const part of ev.message?.content ?? []) {
+      // The CLI addresses itself through `user` messages too — an injected
+      // skill body, a hook's output — and flags every one of them isMeta. Its
+      // own UI never shows them, and neither does this one.
+      if (ev.isMeta) return;
+      // Replay is always block-shaped: a transcript's bare-string prompt is
+      // normalised (and envelope-filtered) by read_session before it gets
+      // here — but that guarantee is replay-only. Whether a live
+      // <task-notification> can ever arrive on stdout as a bare string is
+      // unmeasured (wiki/background-agents.md); if it ever does, wrap it the
+      // same way server.py's _normalize_transcript_event does so the loop
+      // below iterates block parts, never the string's own characters.
+      const content = typeof ev.message?.content === "string"
+        ? [{ type: "text", text: ev.message.content }]
+        : (ev.message?.content ?? []);
+      for (const part of content) {
         // Replayed history carries the user's own turns here. Live it does not
         // (we do not pass --replay-user-messages), so the composer echoes them
         // via wrapper/user_echo instead — hence both paths exist.
         if (part.type === "text") {
+          // A background agent's completion report, auto-submitted by the CLI
+          // as if the user had typed it. It is news about the conversation,
+          // not a turn in it.
+          if (TASK_NOTE.test(part.text ?? "")) {
+            renderTaskNote(part.text);
+            refreshAgents();
+            continue;
+          }
           // The CLI narrates an interrupt as a `user` turn whose text is
           // "[Request interrupted by user]" (or "...for tool use"). Rendered as
           // written it looks like the user typed an English sentence — and the
@@ -676,6 +914,17 @@ export function renderEvent(ev) {
             && structured.answers && typeof structured.answers === "object") {
           (body ?? log).append(renderAnswers(structured.questions,
                                              structured.answers));
+          continue;
+        }
+        // The launch ack for a background agent. Its text is the CLI talking to
+        // itself — an agentId, a temp-file path, and a line telling the model
+        // never to quote it — so the card says the one thing it means. Tested
+        // against the extracted plain text, not the raw `content`: a real ack
+        // is usually a block ARRAY (see toolResultText above), and matching
+        // JSON.stringify(content) against an anchored ^-regex never fires.
+        if (ASYNC_LAUNCH.test(toolResultText(part.content))) {
+          (body ?? log).append(label(FA.agentLaunched, "meta"));
+          refreshAgents();
           continue;
         }
         const text = typeof part.content === "string"
@@ -718,6 +967,10 @@ export function renderEvent(ev) {
       resetTurn();
       setBusy(false);
       refreshProjects();   // the turn changed this session's preview/mtime
+      // The turn is over but the helpers it dispatched are not: this is where
+      // «در انتظار N عامل پس‌زمینه…» appears. Debounced, so a replayed
+      // transcript's hundred result events cost one request.
+      refreshAgents();
       return;
     }
 
@@ -807,6 +1060,7 @@ export function renderEvent(ev) {
         resetTurn();
         resetStatus();
         resetControls();
+        resetAgents();    // list, strip, both poll timers and any open drawer
         state.toolCards.clear();
         setBusy(false);   // a reset means no turn is running, by definition
         refreshProjects();
