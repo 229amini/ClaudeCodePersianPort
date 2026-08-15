@@ -1,67 +1,49 @@
-# Handoff — 2026-08-09, usage cap hit (resets 07:10 Tehran)
+# Handoff — 2026-08-15 (evening)
 
 ## Where we are
 
-The **background-agents feature is landed and verified** (bead `pcg-70f`, closed) plus the
-**isMeta skill-flood fix** (`pcg-e5q`, closed). Everything is in the working tree,
-**uncommitted**, on branch `rework/phases-0-3` — the diff also still contains earlier
-uncommitted work that predates this session.
+Branch `rework/phases-0-3`, everything still **uncommitted**: the tabs/multi-session rework,
+the idle-hint feature, and — new this session — **all 10 review defects fixed and their beads
+closed** (`pcg-14c` epic + `.1`–`.10`, `bd list --tree`). Every gate is green:
 
-Built by two delegated agents (Sonnet: server, Opus: frontend) to the measured contract in
-`wiki/background-agents.md` — read that first; it is the whole CLI contract (launch ack,
-`<task-notification>`, `subagents/agent-*.jsonl` + meta.json, and why agent state must come
-from the transcript file, never the stdout stream).
+- `test_units.py` — PASS (incl. ~25 new checks: close_tab deny-before-drop, in-flight counter,
+  tab-less `/api/projects`, MAX_TABS race over real HTTP)
+- `run_spec_test.py` — **PASS — 103/103** (94 → +3 agents-history, +6 tab-lifecycle guards)
+- `test_transcript_path.py`, `test_no_console.py` — PASS
+- `smoke_test.py` — **PASS 15/15** (the one paid turn; run 2026-08-15 after the fixes)
 
-What exists now:
+## DONE this session
 
-- `server.py`: `build_agent_registry()` (incremental byte-offset cache + lock),
-  `GET /api/agents?id=&cwd=` and `GET /api/agent?id=&agent=&after=&cwd=` (conventions mirror
-  `/api/session`; epoch-float timestamps), `agent_file_path()` traversal guard,
-  `_normalize_transcript_event()` shared by session and agent replay, `read_session` drops
-  `isMeta` and passes `<task-notification>` through (it must jump `user_prompt_text` — the
-  envelope regex would eat it).
-- `static/js/agents.js` (new): strip above composer, per-agent drawer (popover), 3 s poll while
-  running, full teardown on wrapper `reset`. `render.js`: Agent rows named by description,
-  «عامل در پس‌زمینه اجرا شد» instead of the internal ack text, task-notification completion
-  cards, and the `newRenderScope()`/`withRenderTarget()` seam so the drawer replays through the
-  ONE renderer without colliding with `state.toolCards`.
+Three parallel agents off the specs in `TASKS.md` §"2026-08-15 batch" (R1/R2/R3):
 
-## Verified (all re-run independently, not just agent-claimed)
-
-- `C:\Python314\python.exe persian-claude-gui\test_units.py` → 63/63 PASS
-- `C:\Python314\python.exe persian-claude-gui\run_spec_test.py` → **PASS — 64/64**, exit 0
-- `C:\Python314\python.exe persian-claude-gui\test_transcript_path.py` → PASS
-- Live E2E against real history (`D:\Project\GameNet`, session `18e44a29-…`): 11 background
-  tasks listed (8 agents enriched from meta.json + 3 commands), 366-event agent replay with
-  stable `after`/`next`, traversal + bogus-session + bad-token all reject. Script:
-  scratchpad `e2e_agents.py` of session `05888798-b356-47fc-8f23-ce6a27a58b61` (throwaway;
-  boots server, sends no CLI turn, free).
+1. **R1 server** — `PermissionBroker.deny_all()` + close_tab order (deny → stop → `wrapper/closed`
+   → `hub.drop`); busy boolean → in-flight counter (increment before `_write_line`, clamp at 0,
+   hard reset on start/cli-exit/interrupt); `/api/projects` serves tab-less; `_SESSIONS_LOCK`
+   with the MAX_TABS cap inside `open_tab` (slot reserved under lock, spawn outside).
+2. **R2 frontend** — `renderInTab(tab, fn)` seam: replay/resume render into the tab they belong
+   to, never the global `#log`; `wrapper/closed` clears that tab's permission queue/dialog;
+   blank view disables the composer with an explanatory placeholder («برای شروع، گفتگویی باز
+   کنید»); `/api/tabs` snapshots add-never-delete (prune only on `wrapper/closed`);
+   Persian rename via `<bdi dir="auto">` `.tab-proj`, not `pathEl`; `clearPulse(scope)` at the
+   tab-drop choke point. Negative-tested (fixes reverted in batches → exactly the new guards fail).
+3. **R3 agents strip** — «عامل‌های پیشین (N)» toggle: finished agents reachable again, strip
+   stays running-only by default.
+4. Wiki updated: `frontend-modules.md` §"Tab lifecycle rules" (renderInTab, add-never-delete,
+   drop choke point, `.tab-proj` is a name) and `permission-transport.md` §"Closing a tab denies
+   its pending requests" (incl. the deliberate AskUserQuestion deny-on-close deviation).
 
 ## REMAINING — in order
 
-1. **The final xhigh review pass never ran** (bead `pcg-eja`): all 7 finder agents died on the
-   usage cap, so the workflow's "no findings" is meaningless. After reset, either re-run
-   `/code-review xhigh` on the diff, or resume the cached workflow:
-   `Workflow({scriptPath: "C:\Users\Lion\.claude\projects\D--projects-Claude\05888798-b356-47fc-8f23-ce6a27a58b61\workflows\scripts\code-review-wf_0c9c4a07-a0d.js", resumeFromRunId: "wf_0c9c4a07-a0d"})`
-   (same args; completed agents replay from cache). Then call ReportFindings per the host
-   instructions in that session.
-2. One manual pass of the drawer's **live** polling against a session with a currently-running
-   agent (the only path E2E could not exercise — every real agent was already finished). Cheap
-   way: open the GUI, ask for a background `ping -n 60 127.0.0.1` Bash task, watch the strip.
-3. Commit — user approval required (conservative profile). Suggested: one commit for the
-   background-agents feature + isMeta fix; wiki edits ride along
-   (`wiki/background-agents.md` new, README index line, appends to `rtl-rendering-notes.md`
-   and `sessions-and-history.md`).
+1. **Commit — user approval required** (conservative profile). Suggested shape: one commit for
+   the idle hint, one for the tabs rework + review fixes (or split rework/fixes if preferred).
+2. M8 acceptance on the colleague's PC (see CLAUDE.md — cannot be done from this machine).
 
 ## Hard-won facts not written anywhere else
 
-- Session `18e44a29-e168-402f-b150-c8bc7c3ebfdc` under
-  `C:\Users\Lion\.claude\projects\D--Project-GameNet\` is the reference fixture: 8 real agents
-  + 3 background commands, meta.json for all agents, one agent transcript >1 MB.
-- Frontend/server param drift almost shipped: the brief said "mirror /api/session" and one
-  agent still wrote `?session=`. The contract is `id=`. Both endpoints take optional `cwd`.
-- `popover` gotchas and the isMeta rule are recorded in `wiki/rtl-rendering-notes.md` (tail)
-  and `wiki/sessions-and-history.md` (tail).
-- Supervisor pattern that worked: brief → mid-flight acceptance-criteria message → agents
-  report → verifier re-runs every gate. The one defect found (param drift) was caught because
-  the agent was required to state deviations.
+- Known accepted trade (recorded in wiki too): a tab the server forgets **without** emitting
+  `wrapper/closed` (server restart under the same window) lingers in the sidebar until reload.
+- The MAX_TABS race only reproduces through real HTTP (~60% per run against the old code) — the
+  GIL hides it when calling `open_tab` directly; probe at
+  `scratchpad\race_probe.py` (session temp dir, may not survive).
+- R1's spec run can show `FAIL — 100/103` if run against a half-landed static/ tree — the three
+  client-half guards need R2's files; a re-run on the full tree passes.

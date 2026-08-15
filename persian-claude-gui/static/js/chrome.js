@@ -2,14 +2,14 @@
    Chrome around the conversation: sidebar (projects -> sessions), home/empty
    state, replay banner, and the permission dialog.
 
-   Windows paths in chrome — statusline cwd, tab titles, folder picker, session
-   previews, tool-card params — must all use pathEl() (LTR + isolate + <bdi>).
-   Plan §B-10 item 2; the spec's message-shaped test cases cannot catch a
-   regression here.
+   Windows PATHS in chrome — statusline cwd, folder picker, session previews,
+   tool-card params — must all use pathEl() (LTR + isolate + <bdi>). Plan §B-10
+   item 2; the spec's message-shaped test cases cannot catch a regression here.
+   A project's display NAME is not a path (it is renameable, and Persian as
+   often as not): projectChip() below is what those sites use instead.
    ========================================================================= */
 "use strict";
 
-import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 /* Cyclic with render.js on purpose (see the note there): the sidebar replays
    old transcripts through the shipping renderer — plan §B-4's "one renderer,
@@ -27,6 +27,8 @@ const ui = {
   topbarName: document.getElementById("topbar-name"),
   topbarCwd: document.getElementById("topbar-cwd"),
   projects: document.getElementById("projects"),
+  openTabs: document.getElementById("open-tabs"),
+  tabsTitle: document.getElementById("tabs-title"),
   btnNew: document.getElementById("btn-new"),
   projChip: document.getElementById("proj-chip"),
   projChipName: document.getElementById("proj-chip-name"),
@@ -41,13 +43,104 @@ let currentSession = null;
 let lastSession = null;   // newest OTHER session here: {id, path, label}
 const expanded = new Set();   // lowercased project paths open in the sidebar
 let autoExpanded = null;      // the project `expanded` was last auto-opened for
+let lastProjects = [];        // what /api/projects last answered, for a repaint
 
 /* The renderer owns the session id as of every system/init, but the sidebar
-   owns the highlight, so the value lives here. Nullish input keeps the old
-   value — the exact semantics of the `ev.session_id ?? currentSession` this
-   replaces. */
+   owns the highlight, so the value lives here. `undefined` keeps the old value
+   (the `ev.session_id ?? currentSession` semantics this replaces); an explicit
+   `null` CLEARS it, which is what switching to a tab whose CLI has not spoken
+   yet has to do — its session id genuinely is not known. */
 export function setCurrentSession(sessionId) {
-  if (sessionId != null) currentSession = sessionId;
+  if (sessionId !== undefined) currentSession = sessionId;
+}
+
+/* --- open conversations (tabs) ---------------------------------------------
+
+   app.js owns the tab registry; this module only draws it and asks to switch.
+   The arrow is one-way on purpose: chrome.js is already in an import cycle with
+   render.js, and importing the ENTRY module (whose body runs last) is the one
+   shape that guarantees a temporal-dead-zone crash — see the load-order note in
+   app.js. So app.js hands its two verbs in at init instead. */
+let openTabs = [];        // [{tab, session_id, cwd, busy}] — app.js's view
+let openActive = "";
+let tabBridge = null;     // {switchTo(tab), close(tab)}
+let lastTabsKey = "";     // identity of the last painted set, see setOpenTabs
+
+const sessionTitles = new Map();   // session_id -> the title the sidebar shows
+
+export function setTabBridge(bridge) {
+  tabBridge = bridge;
+}
+
+export function setOpenTabs(list, active) {
+  openTabs = Array.isArray(list) ? list : [];
+  openActive = active || "";
+  paintOpenTabs();
+  // A session row's live dot and its click behaviour both depend on the tab
+  // list, so the project tree repaints too — from what /api/projects already
+  // answered, not by asking again. Only when the SET changed, though: this runs
+  // a few times per turn, and a redraw cancels an open ⋯ menu or a rename
+  // in progress by construction (startRename).
+  const key = openTabs.map((t) => t.tab + ":" + (t.session_id || "")).join(",")
+            + "|" + openActive;
+  if (key === lastTabsKey) return;
+  lastTabsKey = key;
+  if (ui.projects) renderProjects(lastProjects);
+}
+
+function tabTitle(entry) {
+  return (entry.session_id && sessionTitles.get(entry.session_id)) || FA.tabFresh;
+}
+
+function paintOpenTabs() {
+  if (!ui.openTabs) return;   // spec-test.html has no sidebar
+  ui.openTabs.replaceChildren();
+  const any = openTabs.length > 0;
+  ui.openTabs.hidden = !any;
+  if (ui.tabsTitle) {
+    ui.tabsTitle.hidden = !any;
+    ui.tabsTitle.textContent = FA.openSessions;
+  }
+  if (!any) return;
+
+  for (const entry of openTabs) {
+    const row = document.createElement("div");
+    row.className = "tab-row";
+    row.dataset.current = String(entry.tab === openActive);
+    row.dataset.busy = String(!!entry.busy);
+
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "tab-open";
+    const dot = label("", "tab-dot");
+    dot.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.className = "tab-name";
+    name.setAttribute("dir", "auto");   // the user's own words, either script
+    name.textContent = tabTitle(entry);
+    open.append(dot, name);
+    // Which project it is running in. A display NAME, not a path: it is
+    // whatever the user renamed the project to and is Persian as often as not,
+    // so pathEl's forced LTR would misorder it and seat it on the wrong side of
+    // an RTL row. The full path stays in the tooltip, which is the thing that
+    // actually disambiguates two folders (plan §B-10 item 2 is about paths, and
+    // this stopped being one).
+    if (entry.cwd) {
+      open.append(projectChip(entry.cwd));
+    }
+    open.title = entry.cwd || tabTitle(entry);
+    open.addEventListener("click", () => tabBridge?.switchTo(entry.tab));
+
+    const close = actionButton("×", FA.closeSession);
+    close.classList.add("tab-close");
+    close.addEventListener("click", (e) => {
+      e.stopPropagation();
+      tabBridge?.close(entry.tab);
+    });
+
+    row.append(open, close);
+    ui.openTabs.append(row);
+  }
 }
 
 /* Static markup only — never user data — so innerHTML is safe here. */
@@ -63,10 +156,35 @@ const SVG = {
   pin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/></svg>',
   unpin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M4 4l16 16"/></svg>',
   explorer: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M14 11h4v4"/><path d="M18 11l-5 5"/></svg>',
+  rename: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17l-4 1 1-4z"/></svg>',
 };
 
 function basename(p) {
   return (p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p || "";
+}
+
+/* Display-name overrides, lowercased path -> name (server: names.json). Filled
+   from the /api/projects payload the sidebar already fetches; the folder's own
+   name is the fallback, so a project with no override needs no entry. */
+const projNames = new Map();
+const NAME_MAX = 64;   // server.py NAME_MAX — the field stops where it stops
+
+function displayName(path) {
+  return projNames.get((path || "").toLowerCase()) || basename(path);
+}
+
+/* The project a conversation belongs to, as a chrome chip. Built the same way
+   the sidebar builds its own project label: a <bdi dir="auto">, so a Persian
+   name reads right-to-left, a Latin one still resolves LTR, and either is
+   isolated from the Persian around it (spec rule 2). The tooltip keeps the real
+   path — that, not the label, is what tells two same-named folders apart. */
+function projectChip(cwd) {
+  const chip = document.createElement("bdi");
+  chip.className = "tab-proj";
+  chip.setAttribute("dir", "auto");
+  chip.textContent = displayName(cwd);
+  chip.title = cwd;
+  return chip;
 }
 
 /* Jalali calendar and Persian digits, from the platform: `fa-IR` implies the
@@ -87,7 +205,10 @@ function whenLabel(epochSeconds) {
    stays the constant «کلاد فارسی» (an OS titlebar cannot carry <bdi>). */
 export function setChrome(cwd) {
   if (cwd) currentCwd = cwd;
-  const name = basename(currentCwd);
+  // render.js calls this on system/init with a bare cwd, before any projects
+  // fetch, so the folder name is what shows for a moment; the debounced
+  // refreshProjects() that follows corrects it to the override.
+  const name = displayName(currentCwd);
   if (ui.topbarName) ui.topbarName.textContent = name;
   if (ui.topbarCwd) ui.topbarCwd.textContent = currentCwd;
   if (ui.projChipName) {
@@ -150,8 +271,23 @@ async function loadProjects() {
   }
   currentCwd = data.current_cwd || currentCwd;
   currentSession = data.current_session ?? currentSession;
+  // Rebuilt, not merged: a name deleted on the server must disappear here too.
+  projNames.clear();
+  sessionTitles.clear();
+  for (const proj of data.projects ?? []) {
+    if (proj.name) projNames.set(proj.path.toLowerCase(), proj.name);
+    for (const sess of proj.sessions ?? []) {
+      // The open-conversations group names a tab by what the sidebar already
+      // calls that session — one source of truth for a title, and a tab whose
+      // CLI has not answered yet has no session id and says «گفتگوی تازه».
+      sessionTitles.set(sess.session_id,
+        sess.title || sess.preview || sess.session_id.slice(0, 8));
+    }
+  }
   setChrome();
-  renderProjects(data.projects ?? []);
+  lastProjects = data.projects ?? [];
+  renderProjects(lastProjects);
+  paintOpenTabs();   // titles may have only just arrived
 
   const here = (data.projects ?? []).find(
     (p) => p.path.toLowerCase() === currentCwd.toLowerCase());
@@ -220,7 +356,9 @@ function projEl(proj, projects) {
   head.innerHTML = SVG.caret + SVG.folder;
   const name = document.createElement("bdi");
   name.className = "proj-name";
-  name.textContent = basename(proj.path);
+  name.textContent = displayName(proj.path);
+  // The tooltip stays the real path even when the label does not: it is the
+  // only thing that tells two folders with the same name apart.
   name.title = proj.path;
   head.append(name);
   // Why this project is at the top. Without it the sort looks like a bug the
@@ -251,6 +389,12 @@ function projEl(proj, projects) {
   // is writing into that folder's transcript right now and the server refuses
   // it with a 409. The menu says which one it is instead of going quiet.
   top.append(...kebabMenu([
+    {
+      // Renames the label only — see startRename().
+      icon: SVG.rename,
+      text: FA.renameProject,
+      run: () => startRename(top, head, proj),
+    },
     {
       icon: proj.pinned ? SVG.unpin : SVG.pin,
       text: proj.pinned ? FA.unpinProject : FA.pinProject,
@@ -309,13 +453,80 @@ function projEl(proj, projects) {
   return wrap;
 }
 
+/* Rename in place: the row itself becomes the field, so the thing being named
+   is the thing being looked at. Only the LABEL changes — no folder on disk is
+   touched and the CLI is never told, which is why the tooltip and the
+   statusline keep showing the real path.
+
+   The field REPLACES the head button rather than living inside it: an <input>
+   nested in a <button> is invalid content, and every click in it would also
+   activate the button and collapse the row underneath.
+
+   All of the edit state is this one element. Nothing is stashed at module
+   level, so a sidebar redraw (which replaces every row) ends the edit by
+   construction — the "armed delete survived the menu reopen" defect cannot
+   have a rename-shaped sibling. */
+function startRename(top, head, proj) {
+  if (top.querySelector(".proj-rename")) return;
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "proj-rename";
+  field.setAttribute("dir", "auto");   // the name can be either script
+  field.maxLength = NAME_MAX;
+  field.value = displayName(proj.path);
+  field.title = proj.path;
+  head.hidden = true;
+  top.prepend(field);
+  field.focus();
+  field.select();
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;   // remove() below fires blur, which calls this again
+    closed = true;
+    field.remove();
+    head.hidden = false;
+  };
+  // Walking away cancels: blur is a decision not to answer, not an answer.
+  field.addEventListener("blur", close);
+  field.addEventListener("keydown", async (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const value = field.value.trim();   // empty resets to the folder's name
+    close();
+    try {
+      await api("/api/project/rename", { path: proj.path, name: value });
+    } catch (err) {
+      return;   // the label is unchanged, which is the truth
+    }
+    loadProjects();
+  });
+}
+
 function sessionRow(sess, projPath, isCurrent) {
   const li = document.createElement("li");
   li.dataset.current = String(isCurrent);
+  // Open in a tab right now — in ANY project, not just this one. Clicking it
+  // must switch to that conversation rather than resume it a second time: two
+  // CLI processes appending to one transcript is corruption, and the server
+  // refuses it anyway (it adopts the tab instead).
+  const liveTab = openTabs.find((t) => t.session_id === sess.session_id)?.tab;
+  li.dataset.live = String(!!liveTab);
 
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "sess";
+  if (liveTab) {
+    const dot = label("", "sess-dot");
+    dot.setAttribute("aria-hidden", "true");
+    dot.title = FA.sessionLive;
+    btn.append(dot);
+  }
   const preview = document.createElement("span");
   preview.className = "sess-preview";
   preview.setAttribute("dir", "auto");   // user text: could be either script
@@ -325,7 +536,10 @@ function sessionRow(sess, projPath, isCurrent) {
   preview.textContent = sess.title || sess.preview || sess.session_id.slice(0, 8);
   preview.title = sess.preview || "";
   btn.append(preview, label(whenLabel(sess.modified), "sess-when"));
-  btn.addEventListener("click", () => resumeSession(sess.session_id, projPath));
+  btn.addEventListener("click", () => {
+    if (liveTab) tabBridge?.switchTo(liveTab);
+    else resumeSession(sess.session_id, projPath);
+  });
 
   // One truncated line cannot tell two sessions apart; the card can.
   btn.addEventListener("mouseenter", () => schedulePreview(btn, sess, projPath));
@@ -558,6 +772,11 @@ function kebabMenu(items) {
 /* Read-only view of an old conversation. Goes through renderEvent exactly as
    the live stream does — plan §B-4's "one renderer, two sources". */
 async function replaySession(sessionId, projPath) {
+  // WHOSE view this replaces, pinned before the fetch and resolved again after
+  // it: the user can switch conversations while a transcript is in the air, and
+  // rendering it into whatever is on screen then would hand one conversation
+  // another one's history — permanently, at the next park (app.js).
+  const tab = tabBridge?.active?.();
   let data;
   try {
     data = await api("/api/session?id=" + encodeURIComponent(sessionId)
@@ -566,11 +785,25 @@ async function replaySession(sessionId, projPath) {
     bubble("error", FA.sendFailed);
     return;
   }
-  log.replaceChildren();
-  resetTurn();
-  state.toolCards.clear();
-  for (const event of data.events ?? []) renderEvent(event);
+  renderInto(tab, data.events);
   showReplayBanner(sessionId, projPath);
+}
+
+/* An old transcript, into the tab it was asked for. Nothing here paints window
+   chrome: for a parked tab the renderer is pointed at its buffer and `state` IS
+   that tab's scope for the length of the call, so the cards, the tool-card map
+   and the cleared view all belong to the conversation being filled. A tab that
+   was closed while the fetch was out gets nothing at all (app.js renderInTab).
+   Shared by replay and by a resumed session's backfill — the two differ only in
+   whether the closing «گفتگو از سر گرفته شد» line is added. */
+function renderInto(tab, events, resumedNote = false) {
+  tabBridge?.renderIn(tab, (node) => {
+    node.replaceChildren();
+    resetTurn();
+    state.toolCards.clear();
+    for (const event of events ?? []) renderEvent(event);
+    if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
+  });
 }
 
 function showReplayBanner(sessionId, projPath) {
@@ -586,39 +819,71 @@ function showReplayBanner(sessionId, projPath) {
   ui.banner.hidden = false;
 }
 
+/* Resuming is a SPAWN now: the conversation opens in a tab of its own and
+   everything already running keeps running. The server answers `adopted: true`
+   when that session was live all along, and then there is nothing to resume —
+   only a tab to switch to. */
 async function resumeSession(sessionId, projPath) {
-  if (sessionId === currentSession) return;   // already the live session
-  ui.banner.hidden = true;
-  try {
-    await api("/api/session/resume", { session_id: sessionId, path: projPath });
-  } catch (err) {
-    bubble("error", FA.sendFailed);
+  const live = openTabs.find((t) => t.session_id === sessionId)?.tab;
+  if (live) {
+    await tabBridge?.switchTo(live);
     return;
   }
-  currentSession = sessionId;
-  if (projPath) setChrome(projPath);
-  // The server clears history and the reset event wipes the view; replay the
-  // transcript so the resumed conversation is not an empty window.
-  const data = await api("/api/session?id=" + encodeURIComponent(sessionId)
-                         + "&cwd=" + encodeURIComponent(projPath || currentCwd));
-  log.replaceChildren();
-  for (const event of data.events ?? []) renderEvent(event);
-  bubble("assistant", FA.resumed).classList.add("meta");
+  ui.banner.hidden = true;
+  let data;
+  try {
+    data = await api("/api/session/resume", { session_id: sessionId, path: projPath });
+  } catch (err) {
+    reportOpenFailure(err);
+    return;
+  }
+  await tabBridge?.switchTo(data.tab);
+  if (data.adopted) return;   // it was already on screen in that tab
+  // The switch can be refused (that tab is gone) or overtaken by the user, and
+  // it swallows the failure — so the window-level facts are only true if the
+  // resumed conversation is the one actually being looked at.
+  if (tabBridge?.active?.() === data.tab) {
+    currentSession = sessionId;
+    if (projPath) setChrome(projPath);
+  }
+  // A resumed CLI does not re-emit the conversation, so the new tab's view
+  // would be empty: replay the transcript into it, through the one renderer.
+  let history;
+  try {
+    history = await api("/api/session?id=" + encodeURIComponent(sessionId)
+                        + "&cwd=" + encodeURIComponent(projPath || currentCwd));
+  } catch (err) {
+    return;   // the session IS resumed; only its backfill failed to arrive
+  }
+  renderInto(data.tab, history.events, true);
   refreshProjects();
 }
 
+/* «گفتگوی جدید» and the folder picker both land here, and both now OPEN one
+   more conversation instead of killing the one that was running. */
 async function switchProject(folder) {
   if (!folder) return;
   if (ui.banner) ui.banner.hidden = true;
   try {
     const data = await api("/api/project/open", { path: folder });
-    setStatus({ cwd: data.cwd, sessionId: null, cost: undefined });
-    currentSession = null;
+    await tabBridge?.switchTo(data.tab);
+    // The new tab's CLI has not said anything yet, so its own scope is empty:
+    // seed the folder it was opened in rather than leaving the previous
+    // conversation's name in the topbar for a second.
+    setStatus({ cwd: data.cwd });
+    setCurrentSession(null);
     setChrome(data.cwd);
     refreshProjects();
   } catch (err) {
-    bubble("error", FA.sendFailed);
+    reportOpenFailure(err);
   }
+}
+
+/* The one failure a user can actually cause here: six conversations already
+   open. The server answers 409 with `max_tabs`; api() throws with the status in
+   its message, which is the same shape agents.js reads a 404 out of. */
+function reportOpenFailure(err) {
+  bubble("error", /-> 409$/.test(err?.message ?? "") ? FA.maxTabs : FA.sendFailed);
 }
 
 /* --- permission dialog (plan §B-5) ---------------------------------------- */
@@ -632,6 +897,7 @@ const perm = {
   remember: document.getElementById("perm-remember"),
   title: document.getElementById("perm-title"),
   text: document.getElementById("perm-body"),
+  source: document.getElementById("perm-source"),
   allow: document.getElementById("perm-allow"),
   deny: document.getElementById("perm-deny"),
   queue: [],
@@ -664,6 +930,7 @@ function nextPermission() {
      and a missing element must degrade, not take the whole renderer down with
      it — which is exactly what an unguarded replaceChildren() did once. */
   const questions = askQuestions(perm.current);
+  paintPermSource(perm.current.tab);
   perm.dialog.classList.toggle("asking", !!questions);
   if (perm.title) perm.title.textContent = questions ? FA.askTitle : FA.permTitle;
   if (perm.text) perm.text.textContent = questions ? FA.askBody : FA.permBody;
@@ -684,6 +951,29 @@ function nextPermission() {
   // A permission defaults to the safe answer (deny). A question has no unsafe
   // answer, so focus goes to the first option instead of to Skip.
   (questions ? perm.ask?.querySelector("input") : perm.deny)?.focus();
+}
+
+/* ONE dialog serves every open conversation, so when the asking one is not the
+   one on screen it has to say WHICH — «اجازه بده» to a tool you cannot see
+   running, in a project you are not looking at, is exactly the consent this
+   window exists to make legible. Silent for the visible tab: naming the
+   conversation you are already reading is noise. */
+function paintPermSource(tab) {
+  if (!perm.source) return;
+  // `openActive` is empty until /api/tabs has answered — before that this
+  // window does not know which conversation it is showing, and guessing
+  // "another one" would be a false alarm on the very first request.
+  const other = !!tab && !!openActive && tab !== openActive;
+  perm.source.hidden = !other;
+  if (!other) return;
+  // A tab that spawned a moment ago may not be in the list yet. It is still not
+  // the one on screen, and saying so unnamed beats saying nothing at all.
+  const entry = openTabs.find((t) => t.tab === tab);
+  const name = document.createElement("bdi");
+  name.setAttribute("dir", "auto");   // the user's own words, either script
+  name.textContent = entry ? tabTitle(entry) : FA.tabFresh;
+  perm.source.replaceChildren(document.createTextNode(FA.permOtherSession + " "), name);
+  if (entry?.cwd) perm.source.append(projectChip(entry.cwd));
 }
 
 /* Built from the tool's own payload, so a question the model invents at runtime
@@ -814,14 +1104,29 @@ async function resolvePermission(decision) {
   nextPermission();
 }
 
-/* The server resolved it without us (timeout, or another window answered). */
-export function dismissPermission(requestId) {
-  perm.queue = perm.queue.filter((r) => r.request_id !== requestId);
-  if (perm.current?.request_id === requestId) {
+/* Requests that can no longer be answered: they leave the queue, and the dialog
+   goes with them if it was the one asking. */
+function dropPermissions(match) {
+  perm.queue = perm.queue.filter((req) => !match(req));
+  if (perm.current && match(perm.current)) {
     perm.current = null;
-    if (perm.dialog.open) perm.dialog.close();
+    if (perm.dialog?.open) perm.dialog.close();
     nextPermission();
   }
+}
+
+/* The server resolved it without us (timeout, or another window answered). */
+export function dismissPermission(requestId) {
+  dropPermissions((req) => req.request_id === requestId);
+}
+
+/* That conversation is gone (app.js dropTab, off a tagged `wrapper/closed`).
+   The server denies whatever was pending before it drops the tab, so the
+   resolved event normally clears these first — this is the belt for the race
+   where it does not, because a dialog still asking on behalf of a dead CLI can
+   only be answered into nothing. */
+export function dismissTabPermissions(tab) {
+  if (tab) dropPermissions((req) => req.tab === tab);
 }
 
 /* --- init ------------------------------------------------------------------ */

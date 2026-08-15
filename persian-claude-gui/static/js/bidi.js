@@ -120,6 +120,37 @@ export function applyDirection(root) {
   }
 }
 
+/* Copy button on code blocks. Idle glyph is two overlapping squares; a
+   successful copy swaps it to a check for 1.5s. No Persian literals here —
+   labels come from window.STRINGS (this file is a leaf, see header). */
+const COPY_ICON =
+  '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2">' +
+  '<rect x="2" y="4" width="8" height="8" rx="1"/><rect x="4" y="2" width="8" height="8" rx="1"/></svg>';
+const CHECK_ICON =
+  '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">' +
+  '<polyline points="2.5,7.5 5.5,10.5 11.5,3.5"/></svg>';
+
+function codeCopyButton(pre) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "code-copy";
+  const setState = (icon, label) => {
+    btn.innerHTML = icon;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  };
+  setState(COPY_ICON, window.STRINGS?.copyCode);
+  btn.addEventListener("click", () => {
+    try {
+      navigator.clipboard.writeText(pre.textContent).then(() => {
+        setState(CHECK_ICON, window.STRINGS?.copied);
+        setTimeout(() => setState(COPY_ICON, window.STRINGS?.copyCode), 1500);
+      });
+    } catch { /* no Clipboard API (e.g. insecure context) — button stays idle */ }
+  });
+  return btn;
+}
+
 export function renderMarkdown(text) {
   const host = document.createElement("div");
   const parse = window.marked?.parse ?? window.marked;
@@ -136,6 +167,15 @@ export function renderMarkdown(text) {
     wrap.className = "table-wrap";
     table.replaceWith(wrap);
     wrap.append(table);
+  }
+  // The copy button sits in the WRAPPER, never inside <pre>: applyDirection()
+  // already set dir="ltr" on pre, and spec assertions read pre.textContent —
+  // Persian button text landing inside it would corrupt both.
+  for (const pre of host.querySelectorAll("pre")) {
+    const wrap = document.createElement("div");
+    wrap.className = "code-wrap";
+    pre.replaceWith(wrap);
+    wrap.append(pre, codeCopyButton(pre));
   }
   return host;
 }

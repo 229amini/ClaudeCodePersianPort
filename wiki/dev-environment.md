@@ -27,7 +27,10 @@ Consequences, all of which cost time to rediscover:
 - **Headless `--screenshot` is a dead end — do not re-walk it.** `msedge --headless=new
   --screenshot` produces a uniformly blank `--bg`-coloured PNG for both `index.html` and
   `spec-test.html`, with or without an open SSE stream, with or without
-  `--virtual-time-budget`. `--dump-dom` on the same command line works fine.
+  `--virtual-time-budget`. `--dump-dom` on the same command line works fine —
+  **but only on pages without an open SSE stream**: `--dump-dom` on the real `index.html` hangs
+  forever because `EventSource` keeps the load pending (measured 2026-08-14, incl. with
+  `--timeout`). `spec-test.html` dumps fine — that is exactly what `data-render-only` exists for.
 
 ## Seeing the running app: the Chrome extension works now (2026-08-05)
 

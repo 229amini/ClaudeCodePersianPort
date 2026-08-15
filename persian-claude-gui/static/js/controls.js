@@ -43,7 +43,12 @@ const POSTURES = [
 let models = [];
 let chosen = null;     // the value we asked for, until a turn confirms it
 let resolved = null;   // system/init.model — what the CLI actually ran
-let posture = "ask";
+/* null until the server's posture event names one, which is also what keeps the
+   pill hidden on a conversation that has not answered yet. It used to default
+   to "ask" and rely on the chip's `hidden` attribute for that, which no longer
+   works: with concurrent tabs the chip is restored per conversation, and a
+   default would show a posture that nothing had confirmed. */
+let posture = null;
 
 /* --- model chip ------------------------------------------------------------ */
 
@@ -240,21 +245,27 @@ async function pickStyle(item) {
    CLI acknowledged the permission mode. Never by our own click: a pill that
    moves on click while the engine refused the change is exactly the silent
    lie this project exists to avoid. */
-export function setPostureState(name, autoCount) {
+export function setPostureState(name, count) {
   if (name) posture = name;
+  paintPosture();
+  setAutoCount(count);
+}
+
+function paintPosture() {
   if (!ui.postureChip) return;
+  ui.postureChip.hidden = !posture;
+  if (!posture) return;
   const entry = POSTURES.find((p) => p.key === posture) ?? POSTURES[0];
-  ui.postureChip.hidden = false;
   ui.postureName.textContent = entry.title;
   ui.postureChip.title = entry.note;
   ui.postureChip.dataset.posture = posture;
-  setAutoCount(autoCount);
 }
 
 /* What was approved without asking, so the counter can be opened and read.
    Fed by permission_resolved events, which the SSE hub replays to a reloading
    window — so the list survives a refresh exactly as far as the count does. */
 const autoActions = [];   // [{tool, why}]
+let autoCount = 0;
 
 export function noteAutoAction(toolName, why) {
   autoActions.push({ tool: toolName || "?", why });
@@ -262,11 +273,47 @@ export function noteAutoAction(toolName, why) {
 
 /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
 export function setAutoCount(count) {
+  autoCount = Number(count) || 0;
   if (!ui.autoChip) return;
-  const n = Number(count) || 0;
-  ui.autoChip.hidden = n === 0;
-  ui.autoChip.textContent = n.toLocaleString("fa-IR") + " " + FA.autoActions;
+  ui.autoChip.hidden = autoCount === 0;
+  ui.autoChip.textContent = autoCount.toLocaleString("fa-IR") + " " + FA.autoActions;
   ui.autoChip.title = FA.autoActionsTitle;
+}
+
+/* --- one window, N conversations -------------------------------------------
+
+   Every value in this module belongs to ONE session: the model it runs on, the
+   effort it was given, its output style, its permission posture and what that
+   posture approved without asking. The chips are single elements, so switching
+   tabs has to carry all of it across at once — a partial restore is the
+   project's oldest defect family («state that belongs to one session surviving
+   into the next»), and here it would mean approving in one conversation under a
+   pill describing another.
+
+   `refused` is deliberately NOT in the snapshot: an effort level the CLI's own
+   settings schema rejects is a fact about the build, not about a session. */
+export function snapshotControls() {
+  return { models, chosen, resolved, styles, style, effort, posture, autoCount,
+           autoActions: autoActions.slice() };
+}
+
+/* A tab that has never been looked at has no snapshot — hence the defaults on
+   every field rather than "keep what is there". */
+export function restoreControls(saved) {
+  const s = saved ?? {};
+  models = s.models ?? [];
+  chosen = s.chosen ?? null;
+  resolved = s.resolved ?? null;
+  styles = s.styles ?? [];
+  style = s.style ?? null;
+  effort = s.effort ?? null;
+  posture = s.posture ?? null;
+  autoActions.length = 0;
+  if (s.autoActions) autoActions.push(...s.autoActions);
+  paintModel();   // paints the effort chip too
+  paintStyle();
+  paintPosture();
+  setAutoCount(s.autoCount ?? 0);
 }
 
 async function pickPosture(item) {

@@ -58,6 +58,12 @@ Two smaller consequences of the same rule:
 `strings.fa.js` and `vendor/marked.min.js` stay **classic** scripts. Classic scripts finish before
 the first module runs, so `window.FA` and `window.marked` are always there.
 
+**app.js is also the tab registry (2026-08-14, concurrent sessions).** It owns the
+`tabs` Map, `activeTab`, SSE routing on `ev.tab` and `applySwitch()`/`switchTab()`. Nothing in the
+module tree may import app.js — it is the entry, so any import of it from a dependency is the same
+guaranteed TDZ crash described above. chrome.js gets its switch/close hooks injected via
+`setTabBridge({switchTo, close})`. The spec harness *may* import app.js because it runs last.
+
 ## spec-test.html: the gate that fails silently
 
 Modules are deferred. The harness block in `spec-test.html` reads `window.renderEvent`, so as a
@@ -140,3 +146,25 @@ character, and the algorithm *skips every descendant that carries its own `dir`*
 header cells would blind the table to the only text that can answer the question and it would fall
 back to `ltr`, mirroring every Persian table. Left bare, the header row supplies the character,
 `th` renders in the direction it just chose, and each `td` still decides for itself.
+
+## Tab lifecycle rules (2026-08-15 review-fix batch)
+
+The 10 defects the tabs rework introduced were all one family: **an invariant the single-session
+design guaranteed for free** (one live session always, one transcript in `#log`, broker always had
+a listener) **broken silently**. The rules that fix them, so nobody re-breaks one:
+
+- **Anything fetched renders through `renderInTab(tab, fn)`** (app.js, handed to chrome.js over
+  the bridge). It resolves the destination *at render time*: active tab → live log/scope, parked
+  tab → its buffer node/scope, closed tab → the callback never runs. Never render a fetched
+  transcript into the global `#log` directly — after any `await`, the tab you started with may not
+  be the one on screen.
+- **`/api/tabs` snapshots add and update, never delete.** The only thing allowed to remove a tab
+  client-side is the server's tagged `wrapper/closed` — a snapshot served mid-spawn is missing the
+  newest tab, and pruning on it discards the buffered `wrapper/init_info` nothing will re-send.
+  Trade-off accepted: a tab the server forgets *without* emitting `wrapper/closed` (server restart
+  under the same window) lingers in the sidebar until reload.
+- **Dropping a tab entry goes through one choke point** that clears the scope's pulse
+  (`clearPulse(scope)`, exported from render.js) and that tab's queued permission entries —
+  otherwise the 500 ms pulse interval paints detached nodes forever.
+- **`.tab-proj` is a display *name*, not a path** — `<bdi dir="auto">`, never `pathEl()`/`.path`
+  (which force LTR and misorder a Persian rename). `.path` remains reserved for real Windows paths.

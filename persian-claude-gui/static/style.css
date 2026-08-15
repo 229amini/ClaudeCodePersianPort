@@ -227,6 +227,103 @@ pre, code, .path, .diff, .tool-output, .mono {
   font-size: .85em;
 }
 
+/* --- open conversations ------------------------------------------------------
+   One row per running `claude` process. Same visual grammar as a session row —
+   it IS a session, the live one — plus a dot that says whether it is working
+   and an ✕, because closing is the only way out of a conversation and this
+   audience does not hunt for hover-only controls. */
+#open-tabs { margin-block-end: 8px; }
+
+.tab-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.tab-row:hover,
+.tab-row:focus-within { background: var(--surface); }
+.tab-row[data-current="true"] { background: var(--accent-soft); }
+
+.tab-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: .88em;
+  cursor: pointer;
+  text-align: start;
+}
+/* The row carries the hover tint; the button inside must not go coral (the
+   global button:hover otherwise repaints it) — same trap as .sess. */
+.tab-open:hover { background: none; }
+
+.tab-dot {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+.tab-row[data-current="true"] .tab-dot { background: var(--accent); }
+/* Working: it breathes rather than blinks, and the tokens layer's
+   reduced-motion rule stops it outright. Shares the agents strip's keyframes —
+   same meaning, same motion. */
+.tab-row[data-busy="true"] .tab-dot {
+  background: var(--accent);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+
+.tab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A <bdi dir="auto"> (chrome.js projectChip), NOT .path: this is the project's
+   display name, which the user can rename into Persian — forcing it LTR
+   misordered it and seated it on the wrong edge of an RTL row. */
+.tab-proj {
+  flex: none;
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  color: var(--fg-muted);
+  font-size: .85em;
+  opacity: .8;
+}
+
+/* `.tab-row .tab-close`, not `.tab-close`: it reuses .sess-act, whose
+   `display: none` (revealed on row hover) is declared LATER in this same layer
+   and would win the tie on source order. */
+.tab-row .tab-close {
+  display: inline-flex;
+  font-size: 1.05em;
+  line-height: 1;
+}
+.tab-row .tab-close:hover { background: var(--surface-2); color: var(--fg); }
+
+/* A history row whose session is open in a tab right now: clicking it switches
+   to that conversation instead of resuming it a second time. */
+.sess-dot {
+  flex: none;
+  align-self: center;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .proj { margin-block-end: 2px; }
 
 .proj-top {
@@ -275,6 +372,24 @@ pre, code, .path, .diff, .tool-output, .mono {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Renaming a project: the field stands exactly where the row's own name was,
+   at the same size, so nothing jumps when the edit opens or closes. */
+.proj-rename {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  margin: 3px 0;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: .92em;
+  line-height: var(--lh-fa);
+}
+.proj-rename:focus-visible { outline: none; }   /* the accent border is the focus */
 
 /* Sits after the name, so a long name ellipses into it rather than pushing it
    off the row. Muted: it explains the sort, it is not an action. */
@@ -632,6 +747,38 @@ body.home #statusline { align-self: end; }
   line-height: 1.55;        /* code is Latin: the Persian floor does not apply */
 }
 .msg pre code { background: none; padding: 0; }
+
+/* Copy button on code blocks. .code-wrap is the positioning context because
+   <pre> has overflow-x:auto and cannot anchor an absolutely positioned child
+   that should stay put while the code scrolls — the .msg > :first-child/
+   :last-child margin resets (above) now land on the wrapper for the same
+   reason. Declared after `.msg pre` so `.code-wrap > pre`'s margin-block: 0
+   wins the tie (equal specificity, same layer). */
+.code-wrap { position: relative; margin-block: .45em; }
+.code-wrap > pre { margin-block: 0; }
+.code-copy {
+  position: absolute;
+  top: .4rem;
+  right: .4rem;             /* physical, not logical — code reads LTR always */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 26px;
+  block-size: 26px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease),
+              color var(--dur) var(--ease);
+}
+.code-wrap:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+/* The generic `button:hover` (~line 1016) fills coral and would otherwise
+   repaint this on hover — same trap as .kebab-item and .ag-row. */
+.code-copy:hover { background: var(--surface-2); color: var(--fg); }
 
 /* GFM tables. marked emits them and always has; with no rules at all the
    browser's default <table> is borderless and gap-less, so a comparison grid
@@ -1375,6 +1522,24 @@ button.round {
   margin-block-end: 8px;
 }
 
+/* Which conversation is asking, when it is not the one on screen. Sits between
+   the question and the tool, quiet but not hidden: it is the difference between
+   approving a write here and approving one in a project you are not looking at. */
+/* `#perm #perm-source`, not `#perm-source`: `#perm p` above is (1,0,1) and
+   would beat a bare id on display and margin — the trap the kebab row already
+   taught this file (wiki/rtl-rendering-notes.md). */
+#perm #perm-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-block: -.4em .8em;
+  padding: 6px 10px;
+  border-inline-start: 2px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-side);
+}
+
 /* Tool parameters are model-supplied text: paths, but also file CONTENT the
    user is about to approve. The box stays LTR so paths and code keep their
    order; each line inside gets dir="auto" so Persian content is readable at the
@@ -1590,6 +1755,23 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 
 /* The CLI's own "Waiting for N background agents", in Persian. */
 .ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: .8em; }
+
+/* Folds finished agents open — muted like .ag-wait, since it is status chrome
+   too, not an action. Needs its own :hover: the generic filled `button:hover`
+   (0,1,1) around line 1016 outranks a plain `.ag-history` (0,1,0) and would
+   paint it coral, the same trap `.ag-row` and `.kebab-item` already hit. */
+.ag-history {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .8em;
+  cursor: pointer;
+}
+.ag-history:hover { background: var(--surface-2); color: var(--fg); }
 
 /* One agent's transcript. [popover] puts it in the top layer and brings light
    dismiss and Escape with it — the same reasoning as the ⋯ menu, and the same

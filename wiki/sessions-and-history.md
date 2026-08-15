@@ -102,19 +102,82 @@ client-side shape check; there is nothing left for it to catch.
 The envelope test is `^\s*<[a-z][a-z-]+>`. A real prompt that opens with an HTML tag would be
 skipped in favour of the next one — an acceptable trade for this audience.
 
-## Restart semantics
+## Restart semantics — replaced by tabs (2026-08-14)
 
-`ClaudeSession.restart()` backs both "switch project" and "resume session": stop, optionally
-change cwd, `hub.reset()`, start with `--resume` if given.
+`ClaudeSession.restart()` is **gone**. Switching project and resuming a session used to stop the
+one CLI and start another in its place; both now open a tab of their own (below) and everything
+already running keeps running. Killing the conversation to make room for another one was the
+defect, not the mechanism.
 
-Two things that are easy to get wrong:
+One thing that survived and is still easy to get wrong:
 
-- **Generation counter.** The old process's reader threads keep draining a dying pipe after a
-  restart. Without the `_generation` check their events leak into the new conversation. Each
-  reader captures the generation it was started with and drops anything published after a swap.
-- **`hub.reset()` clears replay history and broadcasts `wrapper/reset`.** The Hub replays its
-  history to every new SSE client so a reconnecting window is not blank — which means without the
-  reset, switching projects would show the previous project's conversation to any reconnect.
+- **Generation counter.** A stopped process's reader threads keep draining a dying pipe. Without
+  the `_generation` check their events leak into whatever comes next. Each reader captures the
+  generation it was started with and drops anything published after a swap.
+
+## N conversations at once: the tab model (2026-08-14)
+
+The server runs up to `MAX_TABS = 6` long-lived `claude` processes. A **tab** is the wrapper's
+own `uuid4().hex`, minted at spawn — **not** the CLI's `session_id`, which is `None` until the
+first turn completes and therefore cannot route the events of a conversation the user just
+opened.
+
+**Every SSE event carries `"tab"`**, `system/*` included: `TabHub` is a two-method view over the
+Hub (`publish` stamps, `reset` scopes) held by the `ClaudeSession` and its `PermissionBroker`, so
+all ~16 publish sites tag without knowing tabs exist. `Hub._history` is bucketed by tab, capped
+per bucket, and a closed tab's bucket is dropped **and** blacklisted — a stopped session's reader
+thread publishes `wrapper/cli_exited` milliseconds later and would otherwise re-create the bucket
+it just deleted, which then replays to every window for the life of the server.
+
+| endpoint | shape |
+|---|---|
+| `GET /api/tabs` | `{active, tabs:[{tab, session_id, cwd, busy, spawned_at}]}`, spawn order |
+| `POST /api/tab/activate {tab}` | `{ok, active}` or 404 |
+| `POST /api/tab/close {tab}` | `{ok, active}` — `""` when none is left |
+| `POST /api/project/open {path}` | `{cwd, tab, recents}`; **409** `{"error":"too many tabs","max_tabs":6}` at the cap |
+| `POST /api/session/resume {session_id, path?}` | `{ok, tab, adopted, session_id}` |
+
+`adopted: true` means that session was **already live in a tab** — resuming it a second time
+would leave two CLI processes appending to one `.jsonl`, which is corruption, so the server just
+makes that tab active and the window only has to switch to it. Every session-scoped endpoint
+takes an optional `tab` (body key or query param) and defaults to the **active** one, which is
+what keeps `smoke_test.py` and every tab-less caller working unchanged.
+
+Closing a tab publishes `wrapper/cli_exited` then `wrapper/closed`, both tagged.
+
+**`wrapper/reset` no longer has a production publisher.** Clearing is structural: each tab owns
+its own detached transcript node, and a new chat is a new tab, so there is nothing to clear. The
+render path stays (the event is still in the protocol, and the spec harness drives it) and is
+scoped to the tab it names. Do not re-introduce a client-side "reset means new session" rule —
+the session swap now IS the tab swap.
+
+### The window half (static/js/app.js)
+
+`tabs: Map(tab → {node, scope, chrome})` plus `activeTab`. An event whose `tab` is missing or is
+the active one renders exactly as before; anything else goes through
+`withRenderTarget(entry.node, entry.scope, …)` — the same seam the agents drawer replays through.
+Entries are created **lazily** by the first event that names them: `/api/tabs` cannot answer
+before the stream starts, and dropping those events would lose the opening of a conversation.
+
+The one rule that makes it safe: a background scope carries `background: true`, and every call in
+`render.js` that repaints the **window** rather than the transcript is gated on it —
+`setChrome`, `refreshProjects`, `refreshAgents`, the statusline paint, `setBusy`, the model /
+effort / output-style / posture chips, the auto-approve counter, the context notice. Their values
+are parked in `scope.chrome` (last-write-wins per key; the auto-approval list is the one thing
+that accumulates) and applied by `applySwitch()` when the user switches to that tab. What is NOT
+gated: `showPermission` / `dismissPermission` — one modal FIFO serves every tab, and the dialog
+names the asking conversation when it is not the visible one.
+
+A switch is: `POST /api/tab/activate` → park the outgoing tab (its `#log` children move into its
+node, its scope and a controls+composer snapshot are taken) → restore the incoming one
+(children into `#log`, scope into the render state, snapshot into the chips, then the parked
+deltas on top). The restore is deliberately **total** — every chip is painted from that
+conversation's own data or from nothing. Partial restore is this project's oldest defect family
+(«state that belongs to one session surviving into the next»), and with six live conversations it
+would be the norm rather than the exception.
+
+The composer's **draft text and attachments stay global**: there is one box, and a half-typed
+message belongs to the person, not to the session.
 
 ## Folder picker
 
@@ -162,8 +225,9 @@ guarded with `if (!ui.dialog.open)`.
 - **`POST /api/session/delete {session_id, path?}`** — optional `path` for cross-project delete.
   The traversal guard is still `transcript_path()`; the live-session 409 still applies.
 
-"New chat" is not an endpoint — it is `POST /api/project/open` with the current cwd (fresh
-process → fresh session id → `wrapper/reset` clears the view → the home state reappears).
+"New chat" is not an endpoint — it is `POST /api/project/open` with the current cwd. Since the
+tabs work (below) that **spawns one more conversation** instead of restarting the only one, and
+the response carries the new `tab`.
 
 Project-level actions (added 2026-08-05):
 

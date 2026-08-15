@@ -146,3 +146,17 @@ Verified end to end through the UI on 2026-08-07: a Persian question with three 
 Persian labels, one Latin) rendered in the dialog, «قهوه» was clicked, and the model replied
 «پاسخ شما «قهوه» بود.» Gate coverage is in `spec-test.html` (five `ask:` checks) and
 `test_units.py` (four `PermissionBroker` checks).
+
+## Closing a tab denies its pending requests (2026-08-15)
+
+`Handler.close_tab` calls `PermissionBroker.deny_all()` **before** `session.stop()` and
+`hub.drop(tab)` — order is the fix: the waiter is released immediately (not after the full
+110 s timeout) and the `permission_resolved` deny publishes while the tab still exists, so the
+window's dialog is dismissed instead of the event dying on the closed-tab guard. `deny_all()`
+*takes* the pending entries under the broker lock; `request()` detects the taken entry and
+returns without publishing a second resolved event.
+
+One deliberate deviation: a pending **`AskUserQuestion` on a closing tab is denied, not
+skip-allowed** — the Skip semantics above assume a live conversation, and the process is
+terminated milliseconds later, so nothing downstream reads either answer. Covered by the
+`close_tab` checks in `test_units.py`.

@@ -11,7 +11,11 @@ const FA = window.STRINGS;
 
 const input = document.getElementById("input");
 const composer = document.getElementById("composer");
+const sendBtn = document.getElementById("send");
 const stopBtn = document.getElementById("stop");
+/* The invitation to type, as index.html writes it — restored when a
+   conversation comes back (setComposerBlank below borrows the line). */
+const askPlaceholder = input?.placeholder ?? "";
 const attachRow = document.getElementById("attachments");
 const slashPopup = document.getElementById("slash-popup");
 
@@ -29,9 +33,32 @@ const base64Of = (blob) => new Promise((resolve, reject) => {
    below already had to be fixed for once. Stop stays prominent because a
    non-technical user needs an obvious way out; the interrupt leaves the
    process (and the session) alive. */
-export function setBusy(busy) {
+/* Whether the VISIBLE conversation has a turn in flight. A background tab's
+   busy flag lives in its own scope (render.js) until the user switches to it —
+   there is one stop button and it must always mean "stop what you are
+   reading". */
+let busy = false;
+
+export function setBusy(running) {
+  // A turn starting or ending is the conversation being USED — that is what
+  // re-arms the idle hint. Boot's own setBusy(false) is a no-op transition
+  // (busy is already false), so an untouched window never earns the hint.
+  if (running || busy) lastActivity = Date.now();
+  busy = !!running;
   if (stopBtn) stopBtn.hidden = !busy;
   document.body.classList.toggle("busy", busy);
+}
+
+/* No conversation is open at all (app.js blankView): every tab-less endpoint
+   routes by the server's active tab, so a send lands on a 404 and the user gets
+   the generic «ارسال ناموفق بود» — which reads as "your message failed" when
+   the truth is that there is nowhere to send it yet. The box is closed and says
+   so instead; applySwitch() opens it again the moment a tab is on screen. */
+export function setComposerBlank(blank) {
+  if (!input) return;
+  input.disabled = !!blank;
+  input.placeholder = blank ? FA.composerBlank : askPlaceholder;
+  if (sendBtn) sendBtn.disabled = !!blank;
 }
 
 /* --- the context notice ----------------------------------------------------
@@ -53,10 +80,30 @@ export function setBusy(busy) {
 
 const WARN_AT = 85;      // % of the window used
 const NAG_STEP = 5;      // how much worse it must get before asking again
+const IDLE_AT = 60 * 60 * 1000;   // an hour of silence → suggest a fresh chat
 
 const notice = document.getElementById("context-notice");
 let dismissedAt = null;
 let lastContext = 0;
+/* What the notice is currently saying, or null when it is away. The warning is
+   derivable from lastContext, the exhausted one is not (no percentage ever
+   arrives with it) — so the shape is kept rather than recomputed when a tab is
+   switched back to. */
+let noticeState = null;
+/* When this conversation last did anything (a turn started or ended). null
+   until the first turn, so a window left open on the home screen stays quiet. */
+let lastActivity = null;
+
+/* The CLI's own idle nudge, surfaced here: come back after an hour away and
+   the same notice suggests a fresh chat — /clear as a button, like everything
+   else. Fires once per quiet stretch; the next turn re-arms it via setBusy.
+   `now` is a parameter purely so the hour is testable (spec-test.html). */
+export function checkIdle(now = Date.now()) {
+  if (!notice || busy || noticeState) return;   // never talk over the context warning
+  if (lastActivity === null || now - lastActivity < IDLE_AT) return;
+  lastActivity = null;
+  paintNotice(FA.idleTitle, FA.idleBody, false, false);
+}
 
 export function noteContext(pct) {
   if (!notice || typeof pct !== "number") return;
@@ -64,6 +111,7 @@ export function noteContext(pct) {
   if (pct < WARN_AT) {
     // A compact or a clear landed — re-arm so the next approach warns again.
     dismissedAt = null;
+    noticeState = null;
     notice.hidden = true;
     return;
   }
@@ -81,7 +129,11 @@ export function contextFull() {
   paintNotice(FA.ctxTitleFull, FA.ctxBodyFull, true);
 }
 
-function paintNotice(title, body, urgent = false) {
+/* `compact` is false only for the idle hint: an hour-old conversation is not
+   over the limit, so «فشرده کردن» would be answering a question nobody asked —
+   the fresh chat IS the suggestion, and it takes the primary style. */
+function paintNotice(title, body, urgent = false, compact = true) {
+  noticeState = { title, body, urgent, compact };
   notice.replaceChildren();
   notice.classList.toggle("urgent", urgent);
 
@@ -93,26 +145,55 @@ function paintNotice(title, body, urgent = false) {
 
   const row = document.createElement("div");
   row.className = "ctx-actions";
-  row.append(
-    ctxButton(FA.ctxCompact, FA.ctxCompactNote, "primary", () => {
+  if (compact) {
+    row.append(ctxButton(FA.ctxCompact, FA.ctxCompactNote, "primary", () => {
       // Through the composer's own submit path, so the user sees the command
       // echoed like anything else they send. interceptLifecycle deliberately
       // does not claim /compact.
       input.value = "/compact";
       composer.requestSubmit();
       notice.hidden = true;
-    }),
-    ctxButton(FA.ctxClear, FA.ctxClearNote, "", () =>
-      document.getElementById("btn-new")?.click()),
-  );
+    }));
+  }
+  row.append(ctxButton(FA.ctxClear, FA.ctxClearNote, compact ? "" : "primary", () =>
+    document.getElementById("btn-new")?.click()));
   if (!urgent) {
     row.append(ctxButton(FA.ctxDismiss, "", "ghost", () => {
       dismissedAt = lastContext;
+      noticeState = null;
       notice.hidden = true;
     }));
   }
   notice.append(row);
   notice.hidden = false;
+}
+
+/* --- one composer, N conversations -----------------------------------------
+
+   The draft text and the attachments stay GLOBAL on purpose: there is one box,
+   and a message half-typed is about the person, not about the session. What is
+   per-session is everything the box says ABOUT the conversation — whether it is
+   working, which slash commands that CLI has, and how full its context is. */
+export function snapshotComposer() {
+  return { busy, slashCommands, dismissedAt, lastContext, lastActivity, notice: noticeState };
+}
+
+export function restoreComposer(saved) {
+  const s = saved ?? {};
+  slashCommands = s.slashCommands ?? [];
+  dismissedAt = s.dismissedAt ?? null;
+  lastContext = s.lastContext ?? 0;
+  noticeState = s.notice ?? null;
+  if (notice) {
+    if (noticeState) {
+      paintNotice(noticeState.title, noticeState.body, noticeState.urgent,
+                  noticeState.compact ?? true);
+    } else notice.hidden = true;
+  }
+  setBusy(!!s.busy);
+  // After setBusy, which stamps «now» on a busy→idle edge — the restored
+  // conversation's own clock wins, or a tab switch would reset its idle hour.
+  lastActivity = s.lastActivity ?? null;
 }
 
 function ctxButton(text, note, cls, onClick) {
@@ -408,6 +489,13 @@ export function initComposer() {
       slashPopup.hidden = true;
     }
   }, true);   // capture: must beat the Enter-submits handler above
+
+  // The minute tick catches a window that never lost focus; visibilitychange
+  // makes the return itself instant instead of up-to-a-minute late.
+  setInterval(checkIdle, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkIdle();
+  });
 
   setAttachments([]);
   setBusy(false);

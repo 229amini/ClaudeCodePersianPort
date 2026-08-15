@@ -36,6 +36,11 @@
   </button>
 
   <div class="side-scroll">
+    <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
+         /api/tabs by js/chrome.js; hidden until there is one. -->
+    <h2 id="tabs-title" class="side-title" hidden></h2>
+    <nav id="open-tabs" aria-label="نشست‌های باز" hidden></nav>
+
     <h2 id="projects-title" class="side-title"></h2>
     <nav id="projects" aria-label="پروژه‌ها"></nav>
   </div>
@@ -244,6 +249,9 @@
   <form method="dialog" id="perm-form">
     <h2 id="perm-title"></h2>
     <p id="perm-body" dir="auto"></p>
+    <!-- Which conversation is asking, when it is not the one on screen: one
+         dialog serves every open tab (js/chrome.js). -->
+    <p id="perm-source" class="meta" dir="auto" hidden></p>
     <div id="perm-tool"></div>
     <pre id="perm-params"></pre>
     <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes

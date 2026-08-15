@@ -7,8 +7,10 @@ Both of these guard failure modes that produce no error message at all —
 takes bytes straight off a POST body.
 """
 import base64
+import http.client
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
@@ -274,6 +276,79 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a duplicate notification overwrites (last one wins)",
           registry2[AGENT_A]["summary"] == 'Agent "Do the async thing" finished AGAIN')
 
+print("build_agent_registry: the route is the parsed shape, not substring order")
+# The three cheap markers ('"name":"Agent"', '"tool_result"',
+# "task-notification") may FILTER a line but must never DECIDE its route: a
+# notification carries the finished agent's own final text and can quote any
+# of them. Measured across this machine's 315 real transcripts, a genuine
+# notification is `queue-operation`+string (708) or `user`+string (273) and
+# never a `user`+list -- so `type` plus the SHAPE of message.content is the
+# CLI's actual contract, and a substring cascade only agrees with it by luck.
+
+
+def _with_raw_marker(line, decoy):
+    r"""Append a sibling field carrying `decoy` VERBATIM.
+
+    Hand-built on purpose. The CLI escapes every quote inside the
+    notification's own text, so a body quoting `"tool_result"` reaches the
+    line as `\"tool_result\"` and no substring test can see it -- a marker
+    OUTSIDE the JSON string is the only shape in which a substring cascade
+    and the parsed record can disagree, and disagreeing is exactly what
+    dropped the notification (leaving the agent "running" forever).
+    """
+    return line[:-1] + f',"noise":{decoy}}}'
+
+
+AGENT_C = "cccccccccccccccc"   # its notification line also reads "tool_result"
+AGENT_D = "dddddddddddddddd"   # its notification line also reads "name":"Agent"
+
+with tempfile.TemporaryDirectory() as tmp:
+    transcript = Path(tmp) / "noisy.jsonl"
+    transcript.write_text("\n".join([
+        _launch("toolu_C", "Quote a tool result"),
+        _ack_with_result("toolu_C", AGENT_C, "Quote a tool result"),
+        _with_raw_marker(
+            _notification(AGENT_C, "toolu_C", 'Agent "Quote a tool result" finished',
+                          "2026-08-09T11:00:00.000Z", as_queue_op=False),
+            '{"type":"tool_result"}'),
+        _launch("toolu_D", "Quote a launch"),
+        _ack_text_only("toolu_D", AGENT_D),
+        _with_raw_marker(
+            _notification(AGENT_D, "toolu_D", 'Agent "Quote a launch" finished',
+                          "2026-08-09T11:01:00.000Z", as_queue_op=False),
+            '{"name":"Agent"}'),
+    ]) + "\n", encoding="utf-8")
+
+    noisy = server.build_agent_registry(transcript)
+    check('a notification whose line also reads "tool_result" still completes its agent',
+          noisy.get(AGENT_C, {}).get("completed") is True)
+    check('a notification whose line also reads "name":"Agent" still completes its agent',
+          noisy.get(AGENT_D, {}).get("completed") is True)
+    check("launch -> ack -> notification still yields a completed entry with its description",
+          noisy.get(AGENT_D, {}).get("description") == "Quote a launch"
+          and noisy[AGENT_D]["summary"] == 'Agent "Quote a launch" finished')
+
+print("build_agent_registry: a tool_result that merely MENTIONS a launch mints nothing")
+# Measured: 3 such entries across this machine's real transcripts, every one
+# of them stuck at completed=False, i.e. reporting "running" for the life of
+# the process. Reading a wiki page or another session's transcript is enough --
+# the quoted text carries the CLI's own launch line, agentId and all. Only the
+# join to a pending `Agent` tool_use says this ack is real.
+with tempfile.TemporaryDirectory() as tmp:
+    transcript = Path(tmp) / "mention.jsonl"
+    transcript.write_text(_line({
+        "type": "user", "timestamp": "2026-08-09T12:00:00.000Z",
+        "message": {"role": "user", "content": [{
+            "tool_use_id": "toolu_READ", "type": "tool_result",
+            "content": [{"type": "text", "text":
+                         "wiki/background-agents.md line 20:\n"
+                         "Async agent launched successfully. (internal metadata)\n"
+                         "agentId: 0123456789abcdef (internal ID)"}],
+        }]},
+    }) + "\n", encoding="utf-8")
+    check("a quoted launch with no Agent tool_use behind it creates no entry",
+          server.build_agent_registry(transcript) == {})
+
 print("build_agent_registry: incremental parsing only reads appended bytes")
 offsets = []
 orig_tail = server._tail_lines
@@ -519,6 +594,486 @@ with tempfile.TemporaryDirectory() as tmp:
                       (server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE)))
     finally:
         server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE = olds
+
+# --- project display names ---------------------------------------------------
+# The store is a DICT, unlike the three lists above — _load_paths would take it
+# and hand back [] with no error, which is the whole reason these are separate.
+print("set_project_name: the display-name override")
+with tempfile.TemporaryDirectory() as tmp:
+    old_names = server.NAMES_FILE
+    olds = (server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE)
+    try:
+        server.NAMES_FILE = Path(tmp) / "names.json"
+        check("a missing file reads as an empty dict", server._load_names() == {})
+
+        in_force = server.set_project_name(r"D:\Work\App", " برنامه‌ی کاری ")
+        check("Persian name round-trips through the file",
+              server._load_names() == {r"D:\Work\App": "برنامه‌ی کاری"})
+        check("the name in force comes back stripped", in_force == "برنامه‌ی کاری")
+        check("lookup is case-insensitive",
+              server._names_lower().get(r"d:\work\app") == "برنامه‌ی کاری")
+
+        # Same folder, the case Windows handed us this time.
+        server.set_project_name(r"d:\WORK\app", "دومی")
+        check("renaming in another case replaces rather than duplicates",
+              list(server._load_names().values()) == ["دومی"])
+
+        check("a name longer than NAME_MAX is capped",
+              len(server.set_project_name(r"D:\Work\App", "ب" * 200)) == server.NAME_MAX)
+
+        check("an empty name reports the folder's own name",
+              server.set_project_name(r"D:\Work\App", "   ") == "App")
+        check("and deletes the override entirely", server._load_names() == {})
+
+        server.NAMES_FILE.write_text("{ not json", encoding="utf-8")
+        check("a corrupt file reads as an empty dict", server._load_names() == {})
+        server.NAMES_FILE.write_text('["a list"]', encoding="utf-8")
+        check("a list-shaped file reads as an empty dict", server._load_names() == {})
+
+        # A removed project must not leave its name behind for the next folder
+        # created at the same path.
+        server.RECENTS_FILE = Path(tmp) / "r2.json"
+        server.ARCHIVED_FILE = Path(tmp) / "a2.json"
+        server.PINNED_FILE = Path(tmp) / "p2.json"
+        server.set_project_name(r"D:\Work\App", "برنامه")
+        server.drop_project_from_lists(r"d:\work\app")
+        check("removing a project forgets its display name too",
+              server._load_names() == {})
+    finally:
+        server.NAMES_FILE = old_names
+        server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE = olds
+
+# --- resume prefill ----------------------------------------------------------
+# After /api/session/resume the bar stayed blank until the first turn: every
+# source that fills it (system/init, result, usage, statusline) waits for the
+# CLI to process a message. The three facts below are already known at spawn.
+# What can go wrong is silent in both directions -- a stale generation painting
+# a dead session's numbers over the new one, or a machine with no statusLine
+# taking the whole prefill down with it.
+print("_publish_resume_prefill: the bar is filled before the first turn")
+
+PREFILL_ID = "resumed-0123456789"
+PREFILL_CWD = Path("D:/proj")
+
+
+def _stub_session(hub):
+    """A ClaudeSession with no subprocess: __init__ spawns nothing, and control()
+    is the only thing _publish_resume_prefill needs from the live CLI."""
+    session = server.ClaudeSession(PREFILL_CWD, hub, "claude.exe")
+    session.session_id = PREFILL_ID
+    session._generation = 1
+    session.asked = []
+
+    def _control(subtype, timeout=None, wait=True, **params):
+        session.asked.append(subtype)
+        if subtype == "get_context_usage":
+            return {"subtype": "success", "response": {"percentage": 12.5}}
+        if subtype == "get_usage":
+            return {"subtype": "success", "response": {
+                "session": {"total_cost_usd": 0.42},
+                "rate_limits": {"five_hour": {"utilization": 7}}}}
+        return {"subtype": "error", "error": f"unexpected: {subtype}"}
+
+    session.control = _control
+    return session
+
+
+_old_statusline_command = server.statusline_command
+try:
+    # The machine HAS a statusLine: echo the payload back so the JSON the
+    # script is handed can be read out of the published text.
+    server.statusline_command = lambda: (
+        f'"{sys.executable}" -c "import sys; sys.stdout.write(sys.stdin.read())"')
+
+    prefill_hub = _Hub()
+    _stub_session(prefill_hub)._publish_resume_prefill(1)
+    kinds = [e.get("subtype") for e in prefill_hub.events]
+    check("resumed is published first, then usage, then the statusline",
+          kinds == ["resumed", "usage", "statusline"])
+    check("the resumed event carries the session id and the cwd",
+          prefill_hub.events[0] == {"type": "wrapper", "subtype": "resumed",
+                                    "session_id": PREFILL_ID, "cwd": str(PREFILL_CWD)})
+    usage = next((e for e in prefill_hub.events if e.get("subtype") == "usage"), {})
+    check("usage carries the CLI's own numbers, not client arithmetic",
+          (usage.get("context"), usage.get("cost"), usage.get("quota")) == (12.5, 0.42, 7))
+    statusline = next((e for e in prefill_hub.events
+                       if e.get("subtype") == "statusline"), {})
+    payload = json.loads(statusline.get("text") or "{}")
+    check("the statusline script is handed the resumed session's own id",
+          payload.get("session_id") == PREFILL_ID)
+    check("and no model — only system/init knows which one this session runs on",
+          payload.get("model", {}).get("id") is None)
+
+    # A restart while this thread was still starting up: publishing anything
+    # now writes the dead session's numbers into the live one's bar.
+    stale_hub = _Hub()
+    stale = _stub_session(stale_hub)
+    stale._publish_resume_prefill(0)
+    check("a stale generation publishes nothing", stale_hub.events == [])
+    check("a stale generation does not even ask the CLI", stale.asked == [])
+
+    # statusline_command() returns None on a machine that configured none --
+    # the silent-skip path, which must not take the prefill down with it.
+    server.statusline_command = lambda: None
+    bare_hub = _Hub()
+    _stub_session(bare_hub)._publish_resume_prefill(1)
+    check("no statusLine configured still prefills id, cwd and usage",
+          [e.get("subtype") for e in bare_hub.events] == ["resumed", "usage"])
+finally:
+    server.statusline_command = _old_statusline_command
+
+# --- concurrent tabs ---------------------------------------------------------
+# N conversations at once, each its own ClaudeSession + PermissionBroker,
+# distinguished ONLY by the tab their TabHub stamps on every event. What can go
+# wrong here is invisible until it is expensive: one tab's events rendered into
+# another, a bucket that grows for a week because nothing resets it any more, or
+# a resume that starts a SECOND CLI on a transcript one is already appending to.
+
+
+def _drain(q):
+    out = []
+    while True:
+        try:
+            out.append(q.get_nowait())
+        except queue.Empty:
+            return out
+
+
+print("TabHub: every publish carries its tab")
+live_hub = server.Hub()
+tab_a = server.TabHub(live_hub, "tab-a")
+tab_b = server.TabHub(live_hub, "tab-b")
+tab_a.publish({"type": "wrapper", "subtype": "x"})
+tab_b.publish({"type": "wrapper", "subtype": "y"})
+
+client = live_hub.subscribe()
+replayed = _drain(client)
+check("a new client replays every bucket", len(replayed) == 2)
+check("each event carries the tab that published it",
+      {e["subtype"]: e["tab"] for e in replayed} == {"x": "tab-a", "y": "tab-b"})
+tab_a.publish({"type": "wrapper", "subtype": "z"})
+check("a live publish reaches the connected client, tagged",
+      [(e["subtype"], e["tab"]) for e in _drain(client)] == [("z", "tab-a")])
+
+print("Hub.reset(tab): one bucket, not the server")
+tab_a.reset()
+check("the reset event itself is tagged with the tab it cleared",
+      [(e["subtype"], e["tab"]) for e in _drain(client)] == [("reset", "tab-a")])
+check("tab A's history is gone, tab B's is untouched, and the reset replays",
+      {(e["subtype"], e["tab"]) for e in _drain(live_hub.subscribe())}
+      == {("y", "tab-b"), ("reset", "tab-a")})
+
+print("Hub: replay history is capped PER TAB")
+# The bound matters now: six long-lived tabs never reset, where the
+# single-session server used to bound this by accident on every project switch.
+capped = server.Hub()
+_old_max = server.HISTORY_MAX
+try:
+    server.HISTORY_MAX = 5
+    noisy = server.TabHub(capped, "loud")
+    quiet = server.TabHub(capped, "quiet")
+    quiet.publish({"n": -1})
+    for n in range(8):
+        noisy.publish({"n": n})
+    kept = _drain(capped.subscribe())
+finally:
+    server.HISTORY_MAX = _old_max
+check("a busy tab is capped at HISTORY_MAX",
+      [e["n"] for e in kept if e["tab"] == "loud"] == [3, 4, 5, 6, 7])
+check("the cap is per tab, so a quiet tab keeps its one event",
+      [e["n"] for e in kept if e["tab"] == "quiet"] == [-1])
+
+print("Hub.drop(tab): a closed tab replays nothing, ever")
+closing = server.Hub()
+server.TabHub(closing, "gone").publish({"subtype": "old"})
+server.TabHub(closing, "stays").publish({"subtype": "kept"})
+closing.drop("gone")
+check("the closed tab's bucket is dropped entirely",
+      [e["subtype"] for e in _drain(closing.subscribe())] == ["kept"])
+# The stopped session's reader thread is still draining a dying pipe and
+# publishes wrapper/cli_exited a few ms later. Measured on the running server:
+# it lands after drop(), and without this it re-creates the bucket -- which
+# then replays to every window for the life of the server.
+server.TabHub(closing, "gone").publish({"subtype": "cli_exited"})
+check("a late event from a closed tab does not resurrect its bucket",
+      [e["subtype"] for e in _drain(closing.subscribe())] == ["kept"])
+
+
+class _StubSession:
+    """A ClaudeSession's tab-facing surface: no subprocess, no CLI."""
+
+    def __init__(self, session_id, alive=True, cwd="D:/x"):
+        self.session_id = session_id
+        self.cwd = Path(cwd)
+        self.spawned_at = 1.0
+        self.broker = None
+        self.hub = None
+        self.stopped = False
+        self._alive = alive
+
+    def alive(self):
+        return self._alive
+
+    def stop(self):
+        self.stopped = True
+        self._alive = False
+
+
+print("tab_running: resume ADOPTS a live tab and spawns for anything else")
+# Two CLI processes appending to one .jsonl is corruption, so "already open"
+# has to be answered before a resume spawns anything.
+tabs = {
+    "t1": _StubSession("sess-A"),
+    "t2": _StubSession("sess-B", alive=False),   # killed; its transcript is idle
+    "t3": _StubSession(None),                    # spawned, no first turn yet
+}
+check("a live tab on that session is adopted", server.tab_running(tabs, "sess-A") == "t1")
+check("a DEAD tab is not adopted -- resume spawns a new one",
+      server.tab_running(tabs, "sess-B") is None)
+check("a session nobody is running spawns", server.tab_running(tabs, "sess-C") is None)
+check("an empty session id never matches the tab that has none yet",
+      server.tab_running(tabs, "") is None)
+
+print("respond_permission: the id finds its own tab's broker, and only that one")
+first, second = _StubSession("a"), _StubSession("b")
+first.broker = server.PermissionBroker(_Hub())
+second.broker = server.PermissionBroker(_Hub())
+two_tabs = {"t1": first, "t2": second}
+
+answered = {}
+threading.Thread(target=lambda: answered.update(
+    r=second.broker.request("Write", {"file_path": "x"}, "tu1")), daemon=True).start()
+time.sleep(0.3)
+held = list(second.broker._pending)
+check("the second tab's broker is holding the request", len(held) == 1)
+check("an unknown request id is refused by every broker",
+      server.respond_permission(two_tabs, "no-such-id", "allow", False, "Write", None)
+      is False)
+if held:
+    check("the answer reaches whichever broker holds the id",
+          server.respond_permission(two_tabs, held[0], "allow", True, "Write", None)
+          is True)
+time.sleep(0.3)
+check("the waiting caller got the decision", answered.get("r", {}).get("decision") == "allow")
+check("«دوباره نپرس» stayed in the tab that granted it",
+      second.broker.session_allow == {"Write"} and first.broker.session_allow == set())
+
+print("close_tab: a pending approval is denied BEFORE the tab stops existing")
+# The tabs rework broke an invariant the single-session server had for free:
+# the broker always had a listener. Closing a tab left its waiters blocked for
+# the full PERMISSION_TIMEOUT (110 s), and the deny they published on the way
+# out landed after Hub.drop() -- discarded by the closed-tab guard, so the
+# window's dialog for that conversation never went away.
+closing_hub = server.Hub()
+window = closing_hub.subscribe()          # a connected window, watching
+victim = _StubSession("sess-doomed")
+victim.hub = server.TabHub(closing_hub, "doomed")
+victim.broker = server.PermissionBroker(victim.hub)
+
+waited = {}
+waiter = threading.Thread(target=lambda: waited.update(
+    r=victim.broker.request("Write", {"file_path": "x"}, "tu-doomed")), daemon=True)
+waiter.start()
+time.sleep(0.3)
+check("the doomed tab's broker is holding a request", len(victim.broker._pending) == 1)
+
+_saved_tabs = (getattr(server.Handler, "hub", None),
+               server.Handler.sessions, server.Handler.active)
+try:
+    server.Handler.hub = closing_hub
+    server.Handler.sessions = {"doomed": victim}
+    server.Handler.active = "doomed"
+    started = time.monotonic()
+    server.Handler.close_tab("doomed")
+    check("close_tab does not block on the pending approval",
+          time.monotonic() - started < 5.0)
+finally:
+    server.Handler.hub, server.Handler.sessions, server.Handler.active = _saved_tabs
+
+waiter.join(timeout=5)
+check("the blocked waiter was released with a deny",
+      waited.get("r", {}).get("decision") == "deny")
+check("nothing is left pending", victim.broker._pending == {})
+closed_events = _drain(window)
+resolved = [e for e in closed_events if e.get("subtype") == "permission_resolved"]
+check("exactly one resolved event, published while the tab still existed",
+      len(resolved) == 1 and resolved[0]["decision"] == "deny"
+      and resolved[0]["tab"] == "doomed")
+check("it carries the tool_use_id the dialog is keyed on",
+      resolved[0]["tool_use_id"] == "tu-doomed")
+check("the deny is published BEFORE wrapper/closed",
+      [e.get("subtype") for e in closed_events
+       if e.get("subtype") in ("permission_resolved", "closed")]
+      == ["permission_resolved", "closed"])
+check("the session was stopped and its bucket dropped",
+      victim.stopped and _drain(closing_hub.subscribe()) == [])
+
+print("ClaudeSession.busy: an in-flight COUNTER, not a boolean")
+# Two defects in one field. `busy = True` used to run AFTER _write_line, so a
+# fast result cleared it before it was set and the tab reported "working"
+# forever; and mid-turn sends are allowed by design (the CLI queues extra stdin
+# messages), so turn 1's result cleared a flag queued turn 2 still owned.
+counter = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+seen_busy = []
+counter._write_line = lambda obj: seen_busy.append(counter.busy)
+counter._publish_usage = lambda generation: None
+counter._publish_statusline = lambda result, generation: None
+GEN = counter._generation
+
+counter.send_blocks([{"type": "text", "text": "one"}])
+check("busy is already true while the line is being written", seen_busy == [True])
+counter.send_blocks([{"type": "text", "text": "two"}])       # queued mid-turn
+counter._after_result({}, GEN)
+check("turn 1's result does not clear a queued turn 2", counter.busy is True)
+counter._after_result({}, GEN)
+check("the second result clears it", counter.busy is False)
+counter._after_result({}, GEN)                                # the extra result
+counter.send_blocks([{"type": "text", "text": "three"}])
+check("an extra result cannot drive the count below zero -- a later turn is busy",
+      counter.busy is True)
+counter._after_result({}, GEN)
+check("and one result still ends it", counter.busy is False)
+
+counter.send_blocks([{"type": "text", "text": "four"}])
+counter.send_blocks([{"type": "text", "text": "five"}])
+counter.interrupt()
+check("interrupt drops the queued turns too (they never emit a result)",
+      counter.busy is False)
+counter._after_result({}, GEN)   # the aborted turn's own result still arrives
+check("the aborted turn's result is absorbed by the clamp", counter.busy is False)
+
+
+class _DeadPipe:
+    """A process whose pipes are already at EOF: _read_stdout falls straight
+    through to its exit path, which is also start()'s reset."""
+    stdout = ()
+    stderr = ()
+
+    def poll(self):
+        return 0
+
+
+counter.send_blocks([{"type": "text", "text": "six"}])
+counter._read_stdout(_DeadPipe(), GEN)
+check("the CLI exiting resets the whole count, not just the current turn",
+      counter.busy is False)
+counter.send_blocks([{"type": "text", "text": "seven"}])
+counter._reset_inflight()        # what start() calls on a restart
+check("a restart resets it too", counter.busy is False)
+
+print("GET /api/projects: the sidebar answers with no tabs open")
+# Routing it through _target() 404d once the last tab closed, and the window
+# catches that silently -- the sidebar froze exactly when the user needs it
+# (nothing open, pick something).
+with tempfile.TemporaryDirectory() as tmp:
+    _saved_tabs = (getattr(server.Handler, "hub", None), server.Handler.sessions,
+                   server.Handler.active, server.Handler.token)
+    _saved_paths = (server.PROJECTS_DIR, server.RECENTS_FILE,
+                    server.ARCHIVED_FILE, server.PINNED_FILE, server.NAMES_FILE)
+    httpd = None
+    try:
+        # Hermetic: never scan the author's real ~/.claude/projects.
+        server.PROJECTS_DIR = Path(tmp) / "projects"
+        server.PROJECTS_DIR.mkdir()
+        for attr in ("RECENTS_FILE", "ARCHIVED_FILE", "PINNED_FILE", "NAMES_FILE"):
+            setattr(server, attr, Path(tmp) / f"{attr.lower()}.json")
+
+        server.Handler.token = "unit-token"
+        server.Handler.hub = server.Hub()
+        server.Handler.sessions = {}          # every tab closed
+        server.Handler.active = ""
+        httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        httpd.daemon_threads = True
+        httpd.verbose = False
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+        conn.request("GET", "/api/projects?t=unit-token")
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        conn.close()
+        check("no tabs open is 200, not 404", response.status == 200)
+        check("the project list is still a list", isinstance(payload.get("projects"), list))
+        check("and it reports no current project rather than failing",
+              payload.get("current_cwd") == "" and payload.get("current_session") is None)
+    finally:
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+        (server.Handler.hub, server.Handler.sessions,
+         server.Handler.active, server.Handler.token) = _saved_tabs
+        (server.PROJECTS_DIR, server.RECENTS_FILE, server.ARCHIVED_FILE,
+         server.PINNED_FILE, server.NAMES_FILE) = _saved_paths
+
+print("POST /api/project/open: MAX_TABS holds when every request thread asks at once")
+# Driven over HTTP on purpose. ThreadingHTTPServer answers each request on its
+# own thread, and the cap check used to sit in the ENDPOINT with a filesystem
+# call (Path.resolve) between it and the spawn it guarded -- so N callers all
+# read len(sessions) < MAX_TABS and all spawned. A seventh `claude` process is
+# real memory, already running by the time anything notices. Calling open_tab
+# directly cannot see this: the GIL hides a check and a store that sit next to
+# each other, which is exactly why the check had to move down to the store.
+with tempfile.TemporaryDirectory() as tmp:
+    _saved_tabs = (getattr(server.Handler, "hub", None), server.Handler.sessions,
+                   server.Handler.active, server.Handler.claude_bin,
+                   server.Handler.token)
+    _saved_recents = server.RECENTS_FILE
+    _old_start = server.ClaudeSession.start
+    httpd = None
+    try:
+        # Stubbed spawn: no CLI, but slow enough to keep the threads overlapping.
+        server.ClaudeSession.start = lambda self, resume_id=None: time.sleep(0.02)
+        server.RECENTS_FILE = Path(tmp) / "recents.json"
+        server.Handler.token = "unit-token"
+        server.Handler.hub = server.Hub()
+        server.Handler.sessions = {}
+        server.Handler.active = ""
+        server.Handler.claude_bin = "claude.exe"
+        httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        httpd.daemon_threads = True
+        httpd.verbose = False
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        port = httpd.server_address[1]
+
+        statuses = []
+        statuses_lock = threading.Lock()
+        # All of them inside the endpoint at once -- the whole point. Without
+        # the barrier they queue up behind thread creation.
+        gate = threading.Barrier(server.MAX_TABS * 3)
+
+        def _race():
+            payload = json.dumps({"path": tmp})
+            gate.wait()
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+            conn.request("POST", "/api/project/open?t=unit-token", payload,
+                         {"Content-Type": "application/json"})
+            status = conn.getresponse()
+            status.read()
+            conn.close()
+            with statuses_lock:
+                statuses.append(status.status)
+
+        threads = [threading.Thread(target=_race) for _ in range(server.MAX_TABS * 3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        check("never more tabs than MAX_TABS",
+              len(server.Handler.sessions) == server.MAX_TABS)
+        check("exactly MAX_TABS callers got one", statuses.count(200) == server.MAX_TABS)
+        check("everyone else got the 409, not a seventh process",
+              statuses.count(409) == server.MAX_TABS * 2)
+        check("active is one of the winners, not a tab that lost the race",
+              server.Handler.active in server.Handler.sessions)
+    finally:
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+        server.ClaudeSession.start = _old_start
+        server.RECENTS_FILE = _saved_recents
+        (server.Handler.hub, server.Handler.sessions, server.Handler.active,
+         server.Handler.claude_bin, server.Handler.token) = _saved_tabs
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)
