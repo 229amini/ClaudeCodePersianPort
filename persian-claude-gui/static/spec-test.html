@@ -43,6 +43,24 @@
      notice silently no-ops, which is also what a broken one looks like. -->
 <div id="context-notice" hidden></div>
 
+<!-- Window chrome the concurrent-conversation cases assert against: a
+     background tab's event must leave every one of these alone. js/chrome.js
+     and js/controls.js grab the ids at module-evaluation time; the model chip
+     ships `hidden`, exactly as in index.html. The rest of the composer row is
+     deliberately absent — initControls() binds nothing without #menu-popup. -->
+<div id="harness-chrome">
+  <bdi id="topbar-name"></bdi>
+  <button type="button" id="model-chip" hidden>
+    <span id="model-chip-name" dir="auto"></span>
+  </button>
+  <!-- The open-conversations group. The rest of the sidebar is deliberately
+       absent (#projects stays out, so no fetch is ever fired), but this list is
+       drawn from live data and carries a Windows path per row — the exact site
+       plan §B-10 item 2 says the message-shaped cases cannot cover. -->
+  <h2 id="tabs-title" hidden></h2>
+  <nav id="open-tabs" hidden></nav>
+</div>
+
 <!-- Case 10 drives the REAL permission dialog through window.renderEvent, so the
      harness needs its markup verbatim from index.html. js/chrome.js reads these
      ids at module-evaluation time; without them showPermission() throws and the
@@ -51,6 +69,7 @@
   <form method="dialog" id="perm-form">
     <h2 id="perm-title"></h2>
     <p id="perm-body" dir="auto"></p>
+    <p id="perm-source" class="meta" dir="auto" hidden></p>
     <div id="perm-tool"></div>
     <pre id="perm-params"></pre>
     <div id="perm-ask"></div>
@@ -81,6 +100,17 @@
    so the harness imports it. Module scripts execute in document order, so
    js/app.js has already evaluated this module — the import reuses it. */
 import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
+/* The tab registry and the synchronous half of a switch. Importing the ENTRY
+   module is safe from here and only from here: nothing in the module tree may
+   import app.js (its body runs last — see the load-order note there), but this
+   block runs after every module has evaluated. */
+import {
+  routeEvent, applySwitch, tabs, renderInTab, applyTabs,
+} from "/static/js/app.js";
+/* The sidebar's open-conversations group: app.js hands chrome.js the list and
+   the two verbs, so the harness can stand in for app.js and drive the group
+   exactly as the real window does. */
+import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
 
 /* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
    copy, so a regression in the renderer fails here. Cases match
@@ -222,6 +252,17 @@ check("rule 5: digits inside <pre> stay Latin",
 
 check("no global dir=rtl leak: code block computes LTR inside RTL shell",
   getComputedStyle(specLog.querySelector("pre code")).direction === "ltr");
+
+check("a code block is wrapped in .code-wrap",
+  specLog.querySelector("pre").parentElement?.className === "code-wrap",
+  specLog.querySelector("pre").parentElement?.className ?? "no wrapper");
+
+check("the code block carries a copy button",
+  !!specLog.querySelector(".code-wrap .code-copy"));
+
+check("the copy button lives outside <pre>, never joins its textContent",
+  !specLog.querySelector("pre").textContent.includes("کپی"),
+  specLog.querySelector("pre").textContent);
 
 check("page does not scroll horizontally",
   document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -815,6 +856,48 @@ check("the settled line ends the turn instead of snapping back above it",
   specLog.lastElementChild === pulse && getComputedStyle(pulse).order === "0",
   specLog.lastElementChild?.className + " / order " + getComputedStyle(pulse).order);
 
+/* Orphaned pulses: clearPulse() used to null state.pulse without touching the
+   DOM, so every send after the first in one running turn left the previous
+   "still working" row behind, breathing forever. Isolated in its own render
+   target (the seam withRenderTarget()/newRenderScope() exist for) so the
+   already-settled pulse above — a real transcript entry — cannot be mistaken
+   for a leak by a bare specLog query. */
+const pulseScoped = document.createElement("div");
+const pulseScope = newRenderScope();
+withRenderTarget(pulseScoped, pulseScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "اول" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "دوم" });
+});
+check("a second send mid-turn clears the orphaned pulse instead of leaving it breathing",
+  pulseScoped.querySelectorAll(".pulse.live").length === 1 &&
+  pulseScoped.querySelectorAll(".pulse").length === 1,
+  pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
+  pulseScoped.querySelectorAll(".pulse").length + " total");
+
+withRenderTarget(pulseScoped, pulseScope, () => {
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
+check("the surviving pulse still settles normally once the turn it belongs to ends",
+  pulseScoped.querySelectorAll(".pulse.live").length === 0 &&
+  pulseScoped.querySelectorAll(".pulse").length === 1,
+  pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
+  pulseScoped.querySelectorAll(".pulse").length + " total");
+
+/* The idle hint. An hour of silence suggests a fresh chat through the same
+   context notice — no compact button (nothing is over any limit), fresh chat
+   takes the primary style. checkIdle takes `now` so the hour needs no waiting.
+   It sits AFTER the pulse cases on purpose: their unscoped user_echo/result
+   turn is what stamps the activity clock through the shipping setBusy path —
+   earlier in this file no turn has run and the hint must stay away. */
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 12 });  // let go of the urgent state
+window.checkIdle(Date.now() + 61 * 60 * 1000);
+const idleBtns = [...ctx.querySelectorAll(".ctx-btn .ctx-btn-text")].map(b => b.textContent);
+check("an hour of silence suggests a fresh chat, without the compact button",
+  !ctx.hidden && ctx.querySelector(".ctx-title")?.textContent === window.STRINGS.idleTitle &&
+  idleBtns.length === 2 && idleBtns[0] === window.STRINGS.ctxClear,
+  ctx.hidden ? "hidden" : idleBtns.join(" | ") || "no actions");
+ctx.hidden = true;
+
 /* The delete row in a ⋯ menu is a <button>, so the filled `button.danger` rule
    painted it coral while `.kebab-item.danger` set the text coral too — a blank
    slab, and the armed state was the quieter of the two. Colour is exactly what
@@ -1036,11 +1119,16 @@ check("the agents strip isolates a Latin description inside the RTL shell",
   (dirOf(strip) ?? "none") + " shell / " + (dirOf(stripDesc) ?? "none") + " " +
   (stripDesc ? getComputedStyle(stripDesc).unicodeBidi : "none"));
 
-check("an agent row opens, a background command has nothing to open",
-  stripRows.length === 2 && stripRows[0].tagName === "BUTTON" &&
-  stripRows[1].tagName === "DIV" &&
+/* The strip is the LIVE line above the composer, so it carries what is still
+   running and nothing else — a finished helper (here the completed `b2`
+   command) has already reported back in the transcript, and leaving its row up
+   there only accumulated dead rows for the life of the session. The registry
+   itself keeps every entry; the drawer is the history view. */
+check("an agent row opens, and a finished helper is not in the strip at all",
+  stripRows.length === 1 && stripRows[0].tagName === "BUTTON" &&
+  !strip.querySelector('[data-agent-id="b2"]') &&
   stripRows[0].querySelector(".ag-type")?.textContent === "Explore",
-  stripRows.map(r => r.tagName).join(",") || "no rows");
+  stripRows.map(r => r.dataset.agentId + ":" + r.tagName).join(",") || "no rows");
 
 // Prose, so Persian digits (rule 5) — both the elapsed time and the count.
 check("the strip counts the waiting agents in Persian digits",
@@ -1142,6 +1230,35 @@ check("a late toggle from a closed drawer does not tear down the one that replac
     ? "drawer B present" : "drawer GONE — closed the wrong one");
 panelB.querySelector(".ag-close").click();    // leave no drawer open behind
 
+/* R3: a finished agent used to vanish from the UI entirely once its running
+   row left the strip — a row's own click was the only way into the drawer,
+   and paint() never painted anything but status==="running". A muted history
+   toggle keeps the running-only strip (deliberate — finished-rows-shown-
+   forever was the original complaint) but makes a completed agent reachable
+   again. */
+window.renderAgents([
+  { id: "c1", kind: "agent", description: "Refactor the exporter",
+    agentType: "Explore", status: "completed",
+    startedAt: Math.floor(Date.now() / 1000) - 300,
+    finishedAt: Math.floor(Date.now() / 1000) - 120 },
+]);
+check("a finished-only registry shows the toggle, not a row",
+  !strip.hidden && !!strip.querySelector(".ag-history") &&
+  strip.querySelectorAll(".ag-row").length === 0,
+  (strip.hidden ? "hidden" : "visible") + " / " +
+  (strip.querySelector(".ag-history") ? "toggle" : "no toggle") + " / " +
+  strip.querySelectorAll(".ag-row").length + " rows");
+
+strip.querySelector(".ag-history").click();
+check("clicking the toggle paints the finished agent as a completed row",
+  !!strip.querySelector('button.ag-row[data-status="completed"]'),
+  strip.querySelector(".ag-row")?.dataset.status ?? "no row");
+
+window.renderAgents([]);
+check("an empty registry still hides the strip entirely",
+  strip.hidden,
+  strip.hidden ? "hidden" : "visible");
+
 /* The seam the drawer replays through — one renderer, two sources (plan §B-4),
    so it points the SHIPPING renderer at another element instead of forking one.
    Two ways it fails silently and neither is visible in the drawer itself: the
@@ -1167,6 +1284,207 @@ check("a scoped replay renders elsewhere, keeps its own cards, and hands back",
   (scoped.childElementCount + " scoped, " +
    (state.toolCards.has("spec-scoped") ? "LEAKED" : "isolated") + ", log " +
    specLog.childElementCount + " vs " + (afterSeam + 1)));
+
+/* --- concurrent conversations ------------------------------------------------
+
+   The window runs up to six `claude` processes and shows one of them. Every SSE
+   event carries the tab it belongs to, and an event for a tab the user is NOT
+   looking at has to do two things: render into that tab's own detached node,
+   and touch no window chrome at all. Both fail silently — the first looks like
+   a stray message in the wrong conversation, the second like a statusline that
+   is simply "wrong" — and neither is visible in a screenshot of one tab.
+
+   There is no active tab on this page, so #log is the harness's own DOM: it is
+   saved here and handed back at the end. */
+const specKeep = [...specLog.childNodes];
+const bgTab = "spec-tab-bg";
+const otherTab = "spec-tab-other";
+const logBefore = specLog.childElementCount;
+const topbarBefore = document.getElementById("topbar-name").textContent;
+const modelBefore = document.getElementById("model-chip-name").textContent;
+const sessionBefore = state.status.sessionId;
+
+routeEvent({ tab: bgTab, type: "assistant",
+             message: { content: [{ type: "text", text: "پیام گفتگوی پس‌زمینه" }] } });
+const bgEntry = tabs.get(bgTab);
+check("a background tab renders into its own buffer, never into the visible view",
+  specLog.childElementCount === logBefore &&
+  bgEntry?.node.querySelectorAll(".msg.assistant").length === 1,
+  specLog.childElementCount + " vs " + logBefore + " in #log, " +
+  (bgEntry ? bgEntry.node.childElementCount : "no") + " buffered");
+
+routeEvent({ tab: bgTab, type: "system", subtype: "init",
+             session_id: "spec-bg-session", cwd: "C:\\spec\\background",
+             model: "claude-spec-bg", permissionMode: "default" });
+check("a background system/init leaves every piece of window chrome alone",
+  document.getElementById("topbar-name").textContent === topbarBefore &&
+  document.getElementById("model-chip-name").textContent === modelBefore &&
+  state.status.sessionId === sessionBefore &&
+  bgEntry?.scope.status.sessionId === "spec-bg-session" &&
+  bgEntry?.scope.chrome.model === "claude-spec-bg",
+  "topbar «" + document.getElementById("topbar-name").textContent + "» model «" +
+  document.getElementById("model-chip-name").textContent + "» parked " +
+  (bgEntry?.scope.chrome.model ?? "nothing"));
+
+routeEvent({ tab: otherTab, type: "assistant",
+             message: { content: [{ type: "text", text: "پیام گفتگوی دیگر" }] } });
+
+applySwitch(bgTab);
+check("switching to a tab applies the chrome it collected while it was hidden",
+  document.getElementById("topbar-name").textContent === "background" &&
+  document.getElementById("model-chip-name").textContent === "claude-spec-bg" &&
+  state.status.sessionId === "spec-bg-session",
+  "topbar «" + document.getElementById("topbar-name").textContent + "» model «" +
+  document.getElementById("model-chip-name").textContent + "»");
+const bgOnScreen = specLog.textContent.includes("پیام گفتگوی پس‌زمینه");
+
+applySwitch(otherTab);
+check("a switch swaps the whole view: one transcript on screen, the other parked",
+  bgOnScreen &&
+  specLog.textContent.includes("پیام گفتگوی دیگر") &&
+  !specLog.textContent.includes("پیام گفتگوی پس‌زمینه") &&
+  (tabs.get(bgTab)?.node.textContent ?? "").includes("پیام گفتگوی پس‌زمینه"),
+  (bgOnScreen ? "" : "first switch showed nothing; ") +
+  "#log now holds " + specLog.childElementCount + " nodes");
+
+/* --- the tab lifecycle -------------------------------------------------------
+
+   Everything below is one invariant the single-session design used to give for
+   free — ONE transcript in #log, and always exactly one live conversation —
+   being broken by a second one arriving late. Each case is driven through the
+   seam the real caller uses, because none of them is visible in the DOM of the
+   tab you are looking at. */
+
+/* A replayed transcript is fetched, and the tab it was fetched FOR can be
+   parked or gone by the time it comes back. Rendered into whatever is on
+   screen then, it hands the visible conversation another one's history — and
+   the next park copies it into that tab permanently. chrome.js's replaySession
+   is internal, so this drives the seam it now routes through. */
+const logNodesBefore = specLog.childElementCount;
+renderInTab(bgTab, (node) => {
+  node.replaceChildren();   // a replay starts from an empty view, like the real one
+  window.renderEvent({ type: "assistant",
+    message: { content: [{ type: "text", text: "تاریخچه‌ی بازپخش" }] } });
+});
+check("a replay aimed at a parked tab fills its buffer and never touches the visible view",
+  specLog.childElementCount === logNodesBefore &&
+  !specLog.textContent.includes("تاریخچه‌ی بازپخش") &&
+  (tabs.get(bgTab)?.node.textContent ?? "").includes("تاریخچه‌ی بازپخش"),
+  specLog.childElementCount + " vs " + logNodesBefore + " in #log, buffered «" +
+  (tabs.get(bgTab)?.node.textContent ?? "nothing") + "»");
+
+let orphanRendered = false;
+renderInTab("spec-tab-gone", () => { orphanRendered = true; });
+check("a transcript whose tab closed mid-fetch is dropped, not rendered somewhere else",
+  !orphanRendered && specLog.childElementCount === logNodesBefore,
+  orphanRendered ? "rendered anyway" : "dropped");
+
+/* One dialog serves every conversation, so a request from a tab that has been
+   closed would sit in the queue and open on the NEXT answer — asking the user
+   to consent to a tool call in a conversation that no longer exists, into a
+   pipe nobody is reading. The queued one is exactly the half that a
+   permission_resolved cannot reach: the server never resolves what it dropped. */
+const permTab = "spec-tab-perm";
+const permAsk = (tab, id) => routeEvent({
+  tab, type: "wrapper", subtype: "permission_request", request_id: id,
+  tool_name: "Bash", tool_use_id: id + "-tool", tool_input: { command: "echo " + id },
+});
+permAsk(otherTab, "spec-perm-keep");    // the visible conversation: stays
+permAsk(permTab, "spec-perm-drop");     // queued behind it, from another tab
+const permDialogOpen = permDialog.open;
+routeEvent({ tab: permTab, type: "wrapper", subtype: "closed" });
+// Answering the visible request drains the queue: if the dead tab's request
+// were still in it, the dialog would re-open here rather than close.
+routeEvent({ tab: otherTab, type: "wrapper", subtype: "permission_resolved",
+             request_id: "spec-perm-keep", tool_use_id: "spec-perm-keep-tool",
+             decision: "deny" });
+check("closing a conversation takes the permission it was still waiting on with it",
+  permDialogOpen && !permDialog.open && !tabs.has(permTab),
+  (permDialogOpen ? "" : "dialog never opened; ") +
+  (permDialog.open ? "dialog re-opened on the dead tab's request" : "queue clear"));
+
+/* A /api/tabs GET served mid-spawn answers WITHOUT the tab being spawned. When
+   that snapshot was allowed to prune, it deleted the entry holding that
+   conversation's buffered init_info — the slash commands and the model
+   catalogue, replayed only on a fresh SSE subscribe, so nothing would ever ask
+   for them again. The server's own `closed` event is the only authority. */
+const snapTab = "spec-tab-snap";
+routeEvent({ tab: snapTab, type: "wrapper", subtype: "init_info",
+             info: { commands: [{ name: "spec-only", description: "فقط برای تست" }] } });
+applyTabs({ active: otherTab,
+            tabs: [{ tab: otherTab, session_id: null, cwd: "C:\\spec", busy: false }] });
+const snapSurvived = tabs.has(snapTab)
+  && !!tabs.get(snapTab)?.scope.chrome.slash?.length;
+routeEvent({ tab: snapTab, type: "wrapper", subtype: "closed" });
+check("a stale snapshot cannot delete a conversation, and the server's own close event can",
+  snapSurvived && !tabs.has(snapTab),
+  (snapSurvived ? "survived the snapshot with its slash list" : "PRUNED mid-spawn") +
+  ", after closed: " + (tabs.has(snapTab) ? "still there" : "gone"));
+
+/* The pulse's 500 ms interval lives in the SCOPE, not in the node: emptying a
+   closed tab's node leaves the timer painting an element nobody will ever see
+   again, for the life of the window, and cycling the six-tab cap accumulates
+   them. Only the ACTIVE tab's pulse is reachable through resetTurn(). */
+const pulseTab = "spec-tab-pulse";
+routeEvent({ tab: pulseTab, type: "wrapper", subtype: "user_echo", text: "سلام" });
+const pulseEntry = tabs.get(pulseTab);
+const pulseWasLive = !!pulseEntry?.scope.pulse;
+routeEvent({ tab: pulseTab, type: "wrapper", subtype: "closed" });
+check("closing a background tab mid-turn stops its pulse instead of leaking the timer",
+  pulseWasLive && pulseEntry.scope.pulse === null && !tabs.has(pulseTab),
+  (pulseWasLive ? "" : "no pulse to begin with; ") +
+  "scope.pulse " + (pulseEntry?.scope.pulse === null ? "cleared" : "STILL RUNNING"));
+
+specLog.replaceChildren(...specKeep);   // the harness takes its own DOM back
+
+/* The sidebar's «نشست‌های باز» group, driven exactly as app.js drives it. Two
+   things are worth gating: the Windows path on every row (plan §B-10 item 2 —
+   chrome is where paths regress, and no message-shaped case reaches it), and
+   the ✕, which is the only way out of a conversation. */
+const bridgeCalls = [];
+setTabBridge({ switchTo: (t) => bridgeCalls.push("switch:" + t),
+               close: (t) => bridgeCalls.push("close:" + t) });
+setOpenTabs([
+  { tab: "t1", session_id: null, cwd: "C:\\Users\\Lion\\Projects\\one", busy: true },
+  { tab: "t2", session_id: "sess-2", cwd: "D:\\projects\\two", busy: false },
+  { tab: "t3", session_id: "sess-3", cwd: "D:\\projects\\پروژه‌ی من", busy: false },
+], "t2");
+
+const tabRows = [...document.querySelectorAll("#open-tabs .tab-row")];
+const firstProj = tabRows[0]?.querySelector("bdi.tab-proj");
+check("the open-conversations group draws one row per live session, names isolated",
+  tabRows.length === 3 &&
+  tabRows[0].dataset.busy === "true" && tabRows[1].dataset.current === "true" &&
+  tabRows[0].querySelector(".tab-name").textContent === window.STRINGS.tabFresh &&
+  !!firstProj && firstProj.textContent === "one" &&
+  getComputedStyle(firstProj).direction === "ltr",
+  tabRows.length + " rows, project «" + (firstProj?.textContent ?? "none") + "» -> " +
+  (firstProj ? getComputedStyle(firstProj).direction : "none"));
+
+/* The same element, with the name this audience actually types. It is a DISPLAY
+   NAME, not a path — renameable, and Persian more often than not — so pathEl's
+   forced LTR misordered it and seated it against the left edge of an RTL row.
+   Only the computed direction can see that; the textContent is identical either
+   way. The Latin row above is the other half: dir="auto" has to leave that one
+   LTR inside the RTL shell, or the fix is just an inherited direction. */
+const faProj = tabRows[2]?.querySelector("bdi.tab-proj");
+check("a Persian project name in a tab row reads right-to-left, not forced LTR",
+  !!faProj && faProj.textContent === "پروژه‌ی من" &&
+  !faProj.classList.contains("path") &&
+  faProj.getAttribute("dir") === "auto" &&
+  getComputedStyle(faProj).direction === "rtl" &&
+  getComputedStyle(faProj).unicodeBidi === "isolate" &&
+  faProj.title === "D:\\projects\\پروژه‌ی من",
+  faProj
+    ? faProj.className + " / " + getComputedStyle(faProj).direction + " / " +
+      getComputedStyle(faProj).unicodeBidi
+    : "no project chip");
+
+tabRows[0].querySelector(".tab-open").click();
+tabRows[1].querySelector(".tab-close").click();
+check("a row switches to its conversation and the ✕ closes that one, not the open one",
+  bridgeCalls.join(" ") === "switch:t1 close:t2",
+  bridgeCalls.join(" ") || "nothing was called");
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

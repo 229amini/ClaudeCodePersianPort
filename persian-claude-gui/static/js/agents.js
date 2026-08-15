@@ -33,6 +33,7 @@ let strip = null;       // the row of agents above the composer
 let listTimer = 0;
 let refreshTimer = 0;
 let drawer = null;      // { id, panel, body, live, scope, cursor, empty }
+let showHistory = false; // finished rows are folded behind the .ag-history toggle
 
 /* --- the strip -------------------------------------------------------------- */
 
@@ -130,21 +131,45 @@ function paint() {
   const focusedId = el.contains(document.activeElement)
     ? document.activeElement.dataset.agentId : null;
   el.replaceChildren();
-  if (!registry.length) {
+
+  // The strip is about what is happening NOW — it sits above the composer,
+  // where the CLI prints "Waiting for N background agents". A finished agent
+  // has already reported back in the transcript, so its row does not show by
+  // default (finished-rows-shown-forever was the original complaint) — but it
+  // must stay reachable, since a row's own click is the only way into the
+  // drawer. `registry` still holds every entry the server reported: the
+  // toggle below folds it open, and an open drawer polls its own agent by id
+  // regardless of this filter.
+  const running = registry.filter((a) => a.status === "running");
+  const finished = registry.filter((a) => a.status !== "running");
+  if (!running.length && !finished.length) {
     el.hidden = true;
     return;
   }
-  for (const agent of registry) el.append(rowEl(agent));
+  for (const agent of running) el.append(rowEl(agent));
+
+  if (finished.length) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ag-history";
+    toggle.textContent = FA.agentHistory.replace("{n}", finished.length.toLocaleString("fa-IR"));
+    toggle.addEventListener("click", () => { showHistory = !showHistory; paint(); });
+    el.append(toggle);
+    if (showHistory) {
+      for (const agent of finished) el.append(rowEl(agent));
+    }
+  }
+
   if (focusedId) {
     el.querySelector(`[data-agent-id="${CSS.escape(focusedId)}"]`)?.focus();
   }
 
   // The CLI prints "Waiting for N background agents" once its own turn is over
   // and helpers are still out. Same fact, in Persian, counted off the registry
-  // — never parsed out of a message.
-  const running = registry.filter((a) => a.status === "running").length;
-  if (running && !document.body.classList.contains("busy")) {
-    el.append(label(FA.agentsWaiting.replace("{n}", running.toLocaleString("fa-IR")),
+  // — never parsed out of a message. Still running-only: a finished agent is
+  // not something anyone is waiting for.
+  if (running.length && !document.body.classList.contains("busy")) {
+    el.append(label(FA.agentsWaiting.replace("{n}", running.length.toLocaleString("fa-IR")),
                     "ag-wait"));
   }
   el.hidden = false;
@@ -373,6 +398,7 @@ export function resetAgents() {
   listTimer = refreshTimer = 0;
   closeDrawer();
   registry = [];
+  showHistory = false;
   paint();
   // No refreshAgents() here: this runs from render.js's `wrapper/reset`
   // handler, which clears state.status.sessionId via resetStatus() right

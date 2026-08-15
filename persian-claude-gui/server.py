@@ -4,8 +4,9 @@ server.py - local host for a Persian/RTL front-end over the real Claude Code CLI
 Stdlib only: no npm, no build step, no CDN (see CLAUDE.md). Responsibilities:
 
   1. serve static/ to a chrome-less Edge app-mode window
-  2. own one long-lived `claude -p` subprocess per project, pumping NDJSON both ways
-  3. fan CLI events out to the window over SSE
+  2. own one long-lived `claude -p` subprocess per open TAB (up to MAX_TABS
+     concurrent conversations), pumping NDJSON both ways
+  3. fan CLI events out to the window over SSE, each tagged with its tab
 
 The CLI contract below is verified against claude 2.1.221 and recorded in
 wiki/cli-stream-json-findings.md. Re-verify after a CLI upgrade; the flags and the
@@ -143,6 +144,8 @@ CLI_MODE_POSTURE = {"plan": "plan", "acceptEdits": "acceptEdits"}
 # Longest session title we ask the CLI to store. Titles render in a narrow
 # sidebar; anything longer is truncated by CSS anyway.
 TITLE_MAX = 60
+# Same reasoning for a project's display name (one line in the same sidebar).
+NAME_MAX = 64
 
 EDGE_CANDIDATES = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -181,21 +184,41 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+# Replay events kept PER TAB. Six long-lived conversations never reset any
+# more, so this is the only bound left on Hub memory -- reset() used to supply
+# one by accident, every time the single session was swapped.
+HISTORY_MAX = 5000
+
+
 class Hub:
-    """Fan-out of CLI events to every connected SSE client."""
+    """Fan-out of CLI events to every connected SSE client.
+
+    Replay history is bucketed by tab: every event carries the `tab` it belongs
+    to (stamped by TabHub), one client replays all of them and routes per tab,
+    and closing a tab drops its bucket wholesale.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._clients: set[queue.Queue] = set()
-        self._history: list[dict] = []
+        self._history: dict[str | None, list[dict]] = {}
+        # Tabs that have been closed. A stopped session's reader thread is
+        # still draining a dying pipe and publishes wrapper/cli_exited some
+        # milliseconds later -- without this it lands AFTER drop() and
+        # re-creates the bucket it just deleted, which then replays to every
+        # window for the life of the server.
+        self._closed: set[str] = set()
         self.last_empty_at: float | None = time.monotonic()
 
     def subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue()
         with self._lock:
-            # Replay what already happened so a reconnecting window is not blank.
-            for event in self._history:
-                q.put(event)
+            # Replay what already happened so a reconnecting window is not
+            # blank. Order holds WITHIN a bucket, which is all that matters:
+            # the client renders one tab at a time.
+            for bucket in self._history.values():
+                for event in bucket:
+                    q.put(event)
             self._clients.add(q)
             self.last_empty_at = None
         return q
@@ -208,7 +231,12 @@ class Hub:
 
     def publish(self, event: dict) -> None:
         with self._lock:
-            self._history.append(event)
+            if event.get("tab") in self._closed:
+                return
+            bucket = self._history.setdefault(event.get("tab"), [])
+            bucket.append(event)
+            if len(bucket) > HISTORY_MAX:
+                del bucket[:-HISTORY_MAX]
             targets = list(self._clients)
         for q in targets:
             q.put(event)
@@ -219,21 +247,54 @@ class Hub:
                 return 0.0
             return time.monotonic() - self.last_empty_at
 
-    def reset(self) -> None:
-        """Drop replay history and tell every window to clear.
+    def reset(self, tab: str | None = None) -> None:
+        """Drop ONE tab's replay history and tell every window to clear it.
 
-        Called when the project or session changes: without this, a window that
-        reconnects would replay the previous project's conversation.
+        Without this a window that reconnects would replay a conversation the
+        tab no longer holds. Other tabs' buckets are untouched -- that is the
+        whole difference from the single-session server this replaced.
         """
         with self._lock:
-            self._history = []
-        self.publish({"type": "wrapper", "subtype": "reset"})
+            self._history.pop(tab, None)
+        self.publish({"type": "wrapper", "subtype": "reset", "tab": tab})
+
+    def drop(self, tab: str) -> None:
+        """Forget a closed tab entirely: nothing of it replays again, and
+        nothing it publishes from here on is kept either."""
+        with self._lock:
+            self._history.pop(tab, None)
+            self._closed.add(tab)
+
+
+class TabHub:
+    """A Hub view bound to one tab: `publish` stamps, `reset` scopes.
+
+    Every publisher underneath a conversation -- the ClaudeSession, its
+    PermissionBroker, the /api/message echo -- holds one of these instead of
+    the Hub itself, so all ~16 publish sites tag their events without knowing
+    that tabs exist.
+    """
+
+    def __init__(self, hub: Hub, tab: str) -> None:
+        self.hub = hub
+        self.tab = tab
+
+    def publish(self, event: dict) -> None:
+        event["tab"] = self.tab
+        self.hub.publish(event)
+
+    def reset(self) -> None:
+        self.hub.reset(self.tab)
 
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 RECENTS_FILE = HERE / "recents.json"
 ARCHIVED_FILE = HERE / "archived.json"
 PINNED_FILE = HERE / "pinned.json"
+# Display-name overrides, {path: name}. Wrapper-only state: the CLI has no
+# project-rename route (rename_session is a SESSION thing), and the folder on
+# disk is never touched -- so it lives here beside the other three lists.
+NAMES_FILE = HERE / "names.json"
 MAX_RECENTS = 10
 
 
@@ -343,6 +404,7 @@ def list_projects() -> list[dict]:
             entry_for(recent)
     archived = {a.lower() for a in load_archived()}
     pinned = {p.lower() for p in load_pinned()}
+    names = _names_lower()
     # Pinned first, then most recent. Two keys in one sort rather than two
     # passes: `modified` is a float, so negating it reverses only that half.
     result = sorted(projects.values(),
@@ -350,6 +412,10 @@ def list_projects() -> list[dict]:
     for entry in result:
         entry["archived"] = entry["path"].lower() in archived
         entry["pinned"] = entry["path"].lower() in pinned
+        # Absent when there is no override -- the window falls back to the
+        # folder's own name, so there is nothing to send.
+        if entry["path"].lower() in names:
+            entry["name"] = names[entry["path"].lower()]
     return result
 
 
@@ -629,15 +695,19 @@ def _tail_lines(path: Path, offset: int) -> tuple[list[str], int]:
     return lines, offset + cut + 1
 
 
-def _scan_agent_launch(line: str, pending: dict) -> None:
+def _msg_content(event: dict):
+    """`message.content`, or None. Its SHAPE is what tells the two `user`
+    records apart (see `_scan_agent_line`): a bare string is the CLI
+    auto-submitting a task-notification, a list is tool_result parts."""
+    message = event.get("message")
+    return message.get("content") if isinstance(message, dict) else None
+
+
+def _scan_agent_launch(event: dict, pending: dict) -> None:
     """`assistant` event, `tool_use` named "Agent" -> stash description +
     agentType under the tool_use id, awaiting the launch ack (the join key,
     wiki/background-agents.md)."""
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        return
-    for part in (event.get("message", {}).get("content") or []):
+    for part in (_msg_content(event) or []):
         if not (isinstance(part, dict) and part.get("type") == "tool_use"
                 and part.get("name") == "Agent"):
             continue
@@ -654,26 +724,26 @@ def _scan_agent_launch(line: str, pending: dict) -> None:
         }
 
 
-def _scan_agent_ack(line: str, registry: dict, pending: dict) -> None:
+def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
     """`user` event carrying the `tool_result` for an `Agent` tool_use ->
     create the registry entry. Two data sources, per wiki/background-agents
     .md: the sibling `toolUseResult` field when present, else the
     `tool_result` TEXT (what actually streams live), parsed as a fallback.
+
+    An entry is created ONLY when the tool_use_id joins a pending `Agent`
+    launch. Without that join any tool_result whose TEXT merely quotes
+    "Async agent launched" — reading a wiki page or another transcript does
+    it — minted a description-less entry that reported "running" for the
+    life of the process (3 such entries across this machine's 315 real
+    transcripts, all stuck at completed=False).
     """
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        return
-    if event.get("type") != "user":
-        return
-    content = event.get("message", {}).get("content")
-    if not isinstance(content, list):
-        return
-    for part in content:
+    for part in (_msg_content(event) or []):
         if not (isinstance(part, dict) and part.get("type") == "tool_result"):
             continue
         tool_use_id = part.get("tool_use_id")
         launch = pending.pop(tool_use_id, None) if tool_use_id else None
+        if launch is None:
+            continue
         tur = event.get("toolUseResult")
         agent_id = model = description = None
         if isinstance(tur, dict) and tur.get("isAsync") and tur.get("status") == "async_launched":
@@ -693,13 +763,13 @@ def _scan_agent_ack(line: str, registry: dict, pending: dict) -> None:
         entry = registry.setdefault(agent_id, {"completed": False, "finishedAt": None, "summary": None})
         entry["id"] = agent_id
         entry["kind"] = "agent"
-        entry["description"] = description or (launch or {}).get("description")
-        entry["agentType"] = (launch or {}).get("agentType")
+        entry["description"] = description or launch.get("description")
+        entry["agentType"] = launch.get("agentType")
         entry["model"] = model
         entry["startedAt"] = iso_epoch(event.get("timestamp"))
 
 
-def _scan_notification(line: str, registry: dict) -> None:
+def _scan_notification(event: dict, registry: dict) -> None:
     """A `<task-notification>` block, as either a `queue-operation` record
     or the `user` message the CLI auto-submits from it (wiki/background-
     agents.md) — both carry the same tags, and the same task-id can appear
@@ -709,17 +779,8 @@ def _scan_notification(line: str, registry: dict) -> None:
     (`Bash` with `run_in_background`): it has no Agent launch/ack to join
     to and no subagents files, so its notification IS the whole record.
     """
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        return
-    etype = event.get("type")
-    if etype == "queue-operation":
-        content = event.get("content")
-    elif etype == "user":
-        content = event.get("message", {}).get("content")
-    else:
-        return
+    content = event.get("content") if event.get("type") == "queue-operation" \
+        else _msg_content(event)
     if not isinstance(content, str):
         return
     match = TASK_NOTIFICATION_RE.search(content)
@@ -740,6 +801,45 @@ def _scan_notification(line: str, registry: dict) -> None:
     entry["finishedAt"] = timestamp
     entry["summary"] = _tag(body, "summary")
     entry["completed"] = True
+
+
+# The cheap pre-filter: a line mentioning none of these three cannot carry any
+# of the three markers, and skipping it costs one substring scan instead of a
+# json.loads. It is a FILTER, never a route — see _scan_agent_line().
+_AGENT_MARKERS = ('"name":"Agent"', '"tool_result"', "task-notification")
+
+
+def _scan_agent_line(line: str, registry: dict, pending: dict) -> None:
+    """Route one transcript line to the scanner its PARSED shape calls for.
+
+    Deciding the route from substring order instead was wrong in both
+    directions: a task-notification carries the finished agent's own final
+    text, so it can quote `"tool_result"` or `"name":"Agent"` and be handed
+    to a scanner that parses it cleanly, matches nothing and drops it — after
+    which nothing ever marks that agent completed and the panel reports it
+    running forever. json.loads once, then dispatch on `type` plus the SHAPE
+    of `message.content`: a bare string is the auto-submitted notification, a
+    list is tool_result parts (wiki/background-agents.md).
+    """
+    if not any(marker in line for marker in _AGENT_MARKERS):
+        return
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(event, dict):
+        return
+    etype = event.get("type")
+    if etype == "assistant":
+        _scan_agent_launch(event, pending)
+    elif etype == "queue-operation":
+        _scan_notification(event, registry)
+    elif etype == "user":
+        content = _msg_content(event)
+        if isinstance(content, str):
+            _scan_notification(event, registry)
+        elif isinstance(content, list):
+            _scan_agent_ack(event, registry, pending)
 
 
 _AGENT_CACHE: dict[str, dict] = {}
@@ -775,14 +875,7 @@ def build_agent_registry(transcript: Path) -> dict[str, dict]:
             offset, registry, pending = cached["offset"], cached["registry"], cached["pending"]
         lines, new_offset = _tail_lines(transcript, offset)
         for line in lines:
-            if not line.strip():
-                continue
-            if '"name":"Agent"' in line:
-                _scan_agent_launch(line, pending)
-            elif '"tool_result"' in line and '"type":"user"' in line:
-                _scan_agent_ack(line, registry, pending)
-            elif "task-notification" in line:
-                _scan_notification(line, registry)
+            _scan_agent_line(line, registry, pending)
         _AGENT_CACHE[key] = {"offset": new_offset, "registry": registry, "pending": pending}
         return {agent_id: dict(entry) for agent_id, entry in registry.items()}
 
@@ -1100,6 +1193,13 @@ def pick_folder(interpreter: Path) -> str | None:
     return str(Path(chosen)) if chosen else None
 
 
+# Every read-modify-write of recents/archived/pinned/names goes under this.
+# ponytail: one lock for all four files, not one per file -- they are written
+# on a user click, never in a loop. Concurrent /api/project/open calls (one per
+# tab) are what made them reachable from two threads at once.
+_STORE_LOCK = threading.Lock()
+
+
 def _load_paths(file: Path) -> list[str]:
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
@@ -1115,15 +1215,63 @@ def _save_paths(file: Path, items: list[str]) -> None:
         pass
 
 
+def _load_names() -> dict[str, str]:
+    """The {path: display name} store.
+
+    Deliberately NOT _load_paths: that one filters a LIST of strings, so a dict
+    reaches it as its keys at best and as [] at worst -- silently, which is how
+    every renamed project would lose its name with no error anywhere.
+    """
+    try:
+        data = json.loads(NAMES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+
+
+def _save_names(names: dict[str, str]) -> None:
+    try:
+        NAMES_FILE.write_text(json.dumps(names, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _names_lower() -> dict[str, str]:
+    """Overrides keyed by LOWERCASED path -- the same case convention the
+    sidebar's own dedupe (entry_for) and every path list here already use.
+    The stored key keeps whatever case the window sent."""
+    return {k.lower(): v for k, v in _load_names().items()}
+
+
+def set_project_name(raw: str, name: str) -> str:
+    """Store (or clear) one project's display name; returns the name in force.
+
+    An empty name deletes the override, and the name in force falls back to the
+    folder's own -- which is exactly what the sidebar renders when there is no
+    entry, so the response never has to describe two different states.
+    """
+    name = (name or "").strip()[:NAME_MAX]
+    with _STORE_LOCK:
+        names = {k: v for k, v in _load_names().items() if k.lower() != raw.lower()}
+        if name:
+            names[raw] = name
+        _save_names(names)
+    return name or Path(raw).name
+
+
 def load_recents() -> list[str]:
     return _load_paths(RECENTS_FILE)
 
 
 def remember_recent(cwd: Path) -> list[str]:
-    recents = [item for item in load_recents() if item.lower() != str(cwd).lower()]
-    recents.insert(0, str(cwd))
-    recents = recents[:MAX_RECENTS]
-    _save_paths(RECENTS_FILE, recents)
+    with _STORE_LOCK:
+        recents = [item for item in load_recents() if item.lower() != str(cwd).lower()]
+        recents.insert(0, str(cwd))
+        recents = recents[:MAX_RECENTS]
+        _save_paths(RECENTS_FILE, recents)
     return recents
 
 
@@ -1137,28 +1285,41 @@ def load_pinned() -> list[str]:
 
 def toggle_in_list(file: Path, raw: str, on: bool) -> None:
     """Add or remove one path in a path-list file, case-insensitively."""
-    items = [i for i in _load_paths(file) if i.lower() != raw.lower()]
-    if on:
-        items.insert(0, raw)
-    _save_paths(file, items)
+    with _STORE_LOCK:
+        items = [i for i in _load_paths(file) if i.lower() != raw.lower()]
+        if on:
+            items.insert(0, raw)
+        _save_paths(file, items)
 
 
 def drop_project_from_lists(*variants: str) -> None:
-    """Forget a path in recents, archived and pinned (case-insensitive)."""
+    """Forget a path in recents, archived, pinned and names (case-insensitive).
+
+    The name has to go too: a folder created again at the same path is a
+    different project, and inheriting the removed one's name is a lie that
+    survives forever because nothing ever asks about it again.
+    """
     gone = {v.lower() for v in variants}
-    for file in (RECENTS_FILE, ARCHIVED_FILE, PINNED_FILE):
-        _save_paths(file, [i for i in _load_paths(file) if i.lower() not in gone])
+    with _STORE_LOCK:
+        for file in (RECENTS_FILE, ARCHIVED_FILE, PINNED_FILE):
+            _save_paths(file, [i for i in _load_paths(file) if i.lower() not in gone])
+        _save_names({k: v for k, v in _load_names().items() if k.lower() not in gone})
 
 
 class PermissionBroker:
     """Blocks an inbound `can_use_tool` request until the GUI answers (§B-5).
 
-    One instance per server. `_answer_control_request` calls request() on its
-    own thread and waits; the request is pushed to the window over SSE; the
-    user's answer releases the waiter and becomes the control_response.
+    One instance per SESSION, holding that session's TabHub. That is what makes
+    the posture, «دوباره نپرس» and the auto-approve audit per-tab by
+    construction: the leakage family recorded in reset_posture() below cannot
+    cross a tab boundary because there is nothing shared to cross.
+
+    `_answer_control_request` calls request() on its own thread and waits; the
+    request is pushed to the window over SSE; the user's answer releases the
+    waiter and becomes the control_response.
     """
 
-    def __init__(self, hub: Hub) -> None:
+    def __init__(self, hub: "Hub | TabHub") -> None:
         self.hub = hub
         self._lock = threading.Lock()
         self._pending: dict[str, dict] = {}
@@ -1263,7 +1424,11 @@ class PermissionBroker:
 
         waiter = threading.Event()
         with self._lock:
-            self._pending[request_id] = {"event": waiter, "decision": None}
+            # tool_use_id/tool_name ride along so deny_all() can publish the
+            # same shaped resolved event this thread would have published.
+            self._pending[request_id] = {"event": waiter, "decision": None,
+                                         "tool_use_id": tool_use_id,
+                                         "tool_name": tool_name}
 
         # display_name/description/permission_suggestions come straight from the
         # CLI's can_use_tool payload -- better than anything we could derive, and
@@ -1284,6 +1449,10 @@ class PermissionBroker:
         answered = waiter.wait(timeout=ASK_TIMEOUT if asking else PERMISSION_TIMEOUT)
         with self._lock:
             entry = self._pending.pop(request_id, None)
+        if answered and entry is None:
+            # deny_all() got here first: it took the entry, published the deny
+            # and released us. Publishing again would double the event.
+            return {"decision": "deny", "reason": "the conversation was closed"}
         decision = (entry or {}).get("decision")
 
         if not answered or decision not in ("allow", "deny"):
@@ -1341,11 +1510,40 @@ class PermissionBroker:
             entry["event"].set()
         return True
 
+    def deny_all(self) -> None:
+        """Answer every request still waiting on the user: deny, right now.
+
+        Closing a tab used to leave its waiters blocked for the full
+        PERMISSION_TIMEOUT, and the deny they published on the way out landed
+        AFTER Hub.drop() -- discarded by the closed-tab guard, so the window's
+        dialog for that conversation never went away either. Both halves are
+        fixed by resolving here, synchronously: the publish happens while the
+        tab still exists, and the waiter is released before it is stopped.
+
+        The entry is taken rather than just flagged, so request() knows this
+        path already published its event (it returns without publishing a
+        second one).
+        """
+        with self._lock:
+            pending = list(self._pending.items())
+            self._pending.clear()
+        for request_id, entry in pending:
+            entry["decision"] = "deny"
+            entry["event"].set()
+            self._publish_resolved(request_id, entry.get("tool_use_id"), "deny",
+                                   tool_name=entry.get("tool_name"))
+
 
 class ClaudeSession:
-    """One long-lived `claude -p` process. A turn is one NDJSON line on stdin."""
+    """One long-lived `claude -p` process. A turn is one NDJSON line on stdin.
 
-    def __init__(self, cwd: Path, hub: Hub, claude_bin: str,
+    Multi-instance by design: every field here is per-instance and the reader
+    threads are guarded by `_generation`, so N of these run side by side, one
+    per open tab. What ties an instance to a tab is the TabHub it publishes
+    through — nothing else in here knows tabs exist.
+    """
+
+    def __init__(self, cwd: Path, hub: "Hub | TabHub", claude_bin: str,
                  broker: "PermissionBroker | None" = None) -> None:
         self.broker = broker
         self.cwd = cwd
@@ -1354,6 +1552,12 @@ class ClaudeSession:
         self.proc: subprocess.Popen | None = None
         self.session_id: str | None = None
         self.spawned_at: float | None = None  # set in start(); see _agent_status()
+        # Turns in flight. A COUNT, not a flag: mid-turn sends are allowed by
+        # design (the CLI queues extra stdin messages), so turn 1's result used
+        # to clear a `busy` that queued turn 2 still owned. /api/tabs reports
+        # it, which is the only way a background tab can show it is working.
+        self._inflight = 0
+        self._inflight_lock = threading.Lock()
         self.model: str | None = None
         self._write_lock = threading.Lock()
         self._generation = 0   # stale reader threads check this before publishing
@@ -1371,9 +1575,23 @@ class ClaudeSession:
         self._titled = True
         self._first_prompt: str | None = None
 
+    # ponytail: the counter is stick-proofed at both ends -- the decrement is
+    # clamped at 0 and every path that ends a PROCESS resets it outright (start,
+    # cli exit, interrupt). A count that sticks above 0 leaves a tab reporting
+    # "working" for the life of the server, and nothing else would ever clear
+    # it; an extra result (the interrupted turn still emits one) is absorbed.
+    @property
+    def busy(self) -> bool:
+        return self._inflight > 0
+
+    def _reset_inflight(self) -> None:
+        with self._inflight_lock:
+            self._inflight = 0
+
     def start(self, resume_id: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
+        self._reset_inflight()
 
         # --resume reuses the same session_id rather than forking (verified,
         # B-9.8), so recovery after a crash is idempotent.
@@ -1406,6 +1624,10 @@ class ClaudeSession:
         self.spawned_at = time.time()
         proc = self.proc
         self.init_info = None
+        # Only system/init knows which model a session runs on. Carrying the
+        # previous one over would feed a stale name to the statusline payload
+        # below, which now runs before the first turn on a resume.
+        self.model = None
         # Only a session started from scratch gets an auto-title: a resumed one
         # already has its own history (and possibly a title the user chose).
         self._titled = resume_id is not None
@@ -1420,14 +1642,19 @@ class ClaudeSession:
         # thread above, which must already be running.
         threading.Thread(target=self._fetch_init_info, args=(generation,),
                          daemon=True).start()
+        # A resumed session already has an identity; a fresh one has nothing to
+        # show yet. Same reason as above for the thread: control() waits on the
+        # reader thread.
+        if resume_id:
+            threading.Thread(target=self._publish_resume_prefill,
+                             args=(generation,), daemon=True).start()
 
-    def restart(self, cwd: Path | None = None, resume_id: str | None = None) -> None:
-        """Swap the underlying process: switch project, or resume a session."""
-        self.stop()
-        if cwd is not None:
-            self.cwd = cwd
-        self.hub.reset()
-        self.start(resume_id=resume_id)
+    # restart() is gone with the single-session server. Switching project or
+    # resuming a session now SPAWNS a tab (Handler.open_tab); killing the
+    # running conversation to make room for another one was the whole defect.
+
+    def alive(self) -> bool:
+        return bool(self.proc and self.proc.poll() is None)
 
     def _read_stdout(self, proc: subprocess.Popen, generation: int) -> None:
         for line in proc.stdout:
@@ -1488,13 +1715,17 @@ class ClaudeSession:
                                  args=(event, generation), daemon=True).start()
             self.hub.publish(event)
         if generation == self._generation:
+            # Every queued turn died with the process, not just the current one.
+            self._reset_inflight()
             self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
                               "returncode": proc.poll()})
 
     def _after_result(self, result: dict, generation: int) -> None:
         """Everything that happens once a turn is finished, on one thread."""
         if generation != self._generation:
-            return
+            return   # a dead process's turn; start() already reset the count
+        with self._inflight_lock:
+            self._inflight = max(0, self._inflight - 1)
         try:
             self._title_session(generation)
             self._publish_usage(generation)
@@ -1563,6 +1794,31 @@ class ClaudeSession:
                               "segments": segments,
                               "text": "".join(s["text"] for s in segments)})
 
+    def _publish_resume_prefill(self, generation: int) -> None:
+        """Fill the status bar of a resumed session before its first turn.
+
+        Everything that normally paints it — system/init, result, usage,
+        statusline — only arrives once the CLI has processed a message, so a
+        resumed session showed a blank bar until the user typed. By now we
+        already know the two facts that identify it: session_id (it IS the
+        resume id, set in start()) and cwd. The rest is free — both usage
+        control requests answer on an idle process (wiki/control-protocol.md
+        §6) and the statusline runs off-thread with its own timeout.
+
+        The model stays unknown until system/init names it. init_info's
+        `models` is the catalogue of what this account CAN use, not what this
+        session is on — reading it here would print a confident wrong answer.
+        """
+        if generation != self._generation:
+            return
+        self.hub.publish({"type": "wrapper", "subtype": "resumed",
+                          "session_id": self.session_id, "cwd": str(self.cwd)})
+        try:
+            self._publish_usage(generation)
+        except RuntimeError:
+            pass   # the process went away; there is nothing to ask
+        self._publish_statusline({}, generation)
+
     def _read_stderr(self, proc: subprocess.Popen, generation: int) -> None:
         for line in proc.stderr:
             line = line.rstrip("\n")
@@ -1582,8 +1838,18 @@ class ClaudeSession:
         if not self._titled and self._first_prompt is None:
             self._first_prompt = next(
                 (b.get("text") for b in blocks if b.get("type") == "text"), None)
-        self._write_line({"type": "user",
-                          "message": {"role": "user", "content": blocks}})
+        # Counted BEFORE the write: a fast result can land while _write_line is
+        # still returning, and incrementing afterwards would leave the count --
+        # and therefore the tab -- stuck at "working" forever.
+        with self._inflight_lock:
+            self._inflight += 1
+        try:
+            self._write_line({"type": "user",
+                              "message": {"role": "user", "content": blocks}})
+        except Exception:
+            with self._inflight_lock:
+                self._inflight = max(0, self._inflight - 1)
+            raise
 
     def send_text(self, text: str) -> None:
         self.send_blocks([{"type": "text", "text": text}])
@@ -1596,11 +1862,16 @@ class ClaudeSession:
         control request subtype: X"} rather than failing silently -- that clean
         error is the feature-detection branch. Never gate on a CLI version.
         """
-        self._control_seq += 1
-        request_id = f"pcg-{subtype}-{self._control_seq}"
         slot = {"event": threading.Event(), "response": None}
-        if wait:
-            with self._pending_lock:
+        # The counter mints the request_id, so it belongs under the same lock as
+        # the pending table: spawn already fires initialize/get_settings/usage
+        # concurrently, and two callers reading the same seq would produce one
+        # id for two waiters -- the reply then resolves whichever it finds and
+        # the other waits out its timeout for an answer that already arrived.
+        with self._pending_lock:
+            self._control_seq += 1
+            request_id = f"pcg-{subtype}-{self._control_seq}"
+            if wait:
                 self._pending[request_id] = slot
         try:
             self._write_line({
@@ -1632,6 +1903,12 @@ class ClaudeSession:
         blocking here would stall the caller's HTTP response.
         """
         self.control("interrupt", wait=False)
+        # The CLI cancels the messages it had QUEUED as well as the running
+        # turn (interrupt_cancel_queued_v1), and those queued turns will never
+        # produce a result of their own -- so the count goes to 0 here rather
+        # than waiting for N results that are not coming. The aborted current
+        # turn does still emit one; the clamp in _after_result absorbs it.
+        self._reset_inflight()
 
     def _answer_control_request(self, event: dict, generation: int) -> None:
         """Answer a control_request the CLI sent US.
@@ -1827,6 +2104,67 @@ class ClaudeSession:
             self.proc.kill()
 
 
+# --- tabs ----------------------------------------------------------------
+#
+# N concurrent conversations, keyed by a wrapper-minted uuid4. NOT by the CLI's
+# session_id: that is None until the first turn completes (wiki/cli-stream-json
+# -findings.md), so it cannot be the routing key for a tab the user just opened.
+
+# ponytail: arbitrary ceiling, raise if RAM allows. Each tab is a real `claude`
+# process.
+MAX_TABS = 6
+
+# ThreadingHTTPServer answers every request on its own thread, so the tab
+# registry is shared mutable state: two windows (or a double-click) reaching
+# /api/project/open at once both read len(sessions) < MAX_TABS and both spawn,
+# and an unguarded `active = tab` lets the second spawn steal the first one
+# mid-flight. Every mutation of `Handler.sessions` / `Handler.active` takes this
+# -- same pattern as _STORE_LOCK above. Held only around the dict work: the
+# spawn itself happens outside it, on a slot already reserved.
+_SESSIONS_LOCK = threading.Lock()
+
+
+def tab_running(sessions: dict[str, ClaudeSession], session_id: str) -> str | None:
+    """The tab whose LIVE process owns `session_id`, or None.
+
+    One rule, three callers: /api/session/resume ADOPTS that tab instead of
+    starting a second CLI on the same transcript (two processes appending to
+    one .jsonl is corruption), /api/session/delete refuses to unlink it, and
+    /api/agents reads its spawned_at. A dead tab does not count -- its process
+    is not writing anything any more.
+    """
+    if not session_id:
+        return None
+    for tab, session in list(sessions.items()):
+        if session.session_id == session_id and session.alive():
+            return tab
+    return None
+
+
+def respond_permission(sessions: dict[str, ClaudeSession], request_id: str,
+                       decision: str, remember: bool, tool_name: str | None,
+                       answers: dict | None) -> bool:
+    """Hand an answer to whichever tab's broker is holding `request_id`.
+
+    Scanned rather than routed: request ids are uuid4, so the window does not
+    have to tell us which tab it answered for, and a stale dialog from a closed
+    tab simply finds no holder and reports False.
+    """
+    for session in list(sessions.values()):
+        broker = session.broker
+        if broker is not None and broker.respond(request_id, decision, remember,
+                                                 tool_name, answers):
+            return True
+    return False
+
+
+def stop_all(sessions: dict[str, ClaudeSession]) -> None:
+    """The window closed -> every tab dies. Unchanged product semantics from
+    the single-session server, now plural."""
+    for session in list(sessions.values()):
+        session.stop()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "PersianClaudeGUI/0.1"
     protocol_version = "HTTP/1.1"
@@ -1834,8 +2172,116 @@ class Handler(BaseHTTPRequestHandler):
     # Injected by serve().
     token: str = ""
     hub: Hub
-    session: ClaudeSession
-    broker: PermissionBroker
+    claude_bin: str = ""
+    # Open conversations, insertion-ordered (that is the tab strip's order), and
+    # which one an endpoint means when it is given no `tab`.
+    sessions: dict[str, ClaudeSession] = {}
+    active: str = ""
+
+    # --- tabs ----------------------------------------------------------
+
+    @classmethod
+    def open_tab(cls, cwd: Path, resume_id: str | None = None) -> str | None:
+        """Spawn one more conversation and make it active, or None at the cap.
+
+        The boot tab comes through here too, so there is one spawn path rather
+        than a second one in serve() that drifts -- and the MAX_TABS check
+        lives HERE, with the assignment it guards. Checked by the caller it
+        raced every other request thread: two callers both saw room and both
+        spawned, and the seventh `claude` process was already running by the
+        time anything noticed.
+        """
+        tab = uuid.uuid4().hex
+        view = TabHub(cls.hub, tab)
+        session = ClaudeSession(cwd=cwd, hub=view, claude_bin=cls.claude_bin,
+                                broker=PermissionBroker(view))
+        with _SESSIONS_LOCK:
+            if len(cls.sessions) >= MAX_TABS:
+                return None
+            # The slot is reserved here; start() spawns outside the lock, so a
+            # slow CLI launch cannot block the other tabs' endpoints.
+            cls.sessions[tab] = session
+            cls.active = tab
+        session.start(resume_id=resume_id)
+        return tab
+
+    @classmethod
+    def activate_tab(cls, tab: str) -> bool:
+        """Make an existing tab active. False when there is no such tab."""
+        with _SESSIONS_LOCK:
+            if tab not in cls.sessions:
+                return False
+            cls.active = tab
+            return True
+
+    @classmethod
+    def close_tab(cls, tab: str) -> None:
+        """Stop that conversation and forget it, everywhere."""
+        with _SESSIONS_LOCK:
+            session = cls.sessions.pop(tab, None)
+            if session is not None and cls.active == tab:
+                # The most recently spawned survivor, which is the one nearest
+                # to what the user was doing. Empty string when none is left.
+                # Skipped when another thread already made its own new tab
+                # active -- that one is nearer still.
+                cls.active = max(cls.sessions,
+                                 key=lambda t: cls.sessions[t].spawned_at or 0.0,
+                                 default="")
+        if session is None:
+            return
+        # Order is the fix here. Pending approvals are denied FIRST: their
+        # waiters are released now instead of sitting out PERMISSION_TIMEOUT,
+        # and the resolved event that dismisses the window's dialog is
+        # published while the tab still exists -- after hub.drop() the
+        # closed-tab guard would throw it away.
+        if session.broker is not None:
+            session.broker.deny_all()
+        session.stop()
+        # Published BEFORE the bucket is dropped: live windows get the event,
+        # and nothing of a closed tab is ever replayed to a new one.
+        session.hub.publish({"type": "wrapper", "subtype": "closed"})
+        cls.hub.drop(tab)
+
+    @classmethod
+    def tabs_payload(cls) -> dict:
+        return {
+            "active": cls.active,
+            "tabs": [{
+                "tab": tab,
+                "session_id": session.session_id,
+                "cwd": str(session.cwd),
+                "busy": session.busy,
+                "spawned_at": session.spawned_at,
+            } for tab, session in list(cls.sessions.items())],
+        }
+
+    def _target(self, tab: str | None) -> ClaudeSession | None:
+        """The session an endpoint acts on: the named tab, else the active one.
+
+        Answers 404 itself when there is no such tab, so a caller only has to
+        `return` on None. Every session-scoped endpoint takes `tab` as an
+        OPTIONAL body key or query param -- omitting it is what keeps the
+        pre-tabs window and smoke_test.py working unchanged.
+        """
+        session = self.sessions.get(tab or self.active)
+        if session is None:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such tab"})
+        return session
+
+    def _cwd_for(self, cwd_raw: str, tab: str | None) -> Path | None:
+        """The explicit `cwd` a history endpoint was given, else the tab's own.
+        None means no such tab and the 404 has already been sent."""
+        if cwd_raw:
+            return Path(cwd_raw).expanduser()
+        session = self._target(tab)
+        return session.cwd if session is not None else None
+
+    def _owner(self, session_id: str) -> ClaudeSession | None:
+        """The live session running this CLI session id, in whichever tab —
+        which is not necessarily the active one, and is None for a session
+        that is only history."""
+        tab = tab_running(self.sessions, session_id)
+        return self.sessions.get(tab) if tab else None
 
     def log_message(self, fmt: str, *args) -> None:
         if self.server.verbose:  # type: ignore[attr-defined]
@@ -1893,30 +2339,49 @@ class Handler(BaseHTTPRequestHandler):
         # page opened directly (index.html, or spec-test.html during QA) can
         # authenticate its own subresources.
         set_cookie = "t" in params
+        tab = params.get("tab", [""])[0]
 
         if parsed.path in ("/", "/index.html"):
             self._serve_file(STATIC_DIR / "index.html", set_cookie=set_cookie)
         elif parsed.path == "/api/events":
             self._serve_sse()
+        elif parsed.path == "/api/tabs":
+            self._send_json(HTTPStatus.OK, self.tabs_payload())
         elif parsed.path == "/api/sessions":
+            session = self._target(tab)
+            if session is None:
+                return
             self._send_json(HTTPStatus.OK, {
-                "cwd": str(self.session.cwd),
-                "current": self.session.session_id,
+                "cwd": str(session.cwd),
+                "current": session.session_id,
                 "recents": load_recents(),
-                "sessions": list_sessions(self.session.cwd),
+                "sessions": list_sessions(session.cwd),
             })
         elif parsed.path == "/api/projects":
             # Sidebar payload: all known projects with their sessions inline,
             # one round-trip. The current project may be brand new (opened via
             # --cwd at boot, no transcripts, not in recents yet) — always
             # include it so the sidebar can highlight it.
+            #
+            # Deliberately TAB-LESS: only the current-project entry needs a live
+            # session, so closing the last tab must not 404 here. It did, and
+            # the window catches that silently — the sidebar simply froze on
+            # the last payload it ever got, which is also the state the user is
+            # in when they need it most (nothing open, pick something).
+            session = self.sessions.get(tab or self.active)
             projects = list_projects()
-            current = str(self.session.cwd)
-            if not any(p["path"].lower() == current.lower() for p in projects):
-                projects.insert(0, {"path": current, "modified": 0.0, "sessions": []})
+            current = str(session.cwd) if session is not None else ""
+            if current and not any(p["path"].lower() == current.lower() for p in projects):
+                bare = {"path": current, "modified": 0.0, "sessions": []}
+                # Decorated here too: a brand-new project skips list_projects()
+                # entirely, and without this its rename would show up nowhere.
+                name = _names_lower().get(current.lower())
+                if name:
+                    bare["name"] = name
+                projects.insert(0, bare)
             self._send_json(HTTPStatus.OK, {
                 "current_cwd": current,
-                "current_session": self.session.session_id,
+                "current_session": session.session_id if session is not None else None,
                 "projects": projects,
             })
         elif parsed.path == "/api/session":
@@ -1926,8 +2391,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # Optional cwd: the sidebar replays sessions from any project, not
             # just the open one. A bogus path just yields an empty event list.
-            cwd_raw = params.get("cwd", [""])[0]
-            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
+            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
+            if cwd is None:
+                return
             self._send_json(HTTPStatus.OK, {
                 "session_id": session_id,
                 "events": read_session(cwd, session_id),
@@ -1940,13 +2406,19 @@ class Handler(BaseHTTPRequestHandler):
             if not session_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing id"})
                 return
-            cwd_raw = params.get("cwd", [""])[0]
-            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
+            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
+            if cwd is None:
+                return
             transcript = transcript_path(cwd, session_id)
             if transcript is None:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
                 return
-            live = session_id == self.session.session_id
+            # "Live" means some tab is running this very session -- not that it
+            # is the tab asking. An agent launched in tab 2 keeps reporting
+            # running while the user reads tab 1.
+            owner = self._owner(session_id)
+            live = owner is not None
+            spawned_at = owner.spawned_at if owner else None
             folder = subagents_dir(cwd, session_id)
             agents = []
             for entry in build_agent_registry(transcript).values():
@@ -1956,7 +2428,7 @@ class Handler(BaseHTTPRequestHandler):
                     "description": entry.get("description"),
                     "agentType": entry.get("agentType"),
                     "model": entry.get("model"),
-                    "status": _agent_status(entry, live, self.session.spawned_at),
+                    "status": _agent_status(entry, live, spawned_at),
                     "startedAt": entry.get("startedAt"),
                     "finishedAt": entry.get("finishedAt"),
                     "summary": entry.get("summary"),
@@ -1971,8 +2443,9 @@ class Handler(BaseHTTPRequestHandler):
             if not session_id or not agent_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing id"})
                 return
-            cwd_raw = params.get("cwd", [""])[0]
-            cwd = Path(cwd_raw) if cwd_raw else self.session.cwd
+            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
+            if cwd is None:
+                return
             transcript = transcript_path(cwd, session_id)
             if transcript is None:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
@@ -1988,11 +2461,12 @@ class Handler(BaseHTTPRequestHandler):
             events, next_line = read_agent_events(agent_file, after)
             entry = build_agent_registry(transcript).get(agent_id, {})
             _enrich_agent_meta(subagents_dir(cwd, session_id), entry)
-            live = session_id == self.session.session_id
+            owner = self._owner(session_id)
             self._send_json(HTTPStatus.OK, {
                 "events": events,
                 "next": next_line,
-                "running": _agent_status(entry, live, self.session.spawned_at) == "running",
+                "running": _agent_status(entry, owner is not None,
+                                         owner.spawned_at if owner else None) == "running",
                 "meta": {
                     "description": entry.get("description"),
                     "agentType": entry.get("agentType"),
@@ -2026,7 +2500,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad json"})
             return
 
+        # Every session-scoped endpoint below reads this; absent means the
+        # active tab, which is how the pre-tabs window keeps working.
+        tab = body.get("tab") if isinstance(body.get("tab"), str) else None
+
         if parsed.path == "/api/message":
+            session = self._target(tab)
+            if session is None:
+                return
             text = (body.get("text") or "").strip()
             attachments = [str(a) for a in (body.get("attachments") or [])]
             if not text and not attachments:
@@ -2037,21 +2518,41 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "nothing to send"})
                 return
             try:
-                self.session.send_blocks(blocks)
+                session.send_blocks(blocks)
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             # Echo locally so the window can render the user turn immediately:
-            # the CLI does not replay user messages back to us.
-            self.hub.publish({
+            # the CLI does not replay user messages back to us. Through the
+            # session's own TabHub, or the echo would land in no tab at all.
+            session.hub.publish({
                 "type": "wrapper", "subtype": "user_echo",
                 "text": next((b["text"] for b in blocks if b["type"] == "text"), ""),
                 "images": sum(1 for b in blocks if b["type"] == "image"),
             })
             self._send_json(HTTPStatus.OK, {"ok": True})
+        elif parsed.path == "/api/tab/activate":
+            # Class state under _SESSIONS_LOCK: `self.active = …` would shadow
+            # it, and the check has to be atomic with the assignment or a tab
+            # closing on another thread is activated after it stopped existing.
+            wanted = (body.get("tab") or "").strip()
+            if not self.activate_tab(wanted):
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such tab"})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "active": wanted})
+        elif parsed.path == "/api/tab/close":
+            wanted = (body.get("tab") or "").strip() or self.active
+            if wanted not in self.sessions:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such tab"})
+                return
+            self.close_tab(wanted)
+            self._send_json(HTTPStatus.OK, {"ok": True, "active": Handler.active})
         elif parsed.path == "/api/interrupt":
+            session = self._target(tab)
+            if session is None:
+                return
             try:
-                self.session.interrupt()
+                session.interrupt()
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
@@ -2059,6 +2560,9 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/control":
             # One whitelisted chokepoint for every live CLI control (model,
             # permission mode, compact, rename, usage). Not a passthrough.
+            session = self._target(tab)
+            if session is None:
+                return
             subtype = (body.get("subtype") or "").strip()
             if subtype not in CONTROL_ALLOWED:
                 self._send_json(HTTPStatus.BAD_REQUEST,
@@ -2076,7 +2580,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "reserved param"})
                 return
             try:
-                response = self.session.control(subtype, **control_params)
+                response = session.control(subtype, **control_params)
             except (RuntimeError, TypeError) as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
@@ -2093,16 +2597,19 @@ class Handler(BaseHTTPRequestHandler):
             # arbitrary settings and must not be reachable from the page.
             # The reply carries what is ACTUALLY in force, which is not always
             # what was asked for -- see ClaudeSession.set_effort().
+            session = self._target(tab)
+            if session is None:
+                return
             level = (body.get("level") or "").strip()
             if not level or not level.isalpha():
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad level"})
                 return
             try:
-                current = self.session.set_effort(level)
+                current = session.set_effort(level)
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
-            self.session.publish_effort(current)
+            session.publish_effort(current)
             self._send_json(HTTPStatus.OK,
                             {"ok": current == level, "effort": current})
         elif parsed.path == "/api/output-style":
@@ -2110,24 +2617,31 @@ class Handler(BaseHTTPRequestHandler):
             # Validated against what the CLI advertised, because nothing
             # downstream will: apply_flag_settings takes any string as
             # outputStyle and both read-backs echo a typo happily.
+            session = self._target(tab)
+            if session is None:
+                return
             name = (body.get("style") or "").strip()
-            offered = (self.session.init_info or {}).get("available_output_styles")
+            offered = (session.init_info or {}).get("available_output_styles")
             if not isinstance(offered, list) or name not in offered:
                 self._send_json(HTTPStatus.BAD_REQUEST,
                                 {"error": f"unknown output style: {name}"})
                 return
             try:
-                current = self.session.set_output_style(name)
+                current = session.set_output_style(name)
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
-            self.session.publish_output_style(current)
+            session.publish_output_style(current)
             self._send_json(HTTPStatus.OK,
                             {"ok": current == name, "style": current})
         elif parsed.path == "/api/posture":
             # The approval posture is two settings at once (the CLI's permission
             # mode and the wrapper's auto-approve flag), so it is one endpoint
-            # rather than two client calls that can half-apply.
+            # rather than two client calls that can half-apply. Per tab: the
+            # posture belongs to one conversation's broker, not to the server.
+            session = self._target(tab)
+            if session is None:
+                return
             posture = (body.get("posture") or "").strip()
             if posture not in POSTURES:
                 self._send_json(HTTPStatus.BAD_REQUEST,
@@ -2135,7 +2649,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             mode, auto = POSTURES[posture]
             try:
-                response = self.session.control("set_permission_mode", mode=mode)
+                response = session.control("set_permission_mode", mode=mode)
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
@@ -2145,7 +2659,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK,
                                 {"ok": False, "error": response.get("error")})
                 return
-            self.broker.set_posture(posture, auto)
+            if session.broker:
+                session.broker.set_posture(posture, auto)
             self._send_json(HTTPStatus.OK, {"ok": True, "posture": posture,
                                             "mode": mode})
         elif parsed.path == "/api/attach/pick":
@@ -2158,7 +2673,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK, {"path": path})
         elif parsed.path == "/api/permission/respond":
-            ok = self.broker.respond(
+            # No `tab` needed: the request id names exactly one broker across
+            # every open tab (see respond_permission).
+            ok = respond_permission(
+                self.sessions,
                 body.get("request_id") or "",
                 body.get("decision") or "deny",
                 bool(body.get("remember")),
@@ -2171,15 +2689,25 @@ class Handler(BaseHTTPRequestHandler):
             chosen = pick_folder(Path(sys.executable))
             self._send_json(HTTPStatus.OK, {"path": chosen})
         elif parsed.path == "/api/project/open":
+            # SPAWNS a tab. Every other open conversation keeps running -- this
+            # endpoint used to kill the one session the server had, which is
+            # the whole reason tabs exist.
             raw = (body.get("path") or "").strip()
             target = Path(raw).expanduser() if raw else None
             if not target or not target.is_dir():
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
                 return
             target = target.resolve()
-            self.session.restart(cwd=target)
+            # The cap is enforced inside open_tab, atomically with the slot it
+            # hands out -- checking it here would race every other spawn.
+            new_tab = self.open_tab(target)
+            if new_tab is None:
+                self._send_json(HTTPStatus.CONFLICT,
+                                {"error": "too many tabs", "max_tabs": MAX_TABS})
+                return
             self._send_json(HTTPStatus.OK, {
-                "cwd": str(target), "recents": remember_recent(target),
+                "cwd": str(target), "tab": new_tab,
+                "recents": remember_recent(target),
             })
         elif parsed.path == "/api/project/archive":
             # Hide from the sidebar but keep every transcript — reversible.
@@ -2201,6 +2729,17 @@ class Handler(BaseHTTPRequestHandler):
             flag = bool(body.get("pinned"))
             toggle_in_list(PINNED_FILE, raw, flag)
             self._send_json(HTTPStatus.OK, {"ok": True, "pinned": flag})
+        elif parsed.path == "/api/project/rename":
+            # Display name only — nothing on disk is renamed, and the CLI is
+            # never told. An empty name deletes the override; the response is
+            # always the name in force, so the window never has to guess.
+            raw = (body.get("path") or "").strip()
+            if not raw:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing path"})
+                return
+            self._send_json(HTTPStatus.OK, {
+                "ok": True, "name": set_project_name(raw, str(body.get("name") or "")),
+            })
         elif parsed.path == "/api/project/reveal":
             # Opens the project folder in Explorer. `startfile` on a directory is
             # what the shell does for a double-click, so the user's own file
@@ -2228,7 +2767,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             target = Path(raw).expanduser()
             norm = str(target.resolve()).lower()
-            if norm == str(self.session.cwd).lower():
+            # ANY tab, not just the active one -- deleting the transcripts of a
+            # project a background conversation is still writing to is the same
+            # broken state, one tab over.
+            if any(str(s.cwd).lower() == norm for s in list(self.sessions.values())):
                 self._send_json(HTTPStatus.CONFLICT, {"error": "project is open"})
                 return
             folder = transcript_dir(target)
@@ -2243,36 +2785,56 @@ class Handler(BaseHTTPRequestHandler):
             if not session_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id"})
                 return
-            # Optional path: resuming a session that belongs to another project
-            # must switch cwd in the same restart, not spawn twice.
+            # Already open in a tab? ADOPT it -- just make that tab active.
+            # Resuming it a second time would leave two CLI processes appending
+            # to one .jsonl, which corrupts the transcript.
+            adopted = tab_running(self.sessions, session_id)
+            if adopted is not None and self.activate_tab(adopted):
+                self._send_json(HTTPStatus.OK, {"ok": True, "tab": adopted,
+                                                "adopted": True,
+                                                "session_id": session_id})
+                return
+            # Optional path: a session that belongs to another project resumes
+            # in its own folder. Without one, the tab that asked supplies it.
             raw = (body.get("path") or "").strip()
-            cwd = None
             if raw:
                 target = Path(raw).expanduser()
                 if not target.is_dir():
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
                     return
-                target = target.resolve()
-                if str(target).lower() != str(self.session.cwd).lower():
-                    cwd = target
-            self.session.restart(cwd=cwd, resume_id=session_id)
-            if cwd is not None:
+                cwd = target.resolve()
+            else:
+                current = self._target(tab)
+                if current is None:
+                    return
+                cwd = current.cwd
+            new_tab = self.open_tab(cwd, resume_id=session_id)
+            if new_tab is None:
+                self._send_json(HTTPStatus.CONFLICT,
+                                {"error": "too many tabs", "max_tabs": MAX_TABS})
+                return
+            if raw:
                 remember_recent(cwd)
-            self._send_json(HTTPStatus.OK, {"session_id": session_id})
+            self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
+                                            "adopted": False,
+                                            "session_id": session_id})
         elif parsed.path == "/api/session/delete":
             session_id = (body.get("session_id") or "").strip()
             if not session_id:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id"})
                 return
             # The live process keeps writing its own transcript; deleting it
-            # underneath the CLI is a broken state, not a feature.
-            if session_id == self.session.session_id:
+            # underneath the CLI is a broken state, not a feature. Checked
+            # across every tab -- the session need not be the active one.
+            if tab_running(self.sessions, session_id) is not None:
                 self._send_json(HTTPStatus.CONFLICT, {"error": "session is active"})
                 return
             # Optional path: the sidebar deletes sessions in any project. The
             # traversal guard on the id lives in transcript_path either way.
             raw = (body.get("path") or "").strip()
-            cwd = Path(raw).expanduser() if raw else self.session.cwd
+            cwd = self._cwd_for(raw, tab)
+            if cwd is None:
+                return
             transcript = transcript_path(cwd, session_id)
             if transcript is None:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
@@ -2284,14 +2846,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "session_id": session_id})
         elif parsed.path == "/api/status":
+            session = self._target(tab)
+            if session is None:
+                return
             self._send_json(HTTPStatus.OK, {
-                "session_id": self.session.session_id,
-                "cwd": str(self.session.cwd),
-                "running": bool(self.session.proc and self.session.proc.poll() is None),
+                "session_id": session.session_id,
+                "cwd": str(session.cwd),
+                "running": session.alive(),
+                "tab": tab or self.active,
+                "active": self.active,
                 # Commands, models and account from the CLI's own `initialize`.
                 # None until it answers (milliseconds after spawn); the UI must
                 # tolerate that and also listen for wrapper/init_info over SSE.
-                "init_info": self.session.init_info,
+                "init_info": session.init_info,
             })
         else:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -2351,14 +2918,18 @@ def launch_window(url: str) -> None:
     webbrowser.open(url)
 
 
-def idle_watchdog(hub: Hub, session: ClaudeSession, httpd: ThreadingHTTPServer,
-                  grace: float) -> None:
-    """Server lifetime is tied to the window: last client gone -> shut down."""
+def idle_watchdog(hub: Hub, sessions: dict[str, ClaudeSession],
+                  httpd: ThreadingHTTPServer, grace: float) -> None:
+    """Server lifetime is tied to the window: last client gone -> shut down.
+
+    Every tab dies with it. `sessions` is the live registry, not a copy, so a
+    tab opened after this thread started is stopped too.
+    """
     # Give the window time to make its first connection before arming.
     time.sleep(grace)
     while True:
         if hub.idle_seconds() > IDLE_SHUTDOWN_SECONDS:
-            session.stop()
+            stop_all(sessions)
             threading.Thread(target=httpd.shutdown, daemon=True).start()
             return
         time.sleep(1.0)
@@ -2369,15 +2940,15 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
     port = free_port()
     endpoint = f"http://127.0.0.1:{port}"
     hub = Hub()
-    broker = PermissionBroker(hub)
-    session = ClaudeSession(cwd=cwd, hub=hub, claude_bin=find_claude(),
-                            broker=broker)
-    session.start()
 
     Handler.token = token
     Handler.hub = hub
-    Handler.session = session
-    Handler.broker = broker
+    Handler.claude_bin = find_claude()
+    Handler.sessions = {}
+    Handler.active = ""
+    # The boot conversation is just the first tab, opened through the same
+    # path /api/project/open uses.
+    Handler.open_tab(cwd)
 
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     httpd.daemon_threads = True
@@ -2389,7 +2960,8 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
         print(f"[server] listening: {url}", flush=True)
 
     remember_recent(cwd)
-    threading.Thread(target=idle_watchdog, args=(hub, session, httpd, 30.0),
+    threading.Thread(target=idle_watchdog,
+                     args=(hub, Handler.sessions, httpd, 30.0),
                      daemon=True).start()
     if open_window:
         launch_window(url)
@@ -2399,7 +2971,7 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        session.stop()
+        stop_all(Handler.sessions)
 
 
 def main() -> None:

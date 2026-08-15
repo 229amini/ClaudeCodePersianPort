@@ -215,7 +215,29 @@ export const state = {
   toolCards: new Map(),  // tool_use_id -> body element
   run: null,             // the consecutive-tool-call group being filled
   status: {},
+  // True only while rendering a conversation the user is NOT looking at (a
+  // background tab, app.js). Everything below toChrome() reads it.
+  background: false,
+  // Where a background tab's chrome-shaped facts wait for their turn: posture,
+  // effort, model, busy… app.js drains this when the tab is switched to.
+  chrome: {},
 };
+
+/* THE WINDOW BELONGS TO ONE CONVERSATION AT A TIME.
+   The transcript is per tab (see withRenderTarget below) but the statusline,
+   the chips, the pill and the busy flag are single elements shared by all of
+   them — so a background tab's event must not touch them, or six sessions
+   repaint one window and the user reads another conversation's model, cost and
+   permission level. The value is parked in that tab's own scope instead and
+   applied when the user switches to it (app.js applyChrome()).
+
+   Last-write-wins per key is the whole storage model, and it is enough because
+   every one of these is a scalar the CLI re-announces: nothing accumulates
+   except the auto-approval list, which says so at its own call site. */
+function toChrome(key, value, apply) {
+  if (state.background) state.chrome[key] = value;
+  else apply(value);
+}
 
 export function resetTurn() {
   state.streamBubble = null;
@@ -277,9 +299,23 @@ function paintPulse(p) {
   p.meta.textContent = parts.join(" · ");
 }
 
-function clearPulse() {
-  if (state.pulse) clearInterval(state.pulse.timer);
-  state.pulse = null;
+/* Defaults to the scope currently being rendered into. The argument exists for
+   ONE caller: app.js dropping a tab, whose 500 ms interval lives in that tab's
+   scope and would otherwise keep painting a detached node for the life of the
+   window — the tab is not the one on screen, so `state` is not its scope and
+   resetTurn() cannot reach it. */
+export function clearPulse(scope = state) {
+  const pulse = scope.pulse;
+  if (!pulse) return;
+  clearInterval(pulse.timer);
+  // A pulse only reaches here still wearing "live" when something is
+  // abandoning it without settling it first — a second/third send during a
+  // running turn (startPulse()'s own leading clearPulse()) or resetTurn()
+  // off a live `user` text case. settlePulse() always strips the class
+  // before calling this, so a settled pulse (the turn's permanent closing
+  // line) is never touched here — only the orphaned node is removed.
+  if (pulse.el.classList.contains("live")) pulse.el.remove();
+  scope.pulse = null;
 }
 
 function startPulse() {
@@ -308,7 +344,6 @@ function startPulse() {
 function settlePulse() {
   const p = state.pulse;
   if (!p) return;
-  clearPulse();
   p.glyph.textContent = PULSE_GLYPHS[0];
   p.text.textContent = FA.pulseDone.replace("{verb}", p.verb)
                                    .replace("{time}", fmtDuration(Date.now() - p.started));
@@ -319,6 +354,12 @@ function settlePulse() {
   // without this would snap the closing line back above its own turn.
   p.el.parentElement?.append(p.el);
   p.el.classList.remove("live");   // stops being "now", becomes this turn's record
+  // clearPulse() runs only now, after the class is off: it removes an
+  // abandoned "live" node from the DOM, and a settled pulse must not look
+  // like one to it. JS runs this function to completion with no interleaving,
+  // so moving the call here (rather than before the settle above) changes
+  // nothing else — it only stops the interval and clears state.pulse.
+  clearPulse();
   if (atBottom()) log.scrollTop = log.scrollHeight;
 }
 
@@ -334,13 +375,16 @@ function settlePulse() {
    transcript's state.toolCards (a tool_use id is only unique within one
    transcript, and both sides are streaming).
 
+   Concurrent tabs (app.js) reuse the same seam with `background: true` scopes:
+   N buffered conversations rendering into detached nodes, one of them visible.
+
    The statusline is deliberately NOT swapped: /api/agent returns the same
    user+assistant filtered event shape /api/session does, so nothing a replay
    can carry reaches setStatus in the first place. */
-export function newRenderScope() {
+export function newRenderScope(background = false) {
   return { streamBubble: null, streamText: "", thinkingBody: null,
            thinkingPeek: null, pulse: null, toolCards: new Map(),
-           run: null, status: {} };
+           run: null, status: {}, background, chrome: {} };
 }
 
 export function withRenderTarget(target, scope, fn) {
@@ -828,7 +872,7 @@ export function resetStatus() {
   setStatus({});
   // The «context is filling up» notice is the same number in another shape. A
   // new session starts empty, so it has to go with the meter that raised it.
-  noteContext(0);
+  toChrome("context", 0, noteContext);
 }
 
 export function setStatus(patch) {
@@ -836,7 +880,11 @@ export function setStatus(patch) {
   // One number, two readers: the meter below and the notice above the composer.
   // Driving the notice from here means every source of a context figure (the
   // CLI's own get_context_usage, and the `result` fallback) feeds it for free.
-  if (typeof patch.context === "number") noteContext(patch.context);
+  if (typeof patch.context === "number") toChrome("context", patch.context, noteContext);
+  // state.status IS the tab's own statusline data (the scope carries it), so a
+  // background tab has already recorded everything above; only the paint is
+  // shared, and app.js repaints from the scope at switch time.
+  if (state.background) return;
   statusline.replaceChildren();
   const s = state.status;
 
@@ -897,25 +945,32 @@ export function renderEvent(ev) {
           mode: ev.permissionMode,
           sessionId: ev.session_id,
         });
-        setCurrentSession(ev.session_id);
-        setChrome(ev.cwd);
-        refreshProjects();
-        // session_id is genuinely known only from here — agents.js's own
-        // reset (below, wrapper/reset) fires this too early: it runs right
-        // after resetStatus() clears state.status.sessionId, and the server
-        // hard-requires `id` on /api/agents, so that refresh was provably
-        // always a 400. A resumed session may already have helpers out; this
-        // is what picks them up.
-        refreshAgents();
+        // The sidebar highlight and the topbar name follow the VISIBLE
+        // conversation. A background tab's own cwd and session id are in its
+        // scope's status above, which is what app.js repaints from at switch.
+        if (!state.background) {
+          setCurrentSession(ev.session_id);
+          setChrome(ev.cwd);
+          refreshProjects();
+          // session_id is genuinely known only from here — agents.js's own
+          // reset (below, wrapper/reset) fires this too early: it runs right
+          // after resetStatus() clears state.status.sessionId, and the server
+          // hard-requires `id` on /api/agents, so that refresh was provably
+          // always a 400. A resumed session may already have helpers out; this
+          // is what picks them up.
+          refreshAgents();
+        }
         // The CLI is authoritative about what commands exist on this machine
         // (custom skills, plugins) — never scan skill directories ourselves.
-        if (Array.isArray(ev.slash_commands)) setSlashCommands(ev.slash_commands);
+        if (Array.isArray(ev.slash_commands)) {
+          toChrome("slash", ev.slash_commands, setSlashCommands);
+        }
         // The model this turn actually ran on: the only real confirmation that
         // a set_model took effect (its own ack is empty).
-        setModelResolved(ev.model);
+        toChrome("model", ev.model, setModelResolved);
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
-        setOutputStyle(ev.output_style);
+        toChrome("outputStyle", ev.output_style, setOutputStyle);
       } else if (ev.subtype === "status" && ev.permissionMode) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.
@@ -1043,7 +1098,7 @@ export function renderEvent(ev) {
           // not a turn in it.
           if (TASK_NOTE.test(part.text ?? "")) {
             renderTaskNote(part.text);
-            refreshAgents();
+            if (!state.background) refreshAgents();
             continue;
           }
           // The CLI narrates an interrupt as a `user` turn whose text is
@@ -1078,7 +1133,7 @@ export function renderEvent(ev) {
         // JSON.stringify(content) against an anchored ^-regex never fires.
         if (ASYNC_LAUNCH.test(toolResultText(part.content))) {
           (body ?? log).append(label(FA.agentLaunched, "meta"));
-          refreshAgents();
+          if (!state.background) refreshAgents();
           continue;
         }
         const text = typeof part.content === "string"
@@ -1116,18 +1171,22 @@ export function renderEvent(ev) {
         // that produced nothing: "Context exceeds the N-token limit by M tokens
         // — run /compact or /clear to continue." No percentage arrives with it,
         // so the meter-driven warning above cannot catch this case.
-        if (CONTEXT_EXHAUSTED.test(String(ev.result ?? ""))) contextFull();
+        if (CONTEXT_EXHAUSTED.test(String(ev.result ?? ""))) {
+          toChrome("contextFull", true, contextFull);
+        }
       }
       // Before resetTurn(), which clears the pulse rather than settling it: a
       // stopped turn earns the same closing line as a finished one.
       settlePulse();
       resetTurn();
-      setBusy(false);
-      refreshProjects();   // the turn changed this session's preview/mtime
-      // The turn is over but the helpers it dispatched are not: this is where
-      // «در انتظار N عامل پس‌زمینه…» appears. Debounced, so a replayed
-      // transcript's hundred result events cost one request.
-      refreshAgents();
+      toChrome("busy", false, setBusy);
+      if (!state.background) {
+        refreshProjects();   // the turn changed this session's preview/mtime
+        // The turn is over but the helpers it dispatched are not: this is where
+        // «در انتظار N عامل پس‌زمینه…» appears. Debounced, so a replayed
+        // transcript's hundred result events cost one request.
+        refreshAgents();
+      }
       return;
     }
 
@@ -1160,7 +1219,7 @@ export function renderEvent(ev) {
       if (ev.subtype === "user_echo") {
         // Derive busy from the stream, not from our own submit handler: a turn
         // can also start from another window on the same server.
-        setBusy(true);
+        toChrome("busy", true, setBusy);
         resetTurn();
         const el = bubble("user");
         el.append(...renderMarkdown(ev.text ?? "").childNodes);
@@ -1171,6 +1230,10 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
+        // NEVER gated: one modal queue serves every open tab, and a background
+        // conversation waiting on an answer is exactly the case the dialog has
+        // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
+        // blocked until its timeout with nothing on screen.
         showPermission(ev);
       } else if (ev.subtype === "permission_resolved") {
         dismissPermission(ev.request_id);
@@ -1185,23 +1248,42 @@ export function renderEvent(ev) {
         // «خودکار» posture or an earlier «دوباره نپرس». The count, and the
         // list behind it, are the audit trail that keeps both honest.
         if (ev.auto) {
-          noteAutoAction(ev.tool_name, ev.why);
-          setAutoCount(ev.auto_count);
+          // The one thing here that accumulates rather than overwrites: the
+          // audit list is the whole defence of «خودکار», so a background tab
+          // keeps every entry instead of the last one.
+          if (state.background) {
+            (state.chrome.autoActions ??= []).push({ tool: ev.tool_name, why: ev.why });
+            state.chrome.autoCount = ev.auto_count;
+          } else {
+            noteAutoAction(ev.tool_name, ev.why);
+            setAutoCount(ev.auto_count);
+          }
         }
       } else if (ev.subtype === "init_info") {
         // Everything the CLI can do, answered at spawn and free
         // (wiki/control-protocol.md §1). Richer than system/init.
-        applyInitInfo(ev.info);
-        if (Array.isArray(ev.info?.commands)) setSlashCommands(ev.info.commands);
-        setAgents(ev.info?.agents);
+        toChrome("initInfo", ev.info, applyInitInfo);
+        if (Array.isArray(ev.info?.commands)) {
+          toChrome("slash", ev.info.commands, setSlashCommands);
+        }
+        // ponytail: the subagent label map is module-global, so a background
+        // tab's set waits its turn too — its Task rows fall back to the raw
+        // agent name until the user looks at them. A per-tab map would be a
+        // second registry for a tooltip.
+        toChrome("agents", ev.info?.agents, setAgents);
       } else if (ev.subtype === "output_style") {
         // Published after a change only; the spawn value rode in on init_info.
-        setOutputStyle(ev.style);
+        toChrome("outputStyle", ev.style, setOutputStyle);
       } else if (ev.subtype === "posture") {
-        setPostureState(ev.posture, ev.auto_count);
+        if (state.background) {
+          state.chrome.posture = ev.posture;
+          state.chrome.autoCount = ev.auto_count;
+        } else {
+          setPostureState(ev.posture, ev.auto_count);
+        }
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
-        setEffortState(ev.effort);
+        toChrome("effort", ev.effort, setEffortState);
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — it
         // replaces the estimate the `result` branch computes below. Only the
@@ -1213,20 +1295,40 @@ export function renderEvent(ev) {
         setStatus(patch);
       } else if (ev.subtype === "statusline") {
         setStatus({ custom: ev.segments || (ev.text ? [{ text: ev.text }] : null) });
+      } else if (ev.subtype === "resumed") {
+        // A resumed session knows who it is before the CLI says a word: the id
+        // and the folder come from the process we just spawned, not from state
+        // the reset above deliberately cleared. The model is NOT here — only
+        // system/init knows which one this session runs on.
+        setStatus({ sessionId: ev.session_id, cwd: ev.cwd });
+        // agentsUrl() sends the session id only when it is truthy, so the
+        // refresh at reset time was always a 400 — this is the first moment a
+        // resumed session's helpers can be listed.
+        if (!state.background) refreshAgents();
       } else if (ev.subtype === "reset") {
-        // Project switched or session resumed: clear the view so the previous
-        // conversation cannot bleed into the new one.
+        // Clearing is STRUCTURAL now — each tab owns its own node, and a new
+        // chat is a new tab, so the server has no production publisher for
+        // this any more (T4a). The path stays because the event is still part
+        // of the protocol and the spec harness drives it: scoped to the tab it
+        // names, it clears that conversation and nothing else.
         log.replaceChildren();
         resetTurn();
         resetStatus();
-        resetControls();
-        resetAgents();    // list, strip, both poll timers and any open drawer
         state.toolCards.clear();
-        setBusy(false);   // a reset means no turn is running, by definition
-        refreshProjects();
+        if (state.background) {
+          // Everything parked for this tab described the session it just
+          // dropped. `reset` tells app.js to restore the chips to their
+          // defaults rather than to what it snapshotted.
+          state.chrome = { reset: true };
+        } else {
+          resetControls();
+          resetAgents();  // list, strip, both poll timers and any open drawer
+          setBusy(false); // a reset means no turn is running, by definition
+          refreshProjects();
+        }
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);
-        setBusy(false);
+        toChrome("busy", false, setBusy);
       }
       return;
 

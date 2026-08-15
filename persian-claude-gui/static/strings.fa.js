@@ -105,12 +105,15 @@ window.FA = {
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
   agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
+  agentHistory: "عامل‌های پیشین ({n})",
 
   connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
   pasteFailed: "چسباندن تصویر ناموفق بود",
   moreActions: "کارهای بیشتر",
+  copyCode: "کپی کد",
+  copied: "کپی شد",
   elapsedSeconds: "{n} ثانیه",
   elapsedMinutes: "{n} دقیقه",
   cliExited: "پردازش کلاد بسته شد",
@@ -128,10 +131,28 @@ window.FA = {
 
   newChat: "گفتگوی جدید",
   projects: "پروژه‌ها",
+
+  /* Concurrent conversations. Each open session is a separate running Claude —
+     «نشست» is the same word the statusline already uses for it. `tabFresh` is
+     what a conversation is called before it has said anything: it has no title
+     yet because the title is made from the first message. */
+  openSessions: "نشست‌های باز",
+  tabFresh: "گفتگوی تازه",
+  closeSession: "بستن این نشست",
+  sessionLive: "این گفتگو باز است",
+  maxTabs: "بیشتر از ۶ گفتگو هم‌زمان باز نمی‌شود؛ اول یکی را ببندید",
+  permOtherSession: "این درخواست از گفتگوی دیگری است:",
+  // The composer's placeholder while no conversation is open at all: there is
+  // nothing to send to, so the box says what to do instead of failing a send.
+  composerBlank: "برای شروع، گفتگویی باز کنید",
+
   removeProject: "حذف پروژه و گفتگوهایش",
   projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",
   archiveProject: "بایگانی",
   unarchiveProject: "خروج از بایگانی",
+  // Renames the LABEL, never the folder on disk — «نمایشی» would be noise for
+  // this audience, so the tooltip keeps showing the real path instead.
+  renameProject: "تغییر نام",
   pinProject: "سنجاق به بالای فهرست",
   unpinProject: "برداشتن سنجاق",
   pinnedProject: "سنجاق‌شده",
@@ -193,6 +214,8 @@ window.FA = {
   ctxClear: "گفتگوی تازه",
   ctxClearNote: "از نو شروع می‌شود",
   ctxDismiss: "بعداً",
+  idleTitle: "مدتی از این گفتگو گذشته",
+  idleBody: "اگر سراغ کار تازه‌ای می‌روید، گفتگوی تازه شروع کنید — پاسخ‌ها سریع‌تر و دقیق‌تر می‌مانند.",
 
   slModel: "مدل",
   slFolder: "پوشه",
