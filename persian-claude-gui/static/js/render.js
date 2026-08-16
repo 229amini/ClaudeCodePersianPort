@@ -212,6 +212,12 @@ export const state = {
   thinkingBody: null,
   thinkingPeek: null,    // the collapsed row's one-line preview of that thought
   pulse: null,           // the live "still working" line for the turn in flight
+  // Turns in flight, mirroring the server's own count (server.py _inflight):
+  // the CLI queues mid-turn sends and answers each with its OWN result event,
+  // so "the batch is done" is count==0, not "a result arrived". Settling the
+  // pulse on every result left the queued turns running with no status line
+  // and no stop button — the CLI shows ONE status for the whole queue.
+  inflight: 0,
   toolCards: new Map(),  // tool_use_id -> body element
   run: null,             // the consecutive-tool-call group being filled
   status: {},
@@ -239,13 +245,16 @@ function toChrome(key, value, apply) {
   else apply(value);
 }
 
-export function resetTurn() {
+/* keepPulse: a boundary INSIDE a queued batch (turn 2 of 3 starting) clears the
+   stream state like any turn boundary, but the one status line spans the whole
+   batch and must survive it. */
+export function resetTurn(keepPulse = false) {
   state.streamBubble = null;
   state.streamText = "";
   state.thinkingBody = null;
   state.thinkingPeek = null;
   state.run = null;
-  clearPulse();
+  if (!keepPulse) clearPulse();
 }
 
 /* --- the turn's pulse -------------------------------------------------------
@@ -309,11 +318,10 @@ export function clearPulse(scope = state) {
   if (!pulse) return;
   clearInterval(pulse.timer);
   // A pulse only reaches here still wearing "live" when something is
-  // abandoning it without settling it first — a second/third send during a
-  // running turn (startPulse()'s own leading clearPulse()) or resetTurn()
-  // off a live `user` text case. settlePulse() always strips the class
-  // before calling this, so a settled pulse (the turn's permanent closing
-  // line) is never touched here — only the orphaned node is removed.
+  // abandoning it without settling it first — a `reset`, a dead CLI, or a
+  // resetTurn() that did not ask to keep it. settlePulse() always strips the
+  // class before calling this, so a settled pulse (the turn's permanent
+  // closing line) is never touched here — only the orphaned node is removed.
   if (pulse.el.classList.contains("live")) pulse.el.remove();
   scope.pulse = null;
 }
@@ -383,7 +391,7 @@ function settlePulse() {
    can carry reaches setStatus in the first place. */
 export function newRenderScope(background = false) {
   return { streamBubble: null, streamText: "", thinkingBody: null,
-           thinkingPeek: null, pulse: null, toolCards: new Map(),
+           thinkingPeek: null, pulse: null, inflight: 0, toolCards: new Map(),
            run: null, status: {}, background, chrome: {} };
 }
 
@@ -1108,7 +1116,9 @@ export function renderEvent(ev) {
           // below. Both sources carry it, so it is dropped here, at the one
           // renderer they share.
           if (INTERRUPT_NOTE.test(part.text ?? "")) continue;
-          resetTurn();
+          // A user turn materializing mid-batch (the CLI injecting a queued
+          // message) is a boundary INSIDE the batch: the status line survives.
+          resetTurn(state.inflight > 0);
           const el = bubble("user");
           el.append(...renderMarkdown(part.text ?? "").childNodes);
           continue;
@@ -1175,11 +1185,23 @@ export function renderEvent(ev) {
           toChrome("contextFull", true, contextFull);
         }
       }
-      // Before resetTurn(), which clears the pulse rather than settling it: a
-      // stopped turn earns the same closing line as a finished one.
-      settlePulse();
-      resetTurn();
-      toChrome("busy", false, setBusy);
+      // One result PER QUEUED MESSAGE, so this is a turn boundary, not
+      // necessarily the batch's end. A stop cancels the queued turns too
+      // (interrupt_cancel_queued_v1) and they never emit results of their own,
+      // so an aborted result IS the end regardless of the count.
+      state.inflight = ev.terminal_reason === "aborted_streaming"
+        ? 0 : Math.max(0, state.inflight - 1);
+      if (state.inflight === 0) {
+        // Before resetTurn(), which clears the pulse rather than settling it: a
+        // stopped turn earns the same closing line as a finished one.
+        settlePulse();
+        resetTurn();
+        toChrome("busy", false, setBusy);
+      } else {
+        // Queued turns still to run: the status line and the stop button both
+        // stay, exactly as the CLI keeps its one spinner over the whole queue.
+        resetTurn(true);
+      }
       if (!state.background) {
         refreshProjects();   // the turn changed this session's preview/mtime
         // The turn is over but the helpers it dispatched are not: this is where
@@ -1220,13 +1242,20 @@ export function renderEvent(ev) {
         // Derive busy from the stream, not from our own submit handler: a turn
         // can also start from another window on the same server.
         toChrome("busy", true, setBusy);
-        resetTurn();
+        // A send while a turn runs is QUEUED by the CLI, which keeps its one
+        // spinner running over the whole queue — so the pulse it started keeps
+        // its verb, its clock and its token count instead of restarting. The
+        // pulse check is the self-heal: a count that outlived its pulse must
+        // start a fresh one, not leave the batch running with no status line.
+        const queued = state.inflight > 0 && !!state.pulse;
+        state.inflight += 1;
+        resetTurn(queued);
         const el = bubble("user");
         el.append(...renderMarkdown(ev.text ?? "").childNodes);
         if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one.
-        startPulse();
+        if (!queued) startPulse();
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
@@ -1301,6 +1330,10 @@ export function renderEvent(ev) {
         // the reset above deliberately cleared. The model is NOT here — only
         // system/init knows which one this session runs on.
         setStatus({ sessionId: ev.session_id, cwd: ev.cwd });
+        // A fresh process: any queued turns died with the old one, and a
+        // deliberate restart suppresses the stale reader's cli_exited (the
+        // generation guard), so the count is zeroed here too.
+        state.inflight = 0;
         // agentsUrl() sends the session id only when it is truthy, so the
         // refresh at reset time was always a 400 — this is the first moment a
         // resumed session's helpers can be listed.
@@ -1314,6 +1347,7 @@ export function renderEvent(ev) {
         log.replaceChildren();
         resetTurn();
         resetStatus();
+        state.inflight = 0;
         state.toolCards.clear();
         if (state.background) {
           // Everything parked for this tab described the session it just
@@ -1328,6 +1362,11 @@ export function renderEvent(ev) {
         }
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);
+        // Every queued turn died with the process. The pulse is cleared, not
+        // settled: nothing finished, and the error bubble above says why —
+        // without this it keeps breathing forever next to «کلاد بسته شد».
+        state.inflight = 0;
+        clearPulse();
         toChrome("busy", false, setBusy);
       }
       return;
