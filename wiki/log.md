@@ -4,7 +4,20 @@ Newest first. One entry per session that produced a decision, a verification ans
 discovered gotcha. Keep entries short — point at code and at other wiki files instead of
 restating them.
 
-## 2026-08-06 — M8 §6 feature pass on the author PC (browser-driven)
+## 2026-08-16 — queued sends share ONE status line (user re-report of pcg-987's scenario)
+
+The stacked «در حال …» rows were fixed 2026-08-14 (pcg-987, orphaned-pulse removal), but the
+QUEUE semantics were still wrong: the CLI answers **each queued user message with its own
+`result` event** (that is why `server.py`'s `_inflight` is a count — comment at its definition),
+and the renderer settled the pulse and hid the stop button on the FIRST result, leaving queued
+turns running with no status at all; and every mid-turn send restarted the pulse's clock and
+token count. Fix: `state.inflight` in render.js mirrors the server's count — `user_echo`
+increments (a queued send keeps the running pulse), `result` decrements and settles only at 0,
+an `aborted_streaming` result zeroes it (interrupt cancels the queued turns and they never emit
+results — `interrupt_cancel_queued_v1`), and `reset` / `resumed` / `cli_exited` zero it at the
+process boundaries (`cli_exited` also now clears a live pulse it used to leak forever).
+Guarded free in spec-test.html (echo,echo,result → still live; second result → settles).
+Gate: spec **104/104**. The deployed copy predates this — re-run `setup.bat` to ship it.
 
 Everything in §6 that does not need the colleague's machine, driven through the real window.
 **Passing:** token streaming; «توقف» → «متوقف شد» with the session still usable; the permission

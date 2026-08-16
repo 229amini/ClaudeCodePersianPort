@@ -856,19 +856,23 @@ check("the settled line ends the turn instead of snapping back above it",
   specLog.lastElementChild === pulse && getComputedStyle(pulse).order === "0",
   specLog.lastElementChild?.className + " / order " + getComputedStyle(pulse).order);
 
-/* Orphaned pulses: clearPulse() used to null state.pulse without touching the
-   DOM, so every send after the first in one running turn left the previous
-   "still working" row behind, breathing forever. Isolated in its own render
-   target (the seam withRenderTarget()/newRenderScope() exist for) so the
-   already-settled pulse above — a real transcript entry — cannot be mistaken
-   for a leak by a bare specLog query. */
+/* Queued sends: the CLI queues a mid-turn message and answers EACH message
+   with its own result event, keeping one spinner over the whole queue. Two
+   defect shapes guarded here: the orphaned pulse (clearPulse() used to null
+   state.pulse without touching the DOM, so every extra send left the previous
+   "still working" row behind, breathing forever) and the early settle (one
+   result used to settle the pulse and hide the stop button while queued turns
+   were still running). Isolated in its own render target (the seam
+   withRenderTarget()/newRenderScope() exist for) so the already-settled pulse
+   above — a real transcript entry — cannot be mistaken for a leak by a bare
+   specLog query. */
 const pulseScoped = document.createElement("div");
 const pulseScope = newRenderScope();
 withRenderTarget(pulseScoped, pulseScope, () => {
   window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "اول" });
   window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "دوم" });
 });
-check("a second send mid-turn clears the orphaned pulse instead of leaving it breathing",
+check("a second send mid-turn joins the one status line instead of stacking another",
   pulseScoped.querySelectorAll(".pulse.live").length === 1 &&
   pulseScoped.querySelectorAll(".pulse").length === 1,
   pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
@@ -877,7 +881,16 @@ check("a second send mid-turn clears the orphaned pulse instead of leaving it br
 withRenderTarget(pulseScoped, pulseScope, () => {
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
 });
-check("the surviving pulse still settles normally once the turn it belongs to ends",
+check("the first result of a two-message queue leaves the status line running",
+  pulseScoped.querySelectorAll(".pulse.live").length === 1 &&
+  pulseScoped.querySelectorAll(".pulse").length === 1,
+  pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
+  pulseScoped.querySelectorAll(".pulse").length + " total");
+
+withRenderTarget(pulseScoped, pulseScope, () => {
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
+check("the last result settles the queue's one pulse into one closing line",
   pulseScoped.querySelectorAll(".pulse.live").length === 0 &&
   pulseScoped.querySelectorAll(".pulse").length === 1,
   pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
