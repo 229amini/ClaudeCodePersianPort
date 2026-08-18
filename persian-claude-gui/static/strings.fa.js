@@ -17,6 +17,7 @@ window.FA = {
   removeAttachment: "حذف",
   slashHint: "برای دیدن دستورها / را بزنید",
   hintZwnj: "نیم‌فاصله: Shift+Space",
+  hintPosture: "سطح اجازه: Shift+Tab",
 
   thinking: "در حال فکر کردن",
 
@@ -91,6 +92,11 @@ window.FA = {
     Skill: "مهارت",
     Agent: "عامل پس‌زمینه اجرا شد",
   },
+
+  /* A polling loop wrote the same sentence and made the same call eight times;
+     the transcript keeps one of them and says how many there were. Persian
+     digits — this is prose chrome, not a technical value (spec rule 5). */
+  cycleRepeat: "{n} بار",
 
   /* Background agents. The CLI dispatches helpers that keep working after the
      turn ends; the strip above the composer is where they live. Nothing here

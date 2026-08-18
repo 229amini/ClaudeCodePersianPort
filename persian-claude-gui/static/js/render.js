@@ -10,7 +10,7 @@
    ========================================================================= */
 "use strict";
 
-import { renderMarkdown, pathEl, linesAuto } from "./bidi.js";
+import { renderMarkdown, pathEl, linesAuto, fillInline, autoDir } from "./bidi.js";
 /* Cyclic on purpose: the renderer drives the sidebar, and the sidebar replays
    through the renderer. Only hoisted function declarations cross this edge, and
    only at event time — never while the modules are still evaluating. */
@@ -63,12 +63,34 @@ function toolResultText(content) {
   return "";
 }
 
-/* The CLI's own phrasings for "this conversation will not fit any more", read
-   out of the 2.1.223 bundle. Matched loosely on purpose: the numbers in the
-   real message are interpolated, and the wording drifts across versions —
-   missing it costs a notice, over-matching costs a dismissible one. */
+/* The CLI's own phrasings for "this conversation will not fit any more".
+   Matched loosely on purpose — the numbers in the real message are interpolated
+   and the wording drifts across versions — but FATAL-ONLY, which is the part
+   that had to be measured rather than guessed.
+   Read out of the shipped bundle 2026-08-18. Fatal:
+
+     "Context exceeds the {n}-token limit by {m} tokens — run /compact or
+      /clear to continue."                                    (hard_limit)
+     "Context limit reached · /compact or /clear to continue"  (the CLI's own
+      context_limit → cleared_context_limit error, which CLEARS the session)
+     "prompt is too long" / "input is too long for requested model"
+      (the API's, and the pair the bundle's own overflow detector tests for)
+
+   Deliberately NOT matched — these are warnings the CLI redraws and takes back
+   by itself, and a notice that appears mid-work and vanishes reads as a
+   malfunction to a non-technical user:
+
+     "Context low ({n}% remaining) · Run /compact to compact & continue"
+     "Context is {n} tokens past the {m}-token compaction window — run /compact
+      to continue."
+
+   Note both warnings say "/compact", never "/compact or /clear" — that phrase
+   only appears in the two fatal messages, which is what makes it safe to keep
+   as the drift catch-all. The percentage-driven notice (composer.js noteContext)
+   is what covers the warning half; this door is only for the turn that failed
+   outright, where no percentage ever arrives. */
 const CONTEXT_EXHAUSTED =
-  /context (exceeds|limit reached|low)|\/compact or \/clear|prompt is too long/i;
+  /context (exceeds|limit reached)|\/compact or \/clear|(prompt|input) is too long/i;
 
 /* --- DOM builders --------------------------------------------------------- */
 
@@ -76,11 +98,89 @@ function atBottom() {
   return log.scrollHeight - log.scrollTop - log.clientHeight < 80;
 }
 
+/* A replay is N appends of a transcript that is already finished, so every one
+   of its atBottom() reads is a forced layout for an answer nobody can act on —
+   the view only has to end up at the bottom once. chrome.js renderInto() wraps
+   its loop in this and scrolls itself afterwards. */
+let bulk = 0;
+
+export function bulkAppend(fn) {
+  bulk++;
+  try { fn(); } finally { bulk--; }
+}
+
 function append(el, { stick = true } = {}) {
-  const wasAtBottom = atBottom();
+  const wasAtBottom = stick && !bulk && atBottom();
   toolHome(el).append(el);
-  if (stick && wasAtBottom) log.scrollTop = log.scrollHeight;
+  if (wasAtBottom) log.scrollTop = log.scrollHeight;
   return el;
+}
+
+/* ONE DOM WRITE PER FRAME for the streaming bubble.
+   A text delta used to rewrite the whole bubble (`textContent = state.
+   streamText`) and then read the scroll offset back — an O(n) write plus a
+   forced layout per TOKEN, so an answer of n tokens cost O(n²) relayouts while
+   the user was reading it. The text still accumulates per delta; only the paint
+   is coalesced onto the next frame, which is the rate the screen updates at
+   anyway.
+
+   The queue is keyed by the BUBBLE and carries its own target because
+   withRenderTarget() swaps `log` and `state` for the length of a SYNCHRONOUS
+   replay (a background tab, the agents drawer) — the rAF callback runs long
+   after that swap is undone, so it must read neither. */
+const paintQueue = new Map();   // bubble -> { target, text }
+let paintFrame = 0;
+/* How much of a streaming answer the per-frame direction measurement reads.
+   See the call below — this is a cost bound, not a correctness one. */
+const STREAM_DIR_SAMPLE = 2000;
+
+function queueStreamText(el, target, text) {
+  paintQueue.set(el, { target, text });
+  if (paintFrame) return;
+  paintFrame = requestAnimationFrame(() => {
+    paintFrame = 0;
+    for (const [node, { target: t, text: s }] of paintQueue) {
+      // NOT `node.isConnected`: a parked tab's transcript lives in a DETACHED
+      // buffer node (app.js), where every node reports disconnected and the
+      // whole background conversation would stop painting. `contains` answers
+      // the question that is actually being asked — is this still the bubble's
+      // scroller — for an attached and a buffered target alike. The text lands
+      // either way (it is one idempotent write, and a bubble that moved between
+      // the queue and the frame must not lose a chunk); only the scroll needs
+      // a box that really holds it.
+      const live = t.contains(node);
+      const stick = live && t.scrollHeight - t.scrollTop - t.clientHeight < 80;
+      node.textContent = s;
+      // `.msg` is unicode-bidi:plaintext, which re-decides direction from the
+      // paragraph's own FIRST strong character and ignores `dir` — so a
+      // majority-Persian answer opening with a Latin term streams left-to-right
+      // until the markdown render corrects it. Measure the accumulated text
+      // instead, once per frame (`.streaming` in style.css is what lets the
+      // attribute win). Same helper the settled blocks use — never a second
+      // direction algorithm.
+      //
+      // BOUNDED, and only here: unbounded this is a regex scan of the whole
+      // answer allocating an array of every matched character, ~60x/s for the
+      // length of the stream — the O(n)-per-frame cost the coalescing above
+      // exists to remove, put straight back beside it. The verdict is stable
+      // long before this many characters, and when the message closes
+      // applyDirection() re-measures the finished markdown exactly.
+      autoDir(node, STREAM_DIR_SAMPLE);
+      if (stick) t.scrollTop = t.scrollHeight;
+    }
+    paintQueue.clear();
+  });
+}
+
+/* The queued paint is plain text and would land AFTER the markdown that
+   replaces it, wiping a finished answer back to its own source. Both halves of
+   ending a stream live here so neither can be forgotten: drop the pending
+   paint, and take the bubble out of the live-stream direction rule. Must run
+   immediately before the replaceChildren() that settles the bubble. */
+function endStreamPaint(el) {
+  if (!el) return;
+  paintQueue.delete(el);
+  el.classList.remove("streaming");
 }
 
 /* A run of consecutive tool calls collapses into ONE row — «۱ فایل خوانده شد،
@@ -163,6 +263,120 @@ function toolHome(el) {
   return run.group.body;
 }
 
+/* --- a polling loop is one pair, not sixteen rows ---------------------------
+
+   A model waiting on something writes the same sentence and makes the same call
+   over and over — «منتظر می‌مانم.» then «خوانده شد b7j0iksrd.output», eight
+   times — and the transcript becomes sixteen rows that say one thing. Three or
+   more CONSECUTIVE identical pairs collapse into ONE, with the count on the row.
+
+   THREE, not two. A pair that happens twice is a retry as often as it is a
+   loop, and folding something the reader can still see both halves of costs
+   more than it saves — so pair two stays on screen and is removed only once
+   pair three proves it was a loop.
+
+   IDENTICAL is decided on the assistant text's SOURCE markdown and the tool
+   row's own summary text, never on rendered DOM: two cycles of the same loop
+   differ by a tool_use id, an elapsed counter and a diff stat, and none of
+   those is what the reader is seeing twice.
+
+   ponytail: the pair is [sentence][ONE tool card], adjacent, both at the top
+   level of the log. Two shapes therefore never fold, and both fail SAFE — the
+   adjacency test simply does not match, nothing is removed and the transcript
+   renders exactly as it did before this existed:
+     - a cycle that makes two calls, which toolHome() folds into a `.group`
+       first, so the card's parent is the group body rather than the log;
+     - a loop with INTERLEAVED THINKING, which is the same thing by another
+       route: a thinking card is runnable, so it wraps the pair's card into a
+       group and the chain resets every cycle. A thinking-heavy polling loop
+       therefore keeps all sixteen rows.
+   The upgrade path for both, when a real one shows up: detect the pair on the
+   EVENT stream inside renderEvent(), where a thinking delta and a tool_use are
+   distinguishable, instead of on the DOM the events produced. Not worth it for
+   the loop that was reported, which polls once per cycle with no thinking. */
+const CYCLE_MIN = 3;
+
+/* A sentence. Its other half, if it has one, is the next tool card. */
+function openCycle(el, src) {
+  state.cycle = { el, src };
+}
+
+/* The call arrived. Everything here is read from the DOM as it stands, which is
+   what makes the adjacency test mean anything: whatever else landed between the
+   two halves — a thought, a todo list, a second call, another turn — is sitting
+   between them, and that ends the chain. */
+function closeCycle(details, summary, id) {
+  const open = state.cycle;
+  state.cycle = null;
+  const rep = state.repeat;
+  if (!open || details.parentElement !== log
+      || open.el.nextElementSibling !== details) {
+    state.repeat = null;
+    return;
+  }
+  const pair = { el: open.el, details, id };
+  // The two halves are compared as two FIELDS, never joined into one key:
+  // any separator is a character one of them could legitimately contain.
+  // And consecutive means consecutive — the run so far has to end exactly
+  // where this pair starts, or something the reader saw in between is
+  // being skipped over.
+  if (!rep || rep.src !== open.src || rep.summary !== summary
+      || rep.pairs.at(-1).details.nextElementSibling !== open.el) {
+    state.repeat = { src: open.src, summary, count: 1, pairs: [pair] };
+    return;
+  }
+  rep.count += 1;
+  rep.pairs.push(pair);
+  // `count`, not `pairs.length`: after the first fold there is one pair left on
+  // screen and the threshold would never be reached again.
+  if (rep.count < CYCLE_MIN) return;   // still on screen; still might be a retry
+
+  /* THE NEWEST PAIR SURVIVES, not the first. Two reasons, and the second is a
+     data-loss bug rather than a preference:
+     - what a reader wants out of a folded polling loop is the LAST poll — the
+       one that finally said something — so that is the output the row opens to;
+     - the surviving pair's `tool_result` has NOT arrived yet, and it is routed
+       by state.toolCards. Keeping the first pair instead left every later
+       cycle's id mapped to a body that had just been detached, so each new
+       result was appended into nothing: the folded row kept cycle 1's output
+       and the loop's terminal output existed nowhere, live and in replay both.
+     The ids of the pairs being dropped go with them — their bodies are gone and
+     nothing may append to them again. */
+  for (const old of rep.pairs.splice(0, rep.pairs.length - 1)) {
+    old.el.remove();
+    old.details.remove();
+    state.toolCards.delete(old.id);
+  }
+  /* Nothing removed above can be the OPEN run's first card — the surviving
+     pair's own sentence reset the run a moment ago — but the cost of being
+     wrong is silent and total: toolHome() calls run.first.replaceWith(group) on
+     a parentless node, which is a no-op, so the group never enters the log and
+     every card of that run renders into a detached subtree. Cheaper to check
+     than to reason about. */
+  if (state.run && !state.run.group && state.run.first
+      && !log.contains(state.run.first)) {
+    state.run = null;
+  }
+  // Persian digits: this is prose chrome, not a technical value (spec rule 5).
+  // Built fresh on the surviving row — the previous badge left with its card.
+  details.querySelector(":scope > summary")
+    ?.append(label(FA.cycleRepeat.replace("{n}", faNum(rep.count)), "tool-repeat"));
+}
+
+/* A tool_result whose card is gone: a replay that lost the tool_use, another
+   tab's id, a cycle the fold above dropped. It belongs in the log itself — but
+   it has to arrive there through append(), which is the ONE seam that asks
+   toolHome() where a node goes. A bare `log.append()` skips that, so an open
+   run group survives the orphan output and the next tool card lands INSIDE the
+   group — rendered visually before output that actually came first. Transcript
+   order inverted, and only on the truncated transcripts this fallback exists
+   for, which is the last place anyone would look. */
+function intoCard(body, el) {
+  if (body) body.append(el);
+  else append(el);
+  return el;
+}
+
 export function bubble(kind, text) {
   const el = document.createElement("div");
   el.className = "msg " + kind;
@@ -220,6 +434,8 @@ export const state = {
   inflight: 0,
   toolCards: new Map(),  // tool_use_id -> body element
   run: null,             // the consecutive-tool-call group being filled
+  cycle: null,           // the [sentence][call] pair being assembled
+  repeat: null,          // the run of identical pairs being counted
   status: {},
   // True only while rendering a conversation the user is NOT looking at (a
   // background tab, app.js). Everything below toChrome() reads it.
@@ -249,11 +465,22 @@ function toChrome(key, value, apply) {
    stream state like any turn boundary, but the one status line spans the whole
    batch and must survive it. */
 export function resetTurn(keepPulse = false) {
+  // Both halves of ending a stream, always together: without endStreamPaint the
+  // bubble keeps `.streaming` (so its unicode-bidi stays `isolate` instead of
+  // settling) and keeps its queued paint, which lands one more frame later.
+  // Every teardown that is NOT an assistant close comes through here — a
+  // stopped turn, idle_sync, a dead CLI — so pairing it here pairs all of them.
+  endStreamPaint(state.streamBubble);
   state.streamBubble = null;
   state.streamText = "";
   state.thinkingBody = null;
   state.thinkingPeek = null;
   state.run = null;
+  // A turn boundary is not the middle of a polling loop. `repeat` goes too: it
+  // holds DOM nodes, and a chain surviving into the next session is this
+  // project's oldest defect family.
+  state.cycle = null;
+  state.repeat = null;
   if (!keepPulse) clearPulse();
 }
 
@@ -352,6 +579,11 @@ function startPulse() {
 function settlePulse() {
   const p = state.pulse;
   if (!p) return;
+  // Before the rewrite and the move below, for the reason append() reads first:
+  // the closing line is longer than the running one and dropping `live` changes
+  // where it sits, so a read taken afterwards answers about a box that no
+  // longer exists.
+  const wasAtBottom = atBottom();
   p.glyph.textContent = PULSE_GLYPHS[0];
   p.text.textContent = FA.pulseDone.replace("{verb}", p.verb)
                                    .replace("{time}", fmtDuration(Date.now() - p.started));
@@ -368,7 +600,7 @@ function settlePulse() {
   // so moving the call here (rather than before the settle above) changes
   // nothing else — it only stops the interval and clears state.pulse.
   clearPulse();
-  if (atBottom()) log.scrollTop = log.scrollHeight;
+  if (wasAtBottom) log.scrollTop = log.scrollHeight;
 }
 
 /* --- rendering somewhere other than the transcript --------------------------
@@ -392,7 +624,8 @@ function settlePulse() {
 export function newRenderScope(background = false) {
   return { streamBubble: null, streamText: "", thinkingBody: null,
            thinkingPeek: null, pulse: null, inflight: 0, toolCards: new Map(),
-           run: null, status: {}, background, chrome: {} };
+           run: null, cycle: null, repeat: null,
+           status: {}, background, chrome: {} };
 }
 
 export function withRenderTarget(target, scope, fn) {
@@ -726,33 +959,61 @@ export function renderToolDetail(name, toolInput) {
    ANSWERS; this is the record of it, and in history replay it is the only thing
    there is — so it has to read as a question rather than as a JSON dump.
    Both halves live here because both are fed by the one renderer. */
+/* --- AskUserQuestion prose: ONE implementation, two chromes -----------------
+
+   The tool is rendered twice — as the dialog the user answers in (chrome.js
+   renderQuestions) and as the card the transcript keeps (renderQuestionBody
+   below) — and every word of it is markdown the model wrote. The two differ in
+   chrome (a fieldset with radio inputs, versus a list) and must not differ in
+   anything else, because they already did: when the dialog's question and
+   legend were moved onto the inline pipeline, the transcript's header stayed
+   raw textContent, so the same header read scrambled in one of the two places
+   and nothing said so. The callers own their elements; these own what goes in.
+
+   Two functions and not one, because they are two different operations: a
+   header or a question MEASURES ITSELF, while an option row measures its
+   CONTAINER after both of its parts are in. */
+
+/* Header and question. Inline markdown first — as textContent an inline `code`
+   span keeps its backticks and its neutral characters reorder against the
+   Persian around them — then the block measures its own direction, because
+   these open with a Latin technical term often enough that first-strong alone
+   flips them. */
+export function questionProse(el, markdown) {
+  return autoDir(fillInline(el, markdown));
+}
+
+/* One option, into a container the caller made. The label is a <bdi>, not a
+   span: "Sparkling water" would otherwise decide dir="auto" for the whole row
+   and drag its Persian description left with it. dir="auto" skips descendants
+   carrying their own direction, so isolating the label hands the decision to
+   the prose (spec rule 2) — which is why the container is measured AFTER both
+   parts are in, never before. A label with no description inherits the shell. */
+export function questionOption(stack, option, labelCls, descCls) {
+  const name = document.createElement("bdi");
+  name.className = labelCls;
+  fillInline(name, option.label);
+  stack.append(name);
+  if (option.description) {
+    stack.append(fillInline(label("", descCls), option.description));
+  }
+  return autoDir(stack);
+}
+
 export function renderQuestionBody(questions) {
   const frag = document.createDocumentFragment();
   for (const q of questions ?? []) {
     const wrap = document.createElement("div");
     wrap.className = "q-block";
-    if (q.header) wrap.append(label(q.header, "q-header"));
+    if (q.header) wrap.append(questionProse(label("", "q-header"), q.header));
     const text = document.createElement("p");
     text.className = "q-text";
-    text.setAttribute("dir", "auto");
-    text.textContent = q.question ?? "";
-    wrap.append(text);
+    wrap.append(questionProse(text, q.question));
     const ul = document.createElement("ul");
     ul.className = "q-options";
     for (const option of q.options ?? []) {
-      const li = document.createElement("li");
-      li.setAttribute("dir", "auto");
-      // <bdi>, not a span: an option labelled "Sparkling water" would otherwise
-      // decide dir="auto" for the whole row and drag its Persian description
-      // left with it. dir="auto" skips descendants that carry their own
-      // direction, so isolating the label hands the decision to the prose —
-      // spec rule 2. A label with no description inherits the RTL shell.
-      const name = document.createElement("bdi");
-      name.className = "q-label";
-      name.textContent = option.label ?? "";
-      li.append(name);
-      if (option.description) li.append(label(option.description, "q-desc"));
-      ul.append(li);
+      ul.append(questionOption(document.createElement("li"), option,
+                               "q-label", "q-desc"));
     }
     if (ul.children.length) wrap.append(ul);
     frag.append(wrap);
@@ -1004,10 +1265,17 @@ export function renderEvent(ev) {
       if (typeof delta.text === "string") {
         // Stream as plain text; markdown is rendered once the message closes,
         // so half-written fences never reach marked.
-        if (!state.streamBubble) state.streamBubble = bubble("assistant", "");
+        if (!state.streamBubble) {
+          state.streamBubble = bubble("assistant", "");
+          // Plain text under `.msg`'s unicode-bidi:plaintext ignores `dir`;
+          // the class is what lets the measured direction apply while the
+          // bubble is still text. endStreamPaint() takes it off again.
+          state.streamBubble.classList.add("streaming");
+        }
         state.streamText += delta.text;
-        state.streamBubble.textContent = state.streamText;
-        if (atBottom()) log.scrollTop = log.scrollHeight;
+        // The paint, the direction and the stick all happen once on the next
+        // frame — see queueStreamText().
+        queueStreamText(state.streamBubble, log, state.streamText);
       } else if (typeof delta.thinking === "string") {
         if (!state.thinkingBody) {
           state.thinkingPeek = label("", "tool-target");
@@ -1033,14 +1301,30 @@ export function renderEvent(ev) {
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
+          let settled;
           if (state.streamBubble) {
-            state.streamBubble.replaceChildren(...rendered.childNodes);
+            // Read BEFORE the swap, like append() does: plain text becoming
+            // rendered markdown (headings, code blocks, a table) can change
+            // this bubble's height by hundreds of pixels, and a stick decided
+            // after that measures the wrong box.
+            const wasAtBottom = atBottom();
+            // Before replaceChildren, always: a queued plain-text paint landing
+            // after it would wipe the finished answer back to its source.
+            settled = state.streamBubble;
+            endStreamPaint(settled);
+            settled.replaceChildren(...rendered.childNodes);
             state.streamBubble = null;
             state.streamText = "";
+            if (wasAtBottom) log.scrollTop = log.scrollHeight;
           } else {
-            const el = bubble("assistant");
-            el.append(...rendered.childNodes);
+            settled = bubble("assistant");
+            settled.append(...rendered.childNodes);
           }
+          // Both paths converge here on purpose: a sentence opens a cycle
+          // whether it streamed in or arrived whole out of a replay, and it is
+          // the SOURCE markdown — never the bubble's rendered text — that a
+          // repeat is compared on.
+          openCycle(settled, part.text ?? "");
         } else if (part.type === "tool_use") {
           if (part.name === "TodoWrite") {
             renderTodos(part.input?.todos);
@@ -1052,10 +1336,18 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
-            const { body } = card("tool", toolSummary(part.name, part.input),
-                                  { tool: part.name });
+            const { details, body } = card("tool", toolSummary(part.name, part.input),
+                                           { tool: part.name });
             body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
+            // The call half of a [sentence][call] pair. Read off the summary
+            // AFTER the body is filled and before any tool_progress elapsed
+            // counter can land on it, so two cycles of one loop compare equal.
+            // The id travels too: a folded cycle's card is detached, and its
+            // state.toolCards entry has to go with it.
+            closeCycle(details,
+                       details.querySelector(":scope > summary")?.textContent ?? "",
+                       part.id);
           }
         }
       }
@@ -1131,8 +1423,8 @@ export function renderEvent(ev) {
         const structured = ev.tool_use_result;
         if (structured && Array.isArray(structured.questions)
             && structured.answers && typeof structured.answers === "object") {
-          (body ?? log).append(renderAnswers(structured.questions,
-                                             structured.answers));
+          intoCard(body, renderAnswers(structured.questions,
+                                      structured.answers));
           continue;
         }
         // The launch ack for a background agent. Its text is the CLI talking to
@@ -1142,7 +1434,7 @@ export function renderEvent(ev) {
         // is usually a block ARRAY (see toolResultText above), and matching
         // JSON.stringify(content) against an anchored ^-regex never fires.
         if (ASYNC_LAUNCH.test(toolResultText(part.content))) {
-          (body ?? log).append(label(FA.agentLaunched, "meta"));
+          intoCard(body, label(FA.agentLaunched, "meta"));
           if (!state.background) refreshAgents();
           continue;
         }
@@ -1155,7 +1447,12 @@ export function renderEvent(ev) {
         const out = block("tool-output", "");
         out.append(linesAuto(text));
         if (part.is_error) out.style.color = "var(--danger)";
-        (body ?? bubble("assistant").parentElement ?? log).append(out);
+        // intoCard(), exactly like the two branches above — see its own note
+        // for why the orphan case may not simply `log.append()`. An earlier
+        // fallback here was `bubble("assistant").parentElement`, a way of
+        // writing `log` that leaves an empty .msg.assistant in the transcript
+        // first (bubble() APPENDS) and then hangs the output off its parent.
+        intoCard(body, out);
       }
       return;
     }
@@ -1360,6 +1657,21 @@ export function renderEvent(ev) {
           setBusy(false); // a reset means no turn is running, by definition
           refreshProjects();
         }
+      } else if (ev.subtype === "idle_sync") {
+        // The wrapper says this conversation has nothing in flight. It counts
+        // turns on its own side (server.py _inflight) and is the only thing
+        // that can see a turn which produced no `result` — an interrupt the CLI
+        // answered with silence, a reader thread that died mid-batch. Without
+        // it the count below never reaches 0 and the window works forever.
+        //
+        // Silent and idempotent: the pulse SETTLES rather than being cleared
+        // (the turn did happen; its closing line is the record of it), and a
+        // window that already settled hits three no-ops. Nothing is printed —
+        // an aborted `result` arriving late still writes its own «متوقف شد».
+        state.inflight = 0;
+        settlePulse();
+        resetTurn();
+        toChrome("busy", false, setBusy);
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);
         // Every queued turn died with the process. The pulse is cleared, not

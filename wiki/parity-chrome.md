@@ -159,3 +159,85 @@ real thing):
 
 CDP `Page.captureScreenshot` intermittently times out on this page (also seen with an open modal
 in M4). Retrying the same call usually succeeds. Not a page bug.
+
+## The stop button that stopped nothing (2026-08-18, bead pcg-kk9)
+
+Reported: the working pulse «در حال تراشیدن…» ran indefinitely with the stop button up, pressing
+stop did nothing, and the CLI itself was idle.
+
+**The mechanism, not the trigger.** The window derives "working" from the results it has SEEN —
+`render.js state.inflight`, one `+1` per `wrapper/user_echo` and one `-1` per `result`, because a
+queued batch has to keep ONE status line (see log.md 2026-08-14). So *anything* that eats a
+`result` strands the window at working forever, and stop then interrupts a CLI with no turn to
+interrupt, which produces no `aborted_streaming` result to unstick it either. Two ways found here:
+
+1. **`_read_stdout` publishing no `cli_exited`.** The exit notice sat after the read loop, so an
+   exception inside the loop (a closed pipe mid-read, a thread that could not be spawned for a
+   `result`) skipped it entirely. It is a `try/finally` now — this thread is the only thing that
+   can tell a window its CLI is gone.
+2. **`interrupt()` and the window disagreeing by design.** The server resets `_inflight` to 0 on
+   an interrupt (`interrupt_cancel_queued_v1` means the queued turns never report); the window
+   only zeroes on an `aborted_streaming` result. When that result never comes, the two never
+   reconcile.
+
+**The fix is `wrapper/idle_sync`** — the wrapper saying "this conversation has nothing in flight",
+which is a fact only it holds. `/api/interrupt` arms it; the renderer's handler zeroes the count,
+*settles* the pulse (the turn happened; its closing line is the record) and clears busy. It is
+tagged with the tab like every other event, so it unsticks the conversation the stop belongs to
+rather than whichever tab is on screen, and it is idempotent by construction — a late fire after a
+normal result is three no-ops and prints nothing.
+
+### What it waits on is SILENCE, not a clock
+
+This is the part that took a review round to get right, and it is the whole safety of the feature.
+
+`interrupt()` zeroes `_inflight` (the queued turns are cancelled and will never report), which
+means `busy` can no longer speak for *the very turn being aborted*. A plain "publish in 5 s unless
+busy" therefore fires straight through a CLI that is merely **slow** to abort — a `Bash` child
+resisting termination keeps streaming — and lands mid-stream: `resetTurn()` nulls the streaming
+bubble, the pulse and the stop button vanish while output is still printing, and the next delta
+opens an orphan bubble nothing ever settles.
+
+So the wait is on silence. `interrupt()` sets `_idle_deadline = now + IDLE_SYNC_SECONDS` (5 s) and
+arms one timer; **every stdout line pushes that deadline out** (`_touch_idle()`, called in
+`_pump_stdout` before the parse — a line we cannot read is still a line the CLI sent). A timer that
+wakes early re-arms itself for whatever is left rather than firing. A genuinely stuck CLI is
+*silent*; anything that speaks is alive and its own `result` will do the cleanup.
+
+Three guards in `_sync_idle()`, each for a race that produced a visible defect:
+
+| guard | race |
+|---|---|
+| deadline in the future | the CLI spoke since the interrupt — wait out the rest of the silence |
+| deadline `0.0` | nobody is waiting; also dedupes the timer left by a second press of stop |
+| `_inflight` re-read **under `_inflight_lock`, with the publish inside it** | the timer thread reads 0, a `/api/message` lands and echoes, and the stale sync publishes after it. `send_blocks()` increments under that same lock before it writes, so there is no gap left |
+
+There is deliberately no "publish immediately because we already knew nothing was running" branch.
+A CLI with nothing to do is exactly the one that stays quiet, so silence answers that case too, and
+one path cannot disagree with itself.
+
+The interrupt itself is now sent **even when the server believes nothing is running**. `_inflight`
+is our bookkeeping, not the CLI's, and a stop button that quietly declines to send because our own
+counter drifted is the reported defect pointing the other way — pressing stop twice is exactly what
+a user does when the first press looked like nothing.
+
+### The third way, NOT fixed: SSE reconnect replays everything
+
+`Hub.subscribe()` replays the full per-tab backlog (`HISTORY_MAX` 5000 events/tab) and `_serve_sse`
+sends no `id:` field, so there is no `Last-Event-ID` cursor. An `EventSource` auto-reconnect
+therefore re-delivers every event the window already rendered: the transcript duplicates, and the
+`user_echo`/`result` counting runs a second time. Balanced pairs cancel out, but a reconnect that
+lands **mid-turn** adds a `+1` that the single remaining `result` cannot pay back — permanently
+stuck busy, with no process death anywhere. Fixing it needs a real cursor and is out of scope;
+`idle_sync` is what unsticks it in the meantime.
+
+## Shift+Tab cycles the approval posture (2026-08-18, bead pcg-hta)
+
+TUI parity. `composer.js` binds the key and calls `controls.js cyclePosture()`, which picks the
+next entry of the same `POSTURES` list the pill's menu is built from and hands it to the same
+`pickPosture()`. That is the whole design: both of the pill's load-bearing properties are inherited
+by construction rather than re-implemented — the chip still moves only when the server's
+`wrapper/posture` event arrives, and `plan` still exits on its own when the engine leaves it
+(approval-postures.md). A posture that nothing has confirmed yet does not cycle at all.
+The slash popup's `Tab` branch is now `Tab && !shiftKey`, or Shift+Tab would also accept a
+completion on its way past.

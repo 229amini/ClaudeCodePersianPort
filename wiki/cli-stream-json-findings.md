@@ -180,3 +180,44 @@ em dash came out as `ظ¤`. The same text was clean when piped directly in the f
 PowerShell job/console encoding, not the CLI. Consequence for the build: `server.py` must pin
 `encoding="utf-8"` explicitly on the `subprocess` pipes in both directions and never rely on the
 platform default, or Persian will corrupt in transit.
+
+## The CLI's context messages: which are fatal and which take themselves back
+
+Read verbatim out of the shipped bundle (`C:\Users\Lion\.local\bin\claude.exe`, 2026-08-18) after
+users reported «حافظه گفتگو پر شد» flashing up mid-work and clearing itself (bead pcg-63y). The
+wrapper's `CONTEXT_EXHAUSTED` regex in `render.js` had `context low` in it, and that message is a
+**warning the CLI redraws every frame**, not an outcome.
+
+**Fatal** — the turn produced nothing and no percentage arrives with it, which is why the notice
+has a second door at all:
+
+```
+Context exceeds the ${n}-token limit by ${m} tokens — run /compact or /clear to continue.
+Context limit reached · /compact or /clear to continue
+prompt is too long   /   input is too long for requested model
+```
+
+The middle one is the CLI's own `context_limit` error, whose `errorCode` is
+`cleared_context_limit` — it clears the conversation. The last pair is what the bundle's own
+overflow detector tests for (`t.includes("prompt is too long") || t.includes("input is too long
+for requested model")`).
+
+**Warnings, self-clearing** — never raise the panel:
+
+```
+Context low (${pct}% remaining) · Run /compact to compact & continue
+Context is ${n} tokens past the ${m}-token compaction window — run /compact to continue.
+```
+
+The load-bearing detail: **neither warning says "/compact or /clear"**. That phrase appears only in
+the two fatal messages, which is what makes it safe to keep as the loose drift catch-all while
+matching nothing transient. The percentage-driven notice (`composer.js noteContext`, fed by
+`get_context_usage`) is what covers the warning half — it is dismissible and re-arms itself, which
+is the behaviour a warning is allowed to have.
+
+Also here, since it is the same family and is easy to mistake for a limit message:
+
+```
+Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous
+compact, 3 times in a row. …
+```

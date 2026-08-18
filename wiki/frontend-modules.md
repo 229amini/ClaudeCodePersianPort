@@ -168,3 +168,53 @@ a listener) **broken silently**. The rules that fix them, so nobody re-breaks on
   otherwise the 500 ms pulse interval paints detached nodes forever.
 - **`.tab-proj` is a display *name*, not a path** — `<bdi dir="auto">`, never `pathEl()`/`.path`
   (which force LTR and misorder a Persian rename). `.path` remains reserved for real Windows paths.
+
+## A repeated pair is one pair (2026-08-18, bead pcg-2an)
+
+Sibling rule to the run grouping above, and the same intent: a model polling for something wrote
+«منتظر می‌مانم.» and read the same file eight times, and the transcript showed sixteen rows.
+`render.js openCycle()/closeCycle()` fold **three or more CONSECUTIVE identical pairs** into one,
+with a `.tool-repeat` count on the row (fa-IR digits, `strings.fa.js cycleRepeat`).
+
+Four things that will look like arbitrary detail later:
+
+- **Three, not two.** A pair that happens twice is a retry as often as it is a loop. Pair two stays
+  on screen and is removed only once pair three proves it was a loop.
+- **The pair that SURVIVES is the newest, not the first**, and that is a correctness rule rather
+  than a preference. The surviving pair's `tool_result` has not arrived at fold time and is routed
+  by `state.toolCards`; keeping the first pair left every later cycle's id mapped to a body that had
+  just been detached, so each new result was appended into nothing — the folded row kept cycle 1's
+  output and the loop's **terminal** output, the poll that finally said something, existed nowhere,
+  live and in replay both. Dropped pairs take their `state.toolCards` entries with them.
+  It also gives the reader the answer they actually want out of a folded loop.
+- **Removing cards has to answer to `toolHome()`.** `state.run.first` is the node a later group
+  does `replaceWith()` on; pointed at something detached that call is a silent no-op, the group
+  never enters the log, and every card of that run renders into a detached subtree. `closeCycle()`
+  drops the run when its first card is no longer in the log.
+- **The comparison is the source markdown plus the row's own summary text**, never rendered DOM:
+  two cycles of one loop differ by a fresh `tool_use` id, an elapsed counter and a diff stat, and
+  none of those is what the reader is seeing twice. The two are compared as two FIELDS, not joined
+  into one key — any separator is a character one of them could contain.
+- **Adjacency in the DOM is the chain**, checked at `closeCycle` time: the pair must be
+  `[sentence][card]` with nothing between them and nothing between it and the previous pair. That
+  is what makes "any non-matching event breaks the chain" true without a second bookkeeping path —
+  a thought, a todo list, a second call or another turn is simply *sitting there*.
+- **ponytail: the pair is one tool card.** A cycle that makes two calls folds into a `.group`
+  first (toolHome), and the card's `parentElement` is then the group body rather than the log, so
+  it does not match. The reported loop polls once per cycle; following a group would mean
+  re-deciding the pair every time another card joins it.
+
+Both halves run in `renderEvent`, so live and replay collapse identically — plan §B-4's one
+renderer, unforked.
+
+## `body.agents-running`, the second class-as-signal (2026-08-18, bead pcg-63y)
+
+`composer.js setBusy()` already writes `body.busy` and `agents.js paint()` reads it (the
+«در انتظار N عامل» line is running-only *and* turn-over-only). The idle hint needed the arrow the
+other way: a turn that dispatched background helpers ENDS, so `busy` goes false and a session the
+user can watch working looks abandoned — «مدتی از این گفتگو گذشته» arrived mid-work and read as an
+error. `paint()` now also writes `body.agents-running` and `checkIdle()` obeys it.
+
+A body class rather than an import on purpose: `composer.js → agents.js` (or the reverse) closes a
+third module cycle, because `render.js` already imports both. One boolean is not worth that, and
+the convention already existed in the opposite direction.

@@ -164,6 +164,33 @@ the code-opening item *second*, and only the first strong character votes — se
 `wiki/rtl-rendering-notes.md` §"An inline `<code>` at the start of a block flips it LTR" before
 adding any guard for a first-strong-character rule. Gate: spec **82/82**.
 
+**2026-08-18 — the user's third pass: ten reports, one session, every root cause measured.**
+`scroll-behavior: smooth` on `#log` animated every programmatic scroll, so `atBottom()` read a
+stale offset and the transcript stopped following the stream (2/40 vs 40/40 appends measured) —
+the "overlapping rows" screenshots were compositor tear, not layout. Raw HTML rode marked v15
+into `innerHTML`: a pasted `<style>` restyled the whole app and `<img onerror>` would have run
+script — one `renderer.html` override in `bidi.js` now escapes it. First-strong `dir="auto"`
+resolved majority-Persian blocks LTR whenever they open with a Latin term; `autoDir()` now
+counts strong **letters** (digits and Arabic punctuation vote for nobody; Cyrillic/Greek/CJK
+count as LTR) and may only *promote* to `rtl` — **spec rule 1 carries a dated amendment
+sanctioning exactly that and nothing more.** The AskUserQuestion dialog rendered model markdown
+as `textContent` (backticks, reordered neutrals, LTR flip) — fixed once, via prose builders
+shared by the dialog and the transcript. Stuck busy/stop: anything that eats a `result`
+(subprocess death mid-read, SSE-replay double-count, interrupt bookkeeping) stranded the spinner
+forever; `wrapper/idle_sync` now fires after 5 s of CLI **silence** — any stdout line defers it,
+`_inflight` is re-checked under the lock at publish. The context notice flickered because
+`CONTEXT_EXHAUSTED` matched the CLI's per-frame «Context low» status-line warning — fatal-only
+now, phrasings read out of the 2.1.234 bundle. Stream deltas are rAF-coalesced (one write per
+frame; was O(n²) per answer). New: Shift+Tab cycles the posture through the pill's own
+`pickPosture()`; ≥3 identical (sentence + tool row) polling cycles fold into one pair with a
+«N بار» chip — **newest pair wins**, which is what keeps the folded output the final poll's.
+A high-effort review of the diff returned 10 verified findings (two data-loss in the fold);
+all fixed. `/btw` is not a command on 2.1.234 — `initialize.commands` probed, 60 entries.
+Gates: spec **143/143** (negative-tested), units, transcript guard, `test_no_console`, smoke
+**15/15**. Read `wiki/rtl-rendering-notes.md` (autoDir, the escape-writing trap),
+`wiki/parity-chrome.md` §idle_sync, and `wiki/frontend-modules.md` (the newest-pair rule)
+before touching any of it.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -343,7 +370,7 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). 15 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — 42 assertions, so `PASS — 42/42` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 143 assertions by later passes, so `PASS — 143/143` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

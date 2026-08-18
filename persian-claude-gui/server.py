@@ -120,6 +120,20 @@ CONTROL_ALLOWED = frozenset({
 # local round-trips on an open pipe, so anything slow means trouble.
 CONTROL_TIMEOUT = 15.0
 
+# After an interrupt, how long the CLI must be SILENT before we tell the window
+# the turn is over. The window derives "still working" from the result events it
+# has seen, so a turn that never reports one leaves it spinning for the life of
+# the session -- and the user has ALREADY pressed stop, which makes an
+# idle-looking window the more truthful of the two lies.
+#
+# Silence, not elapsed time, is the signal, and that distinction is the whole
+# safety of this: a genuinely stuck CLI says NOTHING, while one that merely
+# takes a while to abort (a Bash child resisting termination) keeps streaming.
+# Firing on a clock instead would land mid-stream -- resetTurn() nulls the
+# streaming bubble, the pulse and the stop button vanish while output is still
+# printing, and the next delta opens an orphan bubble nothing settles.
+IDLE_SYNC_SECONDS = 5.0
+
 # The three approval postures the pill offers -> (CLI permission mode, wrapper
 # auto-approve). `bypassPermissions` is never sent (the engine refuses it) and
 # neither is `auto`: it approves before the wrapper is ever asked, so there is
@@ -1562,6 +1576,10 @@ class ClaudeSession:
         self._write_lock = threading.Lock()
         self._generation = 0   # stale reader threads check this before publishing
         self._interrupt_seq = 0
+        # Monotonic instant after which an interrupt with no answer gives up and
+        # tells the window itself. 0.0 = nothing is waiting. Pushed forward by
+        # every byte the CLI sends (_touch_idle) -- see IDLE_SYNC_SECONDS.
+        self._idle_deadline = 0.0
         # Outbound control requests we are waiting on, keyed by our request_id.
         self._pending: dict[str, dict] = {}
         self._pending_lock = threading.Lock()
@@ -1657,6 +1675,22 @@ class ClaudeSession:
         return bool(self.proc and self.proc.poll() is None)
 
     def _read_stdout(self, proc: subprocess.Popen, generation: int) -> None:
+        # try/finally, not a plain loop-then-tail: this thread is the ONLY thing
+        # that can tell a window its CLI is gone, and the window's "still
+        # working" state is derived from events this loop publishes. An
+        # exception in here (a closed pipe mid-read, a thread that cannot be
+        # spawned for a result) used to skip the exit publish entirely, leaving
+        # the pulse breathing over a process that no longer exists.
+        try:
+            self._pump_stdout(proc, generation)
+        finally:
+            if generation == self._generation:
+                # Every queued turn died with the process, not just the current one.
+                self._reset_inflight()
+                self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
+                                  "returncode": proc.poll()})
+
+    def _pump_stdout(self, proc: subprocess.Popen, generation: int) -> None:
         for line in proc.stdout:
             line = line.strip()
             if not line:
@@ -1665,6 +1699,11 @@ class ClaudeSession:
             # its events must not leak into the new conversation.
             if generation != self._generation:
                 continue
+            # This line is proof of life. A pending interrupt waits for SILENCE,
+            # not for a clock, so anything the CLI says pushes that deadline out
+            # -- see _sync_idle(). Before the parse: a line we cannot read is
+            # still a line it sent.
+            self._touch_idle()
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -1714,11 +1753,6 @@ class ClaudeSession:
                 threading.Thread(target=self._after_result,
                                  args=(event, generation), daemon=True).start()
             self.hub.publish(event)
-        if generation == self._generation:
-            # Every queued turn died with the process, not just the current one.
-            self._reset_inflight()
-            self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
-                              "returncode": proc.poll()})
 
     def _after_result(self, result: dict, generation: int) -> None:
         """Everything that happens once a turn is finished, on one thread."""
@@ -1902,6 +1936,12 @@ class ClaudeSession:
         Fire-and-forget: the turn's own result event is the real signal, and
         blocking here would stall the caller's HTTP response.
         """
+        # Sent even when we believe nothing is running. `_inflight` is our
+        # bookkeeping, not the CLI's, and a stop button that quietly declines to
+        # send because OUR counter drifted is the failure the user reported --
+        # pressing it twice is exactly what happens when the first press looked
+        # like nothing. The CLI answers an interrupt it has no turn for with a
+        # plain `success`, so the cost of being wrong here is one line on a pipe.
         self.control("interrupt", wait=False)
         # The CLI cancels the messages it had QUEUED as well as the running
         # turn (interrupt_cancel_queued_v1), and those queued turns will never
@@ -1909,6 +1949,70 @@ class ClaudeSession:
         # than waiting for N results that are not coming. The aborted current
         # turn does still emit one; the clamp in _after_result absorbs it.
         self._reset_inflight()
+        # ONE path, busy or not. Zeroing the count on the line above means
+        # `busy` can no longer speak for the very turn being aborted, so SILENCE
+        # is what we wait on instead -- and silence answers the "we already knew
+        # nothing was running" case too, since a CLI with nothing to do is
+        # exactly the one that stays quiet.
+        self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+        self._arm_idle_sync(IDLE_SYNC_SECONDS)
+
+    def _arm_idle_sync(self, delay: float) -> None:
+        timer = threading.Timer(delay, self._sync_idle, (self._generation,))
+        timer.daemon = True   # never hold the process open for this
+        timer.start()
+
+    def _touch_idle(self) -> None:
+        """Any byte from the CLI means it is alive: push the deadline out.
+
+        Cheap on purpose -- this runs once per stdout line. Re-arming a real
+        timer per event would be one thread per event; the timer already out
+        re-arms itself once, for whatever is left (see _sync_idle).
+        """
+        if self._idle_deadline:
+            self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+
+    def _sync_idle(self, generation: int) -> None:
+        """Tell every window this conversation has nothing in flight.
+
+        The window counts turns for itself (render.js state.inflight) because
+        that is the only way a queued batch keeps ONE status line. Anything that
+        eats a `result` therefore strands it at "working" forever, and pressing
+        stop then interrupts a CLI that is already idle -- a no-op with no
+        aborted result to unstick anything. This is the wrapper saying what only
+        it can know.
+
+        Three guards, each for a race that would produce a visible defect:
+
+        - a deadline still in the FUTURE means the CLI has spoken since the
+          interrupt, so it is alive and its own result will do the cleanup. Wait
+          out the rest of the silence rather than firing mid-stream, which would
+          null the streaming bubble and drop the pulse and the stop button while
+          output was still printing.
+        - a ZERO deadline means nobody is waiting. That also dedupes the second
+          timer left over by a second press of stop.
+        - `_inflight` is re-read UNDER THE LOCK, with the publish inside it.
+          send_blocks() increments under that same lock before it writes or
+          echoes, which closes the window where this thread reads 0, a
+          /api/message lands, and the stale sync publishes after its user_echo.
+
+        Otherwise idempotent: the renderer's handler is a no-op on a window that
+        has already settled, so a late fire after a normal result costs nothing.
+        """
+        if generation != self._generation:
+            return
+        deadline = self._idle_deadline
+        if not deadline:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            self._arm_idle_sync(remaining)
+            return
+        self._idle_deadline = 0.0
+        with self._inflight_lock:
+            if self._inflight:
+                return   # a new turn owns the window; its own result will end it
+            self.hub.publish({"type": "wrapper", "subtype": "idle_sync"})
 
     def _answer_control_request(self, event: dict, generation: int) -> None:
         """Answer a control_request the CLI sent US.

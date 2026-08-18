@@ -56,6 +56,23 @@ code,
 
 Let the browser detect direction from the first strong character. Do not compute it yourself.
 
+**Amendment 2026-08-18 — block-level promotion to RTL by measurement.** First-strong failed in
+the field: this product's prose is majority-Persian and routinely *opens* with a Latin technical
+term, so real messages — «Object Cache با Redis کانفیگ شده…», a list whose first bullet is a file
+name — resolved LTR (user-reported, screenshots on record). The renderer (`bidi.js autoDir()`)
+may therefore count strong characters in a block and set `dir="rtl"` when RTL letters are at
+least half of the strong total. Bounds, all binding:
+
+- The count reads the same text the browser's own scan would read: it skips `<bdi>`,
+  `<pre>`/`<code>`, `<script>`/`<style>`, and any subtree carrying its own `dir`.
+- Only strong **letters** vote. Digits — European or Arabic-Indic — and punctuation are
+  bidi-weak or neutral and vote for nobody.
+- The measurement may only **promote to `rtl`**; every other outcome keeps `dir="auto"`, so an
+  English block still resolves by the browser's own algorithm. Never set `ltr` from a count,
+  and never reorder text in JS (the closing list stands unchanged).
+- Guarded in `spec-test.html`: the Latin-opening Persian paragraph, the English-quoting-Persian
+  counter-case, the Latin-opening Persian list.
+
 ### 2. Wrap inline identifiers in `<bdi>`
 
 Neutral characters — `\ / . : ( ) [ ] { } - _ @ #` — take their direction from the surrounding text. Inside a Persian sentence, an unwrapped file path or function name will have its punctuation reordered.
@@ -135,7 +152,7 @@ Keep the container LTR and wrap **every line** in its own `dir="auto"` element:
 
 Line order and the box's own alignment stay LTR; each line resolves its own direction from its first strong character. Latin and neutral-only lines are unaffected.
 
-**Per line, never per run.** Wrapping the Persian *run* inside a line in `<bdi>` looks equivalent and is not: adjacent digits fall outside the isolate and get reordered against the text they belong to. Splitting on `\n` is the whole algorithm — do not detect direction in JavaScript (that is still forbidden by rule 1 and the list at the end of this document).
+**Per line, never per run.** Wrapping the Persian *run* inside a line in `<bdi>` looks equivalent and is not: adjacent digits fall outside the isolate and get reordered against the text they belong to. Splitting on `\n` is the whole algorithm — do not detect direction in JavaScript here (rule 1's amendment sanctions exactly one computation, block-level promotion to `rtl` by letter count; per-run and per-line detection stay forbidden by rule 1 and the list at the end of this document).
 
 A blank line needs a `<br>` inside its wrapper, or it has no line box and the blank line silently disappears.
 

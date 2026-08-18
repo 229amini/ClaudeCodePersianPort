@@ -341,3 +341,160 @@ in position *two*. Position two changes nothing — only the first strong charac
 votes. Guards for a first-strong-character rule must place the offending token **first**, or they
 assert nothing. Both new cases are in `spec-test.html`; removing the fix turns them, and only them,
 red (`FAIL — 80/82`).
+
+## The third report of the same list: first-strong is the wrong question (2026-08-18)
+
+`<code dir="ltr">` fixed the case where the opening token *could* be given a direction. The user
+reported the same scrambling again on content where it cannot: a **bare Latin word**.
+
+```
+«Object Cache با Redis کانفیگ شده — ولی یک ایراد در تنظیمات دارد…»   ->  p:ltr   (measured, Edge)
+```
+
+16 Latin letters against 48 Persian ones, and `dir="auto"` reads exactly the first two of them.
+That is not a bug in `dir="auto"` — it is UAX#9 working as specified — it is that **first-strong is
+the wrong question for this product's prose**, which is majority Persian and opens with a Latin
+technical term constantly (a product name, a table name, a file name, a function).
+
+`autoDir()` in `bidi.js` counts strong characters instead and is **one-way**: `rtl > 0 && rtl >=
+ltr` sets `dir="rtl"`, anything else keeps `dir="auto"` so the browser still decides the LTR side.
+An English paragraph quoting one Persian phrase therefore stays LTR, which is the assertion that
+stops anyone "simplifying" this into the hardcoded `direction: rtl` the spec calls a non-solution.
+
+Three things are load-bearing and will look like arbitrary detail later:
+
+- **The count must skip exactly what the browser's own scan skips** — `SKIP_TAGS`, plus any
+  descendant carrying its own `dir`. Skip a different set and you have invented a second direction
+  algorithm that disagrees with the first.
+- **Two passes, in this order.** Every block is given `dir="auto"` *before* any block is measured.
+  Measure while assigning and an ancestor counts text its own scan would have skipped — which is
+  precisely what would have flipped the documented `table` trade above (a table whose cells all
+  carry `dir` must keep measuring nothing and falling back to LTR).
+- **One helper for blocks and for lists.** They are the same question at two scopes; the list is
+  measured *after* its items give up their `dir`, so it reads all of them.
+
+**One existing assertion legitimately changed answer.** The "an English list still reads
+left-to-right" case was one English item against one Persian one — 9 Latin letters to 13 Persian.
+Under a majority rule that is not an English list, so its fixture grew a second English item. If a
+future change makes that check fail again, check the ratio before touching the rule.
+
+## marked v15 renders raw HTML verbatim, and the transcript is untrusted on both sides
+
+A user pasted code containing CSS into the composer and the `<style>` block inside it **restyled the
+whole app window**. Same hole, sharper: `<img src=x onerror=…>` runs script inside a page holding
+the session token. marked dropped its sanitizer on purpose ("use a library"), and we vendor no
+library and want none — the correct rendering of raw HTML here is the **literal text it was**.
+
+One override at the top of `bidi.js` does it:
+
+```js
+window.marked?.use?.({ renderer: { html: ({ text }) => escapeHtml(text) } });
+```
+
+Non-obvious parts, all measured against `static/vendor/marked.min.js` (v15.0.12):
+
+- **One method covers block and inline.** The parser has two dispatch sites for `html` tokens
+  (`Parser.parse` and `Parser.parseInline`) and both call `renderer.html(token)`. Overriding once is
+  the whole fix; there is no separate inline renderer to patch.
+- **The token carries `.text`**, and it is the raw source.
+- **`code`/`codespan` are different token types**, so fenced and inline code are untouched — the
+  gate asserts that explicitly, because "escaped everything" would be a regression, not a fix.
+- Configured **once at module evaluation**, which is safe only because `vendor/marked.min.js` is a
+  *classic* script (finished before any module body runs) and `bidi.js` imports nothing. See
+  `frontend-modules.md` before moving it.
+
+`fillInline()` exists so chrome prose — the AskUserQuestion question, its option labels and
+descriptions — gets the same pipeline as message content. It uses `marked.parseInline`, not
+`parse`: those elements are already styled (`.ask-text`, `.q-desc`) and a block parse would wrap
+the text in a `<p>` carrying a margin the stylesheet never set for them. Rendered as bare
+`textContent` (what it was), an inline code span printed its backticks and its neutral characters
+(`/price-photo/`) reordered against the Persian around them — **at the moment the user had to read
+the question to answer it**. The raw option label still goes to `input.value` untouched: that
+string is the wire format the CLI matches the answer against
+(`wiki/permission-transport.md`).
+
+## A streaming bubble ignores its own `dir`, and the gate gets ~3 animation frames (2026-08-18)
+
+Two facts from the streaming-render half of the scroll/jank fix. Both are invisible to every
+check that reads text.
+
+**`unicode-bidi: plaintext` outranks the `dir` attribute, by design.** `.msg` carries it (spec
+base CSS) and it re-decides each paragraph's base direction from that paragraph's own FIRST
+strong character, *ignoring* `direction` — which is right for a settled message, where
+`applyDirection()` has measured a direction onto every block, and wrong for the seconds a bubble
+is one run of plain streaming text. A majority-Persian answer opening with «Object Cache»
+therefore streamed left-to-right and only snapped RTL when the markdown render landed. The fix is
+`.msg.streaming { unicode-bidi: isolate }`, which hands the decision back to the `dir` that
+`autoDir()` writes on each painted frame; render.js adds the class with the bubble and
+`endStreamPaint()` removes it in the same breath as the markdown swap.
+
+Two traps in it:
+
+- **The rule has to live in the `spec` layer.** `.msg { unicode-bidi: plaintext }` is in that
+  layer, layer order beats specificity, and the same rule written in `components` loses however
+  specific it gets. It is the only rule in `style.css` outside the binding block that must sit
+  there.
+- **`getComputedStyle(el).direction` cannot see this defect.** It reads `rtl` off the attribute
+  while the line is laid out left-to-right — the "+2 −1" lesson in a new costume. The guard
+  measures where the first character actually landed (a `Range` rect against the bubble's
+  midpoint): in an RTL line the opening Latin run sits at the RIGHT end. Measured: 645 px vs a
+  383 px midpoint with the fix, 38 px without it, `dir="rtl"` in both.
+
+**The headless gate serves about three animation frames, then none.** `msedge --headless=new
+--virtual-time-budget=8000` (what `run_spec_test.py` drives) stops producing frames early: the
+fourth `requestAnimationFrame` of a run never fired, the harness hung on its `await`, and the
+runner reported `FAIL — harness never ran` — a missing frame and a module-load error look
+identical from outside. The virtual clock was at 184 ms of its 8000 ms budget, so this is not
+budget exhaustion. **Never build a spec check on waiting for a frame.** `spec-test.html` swaps
+`window.requestAnimationFrame` for a queue and runs the renderer's own callback itself
+(`flushFrame()`), which exercises the same code path, needs no frame, and keeps the verdict
+written in one task.
+
+While writing that guard: `atBottom()`'s own 80 px window is too loose to assert *with*. One delta
+grows a bubble by about a line, so "still within 80 px of the bottom" passes with the stick
+deleted. The stick check asserts exact pinning (`scrollHeight - clientHeight - scrollTop <= 1`),
+and it only means anything if the box is really scrollable — which it asserts too.
+
+## The direction classifier counts LETTERS (2026-08-18, review F5)
+
+`bidi.js autoDir()` promotes a block to `dir="rtl"` when it measures at least half strong-RTL.
+Both of its character classes were wrong, in opposite directions, and no existing case could see
+either — every guard used prose that was overwhelmingly one script.
+
+- **`RTL_STRONG` counted bidi-WEAK characters as RTL votes.** One flat `U+0590–U+08FF` range swept
+  in the Arabic-Indic digits (`U+0660–U+0669`), their Extended-Arabic twins (`U+06F0–U+06F9`) and
+  the Arabic punctuation and format blocks (`U+0600–U+061F`, `U+066A–U+066D`). So
+  `Total: ۱۲۳۴۵۶۷۸۹۰۱۲` — five Latin letters against twelve digits — was pinned `rtl` while the
+  browser lays it out left-to-right, and the code's own comment ("digits, punctuation, whitespace
+  vote for nobody") had never been true. The gaps between the ranges now in the file are exactly
+  those non-letters.
+- **`LTR_STRONG` knew Latin and nothing else.** A Greek, Cyrillic, Armenian, Japanese, Chinese or
+  Korean paragraph quoting one Persian word measured `rtl=1, ltr=0` and was pinned `rtl`. All of
+  those are strong L in UAX#9; they are in the class now.
+
+Matches the dated amendment to spec rule 1 (promote-to-rtl only, letters only, same subtree
+exclusions). Three spec guards hold the shape: the Persian-digit Latin line stays LTR, a Cyrillic
+sentence quoting one Persian word stays LTR, **and** a majority-Persian block opening with a Latin
+term is still promoted — the third is what stops anyone "fixing" the first two by deleting the
+promotion.
+
+**Writing these ranges is its own trap.** `\uXXXX` escapes typed through the Edit tool — and
+through a heredoc into a shell — arrive as literal characters or with a backslash level stripped.
+Patch this line from a Python script that builds the backslash with `chr(92)`; a literal NUL got
+into `render.js` the same way this session (`grep` then reports the file as binary).
+
+## A streamed bubble is torn down in two halves (2026-08-18, review F10)
+
+`endStreamPaint()` exists to pair them: drop the pending frame paint, and take `.streaming` off the
+bubble. Only the assistant-close path called it. `resetTurn()` nulled `state.streamBubble` on its
+own, so every teardown that is *not* a close — a stopped turn, `idle_sync`, a dead CLI — left the
+bubble wearing `.streaming` forever, which is the class that lets the measured `dir` beat
+`.msg { unicode-bidi: plaintext }`: the bubble stayed pinned to a verdict taken mid-sentence, and
+its queued paint stayed live for one more frame. `resetTurn()` calls `endStreamPaint()` now, so
+every teardown path is paired by construction rather than by remembering.
+
+Related, same function: the per-frame `autoDir()` on a streaming bubble is **bounded** to the first
+2000 characters (`STREAM_DIR_SAMPLE`). Unbounded it is a full-string regex scan allocating an array
+of every matched character ~60×/s for the length of the answer — the O(n)-per-frame cost the paint
+coalescing was written to remove, put straight back beside it. The verdict is stable long before
+that; `applyDirection()` re-measures the finished markdown exactly when the message closes.
