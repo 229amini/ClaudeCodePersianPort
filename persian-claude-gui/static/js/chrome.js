@@ -16,7 +16,8 @@ import { api, token } from "./api.js";
    two sources". Nothing below runs at module-evaluation time; initChrome() is
    called from app.js once every module is live. */
 import {
-  bubble, label, renderEvent, renderToolDetail, resetTurn, state, setStatus,
+  bubble, bulkAppend, label, renderEvent, renderToolDetail, resetTurn, state,
+  setStatus, questionProse, questionOption,
 } from "./render.js";
 
 const FA = window.STRINGS;
@@ -801,8 +802,15 @@ function renderInto(tab, events, resumedNote = false) {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
-    for (const event of events ?? []) renderEvent(event);
-    if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
+    // A finished transcript in one synchronous loop: every append() would ask
+    // "is the reader at the bottom?" and force a layout to answer, hundreds of
+    // times, about a view that is not on screen yet. The answer is only needed
+    // once, below.
+    bulkAppend(() => {
+      for (const event of events ?? []) renderEvent(event);
+      if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
+    });
+    node.scrollTop = node.scrollHeight;   // a replay opens at its newest message
   });
 }
 
@@ -987,17 +995,19 @@ function renderQuestions(questions) {
     set.className = "ask-q";
     set.dataset.question = q.question ?? "";
 
+    /* The prose — header, question, and each option below — goes through
+       render.js's builders, which are the ONE implementation of the BiDi
+       contract for this tool. This is the place the user has to READ the
+       question to answer it, and as textContent an inline `code` span kept its
+       backticks and its neutral characters («/price-photo/») reordered against
+       the Persian around them: the scrambled question that was reported. This
+       file keeps the chrome — the fieldset, the inputs, the free-text box. */
     if (q.header) {
-      const legend = document.createElement("legend");
-      legend.setAttribute("dir", "auto");
-      legend.textContent = q.header;
-      set.append(legend);
+      set.append(questionProse(document.createElement("legend"), q.header));
     }
     const text = document.createElement("p");
     text.className = "ask-text";
-    text.setAttribute("dir", "auto");
-    text.textContent = q.question ?? "";
-    set.append(text);
+    set.append(questionProse(text, q.question));
     if (q.multiSelect) set.append(label(FA.askMulti, "ask-hint"));
 
     for (const option of q.options ?? []) {
@@ -1006,19 +1016,13 @@ function renderQuestions(questions) {
       const box = document.createElement("input");
       box.type = q.multiSelect ? "checkbox" : "radio";
       box.name = "ask-" + index;
+      // The RAW label, never the rendered one: this value is the wire format
+      // the CLI matches the answer against (wiki/permission-transport.md).
       box.value = option.label ?? "";
       row.append(box);
       const stack = document.createElement("span");
       stack.className = "ask-opt-text";
-      stack.setAttribute("dir", "auto");
-      // <bdi> so a Latin label ("Sparkling water") isolates instead of deciding
-      // the direction of the Persian description under it — spec rule 2.
-      const name = document.createElement("bdi");
-      name.className = "ask-label";
-      name.textContent = option.label ?? "";
-      stack.append(name);
-      if (option.description) stack.append(label(option.description, "ask-desc"));
-      row.append(stack);
+      row.append(questionOption(stack, option, "ask-label", "ask-desc"));
       set.append(row);
     }
 

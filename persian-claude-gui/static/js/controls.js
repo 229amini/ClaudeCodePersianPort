@@ -316,6 +316,25 @@ export function restoreControls(saved) {
   setAutoCount(s.autoCount ?? 0);
 }
 
+/* Shift+Tab in the composer, the way the TUI cycles it (composer.js binds the
+   key; this owns the order). Deliberately NOT a second implementation: it picks
+   the next entry of the SAME list the pill's menu is built from and hands it to
+   the SAME pickPosture(), so both of the pill's load-bearing properties are
+   inherited by construction — the chip still moves only when the server's
+   `wrapper/posture` event arrives, and `plan` still exits on its own when the
+   engine leaves it (wiki/approval-postures.md).
+
+   No posture confirmed yet means the conversation has not answered; there is
+   nothing to cycle FROM, and starting at POSTURES[0] would be this window
+   asserting a permission level nothing has agreed to. The boolean says whether
+   the key did anything, so the caller can decide whether to swallow it. */
+export function cyclePosture() {
+  if (!posture) return false;
+  const at = POSTURES.findIndex((p) => p.key === posture);
+  pickPosture(POSTURES[(at + 1) % POSTURES.length]);
+  return true;
+}
+
 async function pickPosture(item) {
   closeMenu();
   try {

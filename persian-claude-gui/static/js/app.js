@@ -142,7 +142,8 @@ export function renderInTab(tab, fn) {
 /* Identity (session id), folder and busy are the server's to know, and every
    event below changes one of them. Asking is cheaper than mirroring the
    server's bookkeeping here and drifting from it. */
-const TAB_NEWS = new Set(["user_echo", "resumed", "cli_exited", "reset"]);
+const TAB_NEWS = new Set(["user_echo", "resumed", "cli_exited", "reset",
+                          "idle_sync"]);
 
 function noteTabEvent(ev, tab) {
   if (ev.type === "wrapper" && ev.subtype === "closed") {

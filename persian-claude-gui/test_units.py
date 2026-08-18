@@ -961,6 +961,94 @@ counter.send_blocks([{"type": "text", "text": "seven"}])
 counter._reset_inflight()        # what start() calls on a restart
 check("a restart resets it too", counter.busy is False)
 
+
+class _BrokenPipe:
+    """stdout that dies mid-read.
+
+    This thread is the ONLY thing that can tell a window its CLI is gone, and
+    the window's "still working" state is derived from the events it publishes.
+    An exception in the read loop used to skip the exit notice entirely, which
+    left the pulse breathing over a process that no longer exists.
+    """
+
+    stderr = ()
+
+    @property
+    def stdout(self):
+        yield '{"type":"tool_progress","elapsed_time_seconds":1}'
+        raise ValueError("I/O operation on closed file")
+
+    def poll(self):
+        return 1
+
+
+print("_read_stdout: a reader that dies still reports the exit")
+broken = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+broken._write_line = lambda obj: None
+broken.send_blocks([{"type": "text", "text": "in flight"}])
+try:
+    broken._read_stdout(_BrokenPipe(), broken._generation)
+except ValueError:
+    pass                      # the thread still dies; what matters is the notice
+check("a reader thread that dies mid-read still publishes cli_exited",
+      [e.get("subtype") for e in broken.hub.events][-1:] == ["cli_exited"])
+check("and the in-flight count dies with the process",
+      broken.busy is False)
+
+print("interrupt: the window is told only after the CLI has gone quiet")
+# The reported defect: the pulse ran forever and stop did nothing. The window
+# counts turns for itself (one status line over a queued batch), so anything
+# that eats a `result` strands it -- and an interrupt aimed at an idle CLI
+# produces no aborted result to unstick it either. What we wait on is SILENCE:
+# a stuck CLI says nothing, while one that is merely slow to abort keeps
+# streaming, and firing on a clock instead would tear a live stream down
+# mid-sentence.
+idle = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+sent = []
+idle._write_line = sent.append
+idle.interrupt()
+check("an interrupt with nothing running still reaches the CLI",
+      [o.get("request", {}).get("subtype") for o in sent] == ["interrupt"])
+check("and nothing is published on the spot -- the CLI gets its window to answer",
+      idle.hub.events == [])
+
+idle._idle_deadline = time.monotonic() - 0.01      # the silence has elapsed
+idle._sync_idle(idle._generation)
+check("once the CLI has been quiet for the window, the wrapper says so",
+      [e.get("subtype") for e in idle.hub.events] == ["idle_sync"])
+idle._sync_idle(idle._generation)
+check("and says it once: a second press of stop cannot double-publish",
+      len(idle.hub.events) == 1)
+
+# (i) The CLI is not stuck, it is slow to abort -- a Bash child resisting
+# termination goes on streaming. Landing mid-stream nulls the streaming bubble
+# and drops the pulse and the stop button while output is still printing.
+alive = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+alive._write_line = lambda obj: None
+alive.send_blocks([{"type": "text", "text": "a real turn"}])
+alive.interrupt()
+alive._idle_deadline = time.monotonic() - 0.01
+alive._touch_idle()                 # one more stdout line, right on the boundary
+alive._sync_idle(alive._generation)
+check("an event inside the window defers the sync instead of firing mid-stream",
+      alive.hub.events == [])
+check("and it stays armed -- the deadline moved, it was not dropped",
+      alive._idle_deadline > time.monotonic())
+
+# (ii) The deadline passes, then /api/message lands before the timer thread gets
+# to publish. _inflight is re-read under the same lock send_blocks increments,
+# with the publish inside it, so there is no gap left to lose.
+alive._idle_deadline = time.monotonic() - 0.01
+alive.send_blocks([{"type": "text", "text": "sent inside the window"}])
+alive._sync_idle(alive._generation)
+check("a message sent inside the window cancels the sync",
+      alive.hub.events == [])
+alive._reset_inflight()
+alive._idle_deadline = time.monotonic() - 0.01
+alive._sync_idle(alive._generation - 1)
+check("a stale generation publishes nothing either", alive.hub.events == [])
+alive._idle_deadline = 0.0          # disarm: nothing else here reads this session
+
 print("GET /api/projects: the sidebar answers with no tabs open")
 # Routing it through _target() 404d once the last tab closed, and the window
 # catches that silently -- the sidebar froze exactly when the user needs it

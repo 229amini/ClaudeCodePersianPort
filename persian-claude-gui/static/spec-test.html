@@ -111,6 +111,9 @@ import {
    the two verbs, so the harness can stand in for app.js and drive the group
    exactly as the real window does. */
 import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
+/* The posture cycle's "nothing confirmed yet" branch: this is the only way to
+   put controls.js back to a conversation that has not answered. */
+import { restoreControls } from "/static/js/controls.js";
 
 /* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
    copy, so a regression in the renderer fails here. Cases match
@@ -223,10 +226,17 @@ check("base CSS: pre is direction:ltr + isolate",
 
 // Outside a list, because a list is one block and its items deliberately give
 // up their own dir so the list can read them — see the list checks below.
-check("rule 1: block elements carry dir=auto",
+// "auto" or "rtl": a block that measures at least half Persian is pinned rtl
+// (bidi.js autoDir) because dir="auto" is first-strong and this content opens
+// with a Latin technical term all the time. Everything else keeps "auto", so
+// the browser still decides the LTR side. What rule 1 forbids is a block with
+// NO direction of its own.
+check("rule 1: every block element carries its own direction",
   [...specLog.querySelectorAll(".msg p")]
     .filter(p => !p.closest("li"))
-    .every(p => p.getAttribute("dir") === "auto"));
+    .every(p => ["auto", "rtl"].includes(p.getAttribute("dir"))),
+  [...new Set([...specLog.querySelectorAll(".msg p")]
+    .map(p => p.getAttribute("dir")))].join(","));
 
 const case3 = bubbles[2];
 const bdi = case3.querySelector("bdi.path");
@@ -581,6 +591,58 @@ window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
                      request_id: "spec13", tool_use_id: "spec13",
                      decision: "allow" });
 
+/* The question the user actually READS, and the one place a BiDi defect is
+   unanswerable rather than merely ugly. It is markdown the model wrote, and it
+   was assigned as textContent: the backticks of an inline code span printed
+   literally, its neutral characters («/price-photo/») reordered against the
+   Persian around them, and the whole line flipped LTR off the Latin word it
+   opens with. Same three failures, three different layers — one pipeline fixes
+   all of them (bidi.js fillInline + autoDir). */
+const MD_QUESTIONS = [{
+  header: "sitemap",
+  question: "Sitemap تصویر شکسته دارد و تازه به `/price-photo/` هم اشاره می‌کند؛ کدام را درست کنیم؟",
+  options: [{ label: "sitemap", description: "فقط `/price-photo/` را بردار" },
+            { label: "همه", description: "" }],
+}];
+window.renderEvent({
+  type: "wrapper", subtype: "permission_request", request_id: "spec14",
+  tool_name: "AskUserQuestion", tool_use_id: "spec14",
+  tool_input: { questions: MD_QUESTIONS },
+});
+const askMd = document.querySelector("#perm-ask .ask-text");
+check("ask: the dialog's question is rendered markdown, not a raw string",
+  askMd?.querySelector("code")?.getAttribute("dir") === "ltr" &&
+  !askMd.textContent.includes("`"),
+  askMd?.querySelector("code")
+    ? "code dir=" + askMd.querySelector("code").getAttribute("dir")
+    : "NO code span — question rendered as text");
+
+check("ask: a Persian question opening with a Latin word still reads RTL",
+  dirOf(askMd) === "rtl" && askMd.getAttribute("dir") === "rtl",
+  (dirOf(askMd) ?? "no question") + " / attr " +
+  (askMd?.getAttribute("dir") ?? "none"));
+
+// The description under an option is the same prose in a smaller box, and the
+// row must still read it — the <bdi> label is invisible to the decision.
+const mdDesc = document.querySelector("#perm-ask .ask-desc");
+check("ask: an option description is markdown too, and its row reads RTL",
+  !!mdDesc?.querySelector("code") &&
+  dirOf(mdDesc.closest(".ask-opt-text")) === "rtl",
+  (mdDesc ? (mdDesc.querySelector("code") ? "code span" : "PLAIN TEXT") : "no description")
+  + " / " + (dirOf(mdDesc?.closest(".ask-opt-text")) ?? "none"));
+
+// Whatever the question renders as, the wire value stays the RAW label — that
+// string is what the CLI matches the answer against.
+check("ask: the option input still carries the raw label as its value",
+  [...document.querySelectorAll("#perm-ask .ask-opt input")]
+    .map(i => i.value).join("|") === "sitemap|همه",
+  [...document.querySelectorAll("#perm-ask .ask-opt input")]
+    .map(i => i.value).join("|") || "no options");
+
+window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
+                     request_id: "spec14", tool_use_id: "spec14",
+                     decision: "allow" });
+
 /* The context notice. Driven by the number the CLI measures, so the check is
    "does a usage event above the threshold produce the two actions" — and that
    the percentage is written in Persian digits, since it is prose (rule 5). */
@@ -601,6 +663,23 @@ check("context percentage is written in Persian digits (rule 5)",
 // A compact or a clear drops the number; the notice must let go by itself.
 window.renderEvent({ type: "wrapper", subtype: "usage", context: 12 });
 check("context notice clears itself once the conversation shrinks", ctx.hidden);
+
+/* The CLI's WARNING phrasings, verbatim out of the shipped bundle (2026-08-18).
+   Both used to raise the non-dismissible «حافظه گفتگو پر شد» panel, which the
+   next healthy percentage then took away again — a notice that appears mid-work
+   and vanishes by itself reads as a malfunction. Neither says "/compact or
+   /clear"; that phrase belongs only to the two fatal messages, which is exactly
+   what makes it safe to keep as the drift catch-all in CONTEXT_EXHAUSTED. */
+for (const warning of [
+  "Context low (12% remaining) · Run /compact to compact & continue",
+  "Context is 3000 tokens past the 200000-token compaction window — run /compact to continue.",
+]) {
+  window.renderEvent({ type: "result", subtype: "error_during_execution",
+                       is_error: true, usage: {}, result: warning });
+}
+check("a context WARNING from the CLI never raises the exhausted panel",
+  ctx.hidden,
+  ctx.hidden ? "quiet" : "SHOWED: " + (ctx.querySelector(".ctx-title")?.textContent ?? "?"));
 
 // The hard limit arrives as a failed turn with no percentage at all.
 window.renderEvent({
@@ -704,17 +783,121 @@ const codePara = [...specLog.querySelectorAll(".msg p")].at(-1);
 check("a Persian paragraph opening with `code` resolves RTL, not off the code",
   dirOf(codePara) === "rtl", dirOf(codePara) ?? "no paragraph");
 
+/* The same block, one layer down again: the first token is a bare Latin WORD,
+   which carries no dir and cannot be given one — it is ordinary prose. This is
+   the user's screenshot, verbatim in shape: a paragraph that is overwhelmingly
+   Persian, opening with the product name it is about, rendered left-to-right
+   with its Persian trailing off the wrong edge. dir="auto" is first-strong and
+   first-strong is wrong for this content; the count is what fixes it. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "Object Cache با Redis کانفیگ شده — ولی یک ایراد در تنظیمات دارد که باید درست شود." }] },
+});
+const latinFirstPara = [...specLog.querySelectorAll(".msg p")].at(-1);
+check("a majority-Persian paragraph opening with a Latin word resolves RTL",
+  dirOf(latinFirstPara) === "rtl" && latinFirstPara.getAttribute("dir") === "rtl",
+  (dirOf(latinFirstPara) ?? "no paragraph") + " / attr " +
+  (latinFirstPara?.getAttribute("dir") ?? "none"));
+
+/* The other side of the same measurement, and the reason the rule is one-way:
+   an English paragraph quoting one short Persian phrase is still English. It
+   keeps dir="auto" — the browser decides it, nothing is forced — which is what
+   stops this from becoming the hardcoded `direction: rtl` the spec calls a
+   non-solution. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "The user typed «سلام» into the composer and the round-trip kept it intact." }] },
+});
+const enQuotePara = [...specLog.querySelectorAll(".msg p")].at(-1);
+check("an English paragraph quoting a short Persian phrase stays LTR",
+  dirOf(enQuotePara) === "ltr" && enQuotePara.getAttribute("dir") === "auto",
+  (dirOf(enQuotePara) ?? "no paragraph") + " / attr " +
+  (enQuotePara?.getAttribute("dir") ?? "none"));
+
+/* The half NEITHER of those can see: a first item that opens with a bare Latin
+   WORD. `<code dir="ltr">` cannot help there — a plain word carries no dir and
+   is exactly what dir="auto" is built to read — so first-strong flipped the
+   whole list on the most ordinary content this app renders (a product name, a
+   file name, a table name at the head of a Persian bullet). The count is what
+   answers it: three Persian items outvote one Latin word. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "- Redis کانفیگ شده ولی کار نمی‌کند\n- " + PERSIAN_LINE + "\n- ۴۰۴ هم همین‌طور" }] },
+});
+const latinFirst = [...specLog.querySelectorAll(".msg ul")].at(-1);
+const latinFirstItems = [...(latinFirst?.querySelectorAll("li") ?? [])];
+check("a Persian list whose FIRST item opens with a Latin word still reads RTL",
+  dirOf(latinFirst) === "rtl" && latinFirstItems.length === 3 &&
+  latinFirstItems.every(li => dirOf(li) === "rtl"),
+  (dirOf(latinFirst) ?? "no list") + " list / " + latinFirstItems.map(dirOf).join(","));
+
 // The other half of that trade, and the reason this is `dir="auto"` on the list
 // rather than the `direction: rtl` it would be tempting to hardcode: an English
 // list inside the RTL shell still has to read left-to-right (spec's first trap).
+// The fixture carries a Persian item ON PURPOSE — it is the LTR side of the
+// count, so a Persian minority must not drag an English list over. (It used to
+// be one English item against one Persian one, which under a majority rule is
+// not an English list at all: 13 Persian letters to 9 Latin.)
 window.renderEvent({
   type: "assistant",
-  message: { content: [{ type: "text", text: "- first item\n- " + PERSIAN_LINE }] },
+  message: { content: [{ type: "text", text:
+    "- first item, written in English\n- second line, also English\n- " + PERSIAN_LINE }] },
 });
 const enList = [...specLog.querySelectorAll(".msg ul")].at(-1);
 check("an English list still reads left-to-right — the list decides, nothing is forced",
   dirOf(enList) === "ltr" && enList !== faList,
   dirOf(enList) ?? "no list");
+
+/* Raw HTML in a message. marked v15 emits html tokens VERBATIM — it dropped its
+   sanitizer on purpose — and both halves of this transcript are untrusted text:
+   the model writes one, the user pastes the other. A user pasted code
+   containing CSS and the <style> block inside it restyled the entire window
+   (reported); <img onerror> is the same hole with script on the end of it,
+   inside a page that holds the session token. Raw HTML now renders as the text
+   it always was (bidi.js). Element counts, not textContent alone: an injected
+   node is a STRUCTURAL defect, and "the literal text is visible" is only the
+   second half of the assertion. */
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "<style>#x{display:none}</style>\n\nاین متن بعد از استایل است." }] },
+});
+const styleMsg = [...specLog.querySelectorAll(".msg.assistant")].at(-1);
+check("a pasted <style> block is escaped, never injected into the page",
+  specLog.querySelectorAll("style, link").length === 0 &&
+  styleMsg.textContent.includes("<style>#x{display:none}</style>"),
+  specLog.querySelectorAll("style, link").length + " injected node(s) / " +
+  (styleMsg.textContent.includes("<style>") ? "literal text kept" : "TEXT LOST"));
+
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "تصویر <img src=x onerror=1> در متن پیام." }] },
+});
+const imgMsg = [...specLog.querySelectorAll(".msg.assistant")].at(-1);
+check("an inline <img onerror> never becomes an element",
+  specLog.querySelectorAll("img").length === 0 &&
+  imgMsg.textContent.includes("<img src=x onerror=1>"),
+  specLog.querySelectorAll("img").length + " <img> in the log / " +
+  (imgMsg.textContent.includes("<img") ? "literal text kept" : "TEXT LOST"));
+
+// The other side of the same override: a fenced block and an inline span are
+// `code` tokens, not `html` ones, and must render exactly as before.
+window.renderEvent({
+  type: "assistant",
+  message: { content: [{ type: "text", text:
+    "```html\n<b>bold</b>\n```\n\nو `<i>x</i>` در متن." }] },
+});
+const codeMsg = [...specLog.querySelectorAll(".msg.assistant")].at(-1);
+check("escaping raw HTML left fenced and inline code untouched",
+  codeMsg.querySelector("pre code")?.textContent.trim() === "<b>bold</b>" &&
+  codeMsg.querySelector("p code")?.textContent === "<i>x</i>" &&
+  codeMsg.querySelectorAll("b, i").length === 0,
+  (codeMsg.querySelector("pre code")?.textContent.trim() ?? "no fence") + " / " +
+  (codeMsg.querySelector("p code")?.textContent ?? "no span"));
 
 /* Consecutive tool calls fold into one row, as the CLI's own transcript does.
    The count is the assertion a textContent check on the cards cannot make: it
@@ -1498,6 +1681,538 @@ tabRows[1].querySelector(".tab-close").click();
 check("a row switches to its conversation and the ✕ closes that one, not the open one",
   bridgeCalls.join(" ") === "switch:t1 close:t2",
   bridgeCalls.join(" ") || "nothing was called");
+
+/* --- the live stream: one paint per frame, and the direction it paints with --
+   The transcript follows the stream by writing log.scrollTop, and every one of
+   those writes has to land instantly. With `scroll-behavior: smooth` the write
+   reads back as the OLD offset (the animation has not run yet), atBottom()
+   answers "no" on the next event and the view stops following the stream for
+   good — measured at 2/40 appends followed, ending 1616 px adrift. Computed
+   style is the only thing that can see it. */
+check("#log never animates a programmatic scroll",
+  getComputedStyle(specLog).scrollBehavior === "auto",
+  getComputedStyle(specLog).scrollBehavior);
+
+const streamDelta = (text) => window.renderEvent(
+  { type: "stream_event", event: { type: "content_block_delta", delta: { text } } });
+
+/* THE FRAME IS DRIVEN BY HAND, and it has to be. The renderer coalesces its
+   stream paint onto requestAnimationFrame, so every check below needs one frame
+   to have happened — but this page runs under `msedge --headless=new
+   --virtual-time-budget`, and that combination serves a handful of real
+   animation frames and then none at all (measured: the fourth rAF of the run
+   never fired, the harness hung on it, and the runner reported the whole
+   verdict as empty — a module-load error and a missing frame look identical
+   from outside). Waiting for a frame is therefore not a gate, it is a coin
+   toss, and one that fails CLOSED in the noisiest possible way.
+
+   `requestAnimationFrame` is resolved off `window` at call time, so holding the
+   renderer's own callback and running it here exercises the same code path with
+   no frame involved — and synchronously, which keeps the verdict written in one
+   task the way every other check in this file is. Restored at the end. */
+const frameQueue = [];
+const realRaf = window.requestAnimationFrame;
+window.requestAnimationFrame = (fn) => frameQueue.push(fn);   // a truthy id
+const flushFrame = () => {
+  for (const fn of frameQueue.splice(0)) fn(performance.now());
+};
+
+/* Where the first character of a bubble's text actually LANDED. A streamed
+   bubble is plain text under `.msg { unicode-bidi: plaintext }`, which decides
+   the base direction from the first strong character and ignores `dir` — so
+   `getComputedStyle(el).direction` reads "rtl" from the attribute while the
+   line is laid out left-to-right. Same trap as the "+2 −1" defect: the property
+   that is wrong is not the one being asked about. Geometry is not fooled — in
+   an RTL line the opening Latin run sits at the RIGHT end of the box. */
+function headX(el) {
+  const range = document.createRange();
+  range.setStart(el.firstChild, 0);
+  range.setEnd(el.firstChild, 1);
+  const r = range.getBoundingClientRect();
+  return r.left + r.width / 2;
+}
+const midX = (el) => el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2;
+
+// Majority Persian, opening with a Latin technical term — the shape this
+// product's prose actually has, and the one first-strong gets wrong.
+const STREAM_FA = ["Object Cache ", "با Redis کانفیگ شده — ",
+                   "ولی یک ایراد در تنظیمات دارد که باید درست شود."];
+for (const chunk of STREAM_FA) streamDelta(chunk);
+const streamBubble = state.streamBubble;
+// Nothing may have been painted yet: the deltas ran in one synchronous loop and
+// the write is coalesced onto the next frame. This is the O(n²) guard — a
+// renderer that writes textContent per delta shows the text here.
+const paintedEarly = streamBubble?.textContent ?? "(no bubble)";
+flushFrame();
+
+check("a streaming bubble paints once per frame, right-to-left when its text is Persian",
+  !!streamBubble && paintedEarly === "" &&
+  streamBubble.textContent === STREAM_FA.join("") &&
+  streamBubble.getAttribute("dir") === "rtl" &&
+  getComputedStyle(streamBubble).unicodeBidi === "isolate" &&
+  headX(streamBubble) > midX(streamBubble),
+  streamBubble
+    ? "before the frame: «" + paintedEarly.slice(0, 20) + "», after: " +
+      streamBubble.textContent.length + " chars, dir=" +
+      streamBubble.getAttribute("dir") + "/" +
+      getComputedStyle(streamBubble).unicodeBidi +
+      ", first char at " + Math.round(headX(streamBubble)) +
+      " of " + Math.round(midX(streamBubble))
+    : "no stream bubble");
+
+/* The load-bearing half of the coalescing: a delta queued and NOT yet painted
+   when the message closes. The queued write is the raw stream text, so landing
+   it after the markdown swap replaces a finished answer with its own source. */
+streamDelta(" و یک تکه دیگر.");
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text",
+  text: "## نتیجه\n\nمتن فارسی با `Redis` و توضیح کوتاه." }] } });
+flushFrame();
+const settledP = streamBubble?.querySelector("p");
+check("the markdown that settles a streamed answer is not wiped by a queued paint",
+  !!settledP && !!streamBubble.querySelector("h2") &&
+  !streamBubble.classList.contains("streaming") &&
+  !streamBubble.textContent.includes("Object Cache") &&
+  getComputedStyle(settledP).direction === "rtl",
+  settledP
+    ? streamBubble.children.length + " rendered children, class «" +
+      streamBubble.className + "», p is " + getComputedStyle(settledP).direction
+    : "no rendered markdown left: " + (streamBubble?.textContent.slice(0, 30) ?? "gone"));
+
+/* The other side of the measurement, and the assertion that stops anyone
+   "simplifying" the streaming rule into a hardcoded direction: an English
+   answer keeps dir="auto" and the browser still resolves it left-to-right. */
+for (const chunk of ["Object Cache is configured ", "with Redis, but one setting is wrong."]) {
+  streamDelta(chunk);
+}
+const enBubble = state.streamBubble;
+flushFrame();
+check("an English stream still resolves left-to-right",
+  !!enBubble && enBubble !== streamBubble &&
+  enBubble.getAttribute("dir") === "auto" &&
+  getComputedStyle(enBubble).direction === "ltr" &&
+  headX(enBubble) < midX(enBubble),
+  enBubble
+    ? "dir=" + enBubble.getAttribute("dir") + " -> " +
+      getComputedStyle(enBubble).direction + ", first char at " +
+      Math.round(headX(enBubble)) + " of " + Math.round(midX(enBubble))
+    : "no stream bubble");
+
+/* What all of the above is FOR: the transcript follows a reader who is sitting
+   at the bottom and leaves alone one who has scrolled up. The stick moved into
+   the frame callback along with the paint, so it is now possible to coalesce
+   the write and lose the follow — and that failure is invisible until an answer
+   is long enough to scroll. `scrollable` is not decoration: an unscrollable box
+   satisfies both halves trivially, which is a check that can never fail. */
+const scrollable = specLog.scrollHeight > specLog.clientHeight + 80;
+specLog.scrollTop = specLog.scrollHeight;
+streamDelta(" A further sentence, long enough to push the box down another line or two.");
+flushFrame();
+// EXACTLY at the bottom, not merely inside atBottom()'s own 80 px window: one
+// delta grows the bubble by about a line, so a "close enough" assertion passes
+// with the stick deleted and guards nothing (measured — it did).
+const pinned = Math.abs(specLog.scrollHeight - specLog.clientHeight - specLog.scrollTop) <= 1;
+specLog.scrollTop = 0;
+streamDelta(" And one more after that, which the reader above is not asking to see.");
+flushFrame();
+check("a delta follows a reader pinned to the bottom and leaves one who scrolled up alone",
+  scrollable && pinned && specLog.scrollTop === 0,
+  (scrollable ? "" : "NOT SCROLLABLE — the check proves nothing; ") +
+  "pinned: " + (pinned ? "followed" : "fell behind") +
+  ", scrolled up: at " + Math.round(specLog.scrollTop));
+
+window.requestAnimationFrame = realRaf;
+
+/* --- the stop button that stopped nothing (bead pcg-kk9) --------------------
+
+   «در حال تراشیدن…» ran indefinitely with the stop button up while the CLI was
+   idle. The window derives "working" from the results it has SEEN
+   (render.js state.inflight, one per queued message), so anything that eats a
+   result strands it at working forever — and stop then interrupts a CLI with
+   nothing to interrupt, producing no aborted result to unstick it either. The
+   server is the only side that can know; it says so with wrapper/idle_sync.
+
+   Scoped, so the settled line here is this case's own and not one of the
+   transcript entries the pulse checks above left behind. */
+const stuck = document.createElement("div");
+const stuckScope = newRenderScope();
+withRenderTarget(stuck, stuckScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+});
+check("a turn in flight reports working, with one live status line",
+  document.body.classList.contains("busy") &&
+  stuck.querySelectorAll(".pulse.live").length === 1,
+  (document.body.classList.contains("busy") ? "busy" : "NOT busy") + " / " +
+  stuck.querySelectorAll(".pulse.live").length + " live");
+
+withRenderTarget(stuck, stuckScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
+});
+check("idle_sync ends a turn that produced no result: idle window, settled line",
+  !document.body.classList.contains("busy") && stuckScope.inflight === 0 &&
+  stuck.querySelectorAll(".pulse.live").length === 0 &&
+  stuck.querySelectorAll(".pulse").length === 1,
+  (document.body.classList.contains("busy") ? "STILL busy" : "idle") +
+  " / inflight " + stuckScope.inflight + " / " +
+  stuck.querySelectorAll(".pulse.live").length + " live of " +
+  stuck.querySelectorAll(".pulse").length);
+
+/* Both late arrivals are no-ops by construction — a second idle_sync, and the
+   aborted result the CLI may still send after all. Either one printing a second
+   closing line would turn the fix into its own defect. */
+withRenderTarget(stuck, stuckScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
+  window.renderEvent({ type: "result", subtype: "error_during_execution",
+                       terminal_reason: "aborted_streaming", usage: {} });
+});
+check("a late idle_sync and a late aborted result add no second closing line",
+  stuck.querySelectorAll(".pulse").length === 1 &&
+  stuck.querySelectorAll(".pulse.live").length === 0 &&
+  !document.body.classList.contains("busy") &&
+  stuck.textContent.includes(window.STRINGS.stopped),
+  stuck.querySelectorAll(".pulse").length + " pulse rows / " +
+  (stuck.textContent.includes(window.STRINGS.stopped) ? "«متوقف شد» present"
+                                                      : "no stop note"));
+
+/* --- the idle hint during agent-driven work (bead pcg-63y) ------------------
+   The turn that dispatched the helpers ENDED, so `busy` is false and the
+   conversation looks abandoned — «مدتی از این گفتگو گذشته» arrived in the
+   middle of a session the user could watch working, and read as an error.
+   agents.js publishes the fact as a body class (the same signal it already
+   reads in the other direction, `body.busy`); composer.js obeys it. */
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 12 });  // clear the notice
+// The activity clock is stamped on setBusy's busy→idle edge and the earlier
+// idle case consumed it. Re-armed through the shipping path, in its own scope.
+const idleScope = newRenderScope();
+withRenderTarget(document.createElement("div"), idleScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کار" });
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
+window.renderAgents([
+  { id: "idle-1", kind: "agent", description: "Still working", agentType: "Explore",
+    status: "running", startedAt: Math.floor(Date.now() / 1000) - 60 },
+]);
+window.checkIdle(Date.now() + 61 * 60 * 1000);
+check("the idle hint stays away while a background agent is still running",
+  ctx.hidden && document.body.classList.contains("agents-running"),
+  (ctx.hidden ? "quiet" : "SHOWED: «" +
+    (ctx.querySelector(".ctx-title")?.textContent ?? "?") + "»") + " / " +
+  (document.body.classList.contains("agents-running") ? "flag set" : "NO flag"));
+
+// A suppression, not a mute switch: once the helpers are done the hint is free
+// again. Without this half, deleting checkIdle entirely would pass the check above.
+window.renderAgents([]);
+window.checkIdle(Date.now() + 61 * 60 * 1000);
+check("with nothing running any more the hint is free to fire again",
+  !ctx.hidden &&
+  ctx.querySelector(".ctx-title")?.textContent === window.STRINGS.idleTitle,
+  ctx.hidden ? "still hidden"
+             : (ctx.querySelector(".ctx-title")?.textContent ?? "no title"));
+ctx.hidden = true;
+
+/* --- Shift+Tab cycles the approval posture (bead pcg-hta) -------------------
+   Parity with the TUI, and it has to run through the pill's own path: the chip
+   moves only when the SERVER echoes the change back, because an optimistic
+   permission control that looks engaged and is not is the exact defect class
+   this project exists to avoid (wiki/approval-postures.md). So the assertions
+   are what went on the wire, that focus stayed in the box, and — the load-
+   bearing one — that pressing it twice does NOT advance twice. */
+window.renderEvent({ type: "wrapper", subtype: "posture", posture: "ask",
+                     auto_count: 0 });
+const realFetch = window.fetch;
+const posted = [];
+window.fetch = (url, options) => {
+  posted.push({ url: String(url), body: options?.body });
+  return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+};
+const pressShiftTab = () => {
+  const ev = new KeyboardEvent("keydown",
+    { key: "Tab", shiftKey: true, cancelable: true, bubbles: true });
+  input.dispatchEvent(ev);
+  return ev;
+};
+const firstPress = pressShiftTab();
+check("Shift+Tab asks the server for the next posture and keeps the caret in the box",
+  firstPress.defaultPrevented && posted.length === 1 &&
+  posted[0].url.startsWith("/api/posture") &&
+  JSON.parse(posted[0].body ?? "{}").posture === "acceptEdits",
+  (firstPress.defaultPrevented ? "" : "focus LEFT the box; ") +
+  posted.map(p => p.url.split("?")[0] + " " + p.body).join(" | ") || "nothing sent");
+
+pressShiftTab();
+check("a second press with no echo asks for the same one — the pill never moves itself",
+  posted.length === 2 && JSON.parse(posted[1].body ?? "{}").posture === "acceptEdits",
+  posted[1]?.body ?? "nothing sent");
+
+// The engine's own echo is what advances it — and the list wraps, so the last
+// posture leads back to «طرح‌ریزی» rather than dead-ending.
+window.renderEvent({ type: "wrapper", subtype: "posture", posture: "autoApprove",
+                     auto_count: 0 });
+pressShiftTab();
+window.fetch = realFetch;
+check("the server's echo is what advances it, and the cycle wraps round",
+  posted.length === 3 && JSON.parse(posted[2].body ?? "{}").posture === "plan",
+  posted[2]?.body ?? "nothing sent");
+
+/* --- a polling loop is one pair, not sixteen rows (bead pcg-2an) ------------
+   A model waiting on something wrote «منتظر می‌مانم.» and read the same file
+   eight times, and the transcript showed sixteen rows. Three or more
+   CONSECUTIVE identical pairs fold into one, counted — and the comparison is on
+   the SOURCE markdown plus the row's own summary, never on rendered DOM, which
+   carries a different tool_use id in every cycle. */
+const loop = document.createElement("div");
+const loopScope = newRenderScope();
+/* A REAL cycle, not a sketch: a sentence, a call, and the call's own OUTPUT.
+   The first version of this fixture sent no tool_result and made one call per
+   cycle, and that blindness is exactly why the gate sailed over a fold that
+   detached cards state.toolCards was still routing results into — the terminal
+   poll's output landed in nothing, and no assertion here could see it. */
+const pollCycle = (id, file = "b7j0iksrd.output", out = "still waiting") => {
+  window.renderEvent({ type: "assistant",
+    message: { content: [{ type: "text", text: "منتظر می‌مانم." }] } });
+  window.renderEvent({ type: "assistant", message: { content: [{
+    type: "tool_use", id: "poll-" + id, name: "Read",
+    input: { file_path: "C:\\Temp\\" + file } }] } });
+  window.renderEvent({ type: "user", message: { content: [{
+    type: "tool_result", tool_use_id: "poll-" + id, content: out }] } });
+};
+withRenderTarget(loop, loopScope, () => { pollCycle(1); pollCycle(2); });
+check("two identical cycles are a retry, not a loop — both stay on screen",
+  loop.querySelectorAll(":scope > .msg.assistant").length === 2 &&
+  loop.querySelectorAll(":scope > details.card.tool").length === 2 &&
+  !loop.querySelector(".tool-repeat"),
+  loop.querySelectorAll(":scope > .msg.assistant").length + " sentences / " +
+  loop.querySelectorAll(":scope > details.card.tool").length + " rows / " +
+  (loop.querySelector(".tool-repeat") ? "folded too early" : "not folded"));
+
+withRenderTarget(loop, loopScope, () => { pollCycle(3); pollCycle(4); });
+const loopBadge = loop.querySelector(".tool-repeat");
+check("four identical cycles collapse into one pair, counted in Persian digits",
+  loop.querySelectorAll(":scope > .msg.assistant").length === 1 &&
+  loop.querySelectorAll(":scope > details.card.tool").length === 1 &&
+  loopBadge?.textContent === "۴ بار",
+  loop.querySelectorAll(":scope > .msg.assistant").length + " sentences / " +
+  loop.querySelectorAll(":scope > details.card.tool").length + " rows / «" +
+  (loopBadge?.textContent ?? "no count") + "»");
+
+// The other side of the measurement: one changed parameter is a different
+// cycle, and four of those are four rows. Nothing here may fold.
+const varied = document.createElement("div");
+withRenderTarget(varied, newRenderScope(), () => {
+  for (let i = 1; i <= 4; i++) pollCycle("v" + i, "run-" + i + ".output");
+});
+check("cycles that differ by one parameter are never folded together",
+  varied.querySelectorAll(":scope > details.card.tool").length === 4 &&
+  varied.querySelectorAll(":scope > .msg.assistant").length === 4 &&
+  !varied.querySelector(".tool-repeat"),
+  varied.querySelectorAll(":scope > details.card.tool").length + " rows / " +
+  (varied.querySelector(".tool-repeat") ? "FOLDED" : "kept apart"));
+
+/* WHAT THE FOLDED ROW OPENS TO. The pair that survives is the NEWEST one, and
+   its own tool_result has not arrived yet at fold time — so this is the check
+   that the fold did not detach the card that result is routed to. Keeping the
+   FIRST pair instead left the row showing cycle 1's output while the loop's
+   terminal output — the poll that finally said something — existed nowhere. */
+withRenderTarget(loop, loopScope, () => {
+  pollCycle(5, "b7j0iksrd.output", "DONE: the file finally appeared");
+});
+// The card BODY, not the first `.tool-output` in it: renderToolDetail paints
+// the call's own parameters into a box of the same class, so a narrower
+// selector reads the file path back and proves nothing about the result.
+const foldedBody = loop.querySelector("details.card.tool > .card-body");
+const foldedOut = foldedBody?.textContent ?? "";
+check("the folded row opens to the LAST cycle's output, not the first",
+  loop.querySelectorAll(":scope > details.card.tool").length === 1 &&
+  foldedOut.includes("DONE:") && !loop.textContent.includes("still waiting") &&
+  loop.querySelector(".tool-repeat")?.textContent === "۵ بار",
+  (foldedOut.includes("DONE:") ? "last output kept" : "row body: " + foldedOut) + " / «" +
+  (loop.querySelector(".tool-repeat")?.textContent ?? "no count") + "»");
+
+/* The fold removes cards, and toolHome() keeps a reference to the run's FIRST
+   card so it can replaceWith() a group around it later. Pointed at a node the
+   fold detached, that call is a silent no-op: the group never enters the log,
+   and every card of that run renders into a detached subtree — invisible, with
+   no error anywhere. So: fold, then make a second consecutive call, which is
+   the thing that builds a group. */
+withRenderTarget(loop, loopScope, () => {
+  for (const cmd of ["git status", "git log"]) {
+    window.renderEvent({ type: "assistant", message: { content: [{
+      type: "tool_use", id: "after-" + cmd, name: "Bash",
+      input: { command: cmd } }] } });
+  }
+});
+const afterFold = [...loop.querySelectorAll("details.card.tool[data-tool=\"Bash\"]")];
+check("tool calls after a fold stay in the transcript, not in a detached group",
+  afterFold.length === 2 && afterFold.every(c => loop.contains(c)) &&
+  !!loop.querySelector("details.card.group"),
+  afterFold.length + " Bash cards, " +
+  afterFold.filter(c => loop.contains(c)).length + " reachable, group " +
+  (loop.querySelector("details.card.group") ? "present" : "MISSING"));
+
+/* INTERLEAVED THINKING does not fold, and the point of this case is that it
+   fails SAFE. A thinking card is runnable, so it wraps the cycle's tool card
+   into a `.group` and the pair is no longer a top-level [sentence][card] — the
+   adjacency test misses, `state.repeat` is dropped and NOTHING is removed. Four
+   thinking cycles are therefore four cycles on screen, exactly as they were
+   before any of this existed. Recorded as a limitation in render.js with the
+   upgrade path (detect the pair on the event stream, where a thinking delta is
+   distinguishable from a tool call); this is the assertion that it stays a
+   limitation rather than becoming a corruption. */
+const thinky = document.createElement("div");
+withRenderTarget(thinky, newRenderScope(), () => {
+  for (let i = 1; i <= 4; i++) {
+    window.renderEvent({ type: "assistant",
+      message: { content: [{ type: "text", text: "منتظر می‌مانم." }] } });
+    window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
+      delta: { thinking: "Checking again." } } });
+    window.renderEvent({ type: "assistant", message: { content: [{
+      type: "tool_use", id: "think-" + i, name: "Read",
+      input: { file_path: "C:\\Temp\\poll.output" } }] } });
+  }
+});
+check("a loop with interleaved thinking does not fold, and loses nothing",
+  thinky.querySelectorAll(":scope > .msg.assistant").length === 4 &&
+  thinky.querySelectorAll("details.card.tool[data-tool='Read']").length === 4 &&
+  !thinky.querySelector(".tool-repeat"),
+  thinky.querySelectorAll(":scope > .msg.assistant").length + " sentences / " +
+  thinky.querySelectorAll("details.card.tool[data-tool='Read']").length +
+  " calls kept / " +
+  (thinky.querySelector(".tool-repeat") ? "FOLDED" : "not folded"));
+
+/* The count is one more chip on the transcript's most repeated element, so it
+   inherits that element's one-line guard. Measured in the real log — a detached
+   node reports every box as 0×0 and the check would prove nothing. */
+specLog.append(...loop.childNodes);
+const loopSummary = [...specLog.querySelectorAll("details.card.tool > summary")]
+  .find(s => s.querySelector(".tool-repeat"));
+check("a folded loop's row is still one line, count included",
+  (loopSummary?.getBoundingClientRect().height ?? 99) < 40 &&
+  loopSummary?.scrollWidth <= loopSummary?.clientWidth + 1,
+  Math.round(loopSummary?.getBoundingClientRect().height ?? 0) + "px, " +
+  loopSummary?.scrollWidth + " vs " + loopSummary?.clientWidth);
+
+/* --- the direction classifier counts LETTERS, and knows more than Latin -----
+   (review F5.) autoDir() promotes a block to dir="rtl" when it measures at
+   least half strong-RTL, and its two character classes were both wrong in ways
+   no existing case could see. The RTL class swept in whole blocks of bidi-WEAK
+   characters — Arabic-Indic digits and Arabic punctuation — contradicting its
+   own comment, and the LTR class knew Latin and nothing else, so every other
+   strong-L script lost every vote it should have had. Both assertions are the
+   COMPUTED direction as well as the attribute: `dir="auto"` left in place is
+   the browser deciding, which is the whole point of promote-only. */
+const dirCase = document.createElement("div");
+specLog.append(dirCase);
+
+dirCase.append(...window.renderMarkdown("Total: ۱۲۳۴۵۶۷۸۹۰۱۲").childNodes);
+const digitP = dirCase.querySelector("p");
+check("Persian digits vote for nobody: a Latin line full of them stays LTR",
+  digitP?.getAttribute("dir") === "auto" && dirOf(digitP) === "ltr",
+  (digitP?.getAttribute("dir") ?? "none") + " -> " + (dirOf(digitP) ?? "none"));
+
+// Strong L that is not Latin. One Persian word inside it used to win 1-0.
+dirCase.append(...window.renderMarkdown(
+  "\u0421\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0430 \u043f\u0440\u043e\u0435\u043a\u0442\u0430 \u0438 \u0435\u0433\u043e \u0444\u0430\u0439\u043b\u044b: پروژه").childNodes);
+const cyrP = dirCase.querySelectorAll("p")[1];
+check("a Cyrillic sentence quoting one Persian word is not pinned RTL",
+  cyrP?.getAttribute("dir") === "auto" && dirOf(cyrP) === "ltr",
+  (cyrP?.getAttribute("dir") ?? "none") + " -> " + (dirOf(cyrP) ?? "none"));
+
+// The half this must NOT have broken: a genuinely Persian block, opening with a
+// Latin technical term, is still promoted. That is what autoDir exists for.
+dirCase.append(...window.renderMarkdown(
+  "Redis این یک جمله فارسی است.").childNodes);
+const faP = dirCase.querySelectorAll("p")[2];
+check("a majority-Persian block opening with a Latin term is still promoted",
+  faP?.getAttribute("dir") === "rtl" && dirOf(faP) === "rtl",
+  (faP?.getAttribute("dir") ?? "none") + " -> " + (dirOf(faP) ?? "none"));
+
+/* --- the question's prose has ONE implementation (review F9) ----------------
+   AskUserQuestion is rendered twice, and the two copies drifted: the dialog's
+   legend was moved onto the inline pipeline and the transcript's header was
+   left as raw textContent, so the same header read scrambled in one of the two
+   places and nothing said so. Both now go through render.js questionProse().
+   The `ask:` cases above cover the dialog; this covers the transcript copy. */
+window.renderEvent({ type: "assistant", message: { content: [{
+  type: "tool_use", id: "spec-q-body", name: "AskUserQuestion",
+  input: { questions: [{
+    header: "`/price-photo/` انتخاب مسیر",
+    question: "`/price-photo/` کدام مسیر؟",
+    options: [{ label: "Sparkling water", description: "این یک جمله فارسی است." }],
+  }] } }] } });
+// `.at(-1)`: an earlier case already put a question card in this log, and the
+// first one is not the one just rendered.
+const qBlock = [...specLog.querySelectorAll(".q-block")].at(-1);
+const qHead = qBlock?.querySelector(".q-header");
+const qText = qBlock?.querySelector(".q-text");
+check("the transcript's question header gets the inline pipeline, not textContent",
+  !!qHead?.querySelector("code") && !qHead.textContent.includes("`") &&
+  ["auto", "rtl"].includes(qHead.getAttribute("dir")),
+  (qHead?.textContent ?? "no header") + " -> dir=" +
+  (qHead?.getAttribute("dir") ?? "none") +
+  (qHead?.querySelector("code") ? " with <code>" : " NO <code>"));
+
+// Measured direction, not the attribute: the header opens with a Latin code
+// span, which is exactly the shape first-strong alone gets wrong.
+check("the transcript's header and question resolve right-to-left",
+  dirOf(qHead) === "rtl" && dirOf(qText) === "rtl",
+  (dirOf(qHead) ?? "none") + " / " + (dirOf(qText) ?? "none"));
+
+/* --- a torn-down stream is settled, never left mid-flight (review F10) ------
+   resetTurn() nulled state.streamBubble without endStreamPaint(), so every
+   teardown that is not an assistant close — a stopped turn, idle_sync, a dead
+   CLI — left the bubble wearing `.streaming` forever. That class is what lets
+   the measured `dir` beat `.msg { unicode-bidi: plaintext }`, so the bubble was
+   stuck on a verdict taken mid-sentence, and its queued paint stayed live for
+   one more frame. The rAF queue is driven by hand here for the same reason as
+   the streaming cases above. */
+const tornQueue = [];
+window.requestAnimationFrame = (fn) => tornQueue.push(fn);
+const torn = document.createElement("div");
+specLog.append(torn);
+const tornScope = newRenderScope();
+withRenderTarget(torn, tornScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کدام مسیر؟" });
+  window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
+                                                      delta: { text: "Half a sen" } } });
+});
+for (const fn of tornQueue.splice(0)) fn(performance.now());
+const tornBubble = torn.querySelector(".msg.assistant");
+const wasStreaming = !!tornBubble?.classList.contains("streaming");
+withRenderTarget(torn, tornScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
+});
+for (const fn of tornQueue.splice(0)) fn(performance.now());
+window.requestAnimationFrame = realRaf;
+check("a stream torn down without an assistant close is settled, not left streaming",
+  wasStreaming && !tornBubble.classList.contains("streaming") &&
+  getComputedStyle(tornBubble).unicodeBidi === "plaintext" &&
+  tornScope.streamBubble === null,
+  (wasStreaming ? "" : "never streamed; ") +
+  "class \u00ab" + tornBubble?.className + "\u00bb / " +
+  (tornBubble ? getComputedStyle(tornBubble).unicodeBidi : "none"));
+
+/* --- Shift+Tab is not a stuck key, and not a stolen one (review F7) -------- */
+window.fetch = (url, options) => {
+  posted.push({ url: String(url), body: options?.body });
+  return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+};
+const before = posted.length;
+const heldDown = new KeyboardEvent("keydown",
+  { key: "Tab", shiftKey: true, repeat: true, cancelable: true, bubbles: true });
+input.dispatchEvent(heldDown);
+check("auto-repeat sends nothing: one press is one posture change",
+  posted.length === before && heldDown.defaultPrevented,
+  (posted.length - before) + " requests from a held key");
+
+// No posture confirmed for this conversation yet: the key is not ours, so it
+// must fall through to the browser's own reverse focus navigation rather than
+// being swallowed into a no-op.
+restoreControls(null);
+const unowned = pressShiftTab();
+window.fetch = realFetch;
+check("with no posture to cycle, Shift+Tab is left to the browser",
+  posted.length === before && !unowned.defaultPrevented,
+  (unowned.defaultPrevented ? "swallowed" : "passed through") + ", " +
+  (posted.length - before) + " requests");
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

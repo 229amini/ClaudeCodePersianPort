@@ -6,6 +6,8 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label } from "./render.js";
+/* One-way, and no new cycle: controls.js imports api.js and nothing else. */
+import { cyclePosture } from "./controls.js";
 
 const FA = window.STRINGS;
 
@@ -100,6 +102,11 @@ let lastActivity = null;
    `now` is a parameter purely so the hour is testable (spec-test.html). */
 export function checkIdle(now = Date.now()) {
   if (!notice || busy || noticeState) return;   // never talk over the context warning
+  // Background agents are still out (agents.js paint()). The turn that
+  // dispatched them ended, so `busy` is false and the conversation LOOKS
+  // abandoned — but suggesting a fresh chat over work that is still running is
+  // how the hint got read as an error in the first place.
+  if (document.body.classList.contains("agents-running")) return;
   if (lastActivity === null || now - lastActivity < IDLE_AT) return;
   lastActivity = null;
   paintNotice(FA.idleTitle, FA.idleBody, false, false);
@@ -384,6 +391,24 @@ export function initComposer() {
       input.setRangeText("\u200C", selectionStart, selectionEnd, "end");
       return;
     }
+    /* Shift+Tab cycles the approval posture, as it does in the TUI. Through
+       controls.js's own cycler, which is the pill's code path — one choke
+       point, so the chip still waits for the server's echo. */
+    if (e.key === "Tab" && e.shiftKey) {
+      // Held down, the key auto-repeats around 30 times a second, and every one
+      // of those would POST /api/posture and push a set_permission_mode at the
+      // CLI. One press, one change.
+      if (e.repeat) {
+        e.preventDefault();
+        return;
+      }
+      // Nothing to cycle — no posture confirmed for this conversation yet — so
+      // the key is not ours: leave it to the browser's reverse focus nav rather
+      // than swallowing it into a no-op.
+      if (!cyclePosture()) return;
+      e.preventDefault();   // or focus leaves the box on the way past
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       composer.requestSubmit();
@@ -481,7 +506,9 @@ export function initComposer() {
       const step = e.key === "ArrowDown" ? 1 : -1;
       slashIndex = (slashIndex + step + slashMatches.length) % slashMatches.length;
       renderSlash();
-    } else if (e.key === "Tab") {
+    } else if (e.key === "Tab" && !e.shiftKey) {
+      // Bare Tab accepts the completion; Shift+Tab is the posture cycle above
+      // and must not also pick a command out of an open popup.
       e.preventDefault();
       acceptSlash();
     } else if (e.key === "Escape") {
@@ -500,6 +527,8 @@ export function initComposer() {
   setAttachments([]);
   setBusy(false);
   const hint = document.getElementById("composer-hint");
-  if (hint) hint.textContent = FA.hintZwnj + " · " + FA.slashHint;
+  if (hint) {
+    hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.slashHint].join(" · ");
+  }
   input.focus();
 }

@@ -20,7 +20,7 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import {
-  label, renderEvent, state, withRenderTarget, newRenderScope,
+  bulkAppend, label, renderEvent, state, withRenderTarget, newRenderScope,
 } from "./render.js";
 
 const FA = window.STRINGS;
@@ -142,6 +142,15 @@ function paint() {
   // regardless of this filter.
   const running = registry.filter((a) => a.status === "running");
   const finished = registry.filter((a) => a.status !== "running");
+  /* «کار در جریان است», published the way `busy` already is: as a body class.
+     The composer's idle hint («مدتی از این گفتگو گذشته») fires on a quiet
+     stretch, and a turn that dispatched helpers IS quiet — the model's own turn
+     ended minutes ago while the agents keep working — so the hint arrived in the
+     middle of a working session and the user read it as an error. This module
+     is the only one that knows, and the class is the signal it already reads in
+     the other direction three lines below (`body.busy`, written by composer.js
+     setBusy). A shared import would close a third module cycle for one boolean. */
+  document.body.classList.toggle("agents-running", running.length > 0);
   if (!running.length && !finished.length) {
     el.hidden = true;
     return;
@@ -356,7 +365,12 @@ async function pollDrawer() {
     forDrawer.empty = false;
     forDrawer.body.querySelector(".ag-empty")?.remove();
     withRenderTarget(forDrawer.body, forDrawer.scope, () => {
-      for (const event of events) renderEvent(event);
+      // Every append in the loop would ask whether the reader is at the bottom
+      // and force a layout to answer — for nothing, since the line below pins
+      // the drawer regardless. Same skip chrome.js's replay takes.
+      bulkAppend(() => {
+        for (const event of events) renderEvent(event);
+      });
     });
     forDrawer.body.scrollTop = forDrawer.body.scrollHeight;
   }
