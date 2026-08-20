@@ -114,6 +114,9 @@ import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
 /* The posture cycle's "nothing confirmed yet" branch: this is the only way to
    put controls.js back to a conversation that has not answered. */
 import { restoreControls } from "/static/js/controls.js";
+/* The «away» clock the session recap is gated on — a real five minutes, and the
+   only way to test it without waiting them out. */
+import { isAway } from "/static/js/composer.js";
 
 /* Each case is pushed through the SHIPPING renderer (window.renderEvent), not a
    copy, so a regression in the renderer fails here. Cases match
@@ -2213,6 +2216,81 @@ check("with no posture to cycle, Shift+Tab is left to the browser",
   posted.length === before && !unowned.defaultPrevented,
   (unowned.defaultPrevented ? "swallowed" : "passed through") + ", " +
   (posted.length - before) + " requests");
+
+/* --- the closing line survives a reload, and the recap ---------------------
+
+   A refresh replays the hub's ENTIRE event history, so every finished turn is
+   rendered a second time: startPulse() runs again for a turn that ended
+   minutes ago. Two things used to be re-invented at that moment — a
+   Math.random() verb, so the same turn wore a different word after every
+   reload, and a wall clock that measures the replay instead of the turn, so a
+   two-minute answer settled at «۰ ثانیه». The verb is derived from the prompt
+   and the clock takes the CLI's own duration_ms as its floor. Rendered into
+   the live document (not a detached node) because the direction assertions
+   below read COMPUTED style. */
+function replayOneTurn() {
+  const box = document.createElement("div");
+  specLog.append(box);
+  withRenderTarget(box, newRenderScope(), () => {
+    window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کارها را جمع‌بندی کن" });
+    window.renderEvent({ type: "result", subtype: "success", usage: {},
+                        duration_ms: 125_000, result: "ok" });
+  });
+  return box.querySelector(".pulse")?.textContent.replace(/\s+/g, " ").trim() ?? "";
+}
+const replayA = replayOneTurn();
+const replayB = replayOneTurn();
+check("a replayed turn settles to the same closing line, timed by the CLI's own clock",
+  !!replayA && replayA === replayB && replayA.includes("۲ دقیقه و ۵ ثانیه"),
+  "«" + replayA + "» vs «" + replayB + "»");
+
+/* The recap itself: the CLI's «※ recap: …» as a transcript entry. It is model
+   prose, so it goes through the markdown path like every other answer — a
+   textContent read is blind to both halves of that (rule 1 and the backticks),
+   which is why this asserts the computed direction and the code span. */
+const recapBox = document.createElement("div");
+specLog.append(recapBox);
+withRenderTarget(recapBox, newRenderScope(), () => {
+  window.renderEvent({ type: "wrapper", subtype: "recap",
+    text: "هدف: تمام کردن `setup.ps1`. بعدی: اجرای تست." });
+});
+const recapP = recapBox.querySelector(".recap .recap-body p");
+check("the session recap renders as Persian prose, not as a raw string",
+  !!recapP && getComputedStyle(recapP).direction === "rtl" &&
+  recapBox.querySelector(".recap code")?.textContent === "setup.ps1" &&
+  !recapBox.textContent.includes("`"),
+  recapP ? getComputedStyle(recapP).direction + " / «" +
+           recapBox.textContent.replace(/\s+/g, " ").trim() + "»" : "no recap line");
+
+/* Away is a real five minutes of no input, not "the answer took a while": the
+   recap costs an API call and is worth one only when nobody was reading. The
+   negative half is conditioned on the window actually being on screen —
+   `document.hidden` is away by itself, and a headless engine may report
+   either. */
+dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+/* And the harness itself must never buy one. This page drives the shipping
+   renderer against a REAL server with no token, so a recap fired from here
+   would reach the CLI and spend a turn on every run of the free gate. Every
+   result event above has already gone through the same code path. */
+window.fetch = (url, options) => {
+  posted.push({ url: String(url), body: options?.body });
+  return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+};
+const beforeRecap = posted.length;
+withRenderTarget(document.createElement("div"), newRenderScope(), () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
+window.fetch = realFetch;
+check("the untokened spec harness never buys a recap",
+  posted.slice(beforeRecap).every(r => !r.url.includes("/api/recap")),
+  posted.slice(beforeRecap).map(r => r.url).join(", ") || "no requests");
+
+const now = Date.now();
+check("the recap waits five minutes of silence before it costs anything",
+  isAway(now + 6 * 60_000) && (document.hidden || !isAway(now + 60_000)),
+  "1 min → " + isAway(now + 60_000) + ", 6 min → " + isAway(now + 6 * 60_000) +
+  (document.hidden ? " (window reported hidden)" : ""));
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

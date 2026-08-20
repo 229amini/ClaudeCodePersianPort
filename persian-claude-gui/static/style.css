@@ -1116,6 +1116,38 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   .pulse.live .pulse-glyph { animation: none; }
 }
 
+/* --- the session recap ------------------------------------------------------
+   The CLI's «※ recap: …», in Persian and in the transcript: one short
+   note on where the session stands and what is next, written after a turn the
+   person was not there to watch. Shaped like `.pulse` -- same gutter, same
+   muted weight, so the two closing lines read as one family -- but it wraps,
+   because a recap is a sentence and not a counter. */
+.recap {
+  align-self: stretch;
+  max-width: none;
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 12px 8px;
+  color: var(--fg-muted);
+  font-size: .92em;
+}
+
+.recap-glyph {
+  inline-size: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--accent);
+}
+
+/* min-inline-size: 0 so a long unbroken path inside the sentence wraps instead
+   of stretching the flex item past the column -- the same guard every prose
+   box in this file carries. */
+.recap-body { min-inline-size: 0; }
+.recap-body :is(p, ul, ol):first-child { margin-block-start: 0; }
+.recap-body :is(p, ul, ol):last-child { margin-block-end: 0; }
+
 /* --- todos ------------------------------------------------------------------ */
 .todos { align-self: stretch; max-width: none; }
 .todos ul { list-style: none; padding: 0; margin: 0; }

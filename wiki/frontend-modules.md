@@ -218,3 +218,28 @@ error. `paint()` now also writes `body.agents-running` and `checkIdle()` obeys i
 A body class rather than an import on purpose: `composer.js → agents.js` (or the reverse) closes a
 third module cycle, because `render.js` already imports both. One boolean is not worth that, and
 the convention already existed in the opposite direction.
+
+## A reload RE-RENDERS every finished turn, so a closing line may not invent anything (2026-08-20)
+
+`Hub.subscribe()` replays the full per-tab backlog (parity-chrome.md), so a page refresh runs
+`renderEvent` over the whole conversation again from `user_echo` to `result`. Anything the renderer
+*invents* at that moment is invented again, differently:
+
+- the pulse's verb was `Math.random()` → the same finished turn wore a different Persian word after
+  every reload;
+- the settled duration was `Date.now() - started` → a replay runs a two-minute turn in
+  milliseconds, so every closing line in the history read **«۰ ثانیه»**.
+
+Both were reported as "it still says it is thinking after it finished" — the line looked live
+because it named an activity. It was not stuck; it was re-rolled.
+
+The rule this leaves behind: **a transcript entry must be a function of the events, not of the
+clock or the RNG at render time.** Concretely, `pickVerb(prompt)` is a hash of the turn's own
+prompt text, and the settled time is `max(wall clock, Σ result.duration_ms)` — the CLI's own number
+is the floor. Live, the wall clock is always the larger (it starts at the echo, before the CLI has
+the message), so nothing jumps at the end of a real turn; in a replay the wall clock is ~0 and the
+CLI's number is what survives. `duration_ms` accumulates per **result**, not per settle, because a
+queued batch produces several under one pulse — the same reason `base` accumulates their tokens.
+
+Guarded in `spec-test.html` by replaying one turn twice and asserting the two closing lines are
+byte-identical. A single-render assertion cannot see this class of defect at all.

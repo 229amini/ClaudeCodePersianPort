@@ -191,6 +191,45 @@ Gates: spec **143/143** (negative-tested), units, transcript guard, `test_no_con
 `wiki/parity-chrome.md` §idle_sync, and `wiki/frontend-modules.md` (the newest-pair rule)
 before touching any of it.
 
+**2026-08-20 — "it still says it is thinking after it finishes", and the CLI's recap.** The
+reported stuck spinner was not stuck: a page refresh replays the hub's whole backlog, so
+`renderEvent` re-runs every finished turn — and the closing line **invented** two of its parts at
+render time. The verb was `Math.random()` (a different Persian word after every reload) and the
+duration was wall-clock (a replayed turn takes milliseconds, so every line in history read
+«۰ ثانیه»). The verb is now a hash of the turn's own prompt and the settled time is
+`max(wall clock, Σ result.duration_ms)`; read `wiki/frontend-modules.md` §"A reload RE-RENDERS
+every finished turn" before adding anything to a transcript entry that a second render could not
+reproduce. Guarded by replaying one turn twice and comparing.
+
+The TUI's **«※ recap: …»** now exists here too. Measured first: the automatic one is
+`awaySummary`, which leaves over a remote-only channel and is disabled outright in print mode, but
+`/recap` is a **local command** (`supportsNonInteractive: true`) that answers over our own stdin
+pipe, is never written to the transcript, and refuses **for free** on an empty session — which is
+how the whole mechanism was proven without spending a turn. It costs an API call when it really
+answers, so the window asks only on the CLI's own condition: the turn ended while the window was
+hidden or untouched for five minutes (`composer.js isAway()`). Read `wiki/parity-chrome.md`
+§"The session recap" before touching `request_recap()` or the reader's swallow — `_recap_wanted`
+left standing would eat the next **real** answer, silently, which is why any ordinary send clears
+it.
+
+Chasing the same report through the smoke test found **a third defect, and this one really is
+machine-shaped.** `_publish_usage` gave `get_context_usage` a 5-second budget on the grounds that
+it is free and answers instantly on an idle process — true, and irrelevant: it is asked the moment
+a turn ends, when the CLI is busiest, and its answer prices **every skill, agent, MCP tool, slash
+command and memory file in scope**. Measured on this PC at **13 s** after a free local command and
+longer after a real turn; on a bare `~/.claude` it is instant. The patch is built from whatever
+answered, so the failure was silent — `wrapper/usage` published `cost` with no `context`, and the
+window's context meter and «گفتگو پر شده» notice simply never moved *here* and worked fine
+everywhere else. It now has its own `CONTEXT_USAGE_TIMEOUT` (60 s) **and its own event**:
+`_publish_usage` built one merged patch, so the slow request held the fast one hostage and a
+context breakdown that never came took `cost` and `quota` down with it. The two publish
+separately now — the renderer has always merged partial `wrapper/usage` patches, so this needed
+nothing on the client. Read `wiki/control-protocol.md` §9 before shortening any post-`result`
+control timeout or re-merging those two. The smoke test's own title check was wrong too — it took
+the first title anywhere in `/api/projects`, which lists every project on the machine, so it
+started reporting a stranger's title the moment another project had one; it matches on the session
+id now. Gates: spec **147/147**, units, transcript guard, `test_no_console`, smoke **15/15**.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

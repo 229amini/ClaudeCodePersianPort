@@ -269,3 +269,41 @@ and the CLI does not advertise this one: there is no `/ultracode` among the 59 e
 *more* prominent than the affordance it mirrors, and it would hand a non-technical user a
 one-click way to spend a five-hour quota on a task they thought was small. Typing the keyword
 already works, because prompt text passes through untouched.
+
+## §9 — a control request sent right after a `result` is NOT answered promptly (2026-08-20)
+
+`_after_result` fires three things the moment a turn ends: `rename_session`, `get_context_usage`,
+`get_usage`. All three are free and all three answer instantly **on an idle process** — which is
+what the earlier note here measured, and what made the 5-second budget on the usage pair look
+generous. It is not the same situation:
+
+- the CLI does not answer control requests while it is finishing a turn, and
+- `get_context_usage` then has real work to do. Its response prices **every skill, agent, MCP
+  tool, slash command and memory file in scope** (`categories`, `skills`, `agents`, `mcpTools`,
+  `slashCommands`, `memoryFiles`, `messageBreakdown`, plus `percentage` / `totalTokens` /
+  `maxTokens`). On a machine with a large `~/.claude` that is seconds of work, and a SessionStart
+  hook chain pushes the first one out further still.
+
+Measured on this PC with 2.1.235: the same request answers in well under a second when the process
+is idle, times out at 12 s in one run, and answers on a retry in the next. The failure is
+**silent and machine-shaped** — `_publish_usage` builds its patch out of whatever answered, so a
+timed-out `get_context_usage` publishes `wrapper/usage` with `cost` and no `context`, and the
+window's context meter and «گفتگو پر شده» notice simply never move. On a colleague's PC with a bare
+`~/.claude` nothing is wrong at all.
+
+Two changes, and the second is the load-bearing one:
+
+- `get_context_usage` gets `CONTEXT_USAGE_TIMEOUT` (60 s). Nothing is lost by waiting —
+  `_after_result` runs on its own thread precisely so the event pump does not.
+- **the two publish separately.** `_publish_usage` used to build ONE patch and publish it at the
+  end, which put the fast request in a queue behind the slow one: raising the context budget to
+  60 s made things *worse*, because a context breakdown that still did not answer dropped `cost`
+  and `quota` with it and published nothing at all. `get_usage` now goes first and publishes its
+  own `wrapper/usage`; the context percentage follows in a second one whenever it arrives. The
+  renderer has merged partial usage patches since it was written ("a missing one must not erase a
+  good value"), so this needed no client change. Do not re-merge them.
+
+Measured after this: `usage {'cost': 0.017, 'quota': 2}` then `usage {'context': 12}`, smoke 15/15.
+
+Note the shape has NOT changed: `percentage` is still there in 2.1.235. If the meter is dark, the
+request timed out; do not go looking for a renamed field.

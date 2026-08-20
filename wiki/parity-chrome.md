@@ -241,3 +241,53 @@ by construction rather than re-implemented — the chip still moves only when th
 (approval-postures.md). A posture that nothing has confirmed yet does not cycle at all.
 The slash popup's `Tab` branch is now `Tab && !shiftKey`, or Shift+Tab would also accept a
 completion on its way past.
+
+## The session recap — the CLI's «※ recap: …» (2026-08-20)
+
+The TUI prints a one-line recap under a finished turn: *"recap: Goal: … Next: …"*. Two different
+mechanisms sit behind that word in the 2.1.235 bundle, and only one of them is reachable from here.
+
+**The automatic one is remote-only.** It is `awaySummary`: it fires when the person has been away
+5+ minutes, and it leaves through `notifyMetadataChanged({recap})` → `onMetadataChanged`, gated by
+`DGS()` (`CLAUDE_CODE_ENABLE_REMOTE_RECAP` / the `tengu_harbor_moth` flag). That path feeds the
+remote/desktop clients, **not** the stream-json stdout. Worse, `HKr()` — the enable check — begins
+`if (Cn()) return !1`, so print mode disables it outright. Nothing about it can be listened for.
+
+**The command is reachable.** `/recap` is a local command:
+
+```js
+{type:"local", name:"recap", description:"Generate a one-line session recap now",
+ supportsNonInteractive:true, thinClientDispatch:"post-text"}
+```
+
+Measured on 2.1.235 by sending it as ordinary message text down the same stdin pipe every turn
+uses. It answers as **a synthetic `assistant` message plus a `result`**, and:
+
+- it is **never written to the transcript** — the `/recap` turn and its answer do not appear in
+  `~/.claude/projects/<cwd>/*.jsonl`, so nothing of this leaks into history replay;
+- on an empty session it refuses **for free**: `result` = `"Nothing to recap yet — send a message
+  first."`, `num_turns: 0`, `total_cost_usd: 0`. That is the zero-cost probe for the whole
+  mechanism — use it rather than spending a turn;
+- when it really answers it **costs an API call** (~$0.018 on a 33k-token session; it re-reads the
+  conversation). This is why the CLI itself only fires the automatic one when you are away.
+
+### Consequences for the wrapper
+
+`ClaudeSession.request_recap()` sends it and arms `_recap_wanted`; the reader loop swallows that
+turn's `assistant` / `result` / `stream_event` and re-publishes `wrapper/recap` with the text.
+Without the swallow the window renders the CLI's closing note as a reply to a message nobody sent.
+
+**The flag is the dangerous part** — one left standing eats the next *real* answer, which is
+silence with no error anywhere. Three things close that: it is set inside `send_blocks()` under the
+in-flight lock, so **any ordinary send clears it**; `_reset_inflight()` clears it (start, CLI exit,
+interrupt); and a send that raises clears it on the way out. `request_recap()` also refuses while
+a turn is running, because the flag is the only thing telling a recap from a real answer.
+
+`RECAP_NON_ANSWERS` in `server.py` holds the three strings the CLI uses when it cannot answer
+(`"Nothing to recap yet"`, `"Recap cancelled"`, `"Couldn't generate a recap"`). All three come back
+as an ordinary **successful** result, so the text is the only discriminator — re-check them after a
+CLI upgrade; a drifted string costs one stray English line, not a crash.
+
+The trigger lives in the window (`composer.js isAway()`, used by render.js at the turn's end): the
+window is hidden, or nothing has been typed/clicked for five minutes. Turn traffic deliberately
+does not count as input — a long answer arriving is exactly when the person walked off.

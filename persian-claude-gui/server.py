@@ -134,6 +134,23 @@ CONTROL_TIMEOUT = 15.0
 # printing, and the next delta opens an orphan bubble nothing settles.
 IDLE_SYNC_SECONDS = 5.0
 
+# What /recap says when it has nothing to recap or could not generate one, read
+# out of the 2.1.235 bundle. All three come back as an ordinary SUCCESSFUL
+# result, so the text is the only thing that tells them from a real recap.
+# Re-check after a CLI upgrade; a drifted string costs one stray line, not a
+# crash.
+# get_context_usage gets its own, much longer budget. It is free, it runs
+# off-thread, and nothing waits on it -- but it is not fast: its answer prices
+# every skill, agent, MCP tool, slash command and memory file in scope, and it
+# is asked at the one moment the CLI is busiest (right after a result).
+# Measured 13 s on this PC after a free local command and longer after a real
+# turn; the old 5 s budget meant the window's context meter never moved HERE
+# and moved fine on a bare machine. See wiki/control-protocol.md §9.
+CONTEXT_USAGE_TIMEOUT = 60.0
+
+RECAP_NON_ANSWERS = ("Nothing to recap yet", "Recap cancelled",
+                     "Couldn't generate a recap")
+
 # The three approval postures the pill offers -> (CLI permission mode, wrapper
 # auto-approve). `bypassPermissions` is never sent (the engine refuses it) and
 # neither is `auto`: it approves before the wrapper is ever asked, so there is
@@ -1592,6 +1609,8 @@ class ClaudeSession:
         # turns it into the session title (see _after_result).
         self._titled = True
         self._first_prompt: str | None = None
+        # A /recap is in flight: swallow its answer (see the reader loop).
+        self._recap_wanted = False
 
     # ponytail: the counter is stick-proofed at both ends -- the decrement is
     # clamped at 0 and every path that ends a PROCESS resets it outright (start,
@@ -1605,6 +1624,10 @@ class ClaudeSession:
     def _reset_inflight(self) -> None:
         with self._inflight_lock:
             self._inflight = 0
+            # Whatever a pending /recap was waiting for is not coming (a new
+            # process, a dead one, an interrupt). A flag left standing would
+            # swallow the next REAL answer, so it dies with the count.
+            self._recap_wanted = False
 
     def start(self, resume_id: str | None = None) -> None:
         self._generation += 1
@@ -1732,6 +1755,26 @@ class ClaudeSession:
                                  args=(event, generation), daemon=True).start()
                 continue
 
+            # A /recap we asked for ourselves. It answers as an ordinary
+            # assistant+result pair, so without this the window would render
+            # the CLI's own closing note as a reply to a message nobody sent.
+            # Swallowed here and re-published as its own event instead.
+            if self._recap_wanted and etype in ("assistant", "result",
+                                                "stream_event"):
+                if etype != "result":
+                    continue
+                self._recap_wanted = False
+                # _after_result never runs for this event, so the count it
+                # would have decremented is settled here.
+                with self._inflight_lock:
+                    self._inflight = max(0, self._inflight - 1)
+                text = (event.get("result") or "").strip()
+                if (text and not event.get("is_error")
+                        and not text.startswith(RECAP_NON_ANSWERS)):
+                    self.hub.publish({"type": "wrapper", "subtype": "recap",
+                                      "text": text})
+                continue
+
             if etype == "system" and event.get("subtype") == "init":
                 self.session_id = event.get("session_id")
                 self.model = event.get("model")
@@ -1789,23 +1832,35 @@ class ClaudeSession:
         missing on an older build the client keeps its own estimate — hence
         every key here is optional.
         """
-        patch: dict = {}
-        context = self.control("get_context_usage", timeout=5.0)
-        if context.get("subtype") == "success":
-            body = context.get("response") or {}
-            if isinstance(body.get("percentage"), (int, float)):
-                patch["context"] = body["percentage"]
-        usage = self.control("get_usage", timeout=5.0)
+        def publish(patch: dict) -> None:
+            if patch and generation == self._generation:
+                self.hub.publish({"type": "wrapper", "subtype": "usage", **patch})
+
+        # Two requests, published SEPARATELY as each answers -- the renderer
+        # merges whatever keys arrive and never erases a good value with a
+        # missing one. One patch at the end put them in a queue, and the slow
+        # one then took the fast one down with it: get_usage is ~1 s, while
+        # get_context_usage after a real turn is tens of seconds (§9), so the
+        # cost and quota numbers were lost to a context breakdown that had not
+        # come back yet.
+        usage = self.control("get_usage")
         if usage.get("subtype") == "success":
             body = usage.get("response") or {}
+            patch: dict = {}
             cost = (body.get("session") or {}).get("total_cost_usd")
             if isinstance(cost, (int, float)):
                 patch["cost"] = cost
             five = (body.get("rate_limits") or {}).get("five_hour") or {}
             if isinstance(five.get("utilization"), (int, float)):
                 patch["quota"] = five["utilization"]
-        if patch and generation == self._generation:
-            self.hub.publish({"type": "wrapper", "subtype": "usage", **patch})
+            publish(patch)
+
+        # Last, and with a budget of its own: nothing waits on it now.
+        context = self.control("get_context_usage", timeout=CONTEXT_USAGE_TIMEOUT)
+        if context.get("subtype") == "success":
+            body = context.get("response") or {}
+            if isinstance(body.get("percentage"), (int, float)):
+                publish({"context": body["percentage"]})
 
     def _publish_statusline(self, result: dict, generation: int) -> None:
         command = statusline_command()
@@ -1868,7 +1923,7 @@ class ClaudeSession:
             self.proc.stdin.write(payload)
             self.proc.stdin.flush()
 
-    def send_blocks(self, blocks: list[dict]) -> None:
+    def send_blocks(self, blocks: list[dict], recap: bool = False) -> None:
         if not self._titled and self._first_prompt is None:
             self._first_prompt = next(
                 (b.get("text") for b in blocks if b.get("type") == "text"), None)
@@ -1877,16 +1932,39 @@ class ClaudeSession:
         # and therefore the tab -- stuck at "working" forever.
         with self._inflight_lock:
             self._inflight += 1
+            # Set here rather than by the caller so that ANY ordinary send
+            # clears it: a /recap whose answer never arrived would otherwise
+            # leave the flag standing and eat the next real reply.
+            self._recap_wanted = recap
         try:
             self._write_line({"type": "user",
                               "message": {"role": "user", "content": blocks}})
         except Exception:
             with self._inflight_lock:
                 self._inflight = max(0, self._inflight - 1)
+                self._recap_wanted = False   # nothing was sent; nothing to swallow
             raise
 
-    def send_text(self, text: str) -> None:
-        self.send_blocks([{"type": "text", "text": text}])
+    def send_text(self, text: str, recap: bool = False) -> None:
+        self.send_blocks([{"type": "text", "text": text}], recap=recap)
+
+    def request_recap(self) -> bool:
+        """Ask the CLI for its own one-line session recap.
+
+        `/recap` is a LOCAL command (`supportsNonInteractive: true`, measured on
+        2.1.235): it answers over this same pipe as a synthetic assistant
+        message plus a result, is never written to the transcript, and on an
+        empty session refuses for free with "Nothing to recap yet". It is not
+        free otherwise -- it re-reads the conversation and generates a line --
+        which is why the CLI itself only fires it when the user has been away.
+
+        Refused while a turn is running: the reader tells a recap from a real
+        answer by a flag, and two in flight at once would cross the wires.
+        """
+        if self.busy or self._recap_wanted:
+            return False
+        self.send_text("/recap", recap=True)
+        return True
 
     def control(self, subtype: str, timeout: float = CONTROL_TIMEOUT,
                 wait: bool = True, **params) -> dict:
@@ -2661,6 +2739,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True})
+        elif parsed.path == "/api/recap":
+            # Fire-and-forget: the recap arrives over SSE as wrapper/recap, the
+            # same way every other CLI answer does. `ok:false` means the window
+            # asked while a turn was still running -- not an error.
+            session = self._target(tab)
+            if session is None:
+                return
+            try:
+                started = session.request_recap()
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": started})
         elif parsed.path == "/api/control":
             # One whitelisted chokepoint for every live CLI control (model,
             # permission mode, compact, rename, usage). Not a passthrough.
