@@ -51,6 +51,33 @@ export function setBusy(running) {
   document.body.classList.toggle("busy", busy);
 }
 
+/* --- away -------------------------------------------------------------------
+
+   The CLI writes its own «※ recap: ...» only when the person has been away
+   for five minutes, because generating one costs an API call. Same rule here,
+   and the same definition of away: the window is not on screen, or nothing has
+   been typed or clicked in it for five minutes. Turn traffic deliberately does
+   NOT count -- `lastActivity` above is the conversation being used, and a long
+   answer arriving is exactly the case where the person walked off. */
+const AWAY_AT = 5 * 60 * 1000;
+let lastInput = Date.now();
+
+for (const name of ["pointerdown", "keydown", "wheel"]) {
+  addEventListener(name, () => { lastInput = Date.now(); },
+                   { capture: true, passive: true });
+}
+// Coming back to the window is input; leaving it is not (a hidden window is
+// already away by the first clause).
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) lastInput = Date.now();
+});
+
+/* `now` is a parameter for the same reason checkIdle()'s is: so the five
+   minutes are testable without waiting them out. */
+export function isAway(now = Date.now()) {
+  return document.hidden || now - lastInput >= AWAY_AT;
+}
+
 /* No conversation is open at all (app.js blankView): every tab-less endpoint
    routes by the server's active tab, so a send lands on a 404 and the user gets
    the generic «ارسال ناموفق بود» — which reads as "your message failed" when

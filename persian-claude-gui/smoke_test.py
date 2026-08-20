@@ -59,6 +59,7 @@ threading.Thread(target=lambda: [print("[srv]", ln.rstrip()) for ln in proc.stdo
                  daemon=True).start()
 
 seen: list[str] = []
+seen_events: list[dict] = []   # the full events, for the ones that arrive twice
 last: dict[str, dict] = {}     # "type/subtype" -> the most recent such event
 done = threading.Event()
 usage_done = threading.Event()
@@ -77,6 +78,7 @@ def read_sse() -> None:
             event = json.loads(line[6:])
             key = f"{event.get('type')}/{event.get('subtype', '')}".rstrip("/")
             seen.append(key)
+            seen_events.append(event)
             last[key] = event
             if key == "system/init":
                 print("  init:", event.get("session_id"), "|", event.get("model"))
@@ -85,7 +87,12 @@ def read_sse() -> None:
             elif key == "wrapper/usage":
                 print("  usage:", {k: v for k, v in event.items()
                                    if k not in ("type", "subtype")})
-                usage_done.set()
+                # The two requests publish separately now (server.py
+                # _publish_usage), and `context` is the slow one -- waking on
+                # the first event would read the cost patch and call the
+                # context missing.
+                if "context" in event:
+                    usage_done.set()
             elif event.get("type") == "result":
                 print("  result:", repr(event.get("result")))
                 result_event.update(event)
@@ -216,7 +223,10 @@ print("POST /api/message ->", urllib.request.urlopen(request, timeout=30).status
 
 ok = done.wait(timeout=120)
 # get_context_usage / get_usage / rename_session all run once the turn ends.
-usage_done.wait(timeout=30)
+# Generous on purpose: get_context_usage is the slow one (server.py
+# CONTEXT_USAGE_TIMEOUT), and a wait shorter than its budget turns "the CLI was
+# still thinking" into "the wrapper never published usage".
+usage_done.wait(timeout=90)
 
 # A `result` event arriving proves nothing. A CLI that is not logged in answers
 # `result` with subtype **success**, is_error unset, cost 0 and the body
@@ -234,16 +244,25 @@ turn_style = (last.get("system/init") or {}).get("output_style")
 print("output style this turn ran under:", turn_style)
 style_ok = bool(style_pick) and style_res.get("ok") and turn_style == style_pick
 
-usage = last.get("wrapper/usage") or {}
+# Merged the way the renderer merges them: two events, each carrying only the
+# keys that answered.
+usage = {}
+for event in (e for e in seen_events if e.get("subtype") == "usage"):
+    usage.update({k: v for k, v in event.items() if k in ("context", "cost", "quota")})
 usage_ok = isinstance(usage.get("context"), (int, float))
 
 # The title lands in the transcript, not in the ack — read it back the way the
-# sidebar does.
+# sidebar does. Matched on OUR session_id, not "the first title anywhere in the
+# payload": /api/projects lists every project on the machine, so the loose read
+# passed only as long as no other project had a titled session, and started
+# reporting a stranger's title the moment one did.
+our_session = (last.get("system/init") or {}).get("session_id")
 title = None
 for _ in range(10):
     for project in get("/api/projects").get("projects", []):
         for session in project.get("sessions", []):
-            title = title or session.get("title")
+            if session.get("session_id") == our_session:
+                title = title or session.get("title")
     if title:
         break
     time.sleep(1.0)

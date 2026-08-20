@@ -688,12 +688,21 @@ try:
     prefill_hub = _Hub()
     _stub_session(prefill_hub)._publish_resume_prefill(1)
     kinds = [e.get("subtype") for e in prefill_hub.events]
+    # TWO usage events, cost before context: get_context_usage after a turn is
+    # tens of seconds on a machine with a large ~/.claude, and one merged patch
+    # meant the fast, always-available cost and quota numbers waited for it --
+    # and were dropped entirely when it never came (wiki/control-protocol.md §9).
     check("resumed is published first, then usage, then the statusline",
-          kinds == ["resumed", "usage", "statusline"])
+          kinds == ["resumed", "usage", "usage", "statusline"])
+    check("cost does not wait on the slow context breakdown",
+          "cost" in prefill_hub.events[1] and "context" in prefill_hub.events[2])
     check("the resumed event carries the session id and the cwd",
           prefill_hub.events[0] == {"type": "wrapper", "subtype": "resumed",
                                     "session_id": PREFILL_ID, "cwd": str(PREFILL_CWD)})
-    usage = next((e for e in prefill_hub.events if e.get("subtype") == "usage"), {})
+    usage = {}
+    for event in prefill_hub.events:
+        if event.get("subtype") == "usage":
+            usage.update(event)   # merged the way the renderer merges them
     check("usage carries the CLI's own numbers, not client arithmetic",
           (usage.get("context"), usage.get("cost"), usage.get("quota")) == (12.5, 0.42, 7))
     statusline = next((e for e in prefill_hub.events
@@ -718,7 +727,7 @@ try:
     bare_hub = _Hub()
     _stub_session(bare_hub)._publish_resume_prefill(1)
     check("no statusLine configured still prefills id, cwd and usage",
-          [e.get("subtype") for e in bare_hub.events] == ["resumed", "usage"])
+          [e.get("subtype") for e in bare_hub.events] == ["resumed", "usage", "usage"])
 finally:
     server.statusline_command = _old_statusline_command
 
@@ -1162,6 +1171,78 @@ with tempfile.TemporaryDirectory() as tmp:
         server.RECENTS_FILE = _saved_recents
         (server.Handler.hub, server.Handler.sessions, server.Handler.active,
          server.Handler.claude_bin, server.Handler.token) = _saved_tabs
+
+print("/recap: the CLI's own closing note, swallowed and re-published")
+# `/recap` is a LOCAL command: it answers over the same pipe as a synthetic
+# assistant message plus a result, and is never written to the transcript. Left
+# alone, the window would render the CLI's closing note as a reply to a message
+# nobody sent -- so the reader swallows the pair and publishes one wrapper
+# event instead. The dangerous half is the flag: one left standing eats the
+# next REAL answer, which is silence with no error anywhere.
+
+
+class _RecapPipe:
+    """The exact pair a /recap comes back as, then EOF."""
+
+    stderr = ()
+
+    def __init__(self, text, is_error=False):
+        self._text = text
+        self._is_error = is_error
+
+    @property
+    def stdout(self):
+        yield json.dumps({"type": "assistant", "message": {
+            "model": "<synthetic>", "role": "assistant",
+            "content": [{"type": "text", "text": self._text}]}})
+        yield json.dumps({"type": "result", "subtype": "success",
+                          "is_error": self._is_error, "result": self._text})
+
+    def poll(self):
+        return 0
+
+
+recap = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+sent = []
+recap._write_line = sent.append
+check("a recap is refused while a turn is running -- the flag could not tell them apart",
+      (recap.send_blocks([{"type": "text", "text": "کار واقعی"}]),
+       recap.request_recap())[1] is False)
+recap._read_stdout(_RecapPipe("یک پاسخ واقعی"), recap._generation)
+check("so the real turn's answer is rendered, not eaten",
+      [e.get("type") for e in recap.hub.events][:2] == ["assistant", "result"])
+
+recap = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+recap._write_line = sent.append
+check("an idle session takes the request", recap.request_recap() is True)
+check("and it goes out as the CLI's own command, not a control request",
+      sent[-1]["message"]["content"] == [{"type": "text", "text": "/recap"}])
+recap._read_stdout(_RecapPipe("هدف: تمام کردن setup. بعدی: تست."), recap._generation)
+check("the assistant/result pair is swallowed and re-published as one line",
+      [(e.get("type"), e.get("subtype")) for e in recap.hub.events]
+      == [("wrapper", "recap"), ("wrapper", "cli_exited")])
+check("carrying the CLI's text", recap.hub.events[0]["text"].startswith("هدف:"))
+check("and the count it borrowed is given back", recap.busy is False)
+
+# The refusal is an ordinary SUCCESSFUL result, so only its text tells it from
+# a real recap -- and «Nothing to recap yet» in English under a Persian turn is
+# exactly the kind of stray line this window exists to prevent.
+recap = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+recap._write_line = sent.append
+recap.request_recap()
+recap._read_stdout(_RecapPipe("Nothing to recap yet — send a message first."),
+                   recap._generation)
+check("the CLI's «nothing to recap yet» is swallowed whole, not printed",
+      [e.get("subtype") for e in recap.hub.events] == ["cli_exited"])
+
+# A send that never reached the pipe: the flag must not outlive it.
+recap = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+try:
+    recap.request_recap()      # no _write_line stub: RuntimeError, nothing sent
+except RuntimeError:
+    pass
+check("a recap that failed to send leaves nothing armed to swallow the next answer",
+      recap._recap_wanted is False and recap.busy is False)
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)

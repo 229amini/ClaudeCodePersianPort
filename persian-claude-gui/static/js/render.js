@@ -18,7 +18,8 @@ import {
   setChrome, refreshProjects, setCurrentSession,
   showPermission, dismissPermission,
 } from "./chrome.js";
-import { setBusy, setSlashCommands, noteContext, contextFull } from "./composer.js";
+import { setBusy, setSlashCommands, noteContext, contextFull, isAway } from "./composer.js";
+import { api, token } from "./api.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
   setEffortState, setOutputStyle, resetControls,
@@ -553,13 +554,25 @@ export function clearPulse(scope = state) {
   scope.pulse = null;
 }
 
-function startPulse() {
+/* The verb is decorative while the turn runs, but it stays on as that turn's
+   permanent closing line — and a refresh REPLAYS the hub's history, which runs
+   startPulse() again for every turn in it. Math.random() there re-rolled the
+   word on every reload, so a finished turn wore a different verb each time the
+   window was reopened. Derived from the prompt instead: same turn, same verb,
+   for as long as the transcript lives. */
+function pickVerb(seed) {
+  let h = 0;
+  for (const ch of String(seed)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return FA.pulseVerbs[h % FA.pulseVerbs.length];
+}
+
+function startPulse(seed) {
   clearPulse();
   const el = document.createElement("div");
   el.className = "pulse live";
   const glyph = label(PULSE_GLYPHS[0], "pulse-glyph");
   glyph.setAttribute("aria-hidden", "true");
-  const verb = FA.pulseVerbs[Math.floor(Math.random() * FA.pulseVerbs.length)];
+  const verb = pickVerb(seed);
   const text = label(FA.pulseRunning.replace("{verb}", verb), "pulse-verb");
   // The counters abut Persian prose and are written in Persian digits, so they
   // are prose too — dir="auto" resolves them against their own content rather
@@ -571,7 +584,8 @@ function startPulse() {
   el.setAttribute("aria-live", "off");
   append(el);
   const p = state.pulse =
-    { el, glyph, text, meta, verb, started: Date.now(), base: 0, live: 0, frame: 0 };
+    { el, glyph, text, meta, verb, started: Date.now(),
+      base: 0, live: 0, cliMs: 0, frame: 0 };
   p.timer = setInterval(() => paintPulse(p), 500);
   paintPulse(p);
 }
@@ -585,8 +599,14 @@ function settlePulse() {
   // longer exists.
   const wasAtBottom = atBottom();
   p.glyph.textContent = PULSE_GLYPHS[0];
+  // Our wall clock is what the live line counted; `cliMs` is the CLI's own
+  // duration_ms, summed over the turn's results. Live, the wall clock is always
+  // the larger (it starts at the echo, before the CLI has the message), so the
+  // settled line never jumps. In a replay the whole turn arrives in one burst
+  // and the wall clock reads zero — which is the «۰ ثانیه» after a refresh.
+  const elapsed = Math.max(Date.now() - p.started, p.cliMs);
   p.text.textContent = FA.pulseDone.replace("{verb}", p.verb)
-                                   .replace("{time}", fmtDuration(Date.now() - p.started));
+                                   .replace("{time}", fmtDuration(elapsed));
   const tokens = p.base + p.live;
   p.meta.textContent = tokens ? fmtTokens(tokens) : "";
   // `order: 1` only made it LOOK last; in the DOM it is still sitting where the
@@ -1486,6 +1506,11 @@ export function renderEvent(ev) {
       // necessarily the batch's end. A stop cancels the queued turns too
       // (interrupt_cancel_queued_v1) and they never emit results of their own,
       // so an aborted result IS the end regardless of the count.
+      // Per RESULT, not per settle: a queued batch produces several and the
+      // pulse spans all of them, exactly as `base` accumulates their tokens.
+      if (state.pulse && typeof ev.duration_ms === "number") {
+        state.pulse.cliMs += ev.duration_ms;
+      }
       state.inflight = ev.terminal_reason === "aborted_streaming"
         ? 0 : Math.max(0, state.inflight - 1);
       if (state.inflight === 0) {
@@ -1494,6 +1519,19 @@ export function renderEvent(ev) {
         settlePulse();
         resetTurn();
         toChrome("busy", false, setBusy);
+        // The CLI writes its own «※ recap: ...» when you come back to a turn
+        // you were not there to watch. It cannot write it here -- that path is
+        // remote-only (measured) -- so the window asks for it, on the same
+        // condition and for the same reason: the line costs an API call, and
+        // it is worth one only when nobody was reading. Failure is silence; a
+        // recap that does not arrive is a missing nicety, not an error.
+        // `token` is the guard that keeps the free gate free: spec-test.html
+        // drives this renderer with no token at all, and a recap is the one
+        // thing here that would reach a real CLI and spend a real turn.
+        if (token && !state.background && !ev.is_error
+            && ev.terminal_reason !== "aborted_streaming" && isAway()) {
+          api("/api/recap", {}).catch(() => {});
+        }
       } else {
         // Queued turns still to run: the status line and the stop button both
         // stay, exactly as the CLI keeps its one spinner over the whole queue.
@@ -1552,7 +1590,7 @@ export function renderEvent(ev) {
         if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one.
-        if (!queued) startPulse();
+        if (!queued) startPulse(ev.text ?? "");
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
@@ -1657,6 +1695,19 @@ export function renderEvent(ev) {
           setBusy(false); // a reset means no turn is running, by definition
           refreshProjects();
         }
+      } else if (ev.subtype === "recap") {
+        // The CLI's own «※ recap: …», asked for by the window (POST /api/recap)
+        // once the turn is over and the person is not watching. It is a
+        // sentence, not chrome: it belongs in the transcript, after the closing
+        // line of the turn it summarises, and it stays there.
+        const el = document.createElement("div");
+        el.className = "recap";
+        const glyph = label("※", "recap-glyph");
+        glyph.setAttribute("aria-hidden", "true");
+        const body = label("", "recap-body");
+        body.append(...renderMarkdown(ev.text ?? "").childNodes);
+        el.append(glyph, body);
+        append(el);
       } else if (ev.subtype === "idle_sync") {
         // The wrapper says this conversation has nothing in flight. It counts
         // turns on its own side (server.py _inflight) and is the only thing
