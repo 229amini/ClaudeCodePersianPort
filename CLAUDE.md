@@ -230,6 +230,35 @@ the first title anywhere in `/api/projects`, which lists every project on the ma
 started reporting a stranger's title the moment another project had one; it matches on the session
 id now. Gates: spec **147/147**, units, transcript guard, `test_no_console`, smoke **15/15**.
 
+**2026-08-23 — CLI 2.1.240, and the third way is closed.** The upgrade needed **no port**: the
+whole contract re-probed free (initialize, plan mode, `get_context_usage`, `/recap` refusal
+string byte-identical) plus one paid smoke turn — see `wiki/cli-stream-json-findings.md`
+§"2.1.240 re-verification" for the drift list (new `system/thinking_tokens` event, dropped;
+`Concise` style and `claude-fable-5[1m]` appeared by themselves because both chips mirror
+`initialize`). The reported "finished session still shows thinking" was **not** CLI drift: it
+was the documented-unfixed SSE reconnect replay — an `EventSource` auto-reconnect (sleep/wake)
+re-delivered the whole backlog, duplicating the transcript and double-counting
+`user_echo`/`result`, so a drop landing mid-turn stuck the window busy forever. Fixed with a
+monotonic `seq` on `Hub.publish` emitted as the SSE `id:` line and honoured via `Last-Event-ID`
+in `subscribe(after)`; a fresh window (no header) still replays everything. Read
+`wiki/parity-chrome.md` §"The third way" before touching `Hub` or `_serve_sse`. Verified on the
+wire, pinned in `test_units.py`. Gates: spec **147/147**, units, transcript guard, smoke
+**15/15** — both re-run after the change.
+
+**2026-08-23 (same session) — the boot tab is gone.** Launching the app used to `open_tab(--cwd)`
+at serve(): a real CLI spawned in the shortcut's `Documents\Claude` and the window opened ON a
+conversation — contradicting both the user's expectation and `M8-acceptance.md` §4 line 147,
+which already demanded the home state. `serve()` no longer opens a tab; zero tabs was already a
+fully-supported state (`blankView()`, `/api/tabs` `{tabs: [], active: ""}`), and `--cwd` still
+seeds recents so the shortcut's project is one click away. `smoke_test.py` now opens its own tab
+via `/api/project/open` — the only caller that relied on the boot tab. Verified live: zero tabs
+and **no CLI child process** at boot, spawn only on explicit open. Also measured (free): an idle
+`--resume` emits zero inference-shaped events in 12 s — opening/closing a session costs no
+tokens, no matter how old the session; only a sent turn pays (and after a long gap the next
+turn's cache re-write cost is per-turn API behaviour, unrelated to having opened the session
+earlier). See `wiki/cli-stream-json-findings.md` §"2.1.240 re-verification". Gates re-run: spec
+**147/147**, units, `test_no_console`, smoke **15/15**.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

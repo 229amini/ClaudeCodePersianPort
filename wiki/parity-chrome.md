@@ -221,15 +221,25 @@ is our bookkeeping, not the CLI's, and a stop button that quietly declines to se
 counter drifted is the reported defect pointing the other way — pressing stop twice is exactly what
 a user does when the first press looked like nothing.
 
-### The third way, NOT fixed: SSE reconnect replays everything
+### The third way, fixed 2026-08-23: the reconnect cursor
 
-`Hub.subscribe()` replays the full per-tab backlog (`HISTORY_MAX` 5000 events/tab) and `_serve_sse`
-sends no `id:` field, so there is no `Last-Event-ID` cursor. An `EventSource` auto-reconnect
-therefore re-delivers every event the window already rendered: the transcript duplicates, and the
-`user_echo`/`result` counting runs a second time. Balanced pairs cancel out, but a reconnect that
-lands **mid-turn** adds a `+1` that the single remaining `result` cannot pay back — permanently
-stuck busy, with no process death anywhere. Fixing it needs a real cursor and is out of scope;
-`idle_sync` is what unsticks it in the meantime.
+`Hub.subscribe()` used to replay the full per-tab backlog unconditionally and `_serve_sse` sent
+no `id:` field, so an `EventSource` auto-reconnect (sleep/wake, any transient drop) re-delivered
+every event the window already rendered: the transcript duplicated, and the `user_echo`/`result`
+counting ran a second time. Balanced pairs cancel out, but a drop that lands **mid-turn** leaves
+a `+1` no remaining `result` can pay back — permanently stuck busy with no process death
+anywhere. This was the user's "the session is finished but it still says it is thinking" report
+(2026-08-23, on 2.1.240 — but version-independent; the upgrade merely coincided).
+
+The fix is a global monotonic `seq`, stamped in `Hub.publish` under the lock, emitted as the SSE
+`id:` line. The browser sends it back as `Last-Event-ID` on auto-reconnect and
+`subscribe(after)` replays only `seq > after`. A fresh window (no header) still replays
+everything, which is what page refresh and the closing-line rules in frontend-modules.md assume.
+Both stamping and filtering happen under the same `_lock` as client registration, so a publish
+racing a reconnect is either in the replayed history or delivered live, never both. Pinned in
+`test_units.py` (Hub cursor section) and verified on the wire — real server, `id:` lines, a
+reconnect with `Last-Event-ID: 2` receiving exactly seq 3+. `idle_sync` stays: it covers the
+interrupt-shaped ways to lose a `result`, which a cursor does nothing for.
 
 ## Shift+Tab cycles the approval posture (2026-08-18, bead pcg-hta)
 

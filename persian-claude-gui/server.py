@@ -239,17 +239,28 @@ class Hub:
         # re-creates the bucket it just deleted, which then replays to every
         # window for the life of the server.
         self._closed: set[str] = set()
+        # Monotonic cursor stamped on every published event and sent as the
+        # SSE `id:` field. An EventSource auto-reconnect sends it back as
+        # Last-Event-ID, and subscribe() then replays only what the window
+        # missed. Without this a reconnect (sleep/wake, any transient drop)
+        # re-delivered the whole backlog: the transcript duplicated and the
+        # renderer's user_echo/result counting ran a second time -- a
+        # reconnect landing mid-turn left the window busy FOREVER, which is
+        # the "finished session still says it is thinking" report.
+        self._seq = 0
         self.last_empty_at: float | None = time.monotonic()
 
-    def subscribe(self) -> queue.Queue:
+    def subscribe(self, after: int = 0) -> queue.Queue:
         q: queue.Queue = queue.Queue()
         with self._lock:
             # Replay what already happened so a reconnecting window is not
             # blank. Order holds WITHIN a bucket, which is all that matters:
-            # the client renders one tab at a time.
+            # the client renders one tab at a time. `after` is the seq the
+            # window last saw; 0 (a fresh window) replays everything.
             for bucket in self._history.values():
                 for event in bucket:
-                    q.put(event)
+                    if event.get("seq", 0) > after:
+                        q.put(event)
             self._clients.add(q)
             self.last_empty_at = None
         return q
@@ -264,6 +275,8 @@ class Hub:
         with self._lock:
             if event.get("tab") in self._closed:
                 return
+            self._seq += 1
+            event["seq"] = self._seq
             bucket = self._history.setdefault(event.get("tab"), [])
             bucket.append(event)
             if len(bucket) > HISTORY_MAX:
@@ -3084,7 +3097,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
 
-        q = self.hub.subscribe()
+        # An EventSource auto-reconnect sends the last `id:` it saw back as
+        # Last-Event-ID; honouring it is what stops a reconnect from replaying
+        # a transcript the window already rendered (and from double-counting
+        # user_echo/result, which stuck the busy pulse for good).
+        try:
+            after = int(self.headers.get("Last-Event-ID", "") or 0)
+        except ValueError:
+            after = 0
+        q = self.hub.subscribe(after)
         try:
             while True:
                 try:
@@ -3094,7 +3115,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                     continue
                 data = json.dumps(event, ensure_ascii=False)
-                self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                seq = event.get("seq")
+                head = f"id: {seq}\n" if seq is not None else ""
+                self.wfile.write(f"{head}data: {data}\n\n".encode("utf-8"))
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
@@ -3141,9 +3164,10 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
     Handler.claude_bin = find_claude()
     Handler.sessions = {}
     Handler.active = ""
-    # The boot conversation is just the first tab, opened through the same
-    # path /api/project/open uses.
-    Handler.open_tab(cwd)
+    # No boot tab: the window opens on the home state and nothing spawns until
+    # the user picks a project or session (user decision 2026-08-23 — launching
+    # the app must not open a conversation). --cwd still seeds the recents list
+    # below, so the shortcut's project is one click away.
 
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     httpd.daemon_threads = True

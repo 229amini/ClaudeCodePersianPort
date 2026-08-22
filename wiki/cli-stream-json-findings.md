@@ -4,6 +4,43 @@
 on Windows 10 Home 19045, 2026-08-04. Every answer below is version-pinned — re-verify after a
 CLI upgrade.
 
+## 2.1.240 re-verification (2026-08-23, author PC)
+
+Probed with the wrapper's exact flags (free: `initialize`, `set_permission_mode plan`,
+`get_context_usage`, empty-session `/recap`) plus one paid smoke turn. **The contract holds** —
+spec 147/147, units, smoke 15/15, no code change needed for the upgrade itself. Drift found,
+all absorbed by existing design:
+
+- **New event: `system/thinking_tokens`** (seen ×6 in one smoke run). The renderer's `system`
+  case handles only `init`/`status` and silently drops the rest, so it costs nothing. It is NOT
+  an unknown top-level type, so no raw-JSON card either.
+- **`result` gained keys**: `subagent_stats`, `fast_mode_state`, `fast_mode_disabled_reason`,
+  `modelUsage`, `uuid`. Nothing reads them; nothing broke.
+- **Output styles now include `Concise`** — the chip mirrors
+  `initialize.available_output_styles`, so it appeared by itself.
+- **Models list gained `claude-fable-5[1m]`** (supportsEffort true); `haiku` still the only one
+  without `supportsEffort`. Mirrored, not hardcoded — picker updated by itself.
+- `initialize.commands` is 61 entries (was 60 on 2.1.234); `/recap` still present,
+  `supportsNonInteractive` unchanged, and the empty-session refusal string is byte-identical
+  (`RECAP_NON_ANSWERS` still valid).
+- Transcript records: `user` lines now carry `origin: {kind}` / `promptSource`; new
+  `atis-latch` / `ai-title` record types. All filtered by type in `read_session` already.
+- **`/recap` drift, minor:** the 2.1.235 finding said the recap turn is never written to the
+  transcript. On 2.1.240 the *send* IS recorded (`user` + `system/local_command` records —
+  measured in the probe cwd); the CLI's answer still is not, and `read_session` filters both
+  record shapes anyway, so nothing leaks into replay.
+- **An idle spawn writes no transcript; an idle `--resume` costs nothing.** Measured: a bare
+  spawn (no input, killed after use) leaves no `.jsonl` at all, and a `--resume` left idle for
+  12 s emits only the SessionStart `hook_started`/`hook_response` pair — zero inference-shaped
+  events (`assistant`/`result`/`stream_event`/`rate_limit_event`). It does rewrite the
+  transcript (+~170 bytes of spawn records, mtime bump — the known spawn-rewrite the sidebar
+  sort ignores). Tokens are spent per turn only; merely opening and closing a session is free,
+  regardless of how long ago it last ran.
+
+The user-reported "finished session still says thinking" was NOT 2.1.240 drift — it was the
+documented-unfixed SSE reconnect replay (parity-chrome.md §"The third way"), fixed the same day
+with a `Last-Event-ID` cursor on the Hub.
+
 ## B-9.1 — `--verbose` is REQUIRED
 
 Without it:
