@@ -807,6 +807,26 @@ server.TabHub(closing, "gone").publish({"subtype": "cli_exited"})
 check("a late event from a closed tab does not resurrect its bucket",
       [e["subtype"] for e in _drain(closing.subscribe())] == ["kept"])
 
+print("Hub: an SSE reconnect resumes at its cursor instead of replaying")
+# The third way to stick the busy pulse (parity-chrome.md): an EventSource
+# auto-reconnect used to replay the whole backlog, so a drop landing mid-turn
+# re-counted user_echo (+1) with only one result left to pay it back.
+resumed = server.Hub()
+rtab = server.TabHub(resumed, "t")
+rtab.publish({"subtype": "user_echo"})
+rtab.publish({"subtype": "result"})
+first = _drain(resumed.subscribe())
+check("every published event is stamped with a monotonic seq",
+      [e["seq"] for e in first] == [1, 2])
+rtab.publish({"subtype": "late"})
+check("a reconnect with a cursor replays only what the window missed",
+      [e["subtype"] for e in _drain(resumed.subscribe(first[-1]["seq"]))]
+      == ["late"])
+check("a fresh window (no cursor) still replays everything",
+      len(_drain(resumed.subscribe())) == 3)
+check("seq is global, so within-bucket order survives the filter",
+      [e["seq"] for e in _drain(resumed.subscribe(1))] == [2, 3])
+
 
 class _StubSession:
     """A ClaudeSession's tab-facing surface: no subprocess, no CLI."""

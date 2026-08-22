@@ -130,6 +130,11 @@ def wait_for(key: str, match=None, timeout: float = 10.0) -> dict:
 
 threading.Thread(target=read_sse, daemon=True).start()
 
+# The server no longer opens a boot tab (2026-08-23: launching the app must not
+# open a conversation), so the test opens its own — through the same endpoint
+# the sidebar uses.
+print("POST /api/project/open ->", post("/api/project/open", {"path": str(WORKDIR)}))
+
 # `initialize` answers at spawn, before any user message and for free — that is
 # what fills the model picker and the slash popup on a fresh window.
 init_ready.wait(timeout=30)
