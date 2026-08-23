@@ -14,8 +14,10 @@ it took; `rename_session` writes nothing on a session with no messages, so only
 a transcript read proves it; and a permission mode the engine refuses still
 comes back cheerful. Nothing here is asserted from an ack alone.
 """
+import atexit
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +36,36 @@ proc = subprocess.Popen(
     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     text=True, encoding="utf-8", errors="replace", bufsize=1,
 )
+
+
+def _cleanup() -> None:
+    """Leave no project behind.
+
+    server.py lists every ~/.claude/projects entry whose recorded cwd still
+    exists, plus everything in recents.json — so a temp workdir that outlives
+    the test shows up in the window's sidebar as a "pcg-smoke-…" project, on
+    the colleague's PC, right after setup.ps1 ran this. taskkill /T because a
+    plain kill orphans the claude child, and Windows will not delete a folder
+    that is some process's cwd.
+    """
+    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    try:
+        proc.wait(timeout=10)           # taskkill only signals; the cwd is held until it exits
+    except Exception:
+        pass
+    import server                      # same folder; only for the two helpers
+    transcripts = server.transcript_dir(Path(WORKDIR))
+    for _ in range(20):
+        shutil.rmtree(WORKDIR, ignore_errors=True)
+        if not Path(WORKDIR).exists():
+            break
+        time.sleep(0.25)
+    if transcripts:
+        shutil.rmtree(transcripts, ignore_errors=True)
+    server.drop_project_from_lists(str(WORKDIR))
+
+
+atexit.register(_cleanup)
 
 url = None
 deadline = time.time() + 30
@@ -286,7 +318,6 @@ except urllib.error.HTTPError as exc:
     auth_ok = exc.code == 403
     print(f"AUTH: {'ok' if auth_ok else 'FAIL'} — bad token got {exc.code}")
 
-proc.kill()
 
 checks = {
     "turn completed": ok,

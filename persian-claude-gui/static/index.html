@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>کلاد فارسی</title>
+<title>کلاد فارسی — v{{VERSION}}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="app">
@@ -55,6 +55,10 @@
       </svg>
       <span id="btn-help-label"></span>
     </a>
+    <!-- Which build is running. server.py substitutes {{VERSION}} into every
+         .html it serves, so this and the window title cannot disagree with the
+         code that is actually answering. LTR by markup (spec rule 2). -->
+    <div class="side-ver"><bdi dir="ltr">v{{VERSION}}</bdi></div>
   </div>
 </aside>
 
@@ -229,7 +233,8 @@
             <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/>
           </svg>
         </button>
-        <button type="button" id="stop" class="round danger" hidden aria-label="توقف">
+        <button type="button" id="stop" class="round danger" hidden
+                aria-label="توقف (Esc)" title="توقف (Esc)">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
             <rect x="6" y="6" width="12" height="12" rx="2"/>
           </svg>

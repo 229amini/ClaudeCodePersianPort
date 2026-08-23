@@ -35,6 +35,9 @@
   <textarea id="input" rows="1" dir="auto"
             placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
   <button type="submit" id="send">ارسال</button>
+  <!-- The Esc case routes through the stop button's own click handler, so the
+       harness needs the button itself; setBusy() also unhides it. -->
+  <button type="button" id="stop" hidden aria-label="توقف (Esc)">توقف</button>
 </form>
 
 <footer id="statusline"></footer>
@@ -1955,6 +1958,66 @@ window.fetch = realFetch;
 check("the server's echo is what advances it, and the cycle wraps round",
   posted.length === 3 && JSON.parse(posted[2].body ?? "{}").posture === "plan",
   posted[2]?.body ?? "nothing sent");
+
+/* --- Esc stops the running turn (bead pcg-b33) -----------------------------
+   Parity with the TUI, and the whole risk is the OTHER direction: Esc is
+   already how you dismiss a modal, a popover, the slash list and the chip
+   menu, so an interrupt bound to it must stay out of the way of every one of
+   those. The assertions are therefore two negatives and one positive, and the
+   negatives are the load-bearing ones — a stray interrupt kills a turn the
+   user only meant to un-open a menu for. */
+const escLog = document.createElement("div");
+const escScope = newRenderScope();
+const escFetch = window.fetch;
+const escPosts = [];
+window.fetch = (url, options) => {
+  escPosts.push(String(url).split("?")[0]);
+  return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+};
+const pressEsc = () => {
+  const ev = new KeyboardEvent("keydown",
+    { key: "Escape", cancelable: true, bubbles: true });
+  document.dispatchEvent(ev);
+  return ev;
+};
+
+// Nothing running: Esc is not ours, and the box keeps what was typed.
+input.value = "متنی که نباید پاک شود";
+const idleEsc = pressEsc();
+check("with no turn running Esc does nothing and the composer keeps its text",
+  !idleEsc.defaultPrevented && escPosts.length === 0 &&
+  input.value === "متنی که نباید پاک شود",
+  (escPosts.join(" | ") || "nothing sent") + " / «" + input.value + "»");
+input.value = "";
+
+// Busy, but something dismissible is open — the popover owns the key. Built
+// here rather than borrowed from the app so the check is about the guard.
+withRenderTarget(escLog, escScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کار طولانی" });
+});
+const escPop = document.createElement("div");
+escPop.popover = "auto";
+document.body.append(escPop);
+escPop.showPopover();
+const popEsc = pressEsc();
+check("Esc closes an open popover instead of killing the turn behind it",
+  document.body.classList.contains("busy") &&
+  !popEsc.defaultPrevented && escPosts.length === 0,
+  (document.body.classList.contains("busy") ? "" : "NOT busy; ") +
+  (escPosts.join(" | ") || "nothing sent"));
+escPop.hidePopover();
+escPop.remove();
+
+const stopEsc = pressEsc();
+check("with a turn running and nothing open, Esc interrupts it",
+  stopEsc.defaultPrevented && escPosts.length === 1 &&
+  escPosts[0] === "/api/interrupt",
+  escPosts.join(" | ") || "nothing sent");
+
+window.fetch = escFetch;
+withRenderTarget(escLog, escScope, () => {
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
 
 /* --- a polling loop is one pair, not sixteen rows (bead pcg-2an) ------------
    A model waiting on something wrote «منتظر می‌مانم.» and read the same file

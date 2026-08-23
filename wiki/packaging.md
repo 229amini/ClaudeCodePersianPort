@@ -243,3 +243,45 @@ one's false PASS survived two days. A stub proves the caller's error handling, n
 Login itself still cannot be automated; that is the single manual step the plan allows.
 
 Do not claim M7 is proven end-to-end until it has run on a machine with nothing installed.
+
+## The setup left a project in the sidebar every time (2026-08-23)
+
+`setup.ps1` ends in two checks that each spawn the server on a `tempfile.mkdtemp()` project —
+`test_no_console.py` (`pcg-noconsole-…`) and `smoke_test.py` (`pcg-smoke-…`) — and neither
+deleted it. That is not invisible junk: `_projects()` lists every `~/.claude/projects/<sanitized>`
+entry **whose recorded `cwd` still exists on disk**, plus everything in `recents.json`, so each
+setup run added one permanent `pcg-smoke-…` row to the window's sidebar on the colleague's PC.
+`recents.json` is capped at `MAX_RECENTS = 10`, so a handful of runs also pushed the real projects
+out of the recents list.
+
+Both scripts now clean up after themselves — one `_cleanup()` each (duplicated on purpose: a
+shared helper would be a third file `setup.ps1` has to copy):
+
+1. `taskkill /PID <pid> /T /F` — a plain `proc.kill()` leaves the `claude.exe` child alive, and
+   Windows will not delete a folder that is some process's cwd.
+2. **`proc.wait()` after the taskkill.** taskkill only *signals*; without the wait the first
+   `rmtree` runs while the handle is still open, deletes the contents but not the folder, and
+   leaves an empty directory behind — which still counts as an existing `cwd`, so the sidebar row
+   survives anyway. This is the whole bug in miniature: measured, the wait makes the delete succeed
+   on the first try (0.2 s) instead of losing a 5 s retry loop.
+3. `server.transcript_dir()` then `shutil.rmtree` — the CLI's own transcript folder. Note the temp
+   name may contain `_`, which the CLI sanitizes to `-`, so the derived name misses and the
+   `cwd`-read fallback is what finds it. Resolve it **before** deleting the workdir.
+4. `server.drop_project_from_lists()` — the recents/archived/pinned/names entry.
+
+Console output of `setup.ps1` is **English** as of the same date (the target console renders
+Persian unreliably); the shortcut name, the app UI and `static/help.html` stay Persian.
+
+## The version marker: how you know an update landed (2026-08-24)
+
+`APP_VERSION` in `server.py` is the single source. `_serve_file()` substitutes
+`{{VERSION}}` into **any** `.html` it sends, so the window title and the sidebar
+footer are filled in by the process that is actually answering — a stale copy of
+`static/` served by a new `server.py` still reports the new number, and there is
+no second constant to forget. Every response is `Cache-Control: no-store`, so a
+reload after an update always shows the new value; no cache-busting query needed.
+
+Bump it in one place when deploying, and tell the colleague to check the window
+title — that is the whole "did the update take?" test on a machine with no
+terminal. `test_layout.py` substitutes a stand-in of the same shape, because the
+probe page reads `index.html` off disk and never goes through the server.

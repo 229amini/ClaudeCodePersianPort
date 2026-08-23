@@ -37,6 +37,28 @@ non-technical user.
 The `capabilities` array in `system/init` advertises this:
 `interrupt_receipt_v1`, `interrupt_cancel_queued_v1`, `msg_lifecycle_v1`.
 
+### Esc is the second door to it (2026-08-23, `pcg-b33`)
+
+The TUI stops a turn with Esc, so the window does too — bound on `document`, not on the
+textarea, and routed through the **stop button's own click** rather than a second `fetch`. That
+buys the auto-repeat guard for free: the click handler disables the button until the POST comes
+back, so a held-down Esc is one interrupt and not thirty.
+
+The risk is entirely the other direction. Esc already dismisses four things here — the permission
+`<dialog>`, the `popover` menus (kebab, agents drawer), the slash list and the chip menu — and a
+stray interrupt would kill a turn the user only meant to un-open a menu for. The guard is one
+`querySelector` (`dialog[open], :popover-open, #slash-popup:not([hidden]),
+#menu-popup:not([hidden])`) plus `e.defaultPrevented`, which covers handlers that claim the key
+without any of those states (the sidebar's inline rename field). **A DOM query, not a flag** —
+registration order between two `document` listeners is not something a later module can be
+trusted to preserve.
+
+Idle Esc is deliberately unbound. The TUI clears its input line with it; here the composer is a
+real `<textarea>` whose value is the only copy of what was typed, and there is no undo across a
+programmatic clear.
+
+Guarded by three spec checks, two of them negatives — those are the load-bearing ones.
+
 ## B-9.4 — slash commands work in `-p`
 
 Sending `/context` as plain user text returned real rendered markdown (context table, token

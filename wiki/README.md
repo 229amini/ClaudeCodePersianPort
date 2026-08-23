@@ -31,7 +31,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   cascade layers are ordered the way they are (not the way the plan sketched).
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
-  collision) that a screenshot cannot catch.
+  collision) that a screenshot cannot catch. Also **what breaks when the window is made small**,
+  and why the picker menus were sizing themselves off their own anchor.
 - [sessions-and-history.md](sessions-and-history.md) — `--resume` semantics, where transcripts
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own

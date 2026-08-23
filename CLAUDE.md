@@ -259,6 +259,31 @@ turn's cache re-write cost is per-turn API behaviour, unrelated to having opened
 earlier). See `wiki/cli-stream-json-findings.md` §"2.1.240 re-verification". Gates re-run: spec
 **147/147**, units, `test_no_console`, smoke **15/15**.
 
+**2026-08-23 — the window was never responsive, and the picker menu was sizing itself.** Reported
+as small resolutions breaking, with a screenshot of the posture menu crushed into a ~180px column
+whose rows drew on top of each other. Measured headlessly against the real `index.html` first:
+`positionMenu()` writes a physical `right` on a **shrink-to-fit** popup, so the offset that lines
+the menu up with its chip was also *subtracting from its width* — the posture chip is the last one
+on the row, which is why that menu was the narrow one (201px in a 760px window, 282px in a 1280px
+one). It opens upward, so `max-height: 46vh` was clipped by the top of the window in the home state
+(first row at `y = -64`, no scrollbar to say so) — capped from the anchor's rect now, and
+`#slash-popup` needed the same line. `.menu-row` carried `min-height: 0`, so the rows shrank below
+their own content instead of the popup scrolling: **the third appearance of the `#log > * { flex:
+none }` family**. And the shell had no `@media` block at all — a 500px window handed `#stage` 194px
+for 244px of content and drew the composer at `x = -30`, off the window, with every spec assertion
+still green. Two breakpoints, no drawer (Chromium will not go below ~490px of viewport). Read
+`wiki/rtl-rendering-notes.md` §"Nothing in the shell was responsive" before touching `positionMenu`
+or the sidebar column. New free gate: **`test_layout.py`**, negative-tested against the old CSS
+(7 failures). Gates: layout **PASS**, spec **150/150**, units, transcript guard, `test_no_console`.
+The smoke test was not re-run — nothing here touches transport.
+
+**2026-08-24 — a version marker, so an update is visible without a terminal.**
+`APP_VERSION` in `server.py` is the one constant; `_serve_file()` substitutes `{{VERSION}}` into
+every `.html` it serves, so the window title («کلاد فارسی — v1.0.0») and the sidebar footer are
+written by the process that is actually answering — not by a static file that may not have been
+copied. Bump it on release; see `wiki/packaging.md` §"The version marker". Gates re-run: layout
+**PASS**, spec **150/150**, `test_no_console` **PASS**.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -438,7 +463,8 @@ Two checks exist:
 | Check | How | Asserts |
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). 15 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 143 assertions by later passes, so `PASS — 143/143` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 150 assertions by later passes, so `PASS — 150/150` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Narrow windows | `python persian-claude-gui\test_layout.py` | the shipping `index.html` (not a copy — the probe page is generated from it and deleted again) measured headlessly at 1280×800, 760×640 and 500×560: nothing drawn off the window, nothing wider than its own box, and the posture menu open — full width, on screen, rows at their natural height. Free. This is the class the spec gate is structurally blind to: it runs at one size and asserts message content |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |

@@ -493,6 +493,12 @@ pre, code, .path, .diff, .tool-output, .mono {
   cursor: pointer;
 }
 .side-item:hover { background: var(--surface); color: var(--fg); }
+.side-ver {
+  padding: 6px 8px 0;
+  color: var(--fg-muted);
+  font-size: .74rem;
+  opacity: .75;
+}
 
 /* --- stage ----------------------------------------------------------------- */
 #stage {
@@ -1211,6 +1217,12 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
      composer.js (input.style.height = scrollHeight) computed to nothing and a
      multi-line message stayed a 1-line box with a hidden scrollbar. */
   flex: none;
+  /* A <textarea> carries an intrinsic width from `cols` (~180px), and that
+     width is what the whole stage reported as its min-content — so a narrow
+     window handed the grid column less than the composer's minimum and the box
+     was drawn off the start edge (measured: a 500px window put .comp-box at
+     x = -30). A percentage width contributes nothing to intrinsic sizing. */
+  inline-size: 100%;
 }
 .comp-box #input:focus-visible { outline: none; }   /* the box shows focus */
 
@@ -1412,7 +1424,11 @@ button.round {
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
-  min-height: 0;
+  /* Never shrink. The popup is a flex column with a max-height, so a row with
+     `min-height: 0` gave up its own content size once the list was taller than
+     the box — the notes then drew ON TOP of the next row's title instead of
+     scrolling. Same defect, same fix, as `#log > * { flex: none }`. */
+  flex: none;
   padding: 8px 10px;
   border: 0;
   border-radius: 7px;
@@ -1998,6 +2014,36 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* --- narrow windows ----------------------------------------------------------
+   The window is resizable and nothing here was: a fixed 288px sidebar beside a
+   `minmax(0, 1fr)` stage means the stage pays for every pixel the window loses.
+   Measured before this block existed (headless, real markup): a 760px window
+   left the stage 438px and wrapped the composer row onto three lines; a 500px
+   window left it 194px for 244px of content, which is not a squeeze but an
+   overflow — the composer, the greeting and the cards were drawn off the start
+   edge of the window entirely.
+
+   The order things give way in: the sidebar first (it is chrome, and its rows
+   already ellipsis), then the reading column's 20px gutters, then the home
+   grid's second column. The composer row itself needs nothing — it has wrapped
+   since the effort chip vanished off it. */
+@media (max-width: 1000px) {
+  body.app { grid-template-columns: 244px minmax(0, 1fr); }
+}
+
+@media (max-width: 820px) {
+  body.app { grid-template-columns: 200px minmax(0, 1fr); }
+  #log { padding-inline: 12px; }
+  #composer { padding-inline: 12px; }
+  #topbar { padding-inline: 12px; }
+  #context-notice { margin-inline: 12px; }
+  #replay-banner { width: calc(100% - 24px); }
+  /* Two columns of 97px fit neither a title nor its note: the cards grew to
+     215px tall and clipped their own text. One column, full width. */
+  #home-cards { grid-template-columns: minmax(0, 1fr); width: calc(100% - 24px); }
+  .greeting { font-size: 1.5rem; gap: 10px; }
 }
 }
 

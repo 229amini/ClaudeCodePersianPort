@@ -41,6 +41,12 @@ from urllib.parse import parse_qs, urlparse
 
 COOKIE_NAME = "pcg_token"
 
+# Bump on every release. Substituted into any .html this server sends
+# ({{VERSION}}), so the window title and the sidebar footer prove which
+# build is actually running after an update — the one question a
+# non-technical user cannot answer from a folder listing.
+APP_VERSION = "1.0.0"
+
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
 
@@ -3079,6 +3085,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = path.read_bytes()
         ctype = MIME_TYPES.get(path.suffix.lower(), "application/octet-stream")
+        if path.suffix.lower() == ".html":
+            body = body.replace(b"{{VERSION}}", APP_VERSION.encode("utf-8"))
         extra: tuple[tuple[str, str], ...] = ()
         if set_cookie:
             # Host-only, session-scoped, not readable from JS. The server is

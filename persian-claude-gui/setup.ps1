@@ -50,11 +50,11 @@ function Warn([string]$fa) { Write-Host "  ! $fa" -ForegroundColor Yellow; Log "
 function Die([string]$fa)  { Write-Host ""; Write-Host "✗ $fa" -ForegroundColor Red; Log "FAIL: $fa"; exit 1 }
 
 Write-Host ""
-Write-Host "نصب کلاد فارسی" -ForegroundColor White
-Write-Host "این کار چند دقیقه طول می‌کشد. پنجره را نبندید." -ForegroundColor Gray
+Write-Host "Claude Persian - Setup" -ForegroundColor White
+Write-Host "This takes a few minutes. Do not close this window." -ForegroundColor Gray
 
 # ---------------------------------------------------------------- 1. probe
-Step "بررسی سیستم"
+Step "Checking the system"
 
 foreach ($c in @('node', 'npm', 'python', 'py', 'winget', 'claude', 'code')) {
     $found = Get-Command $c -ErrorAction SilentlyContinue
@@ -66,12 +66,12 @@ $edge = @(
     "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if ($edge) { Ok "مرورگر Edge پیدا شد" }
-else { Warn "Edge پیدا نشد — برنامه در مرورگر پیش‌فرض باز می‌شود" }
+if ($edge) { Ok "Edge browser found" }
+else { Warn "Edge not found - the app will open in the default browser" }
 Log "  edge => $edge"
 
 # ---------------------------------------------------------------- 2. python
-Step "بررسی پایتون"
+Step "Checking Python"
 
 function Find-RealPython {
     # The Microsoft Store alias stub lives in WindowsApps and is NOT real
@@ -95,23 +95,23 @@ function Find-RealPython {
 
 $python = Find-RealPython
 if ($python) {
-    Ok "پایتون از قبل نصب است"
+    Ok "Python is already installed"
     Log "  python => $python"
 } else {
-    Note "پایتون نصب نیست — در حال نصب"
+    Note "Python is not installed - installing it"
 
     $installer = $null
     if ($Payload) {
         # Say why the offline folder was ignored. Silently falling through to a
-        # download means a blocked network reports "دانلود ناموفق" when the real
+        # download means a blocked network reports "Python download failed" when the real
         # problem is a wrong -Payload path.
         if (-not (Test-Path $Payload)) {
-            Warn "پوشه آفلاین پیدا نشد: $Payload"
+            Warn "Offline folder not found: $Payload"
         } else {
             $installer = Get-ChildItem -Path $Payload -Filter 'python-3.12*-amd64.exe' -ErrorAction SilentlyContinue |
                          Select-Object -First 1 -ExpandProperty FullName
-            if ($installer) { Note "استفاده از فایل نصب روی حافظه جانبی" }
-            else { Warn "فایل نصب پایتون در پوشه آفلاین نبود" }
+            if ($installer) { Note "Using the installer from the offline media" }
+            else { Warn "No Python installer in the offline folder" }
         }
     }
 
@@ -123,12 +123,12 @@ if ($python) {
         foreach ($v in $PythonVersions) {
             $url = "https://www.python.org/ftp/python/$v/python-$v-amd64.exe"
             try {
-                Note "دانلود پایتون $v"
+                Note "Downloading Python $v"
                 Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -TimeoutSec 300
                 $done = $true; Log "  downloaded $url"; break
             } catch { Log "  download failed $v : $($_.Exception.Message)" }
         }
-        if (-not $done) { Die "دانلود پایتون ناموفق بود. اینترنت را بررسی کنید یا از حالت آفلاین استفاده کنید." }
+        if (-not $done) { Die "Python download failed. Check the internet connection, or use the offline mode." }
     }
 
     $p = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList `
@@ -136,13 +136,13 @@ if ($python) {
     Log "  installer exit $($p.ExitCode)"
     # 3010 is ERROR_SUCCESS_REBOOT_REQUIRED — installed, not failed. Treating it
     # as failure would abort a bootstrap that actually worked.
-    if ($p.ExitCode -eq 3010) { Warn "پایتون نصب شد؛ ویندوز نیاز به ری‌استارت دارد" }
-    elseif ($p.ExitCode -ne 0) { Die "نصب پایتون ناموفق بود (کد $($p.ExitCode))" }
+    if ($p.ExitCode -eq 3010) { Warn "Python installed; Windows needs a restart" }
+    elseif ($p.ExitCode -ne 0) { Die "Python install failed (code $($p.ExitCode))" }
 
     # PATH is not refreshed inside a running process, so re-detect by path.
     $python = Find-RealPython
-    if (-not $python) { Die "پایتون نصب شد ولی پیدا نشد. سیستم را ری‌استارت کنید و دوباره اجرا کنید." }
-    Ok "پایتون نصب شد"
+    if (-not $python) { Die "Python was installed but cannot be found. Restart the PC and run this again." }
+    Ok "Python installed"
 }
 
 $pythonw = Join-Path (Split-Path $python) 'pythonw.exe'
@@ -150,7 +150,7 @@ if (-not (Test-Path $pythonw)) { $pythonw = $python }
 Log "  pythonw => $pythonw"
 
 # ---------------------------------------------------------------- 3. claude
-Step "بررسی کلاد کد"
+Step "Checking Claude Code"
 
 $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
 if (-not $claude) {
@@ -160,10 +160,10 @@ if (-not $claude) {
 
 if ($claude) {
     $ver = & $claude --version
-    Ok "کلاد کد نصب است ($ver)"
+    Ok "Claude Code is installed ($ver)"
     Log "  claude => $claude ($ver)"
 } else {
-    Note "کلاد کد نصب نیست — در حال نصب"
+    Note "Claude Code is not installed - installing it"
     # Run the vendor installer in a CHILD powershell, never Invoke-Expression.
     # IEX executes in *this* scope, and claude.ai/install.ps1 (read 2026-08-05)
     # both calls `exit 1` on every failure path — verified to terminate the
@@ -181,27 +181,27 @@ if ($claude) {
     $ErrorActionPreference = $eap
     Log "  claude installer exit $installCode"
     if ($installCode -ne 0) {
-        Die "نصب کلاد کد ناموفق بود (کد $installCode). اینترنت را بررسی کنید — ممکن است این سرویس در کشور شما در دسترس نباشد. گزارش کامل: $LogFile"
+        Die "Claude Code install failed (code $installCode). Check the internet connection - the service may not be reachable from your country. Full log: $LogFile"
     }
     $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
     if (-not $claude) {
         $local = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
         if (Test-Path $local) { $claude = $local }
     }
-    if (-not $claude) { Die "کلاد کد نصب شد ولی پیدا نشد. سیستم را ری‌استارت کنید و دوباره اجرا کنید." }
-    Ok "کلاد کد نصب شد"
+    if (-not $claude) { Die "Claude Code was installed but cannot be found. Restart the PC and run this again." }
+    Ok "Claude Code installed"
 }
 
 # ---------------------------------------------------------------- 4. deploy
-Step "کپی برنامه"
+Step "Copying the app"
 
 New-Item -ItemType Directory -Force -Path $DeployRoot | Out-Null
 foreach ($item in @('server.py', 'smoke_test.py', 'test_no_console.py', 'static', 'assets')) {
     $src = Join-Path $Here $item
-    if (-not (Test-Path $src)) { Die "فایل $item پیدا نشد — بسته نصب ناقص است" }
+    if (-not (Test-Path $src)) { Die "$item is missing - the setup package is incomplete" }
     Copy-Item -Path $src -Destination $DeployRoot -Recurse -Force
 }
-Ok "برنامه در $DeployRoot کپی شد"
+Ok "App copied to $DeployRoot"
 Log "  deployed to $DeployRoot"
 
 $serverPy = Join-Path $DeployRoot 'server.py'
@@ -212,7 +212,7 @@ $serverPy = Join-Path $DeployRoot 'server.py'
 # short-name check that guarded it was deleted with it.
 
 # ---------------------------------------------------------------- 5. launcher
-Step "ساخت میان‌بر"
+Step "Creating the shortcut"
 
 New-Item -ItemType Directory -Force -Path $ProjectDir | Out-Null
 
@@ -259,7 +259,7 @@ Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf)
 # has to stay idempotent, and two icons for one app is worse than none.
 $legacy = Join-Path $ShortcutDir 'کلود.lnk'
 if (Test-Path $legacy) { Remove-Item $legacy -Force; Log '  removed pre-rebrand shortcut' }
-Ok "میان‌بر «کلاد فارسی» روی دسکتاپ ساخته شد"
+Ok "Desktop shortcut created"
 Log "  shortcut => $shortcut"
 
 # ------------------------------------------------------- 5.5 launcher check
@@ -268,7 +268,7 @@ Log "  shortcut => $shortcut"
 # pythonw) were invisible to every check that came before and shipped a window
 # showing an error page. Free, no CLI turn, and independent of login — so it
 # runs before the paid smoke test and gates it.
-Step "آزمایش اجرای برنامه"
+Step "Testing the launcher"
 
 $env:PYTHONIOENCODING = 'utf-8'
 $eap = $ErrorActionPreference           # native stderr is terminating under Stop
@@ -279,24 +279,24 @@ $launcherOk = $LASTEXITCODE -eq 0
 $ErrorActionPreference = $eap
 
 if ($launcherOk) {
-    Ok "برنامه بدون پنجره خط فرمان اجرا شد"
+    Ok "The app started with no console window"
 } else {
-    Warn "برنامه اجرا نشد"
+    Warn "The app did not start"
     Write-Host ""
-    Write-Host "  میان‌بر ساخته شد ولی برنامه بالا نیامد." -ForegroundColor Yellow
-    Write-Host "  لطفاً این فایل گزارش را برای سازنده بفرستید:" -ForegroundColor Yellow
+    Write-Host "  The shortcut was created but the app did not come up." -ForegroundColor Yellow
+    Write-Host "  Please send this log file to the developer:" -ForegroundColor Yellow
     Write-Host "    $LogFile" -ForegroundColor Cyan
     Write-Host ""
 }
 
 # ---------------------------------------------------------------- 6. smoke
 if (-not $launcherOk) {
-    Step "آزمایش نهایی رد شد"
+    Step "Final test skipped"
 } elseif ($SkipSmokeTest) {
-    Step "آزمایش نهایی رد شد"
+    Step "Final test skipped"
 } else {
-    Step "آزمایش نهایی"
-    Note "یک پیام آزمایشی به کلاد کد فرستاده می‌شود"
+    Step "Final test"
+    Note "Sending one test message to Claude Code"
 
     $env:PYTHONIOENCODING = 'utf-8'
     $smoke = Join-Path $DeployRoot 'smoke_test.py'
@@ -313,17 +313,17 @@ if (-not $launcherOk) {
     $smokeOk = $smokeCode -eq 0
 
     if ($smokeOk) {
-        Ok "آزمایش موفق بود"
+        Ok "Test passed"
     } else {
-        Warn "آزمایش ناموفق بود"
+        Warn "Test failed"
         Write-Host ""
-        Write-Host "  احتمالاً باید یک بار وارد حساب کلاد کد شوید." -ForegroundColor Yellow
-        Write-Host "  این تنها کاری است که باید دستی انجام دهید:" -ForegroundColor Yellow
+        Write-Host "  You probably need to log in to Claude Code once." -ForegroundColor Yellow
+        Write-Host "  This is the only step you have to do by hand:" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "    1. پنجره خط فرمان را باز کنید" -ForegroundColor White
-        Write-Host "    2. دستور زیر را بزنید و مراحل ورود را کامل کنید:" -ForegroundColor White
+        Write-Host "    1. Open a Command Prompt window" -ForegroundColor White
+        Write-Host "    2. Run the command below and complete the login:" -ForegroundColor White
         Write-Host "       claude" -ForegroundColor Cyan
-        Write-Host "    3. سپس همین فایل نصب را دوباره اجرا کنید" -ForegroundColor White
+        Write-Host "    3. Then run this setup file again" -ForegroundColor White
         Write-Host ""
         Log "  smoke test failed (exit $smokeCode)"
     }
@@ -331,9 +331,9 @@ if (-not $launcherOk) {
 
 # ---------------------------------------------------------------- done
 Write-Host ""
-Write-Host "نصب تمام شد." -ForegroundColor Green
-Write-Host "برای شروع، روی آیکون «کلاد فارسی» در دسکتاپ دوبار کلیک کنید." -ForegroundColor White
-Write-Host "پوشه پروژه: $ProjectDir" -ForegroundColor Gray
-Write-Host "گزارش کامل: $LogFile" -ForegroundColor Gray
+Write-Host "Setup finished." -ForegroundColor Green
+Write-Host "To start, double-click the Claude Persian icon on your desktop." -ForegroundColor White
+Write-Host "Project folder: $ProjectDir" -ForegroundColor Gray
+Write-Host "Full log: $LogFile" -ForegroundColor Gray
 Write-Host ""
 Log "=== setup finished ==="

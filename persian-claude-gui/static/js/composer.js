@@ -322,6 +322,12 @@ function refreshSlash() {
   }
   slashIndex = 0;
   renderSlash();
+  // Same trap as the picker menu (js/controls.js positionMenu): this opens
+  // upward out of the composer, so its 40vh is only real when the composer is
+  // at the bottom of the window. In the home state it sits mid-screen and the
+  // top rows were clipped off the window instead of scrolling.
+  const box = slashPopup.offsetParent?.getBoundingClientRect();
+  if (box) slashPopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
   slashPopup.hidden = false;
 }
 
@@ -491,6 +497,26 @@ export function initComposer() {
     } finally {
       stopBtn.disabled = false;
     }
+  });
+
+  /* Esc stops the running turn, the way it does in the TUI. Routed through the
+     stop button's own click, so there is one interrupt path and not two — and
+     because that handler disables the button until the POST comes back, a
+     held-down Esc is one request rather than thirty.
+
+     Bound on the document: the key means the same thing wherever focus happens
+     to be. Anything dismissible that is open owns Esc first — a modal, a
+     popover, the slash list, the chip menu — and `defaultPrevented` covers
+     whatever claims it after this was written (the sidebar's rename field
+     already does). Idle Esc stays unbound on purpose: the TUI clears the box
+     with it, and here the box holds the only copy of what was typed. */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented || !busy) return;
+    if (document.querySelector("dialog[open], :popover-open, " +
+                               "#slash-popup:not([hidden]), " +
+                               "#menu-popup:not([hidden])")) return;
+    e.preventDefault();
+    stopBtn?.click();
   });
 
   // Ctrl+V with an image on the clipboard. The clipboard hands over bytes with

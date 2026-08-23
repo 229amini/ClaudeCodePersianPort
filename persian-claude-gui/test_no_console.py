@@ -14,6 +14,7 @@ Free — no CLI turn. A 403 on an unauthenticated GET is proof enough: it means
 the response path completed without a console.
 """
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,9 +41,38 @@ if not PYTHONW.exists():
     print(f"SKIP: no pythonw.exe next to {sys.executable}")
     sys.exit(0)
 
-workdir = tempfile.mkdtemp(prefix="pcg-noconsole-")
+WORKDIR = tempfile.mkdtemp(prefix="pcg-noconsole-")
 proc = subprocess.Popen([str(PYTHONW), str(HERE / "server.py"),
-                         "--cwd", workdir, "--no-window"])
+                         "--cwd", WORKDIR, "--no-window"])
+
+
+def _cleanup() -> None:
+    """Leave no project behind.
+
+    server.py lists every ~/.claude/projects entry whose recorded cwd still
+    exists, plus everything in recents.json — so a temp workdir that outlives
+    the test shows up in the window's sidebar as a "pcg-noconsole-…" project, on
+    the colleague's PC, right after setup.ps1 ran this. taskkill /T because a
+    plain kill orphans the claude child, and Windows will not delete a folder
+    that is some process's cwd.
+    """
+    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    try:
+        proc.wait(timeout=10)           # taskkill only signals; the cwd is held until it exits
+    except Exception:
+        pass
+    import server                      # same folder; only for the two helpers
+    transcripts = server.transcript_dir(Path(WORKDIR))
+    for _ in range(20):
+        shutil.rmtree(WORKDIR, ignore_errors=True)
+        if not Path(WORKDIR).exists():
+            break
+        time.sleep(0.25)
+    if transcripts:
+        shutil.rmtree(transcripts, ignore_errors=True)
+    server.drop_project_from_lists(str(WORKDIR))
+
+
 try:
     port = None
     deadline = time.time() + 20
@@ -68,6 +98,4 @@ try:
 
     print(f"PASS: pythonw.exe server answered on port {port}")
 finally:
-    # TerminateProcess leaves the claude child orphaned; kill the tree.
-    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                   capture_output=True)
+    _cleanup()          # kills the tree and deletes the temp project

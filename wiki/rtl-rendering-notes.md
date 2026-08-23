@@ -498,3 +498,48 @@ Related, same function: the per-frame `autoDir()` on a streaming bubble is **bou
 of every matched character ~60×/s for the length of the answer — the O(n)-per-frame cost the paint
 coalescing was written to remove, put straight back beside it. The verdict is stable long before
 that; `applyDirection()` re-measures the finished markdown exactly when the message closes.
+
+## Nothing in the shell was responsive, and the popups were the loudest half (2026-08-23)
+
+Reported as «رزولیشن‌های کوچیک مشکل داره», with a screenshot of the posture picker: four rows
+crushed into a ~180px column, the last title drawn on top of the previous note. Two independent
+causes, both measured headlessly against the real `index.html` before anything was changed —
+which is now the gate: **`python persian-claude-gui	est_layout.py`**, free, three window sizes,
+and negative-tested against the pre-fix CSS (7 failures).
+
+**1. The picker menu is shrink-to-fit, so `positionMenu()` was sizing it, not just moving it.**
+`#menu-popup` is absolutely positioned with `inset-inline-start: 0` and `max-width: min(30rem,
+100%)`; `positionMenu()` then writes a physical `right` so the menu lines up with the chip that
+opened it. For a shrink-to-fit box with `left: auto`, the width available is *the containing block
+minus that offset* — so the further the chip sits from the box's end edge, the narrower the menu
+gets. The posture chip is the LAST chip on the composer row, which is exactly why that menu was the
+one that came back 201px wide in a 760px window (and 282px in a 1280px one — the widths were never
+consistent). It now measures its natural width with the offset cleared, and clamps the offset to
+`box.width - offsetWidth`, so moving it can never squeeze it.
+
+**2. It opens upward, and 46vh of window is not 46vh of room.** `inset-block-end: calc(100% + 8px)`
+puts the menu above the composer. In the home state the composer sits mid-screen, so the menu was
+clipped by the TOP of the window rather than scrolled — measured at 1280×800, the first posture row
+sat at `y = -64`, off screen, with no scrollbar to tell you. `max-height` is now written from the
+anchor's own rect (`box.top - 16`). `#slash-popup` opens out of the same box and had the same bug;
+one line in `refreshSlash()`.
+
+**3. `.menu-row` had `min-height: 0` — the `#log > * { flex: none }` defect, again.** The popup is
+a flex column with a `max-height`, so once the list was taller than the box every row shrank below
+its own content instead of the box scrolling, and the notes drew over the next row's title. That is
+the third member of this family in this file (log cards squashed to 2px, then the drawer). **If a
+flex child has a `min-*: 0` and no `flex: none`, assume it will be crushed the first time its
+container overflows.**
+
+Separately, the shell had no `@media` block at all: `body.app` is a fixed `288px` sidebar next to
+`minmax(0, 1fr)`, so the stage pays for every pixel the window loses. A 500px window gave it 194px
+for 244px of content — not a squeeze but an overflow, with the composer at `x = -30`, the greeting
+`y = -217` and the home cards clipping their own titles, while the spec gate stayed green. Two
+breakpoints now: the sidebar drops to 244px at ≤1000px and 200px at ≤820px, the 20px reading
+gutters to 12px, and the home cards to one column. **No drawer, deliberately** — Chromium will not
+make a window narrower than ~490px of viewport, and 200 + 290 is still two usable columns there.
+
+One non-obvious enabler: `#stage`'s min-content was 244px because a `<textarea>` carries an
+intrinsic width from `cols` (~180px) whatever CSS says around it. `.comp-box #input` now has
+`inline-size: 100%`, which contributes nothing to intrinsic sizing, and the number drops to the
+widest chip.
