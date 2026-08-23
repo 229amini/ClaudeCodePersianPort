@@ -357,10 +357,26 @@ async function pickPosture(item) {
 function positionMenu(anchor) {
   const parent = ui.menu.offsetParent;
   if (!anchor || !parent) return;
+  // Measure at the CSS anchor: the popup is shrink-to-fit, so whatever `right`
+  // the last open left behind is part of the width read below.
+  ui.menu.style.right = "";
   const box = parent.getBoundingClientRect();
   const chip = anchor.getBoundingClientRect();
+
+  // It opens UPWARD (CSS inset-block-end), and 46vh of room is not the same as
+  // 46vh of window: in the home state the composer sits mid-screen, so a full
+  // menu was clipped by the TOP of the window rather than scrolled — measured
+  // at 1280x800, the first posture row sat at y = -64, off screen.
+  ui.menu.style.maxHeight = Math.max(140, box.top - 16) + "px";
+
+  // Shrink-to-fit again: the width left for the popup is the distance from its
+  // start edge to the box, so an offset larger than the slack does not move the
+  // menu, it squeezes it into a column. The posture chip is the last one on the
+  // row, which is why THAT menu was the one that came back 201px wide in a
+  // 760px window and wrapped its notes to three words a line.
+  const slack = Math.max(0, box.width - ui.menu.offsetWidth);
   const offset = box.right - chip.right;
-  ui.menu.style.right = Math.max(0, Math.min(offset, box.width - 40)) + "px";
+  ui.menu.style.right = Math.min(Math.max(0, offset), slack) + "px";
 }
 
 function openMenu(owner, items, onPick, anchor) {
