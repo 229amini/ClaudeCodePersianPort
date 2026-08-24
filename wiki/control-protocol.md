@@ -307,3 +307,38 @@ Measured after this: `usage {'cost': 0.017, 'quota': 2}` then `usage {'context':
 
 Note the shape has NOT changed: `percentage` is still there in 2.1.235. If the meter is dark, the
 request timed out; do not go looking for a renamed field.
+
+## §10 — `get_context_usage`'s answer is the only honest context number (2026-08-24)
+
+Read out of the 2.1.241 schema while chasing "the meter flashes 100% and then corrects itself".
+
+The response field the window uses:
+
+```
+percentage: int   "Rounded total_tokens / raw_max_tokens, 0-100+."
+over_limit: { tokens_over, kind: "hard_limit" | "compaction_window" }   // optional
+```
+
+`percentage` may legitimately exceed 100, and `over_limit.kind` says **how the window was resolved,
+not whether the API will refuse** — `compaction_window` is a policy window that may or may not
+coincide with the model's hard limit. The full body also carries `maxTokens` vs `rawMaxTokens` (they
+differ by the "Autocompact buffer" / "Compact buffer" categories), so do not recompute a percentage
+from `totalTokens / maxTokens` and expect it to match.
+
+**Do not compute this number from a `result` event.** `result.modelUsage` looks like it has
+everything needed and does not:
+
+> "Per-model totals for every model call made through the query pipeline during this query() call —
+> main loop, Task subagents, sidechains, and internal calls such as compaction and Workflow agents.
+> **Cumulative across turns in streaming-input sessions**: each result carries the running total so
+> far, so read the latest result rather than summing across results."
+
+It is a **map keyed by model**, and `result.usage` is the aggregate across all of those keys.
+`total_cost_usd` says the same of itself ("covering the same query-pipeline calls as modelUsage and
+sharing its lifecycle"). So `Object.values(modelUsage)[0].contextWindow` picks an arbitrary model's
+window — often a 200k-class one used for a subagent or an internal call — and dividing an aggregate
+numerator by it reads 3–7× too high on a session running a 1M model. That is `pcg-3nm`.
+
+The trap is that it *self-corrects*, so it reads as a rendering glitch rather than as arithmetic:
+the cheap wrong number lands on the `result` frame instantly, and §9's real one overwrites it up to
+a minute later, every turn.

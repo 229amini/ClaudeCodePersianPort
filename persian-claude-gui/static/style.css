@@ -1746,6 +1746,80 @@ button.round {
 .ctx-btn-text { font-weight: 600; font-size: .92em; }
 .ctx-btn-note { font-size: .78em; opacity: .8; }
 
+/* --- the queued-message strip ------------------------------------------------
+   A message sent while the CLI is still answering is not delivered: it waits in
+   the CLI's own command queue, and this is where it waits. Deliberately the
+   quietest thing in the composer column — muted text, no fill, no motion, no
+   counter. It is a fact about the CLI, not an event in the conversation. */
+#queue-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* The composer's own column, to the pixel. */
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+  /* #stage is a flex column: without `flex: none` a queue several messages deep
+     is crushed instead of scrolling — the `#log > * { flex: none }` family,
+     which has now cost this project three separate defects
+     (wiki/rtl-rendering-notes.md). The cap is what makes the scroll reachable. */
+  flex: none;
+  max-block-size: 22vh;
+  overflow-y: auto;
+}
+#queue-strip[hidden] { display: none; }   /* beats the flex above */
+
+.queued-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+
+.queued-tag {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .92em;
+}
+
+/* Gives up characters, never height: a wrapped message turns the strip into a
+   paragraph and pushes the composer off the window. */
+.queued-text {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A bare icon button has to opt OUT of the generic filled `button` rules
+   explicitly, and the opt-out must be declared BEFORE the :hover of the same
+   specificity or hover stops repainting it — the ⋯ menu learned this the hard
+   way (wiki/rtl-rendering-notes.md). */
+.queued-x {
+  flex: none;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 1.1em;
+  line-height: 1;
+}
+.queued-x:hover, .queued-x:focus-visible {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
 /* --- background agents --------------------------------------------------------
    A slim strip in the composer's own column, above it, next to where the
    context notice sits: what the CLI has working in the background, and for how
@@ -2039,6 +2113,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   #composer { padding-inline: 12px; }
   #topbar { padding-inline: 12px; }
   #context-notice { margin-inline: 12px; }
+  #queue-strip { margin-inline: 12px; }
   #replay-banner { width: calc(100% - 24px); }
   /* Two columns of 97px fit neither a title nor its note: the cards grew to
      215px tall and clipped their own text. One column, full width. */

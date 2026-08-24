@@ -113,6 +113,12 @@ window.FA = {
   agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
   agentHistory: "عامل‌های پیشین ({n})",
 
+  /* The queue. A message sent while Claude is still answering is not delivered
+     — it waits in the CLI's own command queue — so the window says «در صف»
+     instead of drawing it as a message that has arrived. */
+  queuedTag: "در صف",
+  queuedCancel: "حذف از صف",
+
   connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",

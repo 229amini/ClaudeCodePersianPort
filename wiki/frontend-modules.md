@@ -243,3 +243,22 @@ queued batch produces several under one pulse — the same reason `base` accumul
 
 Guarded in `spec-test.html` by replaying one turn twice and asserting the two closing lines are
 byte-identical. A single-render assertion cannot see this class of defect at all.
+
+## The queue strip lives in the render scope (2026-08-24, the uuid-ledger rework)
+
+`state.queued` and `state.outstanding` are render-scope state, exactly like every other
+per-conversation model in this file — a background tab records without painting, and a scope swap
+restores it (`composer.js restoreComposer()` calls `paintQueued()` the same moment it restores
+everything else). The strip itself is built in JS (`render.js queueStripEl()`) rather than added to
+`index.html`, following the agents.js `stripEl()` precedent: it is pure chrome, and the spec harness
+carries the composer markup but none of the rest of the shell, so anything sitting only in
+`index.html` would not exist there. Promotion (`promoteQueued`) and settlement
+(`dropQueued`/`clearQueued`) are each one function that every `command_lifecycle` state and every
+reset path (`idle_sync`, `reset`, `resumed`, `cli_exited`) routes through, so there is exactly one
+place deciding whether a row becomes a bubble or hands its text back — see parity-chrome.md "The
+queue strip" for the rules themselves.
+
+`state.returned[]` is the same model one step further: a background tab's returned text is
+delivered on its **next visible paint** (`paintQueued()` drains it, and it no-ops while
+`state.background`), and it dies with the tab if that tab is closed without ever being looked at —
+deliberately the same semantics as closing a tab that has an unsent draft in it.

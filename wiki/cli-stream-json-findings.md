@@ -258,3 +258,132 @@ Also here, since it is the same family and is easy to mistake for a limit messag
 Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous
 compact, 3 times in a row. …
 ```
+
+---
+
+## The message queue: one `result` does not mean one send (2.1.241)
+
+Read out of the 2.1.241 bundle and confirmed against a real transcript
+(`~/.claude/projects/D--Project/e9ecc3c6-…jsonl`) on 2026-08-24. This is the contract behind the
+reported "it still says it is thinking after it finishes".
+
+**A mid-turn send is FOLDED into the running turn.** It does not become a turn of its own. The
+transcript records the whole life of one:
+
+```
+516  23:36:12  {"type":"queue-operation","operation":"enqueue"}
+521  23:36:12  {"type":"attachment","attachment":{"type":"queued_command","prompt":[…],
+                "commandMode":"prompt"}}          ← delivered beside the next tool_result
+522  23:40:17  {"type":"queue-operation","operation":"remove"}
+```
+
+The CLI says it itself, in a comment beside `cancel_queued`: *"it never runs as its own turn."*
+There is a second merge path too — several prompts already in the queue drain into **one** turn at
+turn start (`lA.length > 1 → merge`, each contributing uuid still getting its own `started`).
+
+Consequence: **N sends can produce ONE `result`.** Any wrapper that counts sends and decrements per
+result leaks upward for the life of the session. Nothing on our stream names the fold: the SDK only
+echoes those prompts under `--replay-user-messages`, which we do not pass.
+
+**There is an exact replacement, and it needs one field from us.** In `-p`/SDK sessions the CLI
+emits, on stdout:
+
+```json
+{"type":"command_lifecycle","command_uuid":"…","state":"queued","uuid":"…","session_id":"…"}
+```
+
+- `command_uuid` is **the client-supplied `uuid` on the inbound message**. The schema is explicit:
+  *"Commands enqueued without a uuid … emit no lifecycle events."* We send none today, so the
+  channel is simply off. The value must match `^[0-9a-f]{8}-[0-9a-f]{4}-…` — `uuid.uuid4()` does.
+- States: `queued` → `started` → exactly one of `completed` / `cancelled` / `discarded` / `refused`.
+- **Ordering against the `result` frame is per-path**: a command that starts a fresh turn emits
+  `completed` **after** that turn's result; a command **folded** into an in-flight turn emits
+  `completed` **before** it.
+- Holes the schema documents, so a backstop is required rather than optional: a turn that fails by
+  throwing can leave `started` with **no terminal state**; a dropped message can leave `queued` with
+  none; internally-enqueued commands mint their own uuid and skip `queued`; and *"on process exit a
+  wrapper should synthesize `discarded` for uuids it has not seen reach a terminal state."*
+- `cancelled` is also what a *user-requested* removal looks like, so it is not by itself a failure.
+
+**`interrupt` does not cancel the queue unless asked.**
+
+> "queued commands survive the interrupt and are listed under `still_queued` … A
+> Stop-means-stop-everything client (a remote UI's Stop button) sets this true so one round-trip
+> halts the session; a wrapper that wants per-uuid control leaves it false and follows up with
+> `cancel_async_message`. … older CLIs ignore the field and behave as if false."
+
+So `{"subtype":"interrupt","cancel_queued":true}` is what this window wants, and the **response**
+carries `cancelled[]` and `still_queued[]`. `interrupt(wait=False)` throwing that receipt away is
+why `_reset_inflight()` after a stop is an assumption, not a fact.
+
+**Resolved 2026-08-24.** `interrupt()` now reads the receipt (`server.py _settle_interrupt()`, off
+the reader thread so the HTTP handler never blocks on it) and closes only the uuids it names
+`cancelled`; `still_queued` uuids are left alone because they will run and report for themselves.
+`_reset_inflight()`/`_inflight` are gone outright, replaced by the uuid ledger (`_outstanding`) —
+see wiki/parity-chrome.md §"The queue strip" and §"the receipt settles the ledger" in
+`test_units.py`. No receipt at all (an older CLI, a timeout) still falls through to the silence
+backstop, unchanged.
+
+Two things about this measured only as far as the bundle and a fake CLI go, not on the wire:
+
+- The interrupt receipt is read as `response.response.cancelled` — a nested envelope
+  (`control_response.response.cancelled`, since the outer `response` is the control-protocol
+  wrapper and the inner one is the interrupt's own payload). If a future CLI build flattens that
+  shape, `_settle_interrupt()` finds nothing to act on and falls back to the quiet window silently
+  — no error, just a slower settle. Re-check this shape after any CLI upgrade.
+- `probe_queue.py` does not drive an interrupt at all (its payload is `/recap` on an empty
+  session, chosen because it is free) — the receipt path above is fake-CLI-tested only
+  (`test_units.py`), never verified against a live process. The folded command's `started`-before-
+  `result` ordering claimed earlier in this section is likewise still bundle-read, not
+  wire-measured — it would need a paid turn with a message sent mid-turn to confirm.
+
+**`cancel_async_message`** — `{"subtype":"cancel_async_message","message_uuid":"…"}` →
+`{"cancelled": bool}`. *"Drops a pending async user message from the command queue by uuid. No-op
+if already dequeued for execution."*
+
+**Capabilities**, advertised on `system/init` — gate everything above on them rather than on a
+version string: `msg_lifecycle_v1`, `interrupt_receipt_v1`, `interrupt_cancel_queued_v1`.
+
+**The replay consequence, and it is data loss.** The folded prompt is written to the transcript
+**only** as that `attachment` / `queued_command` record — there is no `user` line for it anywhere in
+the file (verified by grepping the real transcript for the prompt text: one hit, line 521, an
+attachment). `read_session()` keeps user/assistant lines and drops the rest, so refreshing the
+window erases a message the user actually sent while the answer to it stays on screen.
+
+Tracked as `pcg-tyy` and its children.
+
+### Measured on the wire, 2.1.241, 2026-08-24 (`probe_queue.py`, PASS 8/8, `total_cost_usd = 0`)
+
+Everything above was read out of the bundle; this is the same contract driven against a live CLI
+spawned with our exact `CLAUDE_ARGS`. The probe is free because its payload is `/recap` on an empty
+session, which refuses locally — re-run it after every CLI upgrade.
+
+```
+send  {"type":"user","uuid":"ba2f40f9-…","message":{"role":"user","content":[{"type":"text","text":"/recap"}]}}
+
+recv  command_lifecycle  state=queued     command_uuid=ba2f40f9-…
+recv  command_lifecycle  state=started    command_uuid=ba2f40f9-…
+recv  system/init
+recv  assistant
+recv  result             subtype=success  total_cost_usd=0  "Nothing to recap yet — send a message first."
+recv  command_lifecycle  state=completed  command_uuid=ba2f40f9-…
+```
+
+- **The uuid goes at the TOP LEVEL of the user frame**, beside `type` — not inside `message`. That
+  was the one thing still assumed; it is measured now.
+- `queued → started → completed`, and for a command that starts a **fresh** turn `completed` lands
+  **after** the `result`, exactly as the schema says. (A folded one lands before it — that half is
+  still bundle-read, not wire-measured; it needs a paid turn.)
+- The same frame with **no** `uuid` produced **no** lifecycle events at all. The channel really is
+  opt-in per message.
+- `cancel_async_message` with a uuid that was never enqueued answers `{"cancelled": false}` — free,
+  and therefore the cheap way to prove the subtype exists on a future build.
+
+**The capability list is on `system/init`, not on the `initialize` reply.** `initialize` answers
+with `account, agents, available_output_styles, commands, current_permission_mode,
+fast_mode_disabled_reason, fast_mode_state, ide_rc_auto_enable_gate, models, output_style, pid,
+remote_control_auto_enable, remote_control_auto_on_by_default, session_state` — and
+`capabilities: null`. `system/init` carries `capabilities` (with `msg_lifecycle_v1`,
+`interrupt_receipt_v1`, `interrupt_cancel_queued_v1`) — **but it is not emitted until the first turn
+starts**, as the trace above shows. So nothing may gate on capabilities at spawn time. Detect by
+observation instead, and keep a backstop that works either way.

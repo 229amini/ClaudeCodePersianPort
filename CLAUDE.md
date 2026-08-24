@@ -284,6 +284,45 @@ written by the process that is actually answering — not by a static file that 
 copied. Bump it on release; see `wiki/packaging.md` §"The version marker". Gates re-run: layout
 **PASS**, spec **150/150**, `test_no_console` **PASS**.
 
+**2026-08-24 — the queue rework: a uuid ledger closes the "still thinking" family for good.**
+The send-counter that used to drive `busy` is gone. `ClaudeSession._outstanding` is a
+lock-guarded, insertion-ordered ledger of `command_uuid`s (a dict, so the legacy compat path
+closes FIFO), minted top-level on the user frame by `send_blocks()`, and
+the CLI closes each one itself on the `command_lifecycle` channel — `queued` → `started` → exactly
+one of `completed`/`cancelled`/`discarded`/`refused` (a fresh turn's `completed` lands after its
+`result`; a folded one's before). `wrapper/user_echo` carries the uuid so the window keeps the
+identical ledger; `render.js state.outstanding` settles the pulse when it empties, and `result`
+itself no longer settles anything except that `terminal_reason === "aborted_streaming"` still
+clears the set instantly, so Stop stays instant. Three backstops cover the CLI's own documented
+holes: a silence watchdog armed on every `result` (5 s of quiet → `idle_sync`), a synthetic
+`discarded` published per unreported uuid on process exit, and a `_lifecycle_seen` compat path
+that closes one ledger entry per result for a pre-2.1.241 CLI that never speaks on the channel at
+all. **Stop now means stop for the queue too** — interrupt sends `cancel_queued: true`
+unconditionally, because capabilities live on `system/init`, which does not exist until the first
+turn starts, so nothing can gate on them at spawn — and its own 5 s receipt (read off the reader
+thread, never blocking the HTTP handler) closes exactly the uuids the CLI names `cancelled`; a
+`still_queued` uuid is left alone to report for itself, and no receipt at all falls through to the
+same silence backstop as before. A message sent mid-turn now shows the truth instead of a false
+delivery: it parks in a dim «در صف» strip above the composer until the CLI's own lifecycle events
+promote it into a real bubble or hand its text back to the composer (never on `idle_sync`/reset —
+only when the process is provably gone), with a per-row ✕ (`POST /api/queue/cancel`) to cancel one
+by hand. History replay of a folded message now converges with live rendering
+(`attachment/queued_command` maps to a user event), and the context meter dropped its own
+wrong-arithmetic `result`-event estimate in favour of the CLI's authoritative `get_context_usage`
+exclusively. Shift+Tab now cycles the posture from anywhere outside the permission dialog and
+slash popup. Read `wiki/cli-stream-json-findings.md` §"The message queue: one `result` does not
+mean one send" (plus its 2.1.241 wire probe) and `wiki/parity-chrome.md` §"The stop button that
+stopped nothing" (now corrected for the receipt-driven design) and the new §"The queue strip"
+before touching any of it. A high-effort review of the whole diff returned 10 verified findings,
+9 fixed the same day (the tenth matched existing per-tab draft semantics and was documented
+instead): the silence watchdog defers while a permission request is pending, a backstop settle
+can no longer buy a `/recap`, the aborted-result clear keeps `still_queued` uuids busy, SSE
+backlog replay is marked `replayed: true` (no-cursor connects only) so a reload cannot resurrect
+a returned draft, Shift+Tab backs off every editable/popover surface, `idle_sync` and a
+deliberate respawn both hand queued text back, and every `_idle_deadline` access is under the
+ledger lock. Each fix negative-tested. Gates: spec **171/171**, units, layout, transcript
+guard, `test_no_console`, smoke **16/16** (re-run after the fixes — the SSE path changed).
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -462,8 +501,9 @@ Two checks exist:
 
 | Check | How | Asserts |
 |---|---|---|
-| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). 15 checks, still one subscription turn. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 150 assertions by later passes, so `PASS — 150/150` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). **Also asserts the uuid ledger (2026-08-24)**: the `command_uuid` the turn's send returns comes back on `command_lifecycle` events and reaches a terminal state by the time the result settles — zero extra turns, read off the one send this file already pays for. 16 checks, still one subscription turn. |
+| Queue/lifecycle contract | `python persian-claude-gui\probe_queue.py` | free re-probe for the next CLI upgrade: boots the real CLI, checks `initialize`/`system/init` advertise `msg_lifecycle_v1`/`interrupt_receipt_v1`/`interrupt_cancel_queued_v1`, that a top-level `uuid` on the user frame produces `command_lifecycle` events reaching a terminal state, that the same frame with no `uuid` produces none, and that `cancel_async_message` on a never-enqueued uuid answers `cancelled: false`. 8 checks. Free because its payload is `/recap` on an empty session, which refuses locally — `total_cost_usd` must print `0`. |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 171 assertions by later passes, so `PASS — 171/171` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Narrow windows | `python persian-claude-gui\test_layout.py` | the shipping `index.html` (not a copy — the probe page is generated from it and deleted again) measured headlessly at 1280×800, 760×640 and 500×560: nothing drawn off the window, nothing wider than its own box, and the posture menu open — full width, on screen, rows at their natural height. Free. This is the class the spec gate is structurally blind to: it runs at one size and asserts message content |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |

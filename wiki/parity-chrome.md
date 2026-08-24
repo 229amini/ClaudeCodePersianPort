@@ -197,10 +197,16 @@ interrupt, which produces no `aborted_streaming` result to unstick it either. Tw
    exception inside the loop (a closed pipe mid-read, a thread that could not be spawned for a
    `result`) skipped it entirely. It is a `try/finally` now — this thread is the only thing that
    can tell a window its CLI is gone.
-2. **`interrupt()` and the window disagreeing by design.** The server resets `_inflight` to 0 on
+2. **`interrupt()` and the window disagreeing by design.** ~~The server resets `_inflight` to 0 on
    an interrupt (`interrupt_cancel_queued_v1` means the queued turns never report); the window
    only zeroes on an `aborted_streaming` result. When that result never comes, the two never
-   reconcile.
+   reconcile.~~ **Superseded 2026-08-24.** `_inflight` is gone. The server now keeps a uuid ledger
+   (`_outstanding`); `interrupt()` sends `cancel_queued: true` and leaves the ledger standing
+   until the CLI's own receipt says which uuids it actually cancelled — see "The message queue: one
+   `result` does not mean one send" in `cli-stream-json-findings.md` and `server.py
+   _settle_interrupt()`. The disagreement this bug named is closed at the source now; the silence
+   window below covers only what the receipt cannot (no receipt at all, an older CLI, a
+   still-running command's own terminal state).
 
 **The fix is `wrapper/idle_sync`** — the wrapper saying "this conversation has nothing in flight",
 which is a fact only it holds. `/api/interrupt` arms it; the renderer's handler zeroes the count,
@@ -213,12 +219,16 @@ normal result is three no-ops and prints nothing.
 
 This is the part that took a review round to get right, and it is the whole safety of the feature.
 
-`interrupt()` zeroes `_inflight` (the queued turns are cancelled and will never report), which
-means `busy` can no longer speak for *the very turn being aborted*. A plain "publish in 5 s unless
-busy" therefore fires straight through a CLI that is merely **slow** to abort — a `Bash` child
-resisting termination keeps streaming — and lands mid-stream: `resetTurn()` nulls the streaming
-bubble, the pulse and the stop button vanish while output is still printing, and the next delta
-opens an orphan bubble nothing ever settles.
+**Updated 2026-08-24.** The receipt (`interrupt_receipt_v1`) is now the primary settlement path —
+see `server.py _settle_interrupt()` and "the receipt settles the ledger" in `test_units.py` — so
+`interrupt()` no longer zeroes anything up front; the ledger stands until the receipt, or absent
+one this backstop, says otherwise. The reasoning
+below is unchanged, just no longer resting on an eager zero: a CLI that is merely **slow** to
+abort — a `Bash` child resisting termination — keeps streaming, and a receipt that never arrives
+(an older CLI, a timeout) leaves nothing else to settle it. A plain "publish in 5 s unless busy"
+would fire straight through that and land mid-stream: `resetTurn()` nulls the streaming bubble,
+the pulse and the stop button vanish while output is still printing, and the next delta opens an
+orphan bubble nothing ever settles.
 
 So the wait is on silence. `interrupt()` sets `_idle_deadline = now + IDLE_SYNC_SECONDS` (5 s) and
 arms one timer; **every stdout line pushes that deadline out** (`_touch_idle()`, called in
@@ -232,6 +242,7 @@ Three guards in `_sync_idle()`, each for a race that produced a visible defect:
 |---|---|
 | deadline in the future | the CLI spoke since the interrupt — wait out the rest of the silence |
 | deadline `0.0` | nobody is waiting; also dedupes the timer left by a second press of stop |
+| `broker.has_pending()` | **a `can_use_tool` request the user has not answered yet.** The CLI is stdout-silent *by construction* for as long as the dialog is up, so silence stopped being proof: the deadline expired mid-turn and `_sync_idle` cleared the ledger under a running turn. The deadline is pushed out for a full window instead. The residual this leaves — a model that stalls more than five seconds between stream events with **no** permission pending — is accepted and made harmless: the settle hands a queued row's text back rather than losing it, and it buys no `/recap` (`render.js endBatch(false)`), so it cannot eat the answer that is still coming |
 | `_inflight` re-read **under `_inflight_lock`, with the publish inside it** | the timer thread reads 0, a `/api/message` lands and echoes, and the stale sync publishes after it. `send_blocks()` increments under that same lock before it writes, so there is no gap left |
 
 There is deliberately no "publish immediately because we already knew nothing was running" branch.
@@ -323,3 +334,49 @@ CLI upgrade; a drifted string costs one stray English line, not a crash.
 The trigger lives in the window (`composer.js isAway()`, used by render.js at the turn's end): the
 window is hidden, or nothing has been typed/clicked for five minutes. Turn traffic deliberately
 does not count as input — a long answer arriving is exactly when the person walked off.
+
+## The queue strip (2026-08-24, the uuid-ledger rework)
+
+A message sent while the CLI is still answering used to render as a delivered user bubble the
+moment `/api/message` echoed it — a lie the instant the CLI folds, merges, or drops it rather than
+running it as its own turn (see "The message queue" in `cli-stream-json-findings.md`). It now
+parks in a dim «در صف» row in a strip above the composer (`render.js queueStripEl()`, built the
+same way the background-agents strip is — agents.js `stripEl()` — because it is pure chrome that
+also has to exist on the spec harness, which carries the composer markup and none of the rest of
+the shell), and only the CLI's own `command_lifecycle` events move a row: `started` promotes it
+into a real transcript user bubble at the point the CLI actually reached it (the same point a
+folded prompt's `attachment/queued_command` replays to, so live and refresh converge); `completed`
+with no `started` promotes it too, retroactively — a CLI with no lifecycle channel closes one
+arbitrary ledger entry per result (`server.py _close_one_command`), and that is the only report
+such a row will ever get; `cancelled`/`discarded`/`refused` remove the row and hand its text back
+into the composer, because nothing typed into a queue the user never chose to see may be lost.
+Per-row cancellation is the ✕: `POST /api/queue/cancel {uuid}` calls `cancel_async_message` and
+only acts on a *true* answer — `false` is the CLI's documented "already dequeued for execution,"
+i.e. the row is about to `started`, so it must stay. `idle_sync` and `cli_exited` clear the whole
+strip **and give the text back**: a row still *sitting* in the strip has emitted no lifecycle event
+at all — anything the CLI actually reached was promoted out of it by its own `started` long before
+five seconds of total silence could elapse — so nothing left there can have run. (The earlier rule
+here was no-give-back on `idle_sync`, justified as "the wrapper can no longer account for the
+message"; that lost the typed text outright on the no-receipt stop path — an older CLI, or a
+receipt that never came.) The `reset`/`resumed` paths still clear silently, because the **server**
+hands those back explicitly instead: `start()` publishes one synthetic `discarded` per open uuid
+before it spawns, so a deliberate respawn and a crash now behave identically.
+
+A give-back is suppressed for a **replayed** event. A fresh window (no `Last-Event-ID`) is handed
+the whole backlog, so an hour-old cancellation is re-delivered on every reload; `Hub.subscribe()`
+marks those events `replayed: true` on a shallow copy, and the window drops the row but does not
+hand the text back a second time. A cursor-resume is deliberately **not** marked — those events
+have never been processed by that window, so they are live-equivalent. That mark replaced
+`restoreDraft`'s `input.value.includes(text)` dedupe, which was also a way to *lose* text: a
+returned message that happened to be a substring of the current draft was swallowed silently.
+
+**A stop does not settle the whole ledger.** The receipt keeps `still_queued[]` on purpose, so the
+window clears only the uuids that are **not** in the strip on an `aborted_streaming` result;
+anything still parked there keeps `busy` true until its own lifecycle event arrives (the synthetic
+`cancelled` the receipt publishes, or the `started` of one the CLI kept). A stop with nothing
+queued still settles instantly, which is what keeps the button feeling instant.
+
+Strip state (`state.queued`) lives in the same **render scope** as every other piece of
+per-conversation chrome, so a background tab records without painting and a fresh window rebuilds
+the same strip a live one had out of nothing but the SSE backlog — replay-deduped by uuid, the
+same key the ledger and the transcript both use.

@@ -18,7 +18,9 @@ import {
   setChrome, refreshProjects, setCurrentSession,
   showPermission, dismissPermission,
 } from "./chrome.js";
-import { setBusy, setSlashCommands, noteContext, contextFull, isAway } from "./composer.js";
+import {
+  setBusy, setSlashCommands, noteContext, contextFull, isAway, restoreDraft,
+} from "./composer.js";
 import { api, token } from "./api.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
@@ -427,12 +429,34 @@ export const state = {
   thinkingBody: null,
   thinkingPeek: null,    // the collapsed row's one-line preview of that thought
   pulse: null,           // the live "still working" line for the turn in flight
-  // Turns in flight, mirroring the server's own count (server.py _inflight):
-  // the CLI queues mid-turn sends and answers each with its OWN result event,
-  // so "the batch is done" is count==0, not "a result arrived". Settling the
-  // pulse on every result left the queued turns running with no status line
-  // and no stop button — the CLI shows ONE status for the whole queue.
-  inflight: 0,
+  // The command_uuid of every message sent from this window that the CLI has
+  // not reported finished — the same ledger the server keeps (server.py
+  // _outstanding), fed by wrapper/user_echo and emptied by command_lifecycle.
+  // NOT a count: the CLI folds a mid-turn send into the running turn and
+  // merges a queued batch into one, so N sends can produce ONE `result` and a
+  // counter leaks upward forever (the reported "it still says it is
+  // thinking"). A Set is also what makes an SSE backlog replay harmless — the
+  // same events twice add and remove the same ids.
+  outstanding: new Set(),
+  // Messages the CLI has taken but not STARTED: command_uuid -> {text, images}.
+  // Keyed by uuid so a re-delivered event (an SSE backlog replay) repaints the
+  // same row instead of adding a second one, and insertion-ordered, which is
+  // the order the CLI will run them in. See the queue strip below.
+  queued: new Map(),
+  // Text from a queued message that will never run, waiting to be handed back
+  // to the composer. A list rather than a direct write because this scope may
+  // belong to a conversation the user is not looking at, and there is one box:
+  // it is drained by the next paint that happens while this scope is visible.
+  returned: [],
+  // Was the last result worth a recap? Carried rather than acted on, because
+  // the turn is not over at the result: on a fresh turn the CLI reports the
+  // command finished microseconds AFTER it (measured, 2.1.241).
+  recapWorthy: false,
+  // Did the LAST settle allow a recap? Written by endBatch() and read by
+  // nothing else here: the request itself is gated on `token`, which the free
+  // spec gate deliberately does not have, so this is the only observable of the
+  // rule that a backstop settle may never buy one.
+  recapEligible: false,
   toolCards: new Map(),  // tool_use_id -> body element
   run: null,             // the consecutive-tool-call group being filled
   cycle: null,           // the [sentence][call] pair being assembled
@@ -623,6 +647,221 @@ function settlePulse() {
   if (wasAtBottom) log.scrollTop = log.scrollHeight;
 }
 
+/* Everything the window sent has been reported finished (or something emptied
+   the ledger: a stop, a dead CLI, the wrapper's idle_sync). The pulse SETTLES
+   rather than being cleared — the turn happened, and its closing line is the
+   record of it. Idempotent by construction, which is what a `result` arriving
+   after the last terminal state, a second idle_sync, and an SSE backlog replay
+   all rely on: a settled pulse is already null, busy is already false.
+
+   `settled` is false when a BACKSTOP emptied the ledger rather than the CLI's
+   own terminal states, and it gates one thing: the recap. A backstop settle is
+   a guess — idle_sync fires on five seconds of CLI silence, which a model can
+   produce mid-turn — and a /recap bought on a wrong guess is not a wasted API
+   call but a lost answer: it reaches a server whose ledger was cleared by the
+   same event, so `request_recap`'s busy-guard passes, `/recap` goes down the
+   stdin pipe of a CLI that is still working, and `_recap_wanted` then swallows
+   the running turn's real reply (wiki/parity-chrome.md "The session recap"). */
+function endBatch(settled = true) {
+  settlePulse();
+  resetTurn();
+  toChrome("busy", false, setBusy);
+  const recap = settled && state.recapWorthy;
+  state.recapWorthy = false;
+  // The CLI writes its own «※ recap: …» when you come back to a turn you were
+  // not there to watch. It cannot write it here -- that path is remote-only
+  // (measured) -- so the window asks for it, on the same condition and for the
+  // same reason: the line costs an API call, and it is worth one only when
+  // nobody was reading. At most ONE per batch, whatever the CLI merged into
+  // it. Failure is silence; a recap that does not arrive is a missing nicety,
+  // not an error. `token` is the guard that keeps the free gate free:
+  // spec-test.html drives this renderer with no token at all, and a recap is
+  // the one thing here that would reach a real CLI and spend a real turn.
+  //
+  // Which is also why the settle's own half of the decision is RECORDED: the
+  // request cannot fire on the free gate, so `recapEligible` is the only
+  // observable of the rule this line exists for.
+  state.recapEligible = !!recap;
+  if (recap && token && !state.background && isAway()) {
+    api("/api/recap", {}).catch(() => {});
+  }
+}
+
+/* --- the queue -------------------------------------------------------------
+
+   A message sent while the CLI is still answering is NOT delivered. The CLI
+   puts it in a command queue where it may sit, be folded into the running turn,
+   be merged with the rest of the queue, or be dropped outright — and it says so
+   itself on the `command_lifecycle` channel: queued -> started -> one of
+   completed / cancelled / discarded / refused (wiki/cli-stream-json-findings.md
+   "The message queue"). Drawing it as an ordinary user bubble was the window
+   claiming a delivery that had not happened, which is why a message that never
+   ran looked exactly like one that did.
+
+   So it waits in a strip above the composer instead, and the CLI's own events
+   move it:
+
+     started                        -> the row becomes a user bubble, where the
+                                       CLI itself puts it (the folded prompt's
+                                       transcript line replays as a user event,
+                                       so live and replay converge)
+     completed with no `started`    -> same: it ran. A CLI with no lifecycle
+                                       channel closes one arbitrary entry per
+                                       result (server.py _close_one_command),
+                                       so this is the only report that arrives
+     cancelled/discarded/refused    -> the row leaves and its TEXT GOES BACK
+                                       INTO THE COMPOSER. Nothing the user
+                                       typed may be lost by a queue they did
+                                       not know existed.
+
+   Everything is keyed by uuid and driven only by the event order, so the strip
+   a fresh window rebuilds out of the SSE backlog is the same one it had — a
+   message still genuinely queued at refresh time belongs back in it. */
+
+let queueStrip = null;
+
+/* Built here rather than in index.html, exactly like the background-agents
+   strip (agents.js): it is pure chrome, and it has to exist on the spec
+   harness too, which carries the composer markup and none of the rest of the
+   shell. It sits directly above the composer — closer in than the context
+   notice, because it is about the message just sent rather than about the
+   conversation. */
+function queueStripEl() {
+  if (queueStrip?.isConnected) return queueStrip;
+  queueStrip = document.createElement("div");
+  queueStrip.id = "queue-strip";
+  queueStrip.hidden = true;
+  const anchor = document.getElementById("composer");
+  if (anchor) anchor.before(queueStrip);
+  else document.body.append(queueStrip);
+  return queueStrip;
+}
+
+/* One dim row per queued message: what it says, that it is waiting, and a way
+   out. No counter, no animation, no colour of its own — the queue is a fact
+   about the CLI, not an event in the conversation. */
+function queueRowEl(uuid, entry) {
+  const row = document.createElement("div");
+  row.className = "queued-row";
+  row.dataset.uuid = uuid;
+  row.append(label(FA.queuedTag, "queued-tag"));
+
+  // User content, so it decides its own direction by the same counting rule
+  // every block in the transcript uses (spec rule 1 and its 2026-08-18
+  // amendment) — never a hardcoded one, and never reimplemented here. <bdi>
+  // isolates it from the «در صف» chip beside it, which is chrome and stays RTL
+  // (spec rule 2).
+  const text = document.createElement("bdi");
+  text.className = "queued-text";
+  text.textContent = entry.text;
+  text.title = entry.text;
+  autoDir(text);
+  row.append(text);
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "queued-x";
+  cancel.textContent = "✕";
+  cancel.title = FA.queuedCancel;
+  cancel.setAttribute("aria-label", FA.queuedCancel);
+  cancel.addEventListener("click", () => cancelQueued(uuid, cancel));
+  row.append(cancel);
+  return row;
+}
+
+/* The CLI is the only side that can answer "is it still in the queue?", and it
+   answers honestly: `cancel_async_message` is a documented no-op for a message
+   already dequeued for execution, and says `cancelled: false` for it. A false
+   is therefore NOT a failure — that message is running, its `started` is on its
+   way, and the row it would promote must stay where it is. */
+async function cancelQueued(uuid, button) {
+  button.disabled = true;
+  try {
+    const { cancelled } = await api("/api/queue/cancel", { uuid });
+    // Idempotent with the server's own `cancelled` lifecycle event, which
+    // arrives over SSE for the same uuid: whichever gets here first empties the
+    // row, and the second finds nothing to do. Acting on the answer as well as
+    // on the event is what keeps the ✕ working if that publish is ever lost.
+    if (cancelled) dropQueued(uuid);
+    else button.disabled = false;
+  } catch (err) {
+    button.disabled = false;
+  }
+}
+
+/* Repaints the strip from `state.queued`, and hands back anything the queue
+   lost. GATED ON `state.background` for the same reason setStatus() is: the
+   model is per conversation (it lives in the render scope) but there is one
+   strip and one composer, so a background tab records and paints nothing. Its
+   rows appear the moment the user switches to it — composer.js restoreComposer()
+   calls this after the scope swap, which is where every other piece of
+   per-conversation composer chrome is restored. */
+export function paintQueued() {
+  if (state.background) return;
+  for (const text of state.returned.splice(0)) restoreDraft(text);
+  // Nothing queued and no strip ever built: do not create one to hide it.
+  if (!state.queued.size && !queueStrip?.isConnected) return;
+  const box = queueStripEl();
+  box.replaceChildren();
+  for (const [uuid, entry] of state.queued) box.append(queueRowEl(uuid, entry));
+  box.hidden = !state.queued.size;
+}
+
+function queueSend(uuid, text, images) {
+  state.queued.set(uuid, { text, images });
+  paintQueued();
+}
+
+/* The CLI started it: it is a real turn now, and it belongs in the transcript
+   at the point the CLI actually reached it. resetTurn KEEPS the pulse — this is
+   a boundary INSIDE the batch, exactly like the `user` case below, and the one
+   status line spans the whole queue. */
+function promoteQueued(uuid) {
+  const entry = state.queued.get(uuid);
+  if (!entry) return;
+  state.queued.delete(uuid);
+  paintQueued();
+  resetTurn(true);
+  const el = bubble("user");
+  el.append(...renderMarkdown(entry.text ?? "").childNodes);
+  if (entry.images) el.append(label(`[${entry.images} image]`, "meta"));
+}
+
+/* It will never run. The row goes, and the text goes back to the person who
+   typed it — see restoreDraft() in composer.js for why appending is the only
+   safe way to do that.
+
+   `giveBack` is false for a REPLAYED event. A fresh window is handed the whole
+   SSE backlog (the server marks it, parity-chrome.md "The third way"), so a
+   message cancelled an hour ago is delivered again on every reload — and the
+   hand-back is the one half of this that must not repeat, or the composer grows
+   a zombie draft per refresh. The row still drops: replay has to converge on
+   the same end state a live window reached. */
+function dropQueued(uuid, giveBack = true) {
+  const entry = state.queued.get(uuid);
+  if (!entry) return;
+  state.queued.delete(uuid);
+  if (giveBack && entry.text) state.returned.push(entry.text);
+  paintQueued();
+}
+
+/* Every row at once. `giveBack` whenever nothing in the strip can have run: a
+   dead process, and the silence watchdog — a row still SITTING in the strip has
+   emitted no lifecycle event at all, and anything the CLI actually reached was
+   promoted out of it by its own `started` long before five seconds of total
+   silence could elapse. A fresh session (`reset`/`resumed`) hands nothing back
+   here because the server does it explicitly instead, one synthetic `discarded`
+   per open uuid (server.py start()). */
+function clearQueued(giveBack = false) {
+  if (giveBack) {
+    for (const entry of state.queued.values()) {
+      if (entry.text) state.returned.push(entry.text);
+    }
+  }
+  state.queued.clear();
+  paintQueued();
+}
+
 /* --- rendering somewhere other than the transcript --------------------------
 
    The agents drawer shows one background agent's own transcript, and plan §B-4
@@ -643,7 +882,9 @@ function settlePulse() {
    can carry reaches setStatus in the first place. */
 export function newRenderScope(background = false) {
   return { streamBubble: null, streamText: "", thinkingBody: null,
-           thinkingPeek: null, pulse: null, inflight: 0, toolCards: new Map(),
+           thinkingPeek: null, pulse: null, outstanding: new Set(),
+           queued: new Map(), returned: [],
+           recapWorthy: false, recapEligible: false, toolCards: new Map(),
            run: null, cycle: null, repeat: null,
            status: {}, background, chrome: {} };
 }
@@ -1224,6 +1465,12 @@ const HANDLED = new Set([
   "rate_limit_event", "wrapper", "raw",
 ]);
 
+/* The four command_lifecycle states that CLOSE a message. `cancelled` is also
+   what a user-requested removal looks like, so it is not by itself a failure —
+   all four mean the same thing here: that command will not report again. */
+const TERMINAL_COMMAND = new Set(["completed", "cancelled", "discarded",
+                                  "refused"]);
+
 export function renderEvent(ev) {
   switch (ev.type) {
     case "system":
@@ -1430,7 +1677,7 @@ export function renderEvent(ev) {
           if (INTERRUPT_NOTE.test(part.text ?? "")) continue;
           // A user turn materializing mid-batch (the CLI injecting a queued
           // message) is a boundary INSIDE the batch: the status line survives.
-          resetTurn(state.inflight > 0);
+          resetTurn(state.outstanding.size > 0);
           const el = bubble("user");
           el.append(...renderMarkdown(part.text ?? "").childNodes);
           continue;
@@ -1478,15 +1725,18 @@ export function renderEvent(ev) {
     }
 
     case "result": {
-      const window_ = ev.modelUsage
-        ? Object.values(ev.modelUsage)[0]?.contextWindow
-        : undefined;
-      const used = (ev.usage?.input_tokens ?? 0)
-                 + (ev.usage?.cache_read_input_tokens ?? 0)
-                 + (ev.usage?.cache_creation_input_tokens ?? 0);
+      // No context estimate here on purpose (pcg-3nm). The per-model usage
+      // map this event carries is cumulative across the WHOLE session (main
+      // loop, subagents, sidechains, compaction) and keyed in insertion
+      // order, not by which model is actually running the turn — picking an
+      // arbitrary entry's window as the denominator against a numerator
+      // summed over every model read 100%+ on a session that ever touched a
+      // smaller-window model. The only honest number is what get_context_usage
+      // reports, published later via wrapper/usage (control-protocol.md
+      // §9–§10) — setStatus merges patches, so the meter just keeps its last
+      // real value between turns instead of being repainted with a wrong one.
       setStatus({
         cost: ev.total_cost_usd ?? 0,
-        context: window_ ? Math.round((used / window_) * 100) : undefined,
       });
       // A user-pressed stop lands here as error_during_execution /
       // aborted_streaming (B-9.10). That is not a failure — do not alarm.
@@ -1502,40 +1752,45 @@ export function renderEvent(ev) {
           toChrome("contextFull", true, contextFull);
         }
       }
-      // One result PER QUEUED MESSAGE, so this is a turn boundary, not
-      // necessarily the batch's end. A stop cancels the queued turns too
-      // (interrupt_cancel_queued_v1) and they never emit results of their own,
-      // so an aborted result IS the end regardless of the count.
-      // Per RESULT, not per settle: a queued batch produces several and the
-      // pulse spans all of them, exactly as `base` accumulates their tokens.
+      // A result is a TURN boundary, and a turn is not the batch: a mid-turn
+      // send is folded into the running turn and never gets a result of its
+      // own, so N sends can end in one of these. Only the ledger below knows
+      // when the batch is over (case "command_lifecycle").
+      // Per RESULT, not per settle: a batch can produce several and the pulse
+      // spans all of them, exactly as `base` accumulates their tokens.
       if (state.pulse && typeof ev.duration_ms === "number") {
         state.pulse.cliMs += ev.duration_ms;
       }
-      state.inflight = ev.terminal_reason === "aborted_streaming"
-        ? 0 : Math.max(0, state.inflight - 1);
-      if (state.inflight === 0) {
-        // Before resetTurn(), which clears the pulse rather than settling it: a
-        // stopped turn earns the same closing line as a finished one.
-        settlePulse();
-        resetTurn();
-        toChrome("busy", false, setBusy);
-        // The CLI writes its own «※ recap: ...» when you come back to a turn
-        // you were not there to watch. It cannot write it here -- that path is
-        // remote-only (measured) -- so the window asks for it, on the same
-        // condition and for the same reason: the line costs an API call, and
-        // it is worth one only when nobody was reading. Failure is silence; a
-        // recap that does not arrive is a missing nicety, not an error.
-        // `token` is the guard that keeps the free gate free: spec-test.html
-        // drives this renderer with no token at all, and a recap is the one
-        // thing here that would reach a real CLI and spend a real turn.
-        if (token && !state.background && !ev.is_error
-            && ev.terminal_reason !== "aborted_streaming" && isAway()) {
-          api("/api/recap", {}).catch(() => {});
+      state.recapWorthy = !ev.is_error
+        && ev.terminal_reason !== "aborted_streaming";
+      // A stop ends the batch whatever the ledger says — nothing else reaches
+      // this window instantly on a stop, and without this every press of it
+      // would leave the line breathing until the wrapper's five-second
+      // idle_sync. But NOT the whole ledger: the interrupt receipt deliberately
+      // keeps `still_queued[]` (server.py _settle_interrupt), and a blanket
+      // clear here settled the window while a message it had sent was still on
+      // its way to an answer — this rework's own defect, recreated client-side.
+      //
+      // The strip's keys ARE the ones the CLI may still be holding. Anything
+      // not in it was running or already promoted, and this result is its
+      // settle; a row still in the strip keeps its entry until its own
+      // lifecycle event arrives — the synthetic `cancelled` the receipt
+      // publishes (which hands its text back), or the `started` of one the CLI
+      // kept, which promotes it with the pulse still alive.
+      if (ev.terminal_reason === "aborted_streaming") {
+        for (const uuid of state.outstanding) {
+          if (!state.queued.has(uuid)) state.outstanding.delete(uuid);
         }
-      } else {
-        // Queued turns still to run: the status line and the stop button both
+      }
+      if (state.outstanding.size) {
+        // Commands still to report: the status line and the stop button both
         // stay, exactly as the CLI keeps its one spinner over the whole queue.
         resetTurn(true);
+      } else {
+        // Nothing outstanding — either every terminal state already arrived
+        // (a folded command reports BEFORE the result) or this send carried no
+        // uuid at all, which is the pre-2.1.241 contract: one result, one turn.
+        endBatch();
       }
       if (!state.background) {
         refreshProjects();   // the turn changed this session's preview/mtime
@@ -1544,6 +1799,36 @@ export function renderEvent(ev) {
         // transcript's hundred result events cost one request.
         refreshAgents();
       }
+      return;
+    }
+
+    case "command_lifecycle": {
+      // The CLI's own ledger for the messages WE sent, and the only thing that
+      // can say a queued batch is over: one of the four terminal states below
+      // arrives for every uuid it was given. `queued` says nothing this window
+      // can act on — the strip is built from the echo, not from it, because the
+      // echo is the only event carrying the text.
+      // `started` is the moment a queued message stops waiting, which is when
+      // it earns its place in the transcript.
+      if (ev.state === "started") {
+        promoteQueued(ev.command_uuid);
+        return;
+      }
+      if (!TERMINAL_COMMAND.has(ev.state)) return;
+      // Two terminal states, two different facts about a row still waiting in
+      // the strip. `completed` means it ran and we simply never saw its
+      // `started` (a CLI with no lifecycle channel closes one arbitrary entry
+      // per result), so it belongs in the transcript; the other three mean it
+      // never will, so its text goes back to the composer. Both are no-ops for
+      // a uuid that is not in the strip, which is every ordinary turn.
+      if (ev.state === "completed") promoteQueued(ev.command_uuid);
+      else dropQueued(ev.command_uuid, !ev.replayed);
+      // The CLI mints uuids of its own too (a cron trigger, a teammate's
+      // prompt, a deferred turn resuming) and reports them on this same
+      // channel. Those are not this window's turns. delete() answers both
+      // questions at once: false means we never sent it.
+      if (!state.outstanding.delete(ev.command_uuid)) return;
+      if (state.outstanding.size === 0) endBatch();
       return;
     }
 
@@ -1580,16 +1865,33 @@ export function renderEvent(ev) {
         // A send while a turn runs is QUEUED by the CLI, which keeps its one
         // spinner running over the whole queue — so the pulse it started keeps
         // its verb, its clock and its token count instead of restarting. The
-        // pulse check is the self-heal: a count that outlived its pulse must
-        // start a fresh one, not leave the batch running with no status line.
-        const queued = state.inflight > 0 && !!state.pulse;
-        state.inflight += 1;
-        resetTurn(queued);
-        const el = bubble("user");
-        el.append(...renderMarkdown(ev.text ?? "").childNodes);
-        if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
+        // live pulse is the whole condition: it is the status line this send
+        // would be joining, and a batch whose pulse died has to start a fresh
+        // one rather than run on with none.
+        const queued = !!state.pulse;
+        // ...and it is not DELIVERED either: it waits in the CLI's command
+        // queue, where it may be folded, merged or dropped. So it waits in the
+        // strip above the composer rather than in the transcript, until the CLI
+        // says it started (see the queue section above). The uuid is what makes
+        // that possible — a frame sent without one gets no lifecycle events at
+        // all, so nothing could ever promote its row.
+        const toQueue = !!ev.uuid && state.outstanding.size > 0;
+        // The server's command_uuid for this message (server.py send_blocks).
+        // The CLI reports it finished on `command_lifecycle`, and that — not
+        // the next `result` — is what ends the batch.
+        if (ev.uuid) state.outstanding.add(ev.uuid);
+        if (toQueue) {
+          queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0);
+        } else {
+          resetTurn(queued);
+          const el = bubble("user");
+          el.append(...renderMarkdown(ev.text ?? "").childNodes);
+          if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
+        }
         // After the bubble, so the line reads as an answer to what was just
-        // asked. resetTurn() above has already cleared any stale one.
+        // asked. resetTurn() above has already cleared any stale one. A batch
+        // whose pulse died still gets a fresh one, queued row or not: the stop
+        // button is showing and something has to say what it stops.
         if (!queued) startPulse(ev.text ?? "");
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
@@ -1649,9 +1951,10 @@ export function renderEvent(ev) {
         // Read back out of get_settings, never taken from an ack.
         toChrome("effort", ev.effort, setEffortState);
       } else if (ev.subtype === "usage") {
-        // Measured by the CLI itself (get_context_usage / get_usage) — it
-        // replaces the estimate the `result` branch computes below. Only the
-        // keys that actually arrived: a missing one must not erase a good value.
+        // Measured by the CLI itself (get_context_usage / get_usage) — the
+        // only source of `context`; the `result` case publishes no estimate.
+        // Only the keys that actually arrived: a missing one must not erase a
+        // good value.
         const patch = {};
         for (const key of ["context", "cost", "quota"]) {
           if (typeof ev[key] === "number") patch[key] = ev[key];
@@ -1665,10 +1968,17 @@ export function renderEvent(ev) {
         // the reset above deliberately cleared. The model is NOT here — only
         // system/init knows which one this session runs on.
         setStatus({ sessionId: ev.session_id, cwd: ev.cwd });
-        // A fresh process: any queued turns died with the old one, and a
+        // A fresh process: any queued message died with the old one, and a
         // deliberate restart suppresses the stale reader's cli_exited (the
-        // generation guard), so the count is zeroed here too.
-        state.inflight = 0;
+        // generation guard), so the ledger is emptied here too. Nothing is
+        // handed back HERE — the server publishes a synthetic `discarded` per
+        // open uuid before it spawns (server.py start()), and that event is the
+        // give-back, keyed so a replay cannot repeat it.
+        state.outstanding.clear();
+        clearQueued();
+        // A settle that is a session swap, not a finished turn: whatever the
+        // last result thought about a recap died with the old process.
+        state.recapWorthy = false;
         // agentsUrl() sends the session id only when it is truthy, so the
         // refresh at reset time was always a 400 — this is the first moment a
         // resumed session's helpers can be listed.
@@ -1682,7 +1992,9 @@ export function renderEvent(ev) {
         log.replaceChildren();
         resetTurn();
         resetStatus();
-        state.inflight = 0;
+        state.outstanding.clear();
+        clearQueued();
+        state.recapWorthy = false;
         state.toolCards.clear();
         if (state.background) {
           // Everything parked for this tab described the session it just
@@ -1709,26 +2021,45 @@ export function renderEvent(ev) {
         el.append(glyph, body);
         append(el);
       } else if (ev.subtype === "idle_sync") {
-        // The wrapper says this conversation has nothing in flight. It counts
-        // turns on its own side (server.py _inflight) and is the only thing
-        // that can see a turn which produced no `result` — an interrupt the CLI
-        // answered with silence, a reader thread that died mid-batch. Without
-        // it the count below never reaches 0 and the window works forever.
+        // The wrapper says this conversation has nothing in flight. It keeps
+        // the same ledger this window does (server.py _outstanding) and is the
+        // only side that can see a command which will never report — a turn
+        // that failed by throwing, an interrupt the CLI answered with silence,
+        // a reader thread that died mid-batch. Without it the ledger below
+        // never empties and the window works forever.
         //
-        // Silent and idempotent: the pulse SETTLES rather than being cleared
-        // (the turn did happen; its closing line is the record of it), and a
-        // window that already settled hits three no-ops. Nothing is printed —
-        // an aborted `result` arriving late still writes its own «متوقف شد».
-        state.inflight = 0;
-        settlePulse();
-        resetTurn();
-        toChrome("busy", false, setBusy);
+        // Silent and idempotent: a window that already settled hits nothing
+        // but no-ops. Nothing is printed — an aborted `result` arriving late
+        // still writes its own «متوقف شد».
+        state.outstanding.clear();
+        // The strip empties AND hands its text back. A row still sitting in the
+        // strip has emitted no lifecycle event at all — anything the CLI
+        // actually reached was promoted out of it by its own `started` long
+        // before five seconds of total silence could elapse — so nothing here
+        // can have run, and on the no-receipt stop path (an older CLI, a
+        // receipt that never came) this is the only thing standing between the
+        // user and typed text that is nowhere.
+        clearQueued(!ev.replayed);
+        // A BACKSTOP settle: no recap. idle_sync is a guess from silence, and a
+        // /recap bought on a wrong one is swallowed over a turn that is still
+        // running — see endBatch().
+        endBatch(false);
       } else if (ev.subtype === "cli_exited") {
         bubble("error", FA.cliExited);
-        // Every queued turn died with the process. The pulse is cleared, not
-        // settled: nothing finished, and the error bubble above says why —
-        // without this it keeps breathing forever next to «کلاد بسته شد».
-        state.inflight = 0;
+        // Every queued message died with the process. The wrapper says so one
+        // uuid at a time (a synthetic `discarded` per open entry) immediately
+        // BEFORE this event, so a turn that was running is usually already
+        // settled by the time this line runs — what is left here is the case
+        // with nothing outstanding but a pulse still breathing, and that one
+        // is CLEARED rather than settled: nothing finished, and the error
+        // bubble above says why.
+        state.outstanding.clear();
+        // The process is gone, so anything still waiting in the queue provably
+        // never ran: those texts go back to the composer rather than dying with
+        // it. (For a conversation the user is not looking at they wait in the
+        // scope until it is on screen — there is only one box.)
+        clearQueued(!ev.replayed);
+        state.recapWorthy = false;
         clearPulse();
         toChrome("busy", false, setBusy);
       }

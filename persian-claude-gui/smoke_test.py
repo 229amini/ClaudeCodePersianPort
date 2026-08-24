@@ -102,6 +102,13 @@ PROMPT = "Reply with exactly: PONG"
 
 
 def read_sse() -> None:
+    try:
+        _read_sse()
+    except OSError:
+        pass   # the server exiting at teardown kills this read; the verdict is already printed
+
+
+def _read_sse() -> None:
     with urllib.request.urlopen(f"{base}/api/events?t={token}") as resp:
         for raw in resp:
             line = raw.decode("utf-8").rstrip("\n")
@@ -258,12 +265,44 @@ request = urllib.request.Request(f"{base}/api/message?t={token}", data=body,
                                  method="POST")
 print("POST /api/message ->", urllib.request.urlopen(request, timeout=30).status)
 
+# The uuid the ledger keys on rides the echo, not the HTTP response body (see
+# server.py /api/message: "the only place it learns which command the CLI will
+# later report finished"). This is the same turn the rest of the file already
+# pays for -- no extra send.
+sent_uuid = wait_for("wrapper/user_echo", lambda e: e.get("text") == PROMPT).get("uuid")
+print("command_uuid sent:", sent_uuid)
+
 ok = done.wait(timeout=120)
 # get_context_usage / get_usage / rename_session all run once the turn ends.
 # Generous on purpose: get_context_usage is the slow one (server.py
 # CONTEXT_USAGE_TIMEOUT), and a wait shorter than its budget turns "the CLI was
 # still thinking" into "the wrapper never published usage".
 usage_done.wait(timeout=90)
+
+# A fresh (non-folded) send's `completed` lands AFTER its result
+# (cli-stream-json-findings.md "The message queue"), so give it a short window
+# past `done` rather than requiring it to already be in `seen_events`. Same
+# check whether the CLI reported it itself or the compat backstop synthesized
+# it (server.py _close_one_command) -- both publish command_lifecycle.
+LIFECYCLE_TERMINAL = {"completed", "cancelled", "discarded", "refused"}
+
+
+def _lifecycle_events(command_uuid: str) -> list:
+    return [e for e in seen_events if e.get("type") == "command_lifecycle"
+            and e.get("command_uuid") == command_uuid]
+
+
+lifecycle_events = []
+lifecycle_deadline = time.time() + 10.0
+while time.time() < lifecycle_deadline:
+    lifecycle_events = _lifecycle_events(sent_uuid) if sent_uuid else []
+    if any(e.get("state") in LIFECYCLE_TERMINAL for e in lifecycle_events):
+        break
+    time.sleep(0.2)
+print("command_lifecycle states seen for our uuid:",
+      [e.get("state") for e in lifecycle_events])
+lifecycle_ok = bool(sent_uuid) and any(
+    e.get("state") in LIFECYCLE_TERMINAL for e in lifecycle_events)
 
 # A `result` event arriving proves nothing. A CLI that is not logged in answers
 # `result` with subtype **success**, is_error unset, cost 0 and the body
@@ -335,6 +374,7 @@ checks = {
     "a style the CLI never offered is rejected": style_guard_ok,
     "usage reported by the CLI": usage_ok,
     "session titled from its first prompt": title_ok,
+    "command_lifecycle round trip reaches a terminal state": lifecycle_ok,
 }
 print()
 for name, passed in checks.items():
