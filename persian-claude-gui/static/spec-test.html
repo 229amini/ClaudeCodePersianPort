@@ -698,6 +698,45 @@ check("the CLI's own English limit message raises the Persian notice",
   ctx.hidden ? "hidden" : ctx.className + " / " + ctx.querySelectorAll(".ctx-btn").length + " actions");
 ctx.hidden = true;
 
+/* pcg-3nm / T4: the `result` event's own context "estimate" computed
+   Object.values(modelUsage)[0].contextWindow as the denominator against
+   usage summed across EVERY model in the map. modelUsage is cumulative
+   across the whole session (main loop, subagents, sidechains, compaction —
+   control-protocol.md §10) and keyed in insertion order, not by which model
+   is actually running the turn — so a session on a 1M-window model that
+   ever touched a 200k-class model read 100%+ and raised the notice, only to
+   self-correct minutes later once wrapper/usage's real percentage arrived.
+   The fix deletes the estimate outright: the meter must keep its last real
+   (wrapper/usage) value between turns, not be repainted by `result` at all. */
+const statusline = document.getElementById("statusline");
+function ctxMeterValue() {
+  return [...statusline.querySelectorAll(".sl-item")]
+    .find(i => i.querySelector(".sl-label")?.textContent === window.STRINGS.slContext + ":")
+    ?.querySelector("progress")?.value;
+}
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 55 });
+check("context notice stays away at a real, moderate percentage", ctx.hidden);
+const ctxMeterBefore = ctxMeterValue();
+window.renderEvent({
+  type: "result", subtype: "success",
+  usage: { input_tokens: 82000, cache_read_input_tokens: 200000,
+           cache_creation_input_tokens: 0 },  // 282000 tokens total
+  modelUsage: {
+    // First-inserted key: a 200k-class model the session merely touched.
+    // 282000 / 200000 = 141% under the old (deleted) arithmetic.
+    "claude-3-5-haiku-20241022": { contextWindow: 200000 },
+    // The model actually running the turn — true load is ~28%.
+    "claude-opus-5[1m]": { contextWindow: 1000000 },
+  },
+});
+check("a result event whose old arithmetic reads 141% raises no notice",
+  ctx.hidden,
+  ctx.hidden ? "quiet" : "SHOWED: " + (ctx.querySelector(".ctx-title")?.textContent ?? "?"));
+check("the result event did not touch the status meter's context value",
+  ctxMeterValue() === ctxMeterBefore,
+  ctxMeterBefore + "% before / " + ctxMeterValue() + "% after");
+ctx.hidden = true;
+
 /* Markdown tables. marked emitted them all along; with no CSS at all a <table>
    is borderless and gap-less, so a comparison grid read as loose columns of
    text. `table` AND `th` both carry dir=auto (bidi.js BLOCK_TAGS) — every
@@ -1014,7 +1053,17 @@ check("a collapsed thinking row previews its own thought, not just the word",
    above its own turn), that its counters are written in Persian digits inside
    Persian prose (rule 5), and that it settles rather than lingering as a
    stopwatch nobody stopped. */
-window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+/* One command reaching a terminal state, the way the CLI reports it. A
+   `result` is a TURN boundary and no longer the end of anything: a mid-turn
+   send is FOLDED into the running turn and never gets a result of its own, so
+   N sends can produce ONE result (2.1.241, measured). What ends a batch is the
+   uuid we sent coming back on `command_lifecycle`, which is why every fixture
+   below that finishes a turn has to say both — exactly as the server does. */
+const doneCmd = (uuid) => window.renderEvent(
+  { type: "command_lifecycle", command_uuid: uuid, state: "completed" });
+
+window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                     text: "سلام", uuid: "cmd-solo" });
 const pulse = specLog.querySelector(".pulse");
 const pulseCard = (() => {
   window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
@@ -1029,9 +1078,18 @@ check("the pulse is pinned last while the turn runs, though it was appended firs
   pulse ? "order " + getComputedStyle(pulse).order + " vs card "
           + getComputedStyle(pulseCard).order : "no pulse");
 
+// The turn's result, and it settles NOTHING on its own: the command we sent is
+// still open, and a window that closed the line here would drop the stop button
+// while a message folded into that turn was still to be answered.
+window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+check("a result alone leaves the line running: the command has not closed yet",
+  pulse.classList.contains("live") && document.body.classList.contains("busy"),
+  (pulse.classList.contains("live") ? "live" : "SETTLED on the result alone") +
+  " / " + (document.body.classList.contains("busy") ? "busy" : "idle"));
+
 // Persian prose, so Persian digits — and the token figure is the CLI's own, not
 // a guess: 10 900 has to read «۱۰٫۹ هزار», not «10.9k».
-window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+doneCmd("cmd-solo");
 const pulseText = pulse?.textContent ?? "";
 check("the pulse settles into the turn's closing line, counted in Persian digits",
   !pulse.classList.contains("live") &&
@@ -1058,8 +1116,10 @@ check("the settled line ends the turn instead of snapping back above it",
 const pulseScoped = document.createElement("div");
 const pulseScope = newRenderScope();
 withRenderTarget(pulseScoped, pulseScope, () => {
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "اول" });
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "دوم" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "اول", uuid: "cmd-q1" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "دوم", uuid: "cmd-q2" });
 });
 check("a second send mid-turn joins the one status line instead of stacking another",
   pulseScoped.querySelectorAll(".pulse.live").length === 1 &&
@@ -1069,6 +1129,7 @@ check("a second send mid-turn joins the one status line instead of stacking anot
 
 withRenderTarget(pulseScoped, pulseScope, () => {
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-q1");
 });
 check("the first result of a two-message queue leaves the status line running",
   pulseScoped.querySelectorAll(".pulse.live").length === 1 &&
@@ -1078,12 +1139,53 @@ check("the first result of a two-message queue leaves the status line running",
 
 withRenderTarget(pulseScoped, pulseScope, () => {
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-q2");
 });
-check("the last result settles the queue's one pulse into one closing line",
+check("the last command of the queue settles its one pulse into one closing line",
   pulseScoped.querySelectorAll(".pulse.live").length === 0 &&
-  pulseScoped.querySelectorAll(".pulse").length === 1,
+  pulseScoped.querySelectorAll(".pulse").length === 1 &&
+  pulseScope.outstanding.size === 0,
   pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
-  pulseScoped.querySelectorAll(".pulse").length + " total");
+  pulseScoped.querySelectorAll(".pulse").length + " total / ledger " +
+  pulseScope.outstanding.size);
+
+/* The 2.1.241 shape, and the reported defect itself: a message sent mid-turn is
+   FOLDED into the running turn and never runs as its own, so two sends produce
+   ONE result — and the folded command reports finished BEFORE that result,
+   while the turn's own reports after it. A window counting results is stuck at
+   "working" from here to the end of the session; a window keyed on the uuids it
+   sent settles exactly once. Both orders are driven here because both are what
+   the CLI does. */
+const foldScoped = document.createElement("div");
+const foldScope = newRenderScope();
+withRenderTarget(foldScoped, foldScope, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "سؤال", uuid: "cmd-f1" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "و یک نکته", uuid: "cmd-f2" });
+  doneCmd("cmd-f2");                       // folded: reports BEFORE the result
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+});
+check("two sends answered by ONE result do not settle while a command is open",
+  foldScoped.querySelectorAll(".pulse.live").length === 1 &&
+  document.body.classList.contains("busy"),
+  foldScoped.querySelectorAll(".pulse.live").length + " live / " +
+  (document.body.classList.contains("busy") ? "busy" : "IDLE mid-turn"));
+
+withRenderTarget(foldScoped, foldScope, () => {
+  doneCmd("cmd-f1");                       // the turn's own: AFTER the result
+  // The CLI reports commands of its own too (a cron trigger, a teammate's
+  // prompt, a deferred turn resuming). This window never sent them and must
+  // not act on them.
+  doneCmd("cmd-nobody-sent");
+});
+check("one result for two sends still settles once, on the last uuid we sent",
+  foldScoped.querySelectorAll(".pulse.live").length === 0 &&
+  foldScoped.querySelectorAll(".pulse").length === 1 &&
+  !document.body.classList.contains("busy"),
+  foldScoped.querySelectorAll(".pulse").length + " pulse rows, " +
+  foldScoped.querySelectorAll(".pulse.live").length + " still live / " +
+  (document.body.classList.contains("busy") ? "STILL busy" : "idle"));
 
 /* The idle hint. An hour of silence suggests a fresh chat through the same
    context notice — no compact button (nothing is over any limit), fresh chat
@@ -1831,9 +1933,9 @@ window.requestAnimationFrame = realRaf;
 /* --- the stop button that stopped nothing (bead pcg-kk9) --------------------
 
    «در حال تراشیدن…» ran indefinitely with the stop button up while the CLI was
-   idle. The window derives "working" from the results it has SEEN
-   (render.js state.inflight, one per queued message), so anything that eats a
-   result strands it at working forever — and stop then interrupts a CLI with
+   idle. The window derives "working" from the commands it has sent and not yet
+   seen closed (render.js state.outstanding), so anything that eats a terminal
+   state strands it at working forever — and stop then interrupts a CLI with
    nothing to interrupt, producing no aborted result to unstick it either. The
    server is the only side that can know; it says so with wrapper/idle_sync.
 
@@ -1842,7 +1944,8 @@ window.requestAnimationFrame = realRaf;
 const stuck = document.createElement("div");
 const stuckScope = newRenderScope();
 withRenderTarget(stuck, stuckScope, () => {
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "سلام", uuid: "cmd-stuck" });
 });
 check("a turn in flight reports working, with one live status line",
   document.body.classList.contains("busy") &&
@@ -1854,11 +1957,11 @@ withRenderTarget(stuck, stuckScope, () => {
   window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
 });
 check("idle_sync ends a turn that produced no result: idle window, settled line",
-  !document.body.classList.contains("busy") && stuckScope.inflight === 0 &&
+  !document.body.classList.contains("busy") && stuckScope.outstanding.size === 0 &&
   stuck.querySelectorAll(".pulse.live").length === 0 &&
   stuck.querySelectorAll(".pulse").length === 1,
   (document.body.classList.contains("busy") ? "STILL busy" : "idle") +
-  " / inflight " + stuckScope.inflight + " / " +
+  " / ledger " + stuckScope.outstanding.size + " / " +
   stuck.querySelectorAll(".pulse.live").length + " live of " +
   stuck.querySelectorAll(".pulse").length);
 
@@ -1890,8 +1993,10 @@ window.renderEvent({ type: "wrapper", subtype: "usage", context: 12 });  // clea
 // idle case consumed it. Re-armed through the shipping path, in its own scope.
 const idleScope = newRenderScope();
 withRenderTarget(document.createElement("div"), idleScope, () => {
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کار" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "کار", uuid: "cmd-idle" });
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-idle");
 });
 window.renderAgents([
   { id: "idle-1", kind: "agent", description: "Still working", agentType: "Explore",
@@ -1993,7 +2098,8 @@ input.value = "";
 // Busy, but something dismissible is open — the popover owns the key. Built
 // here rather than borrowed from the app so the check is about the guard.
 withRenderTarget(escLog, escScope, () => {
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کار طولانی" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "کار طولانی", uuid: "cmd-esc" });
 });
 const escPop = document.createElement("div");
 escPop.popover = "auto";
@@ -2017,6 +2123,7 @@ check("with a turn running and nothing open, Esc interrupts it",
 window.fetch = escFetch;
 withRenderTarget(escLog, escScope, () => {
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-esc");
 });
 
 /* --- a polling loop is one pair, not sixteen rows (bead pcg-2an) ------------
@@ -2269,6 +2376,24 @@ check("auto-repeat sends nothing: one press is one posture change",
   posted.length === before && heldDown.defaultPrevented,
   (posted.length - before) + " requests from a held key");
 
+/* Bound on the DOCUMENT, the key was stolen from every other surface in the
+   shell: the sidebar's inline rename field, the agents drawer, any menu. The
+   back-off named only `dialog[open]` and the slash popup, which exempts none of
+   those — so typing a session name and pressing Shift+Tab silently stepped the
+   approval posture instead of moving focus. A posture IS confirmed here
+   («خودکار», echoed above), which is what stops this case from passing for the
+   wrong reason. */
+const stray = document.createElement("input");
+document.body.append(stray);
+const strayPress = new KeyboardEvent("keydown",
+  { key: "Tab", shiftKey: true, cancelable: true, bubbles: true });
+stray.dispatchEvent(strayPress);
+stray.remove();
+check("Shift+Tab inside a text field belongs to the field, not to the posture pill",
+  posted.length === before && !strayPress.defaultPrevented,
+  (strayPress.defaultPrevented ? "swallowed" : "passed through") + ", " +
+  (posted.length - before) + " requests");
+
 // No posture confirmed for this conversation yet: the key is not ours, so it
 // must fall through to the browser's own reverse focus navigation rather than
 // being swallowed into a no-op.
@@ -2295,9 +2420,11 @@ function replayOneTurn() {
   const box = document.createElement("div");
   specLog.append(box);
   withRenderTarget(box, newRenderScope(), () => {
-    window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کارها را جمع‌بندی کن" });
+    window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                        text: "کارها را جمع‌بندی کن", uuid: "cmd-replay" });
     window.renderEvent({ type: "result", subtype: "success", usage: {},
                         duration_ms: 125_000, result: "ok" });
+    doneCmd("cmd-replay");
   });
   return box.querySelector(".pulse")?.textContent.replace(/\s+/g, " ").trim() ?? "";
 }
@@ -2341,8 +2468,10 @@ window.fetch = (url, options) => {
 };
 const beforeRecap = posted.length;
 withRenderTarget(document.createElement("div"), newRenderScope(), () => {
-  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "سلام" });
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "سلام", uuid: "cmd-recap" });
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-recap");   // the batch ends HERE — where the recap is asked for
 });
 window.fetch = realFetch;
 check("the untokened spec harness never buys a recap",
@@ -2354,6 +2483,274 @@ check("the recap waits five minutes of silence before it costs anything",
   isAway(now + 6 * 60_000) && (document.hidden || !isAway(now + 60_000)),
   "1 min → " + isAway(now + 60_000) + ", 6 min → " + isAway(now + 6 * 60_000) +
   (document.hidden ? " (window reported hidden)" : ""));
+
+/* --- the queue is shown as a queue, not as a delivered message --------------
+
+   A send that arrives while the CLI is still answering is NOT delivered: it
+   waits in the CLI's own command queue, where it may be folded into the
+   running turn, merged with the rest of the queue, or dropped outright
+   (wiki/cli-stream-json-findings.md "The message queue"). Rendered as an
+   ordinary user bubble it looked delivered, which is exactly why a message
+   that never ran was indistinguishable from one that did.
+
+   Everything below is driven by the EVENT ORDER alone, because that is all a
+   fresh window has: it rebuilds this strip out of the SSE backlog, so a
+   message still genuinely queued at refresh time belongs back in it. */
+input.value = "";
+const qLog = document.createElement("div");
+const qScope = newRenderScope();
+const qStrip = () => document.getElementById("queue-strip");
+const qRows = () => [...(qStrip()?.querySelectorAll(".queued-row") ?? [])];
+/* Every read below is null-tolerant on purpose: with the feature removed the
+   strip does not exist at all, and a throw here empties the WHOLE verdict —
+   which is a failure that says nothing about which case broke. */
+const qHidden = () => qStrip()?.hidden !== false;
+const qRowText = (uuid) =>
+  qStrip()?.querySelector('[data-uuid="' + uuid + '"] .queued-text');
+const qBubbles = () => [...qLog.querySelectorAll(".msg.user")]
+  .map((b) => b.textContent.replace(/\s+/g, " ").trim());
+const qSend = (uuid, text) => window.renderEvent(
+  { type: "wrapper", subtype: "user_echo", text, uuid });
+const qLife = (uuid, state) => window.renderEvent(
+  { type: "command_lifecycle", command_uuid: uuid, state });
+
+// The turn itself, then a second message typed while it is still answering.
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-a", "اولین پیام");
+  qSend("q-b", "این یکی باید در صف بماند");
+});
+check("a send mid-turn waits in the queue strip instead of claiming it was delivered",
+  qBubbles().length === 1 && qRows().length === 1 && !qHidden() &&
+  qRows()[0]?.textContent.includes("این یکی باید در صف بماند") &&
+  !qLog.textContent.includes("این یکی باید در صف بماند"),
+  qBubbles().length + " bubbles / " + qRows().length + " queued rows" +
+  (qStrip()?.hidden ? " (strip HIDDEN)" : ""));
+
+// The CLI starting it is what earns it a place in the transcript — which is
+// also where the CLI itself puts it, so live and replay converge. The count
+// BEFORE is half the assertion: a bubble that was already there was never
+// waiting on the CLI for anything.
+const beforeStart = qBubbles().length;
+withRenderTarget(qLog, qScope, () => qLife("q-b", "started"));
+check("the CLI starting a queued message is what moves it into the transcript",
+  qRows().length === 0 && qHidden() && beforeStart === 1 &&
+  qBubbles().length === 2 && qBubbles()[1].includes("این یکی باید در صف بماند"),
+  beforeStart + " bubbles before `started`, " + qRows().length +
+  " rows left after / bubbles: " + qBubbles().join(" | "));
+
+/* Re-delivery must change nothing. The transport dedupes an SSE reconnect by
+   `Last-Event-ID` (parity-chrome.md), but the strip is keyed by uuid so that
+   the same events arriving twice produce the same one row and the same one
+   bubble — never a second of either. */
+const beforeDupes = qBubbles().length;
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-c", "پیام تکراری");
+  qSend("q-c", "پیام تکراری");
+});
+const dupeRows = qRows().length;
+withRenderTarget(qLog, qScope, () => {
+  qLife("q-c", "started");
+  qLife("q-c", "started");
+});
+check("the same queued message delivered twice is still one row and one bubble",
+  dupeRows === 1 && qRows().length === 0 &&
+  qBubbles().length === beforeDupes + 1,
+  dupeRows + " rows for two echoes, " +
+  (qBubbles().length - beforeDupes) + " bubbles for two starts");
+
+/* Cancelled, discarded or refused: that message will never run, and the text
+   the person typed may not vanish with it. */
+input.value = "";
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-d", "این پیام را پس بگیر");
+  qLife("q-d", "cancelled");
+});
+check("a cancelled queued message is not lost: the row goes, the text comes back to the box",
+  qRows().length === 0 && input.value.includes("این پیام را پس بگیر") &&
+  !qLog.textContent.includes("این پیام را پس بگیر"),
+  qRows().length + " rows / box «" + input.value + "»");
+
+/* ...and it is APPENDED, never assigned: a half-typed message outranks one from
+   a minute ago. Delivered twice it must still appear once — and the second
+   delivery is a RELOAD replaying the SSE backlog, which is how the server sends
+   it: marked. That mark is what dedupes now. It used to be
+   `input.value.includes(text)` in restoreDraft(), which dropped a returned
+   message whenever it happened to be a substring of the current draft — a way
+   of losing text, dressed as a guard. */
+input.value = "چیزی که دارم تایپ می‌کنم";
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-e", "و این هم پس بیاید");
+  qLife("q-e", "discarded");
+  qSend("q-e", "و این هم پس بیاید");
+  window.renderEvent({ type: "command_lifecycle", command_uuid: "q-e",
+                       state: "discarded", replayed: true });
+});
+check("a returned message is appended below what is being typed, once",
+  input.value.startsWith("چیزی که دارم تایپ می‌کنم") &&
+  input.value.split("و این هم پس بیاید").length === 2,
+  "«" + input.value.replace(/\n/g, " \\n ") + "»");
+input.value = "";
+
+/* Rule 1 in the strip: the row's text is USER content, so it decides its own
+   direction by the same counting rule every block in the transcript uses. The
+   «در صف» chip beside it is chrome and stays with the RTL shell. A textContent
+   read is blind to all of this — only the computed style sees it. */
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-fa", "این پیام فارسی است و باید راست‌چین خوانده شود");
+  qSend("q-en", "please run the test suite again when you are done");
+});
+check("a queued row reads in its own direction: Persian right-to-left, Latin left-to-right",
+  dirOf(qRowText("q-fa")) === "rtl" && dirOf(qRowText("q-en")) === "ltr" &&
+  dirOf(qStrip()?.querySelector(".queued-tag")) === "rtl",
+  "fa " + dirOf(qRowText("q-fa")) + " / en " + dirOf(qRowText("q-en")) +
+  " / tag " + dirOf(qStrip()?.querySelector(".queued-tag")));
+
+/* The ✕ does not decide anything itself: only the CLI knows whether a message
+   is still in its queue, and it answers `{"cancelled": false}` for one it has
+   already taken out to run. So the row asks, by uuid, at one endpoint. */
+const qFetch = window.fetch;
+const qPosts = [];
+window.fetch = (url, options) => {
+  qPosts.push({ url: String(url).split("?")[0], body: options?.body });
+  return Promise.resolve(new Response('{"cancelled":true}', { status: 200 }));
+};
+qStrip()?.querySelector('[data-uuid="q-fa"] .queued-x')?.click();
+window.fetch = qFetch;
+check("the row's ✕ asks the CLI to drop that one message, by uuid",
+  qPosts.length === 1 && qPosts[0].url === "/api/queue/cancel" &&
+  JSON.parse(qPosts[0].body ?? "{}").uuid === "q-fa",
+  qPosts.map((p) => p.url + " " + p.body).join(" | ") || "nothing sent");
+
+/* The wrapper saying this conversation has nothing in flight empties the strip
+   — and hands the text back, which is the opposite of what this case used to
+   assert. The old rule ("idle_sync means the wrapper can no longer account for
+   these") lost the text outright on the no-receipt stop path: an older CLI, or
+   a receipt that never came, and the row died in the strip with the typed
+   message nowhere. It is safe because a row still SITTING in the strip has
+   emitted no lifecycle event at all — anything the CLI actually reached was
+   promoted out of it by its own `started` long before five seconds of total
+   silence could elapse. */
+input.value = "";
+const stranded = qRowText("q-en")?.textContent ?? "";
+withRenderTarget(qLog, qScope, () => window.renderEvent(
+  { type: "wrapper", subtype: "idle_sync" }));
+check("idle_sync empties the strip and gives the stranded message back",
+  qRows().length === 0 && qHidden() && qScope.queued.size === 0 &&
+  !!stranded && input.value.includes(stranded),
+  qRows().length + " rows / stranded «" + stranded + "» / box «" +
+  input.value + "»");
+
+/* A STOP does not settle a message the CLI kept. The interrupt receipt lists
+   `still_queued[]` on purpose (server.py _settle_interrupt) — those commands
+   will run and report for themselves — so a window that emptied its whole
+   ledger on the aborted result settled the pulse and hid the stop button while
+   a message it had sent was still on its way to an answer. That is the exact
+   defect the uuid ledger exists to close, recreated client-side. */
+input.value = "";
+const stopLog = document.createElement("div");
+const stopScope = newRenderScope();
+withRenderTarget(stopLog, stopScope, () => {
+  qSend("s-run", "این یکی در حال اجراست");
+  qSend("s-keep", "و این یکی در صف ماند");
+  window.renderEvent({ type: "result", subtype: "error_during_execution",
+                       terminal_reason: "aborted_streaming", usage: {} });
+});
+check("a stop settles the running turn but not the message still in the queue",
+  stopScope.outstanding.has("s-keep") && !stopScope.outstanding.has("s-run") &&
+  qRows().length === 1 && stopLog.querySelectorAll(".pulse.live").length === 1 &&
+  document.body.classList.contains("busy"),
+  [...stopScope.outstanding].join(",") + " outstanding / " + qRows().length +
+  " rows / " + stopLog.querySelectorAll(".pulse.live").length + " live / " +
+  (document.body.classList.contains("busy") ? "busy" : "IDLE mid-queue"));
+
+// ...and the CLI's own answer for it — the synthetic `cancelled` the receipt
+// publishes — is what finally settles the window and returns the text.
+withRenderTarget(stopLog, stopScope, () => qLife("s-keep", "cancelled"));
+check("the receipt's own cancelled settles the line and hands the text back",
+  stopScope.outstanding.size === 0 && qRows().length === 0 &&
+  stopLog.querySelectorAll(".pulse.live").length === 0 &&
+  input.value.includes("و این یکی در صف ماند"),
+  stopScope.outstanding.size + " outstanding / box «" + input.value + "»");
+
+// A stop with NOTHING queued still settles on the spot: nothing else reaches
+// this window instantly on a stop, and waiting for the wrapper's five-second
+// silence would leave the line breathing after every press.
+input.value = "";
+const soloStop = document.createElement("div");
+const soloScope = newRenderScope();
+withRenderTarget(soloStop, soloScope, () => {
+  qSend("s-solo", "یک نوبت ساده");
+  window.renderEvent({ type: "result", subtype: "error_during_execution",
+                       terminal_reason: "aborted_streaming", usage: {} });
+});
+check("a stop with nothing queued is still instant",
+  soloScope.outstanding.size === 0 &&
+  soloStop.querySelectorAll(".pulse.live").length === 0 &&
+  !document.body.classList.contains("busy"),
+  soloScope.outstanding.size + " outstanding / " +
+  soloStop.querySelectorAll(".pulse.live").length + " live / " +
+  (document.body.classList.contains("busy") ? "STILL busy" : "idle"));
+
+/* A fresh window is handed the WHOLE SSE backlog, so a cancellation from an
+   hour ago is re-delivered on every reload. The server marks that replay
+   (Hub.subscribe), and the give-back obeys the mark: the row still drops —
+   replay must converge on the same end state a live window reached — but the
+   text is not handed back a second time, or the composer grows a zombie draft
+   per refresh. */
+input.value = "";
+const rLog = document.createElement("div");
+const rScope = newRenderScope();
+withRenderTarget(rLog, rScope, () => {
+  qSend("r-a", "نوبت در حال اجرا");
+  qSend("r-b", "پیامی که خیلی وقت پیش لغو شد");
+  window.renderEvent({ type: "command_lifecycle", command_uuid: "r-b",
+                       state: "cancelled", replayed: true });
+});
+check("a replayed cancellation drops the row without re-filling the composer",
+  qRows().length === 0 && input.value === "",
+  qRows().length + " rows / box «" + input.value + "»");
+
+/* The same event unmarked is live, and it hands the text back — INTO a draft
+   that already contains it. That is the second half of the old dedupe's cost:
+   `input.value.includes(text)` swallowed a returned message whenever it
+   happened to be a substring of what was being typed. */
+input.value = "نوبت تازه و چیز دیگری";
+withRenderTarget(rLog, rScope, () => {
+  qSend("r-c", "نوبت تازه");
+  window.renderEvent({ type: "command_lifecycle", command_uuid: "r-c",
+                       state: "cancelled" });
+});
+check("a live cancellation returns its text even when the draft already contains it",
+  qRows().length === 0 && input.value.split("نوبت تازه").length === 3,
+  "box «" + input.value.replace(/\n/g, " \\n ") + "»");
+input.value = "";
+
+/* The recap may only be bought by a settle the CLI itself drove. idle_sync is a
+   BACKSTOP — five seconds of silence, which a model can produce mid-turn — and
+   a /recap fired on a wrong guess is not a wasted call but a lost answer: it
+   reaches a server whose ledger was cleared by the same event, so the busy
+   guard passes, `/recap` goes down the pipe of a CLI that is still working, and
+   `_recap_wanted` swallows that turn's real reply. The observable is the
+   decision rather than the request, because the request is gated on a token
+   this harness deliberately does not have (see the case above). */
+const recapReal = newRenderScope();
+withRenderTarget(document.createElement("div"), recapReal, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "سلام", uuid: "cmd-recap-real" });
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  doneCmd("cmd-recap-real");
+});
+const recapBackstop = newRenderScope();
+withRenderTarget(document.createElement("div"), recapBackstop, () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       text: "سلام", uuid: "cmd-recap-stuck" });
+  window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
+});
+check("a turn the CLI closed itself may buy a recap; one idle_sync guessed at may not",
+  recapReal.recapEligible === true && recapBackstop.recapEligible === false,
+  "lifecycle settle → " + recapReal.recapEligible +
+  " / idle_sync settle → " + recapBackstop.recapEligible);
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

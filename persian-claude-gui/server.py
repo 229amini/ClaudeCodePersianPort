@@ -126,6 +126,22 @@ CONTROL_ALLOWED = frozenset({
 # local round-trips on an open pipe, so anything slow means trouble.
 CONTROL_TIMEOUT = 15.0
 
+# The interrupt receipt's own, much shorter budget. The CLI answers an
+# interrupt as soon as it reads the line -- this is NOT one of the slow
+# post-result requests (get_context_usage prices every skill, agent and MCP
+# tool in scope and was measured at 13 s here; wiki/control-protocol.md §9), and
+# borrowing that budget would leave a stop waiting a minute for facts the
+# silence backstop had already settled without it. Nothing waits on this
+# answer: it only lets the ledger settle EARLIER than the quiet window would.
+INTERRUPT_RECEIPT_TIMEOUT = 5.0
+
+# Dropping ONE message from the CLI's command queue by uuid. Same shape of
+# request as the interrupt receipt -- a local queue lookup the CLI answers as
+# soon as it reads the line -- and emphatically NOT one of the slow
+# post-result requests, so it gets its own short budget rather than borrowing
+# CONTROL_TIMEOUT. A user is waiting on this one: they clicked the row's x.
+CANCEL_QUEUED_TIMEOUT = 5.0
+
 # After an interrupt, how long the CLI must be SILENT before we tell the window
 # the turn is over. The window derives "still working" from the result events it
 # has seen, so a turn that never reports one leaves it spinning for the life of
@@ -156,6 +172,13 @@ CONTEXT_USAGE_TIMEOUT = 60.0
 
 RECAP_NON_ANSWERS = ("Nothing to recap yet", "Recap cancelled",
                      "Couldn't generate a recap")
+
+# command_lifecycle states that CLOSE a message: `queued` and `started` say
+# nothing anyone here can act on. Exactly one of these arrives per command --
+# `cancelled` is also what a user-requested removal looks like, so it is not by
+# itself a failure. See wiki/cli-stream-json-findings.md "The message queue".
+LIFECYCLE_TERMINAL = frozenset({"completed", "cancelled", "discarded",
+                                "refused"})
 
 # The three approval postures the pill offers -> (CLI permission mode, wrapper
 # auto-approve). `bypassPermissions` is never sent (the engine refuses it) and
@@ -263,10 +286,19 @@ class Hub:
             # blank. Order holds WITHIN a bucket, which is all that matters:
             # the client renders one tab at a time. `after` is the seq the
             # window last saw; 0 (a fresh window) replays everything.
+            #
+            # A FRESH window's replay is marked, because that window has to be
+            # able to tell backlog from live: everything in it already happened,
+            # and the give-back paths (a cancelled queued message hands its text
+            # back to the composer) would re-run on every reload and grow a
+            # zombie draft. A CURSOR-resume is deliberately NOT marked -- those
+            # events have never been processed by that window, so they are
+            # live-equivalent. Marked on a shallow COPY: the stored event is
+            # replayed to every future subscriber and must stay pristine.
             for bucket in self._history.values():
                 for event in bucket:
                     if event.get("seq", 0) > after:
-                        q.put(event)
+                        q.put(event if after else {**event, "replayed": True})
             self._clients.add(q)
             self.last_empty_at = None
         return q
@@ -593,7 +625,22 @@ def _normalize_transcript_event(event: dict) -> dict | None:
     written in the identical record format (wiki/background-agents.md), so
     the normalisation is the same; only the caller-side `isSidechain` check
     differs, because an agent file is entirely sidechain by definition.
+
+    A message folded into a running turn (sent while one is in flight) is
+    written ONLY as an `attachment`/`queued_command` line -- there is no
+    `type:"user"` record for it anywhere in the file, so without this it
+    silently disappears from replay while the answer to it stays. Every
+    other attachment shape (`queue-operation` folds, bare bookkeeping) stays
+    dropped; this is the one attachment shape that is a real thing the
+    person said.
     """
+    if event.get("type") == "attachment":
+        attachment = event.get("attachment") or {}
+        if (attachment.get("type") == "queued_command"
+                and attachment.get("commandMode") == "prompt"
+                and not event.get("isMeta") and not event.get("isSynthetic")):
+            return {"type": "user", "message": {"content": attachment.get("prompt") or []}}
+        return None
     if event.get("type") not in ("user", "assistant"):
         return None
     message = event.get("message", {})
@@ -1399,6 +1446,15 @@ class PermissionBroker:
             self.auto_log.clear()
             self.session_allow.clear()
 
+    def has_pending(self) -> bool:
+        """Is anyone still waiting on the user to answer a dialog?
+
+        Read by ClaudeSession._sync_idle: a blocked CLI is stdout-silent, and
+        silence is what that watchdog treats as proof there is nothing left.
+        """
+        with self._lock:
+            return bool(self._pending)
+
     def sync_cli_mode(self, mode: str) -> None:
         """Follow a permission mode the CLI changed on its own.
 
@@ -1602,16 +1658,31 @@ class ClaudeSession:
         self.proc: subprocess.Popen | None = None
         self.session_id: str | None = None
         self.spawned_at: float | None = None  # set in start(); see _agent_status()
-        # Turns in flight. A COUNT, not a flag: mid-turn sends are allowed by
-        # design (the CLI queues extra stdin messages), so turn 1's result used
-        # to clear a `busy` that queued turn 2 still owned. /api/tabs reports
-        # it, which is the only way a background tab can show it is working.
-        self._inflight = 0
-        self._inflight_lock = threading.Lock()
+        # THE LEDGER: the command_uuid of every message we have sent that the
+        # CLI has not yet reported finished. Not a count, because one `result`
+        # does not mean one send on 2.1.241 -- a mid-turn message is FOLDED into
+        # the running turn and never runs as its own turn, and a queued batch
+        # MERGES into one turn, so N sends can produce ONE result and a counter
+        # leaks upward for the life of the session (the reported "it still says
+        # it is thinking"). The CLI closes each entry itself on its
+        # `command_lifecycle` channel -- see wiki/cli-stream-json-findings.md
+        # "The message queue". /api/tabs reports `busy`, which is the only way a
+        # background tab can show it is working.
+        #
+        # A dict rather than a set purely for its INSERTION ORDER: the legacy
+        # compat path (_close_one_command) has to close the OLDEST entry, and a
+        # set's iteration order is arbitrary -- it closed message B while A was
+        # the one that finished, promoting a still-queued message into the
+        # transcript as delivered. Values are unused.
+        self._outstanding: dict[str, None] = {}
+        self._outstanding_lock = threading.Lock()
+        # Has this process ever spoken on that channel? Anything older than
+        # 2.1.241 never does, and its entries would never close -- see
+        # _after_result(), which then closes one per result itself.
+        self._lifecycle_seen = False
         self.model: str | None = None
         self._write_lock = threading.Lock()
         self._generation = 0   # stale reader threads check this before publishing
-        self._interrupt_seq = 0
         # Monotonic instant after which an interrupt with no answer gives up and
         # tells the window itself. 0.0 = nothing is waiting. Pushed forward by
         # every byte the CLI sends (_touch_idle) -- see IDLE_SYNC_SECONDS.
@@ -1628,30 +1699,57 @@ class ClaudeSession:
         # turns it into the session title (see _after_result).
         self._titled = True
         self._first_prompt: str | None = None
-        # A /recap is in flight: swallow its answer (see the reader loop).
+        # A /recap is in flight: swallow its answer (see the reader loop), and
+        # the ledger entry it opened, which is the one command the window is
+        # never told about.
         self._recap_wanted = False
+        self._recap_uuid: str | None = None
 
-    # ponytail: the counter is stick-proofed at both ends -- the decrement is
-    # clamped at 0 and every path that ends a PROCESS resets it outright (start,
-    # cli exit, interrupt). A count that sticks above 0 leaves a tab reporting
-    # "working" for the life of the server, and nothing else would ever clear
-    # it; an extra result (the interrupted turn still emits one) is absorbed.
+    # ponytail: the ledger is stick-proofed at both ends -- discarding an
+    # unknown uuid is free, every path that ends a PROCESS empties it outright
+    # (start, cli exit), and an interrupt settles it from the CLI's own receipt
+    # with five seconds of silence behind that. A uuid that sticks leaves a tab
+    # reporting "working" for the life of the server, and nothing else would
+    # ever clear it.
     @property
     def busy(self) -> bool:
-        return self._inflight > 0
+        return bool(self._outstanding)
 
-    def _reset_inflight(self) -> None:
-        with self._inflight_lock:
-            self._inflight = 0
+    def _reset_inflight(self) -> list[str]:
+        """Empty the ledger; returns the uuids that never reported.
+
+        (The name is what test_units.py pins it by.) The caller decides whether
+        anyone is told: only the process-exit path owes the window a synthetic
+        terminal state for each of them.
+        """
+        with self._outstanding_lock:
+            dropped = list(self._outstanding)
+            self._outstanding.clear()
             # Whatever a pending /recap was waiting for is not coming (a new
-            # process, a dead one, an interrupt). A flag left standing would
-            # swallow the next REAL answer, so it dies with the count.
+            # process, a dead one). A flag left standing would swallow the next
+            # REAL answer, so it dies with the ledger. (interrupt() clears it
+            # too, without emptying the ledger -- see there.)
             self._recap_wanted = False
+            return dropped
 
     def start(self, resume_id: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
-        self._reset_inflight()
+        # A DELIBERATE respawn (a resume, a restart) kills whatever the old
+        # process still held exactly as a crash would -- and the generation bump
+        # above suppresses the old reader's own death-path publish, so this is
+        # the only report those uuids will ever get. Without it a queued
+        # message's text vanished on a restart while the identical crash case
+        # handed it back to the composer. Before the new process exists, so
+        # nothing it says can overtake it.
+        for command_uuid in self._reset_inflight():
+            self.hub.publish({"type": "command_lifecycle",
+                              "command_uuid": command_uuid,
+                              "state": "discarded", "synthetic": True})
+        # Detected per process, never from a version string: the capability
+        # list lives on system/init, which is not emitted until the first turn
+        # starts, so nothing can gate on it at spawn time.
+        self._lifecycle_seen = False
 
         # --resume reuses the same session_id rather than forking (verified,
         # B-9.8), so recovery after a crash is idempotent.
@@ -1727,8 +1825,16 @@ class ClaudeSession:
             self._pump_stdout(proc, generation)
         finally:
             if generation == self._generation:
-                # Every queued turn died with the process, not just the current one.
-                self._reset_inflight()
+                # Every queued message died with the process, not just the
+                # current turn. The CLI's own instruction to wrappers is to
+                # synthesize `discarded` for anything that never reached a
+                # terminal state, so the ledger closes on the same channel it
+                # opened on -- BEFORE the exit notice, which is the last word
+                # this thread has (and what test_units.py asserts).
+                for command_uuid in self._reset_inflight():
+                    self.hub.publish({"type": "command_lifecycle",
+                                      "command_uuid": command_uuid,
+                                      "state": "discarded", "synthetic": True})
                 self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
                                   "returncode": proc.poll()})
 
@@ -1753,6 +1859,23 @@ class ClaudeSession:
                 self.hub.publish({"type": "raw", "line": line})
                 continue
             etype = event.get("type")
+
+            # BACKSTOP for the ledger, and it is required rather than optional:
+            # the schema documents two holes (a turn that fails by THROWING can
+            # leave `started` with no terminal state, a dropped message can
+            # leave `queued` with none). Five seconds of CLI SILENCE after a
+            # result is the version-independent proof there is nothing left --
+            # every stdout line pushes the deadline out (_touch_idle above) and
+            # send_blocks() disarms it, so only a CLI with nothing to say fires
+            # it. Armed here rather than in _after_result so the swallowed
+            # /recap result arms it too.
+            if etype == "result":
+                # Under the lock like every other write to it: _sync_idle reads
+                # and clears it there, so an unlocked write can be lost or read
+                # stale right on the five-second boundary.
+                with self._outstanding_lock:
+                    self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+                self._arm_idle_sync(IDLE_SYNC_SECONDS)
 
             # Our own control_request answered. Resolve the waiter; never
             # render it -- the UI has no use for the raw envelope.
@@ -1783,16 +1906,31 @@ class ClaudeSession:
                 if etype != "result":
                     continue
                 self._recap_wanted = False
-                # _after_result never runs for this event, so the count it
-                # would have decremented is settled here.
-                with self._inflight_lock:
-                    self._inflight = max(0, self._inflight - 1)
+                # _after_result never runs for this event, so on a CLI with no
+                # lifecycle channel the recap's own command would sit in the
+                # ledger forever. Closed SILENTLY, unlike every other one: the
+                # window never learned this uuid (a recap publishes no
+                # user_echo), so a terminal state for it would be noise.
+                with self._outstanding_lock:
+                    self._outstanding.pop(self._recap_uuid, None)
                 text = (event.get("result") or "").strip()
                 if (text and not event.get("is_error")
                         and not text.startswith(RECAP_NON_ANSWERS)):
                     self.hub.publish({"type": "wrapper", "subtype": "recap",
                                       "text": text})
                 continue
+
+            # The CLI closing an entry in the ledger. Forwarded to the window
+            # like any other event -- the renderer keys its own status line on
+            # exactly these uuids, which is the whole point of not counting
+            # results. Unknown uuids are the CLI's own (a cron trigger, a
+            # teammate's prompt, a deferred turn resuming: those emit
+            # started/terminal with no `queued`), and pop() ignores them.
+            if etype == "command_lifecycle":
+                self._lifecycle_seen = True
+                if event.get("state") in LIFECYCLE_TERMINAL:
+                    with self._outstanding_lock:
+                        self._outstanding.pop(event.get("command_uuid"), None)
 
             if etype == "system" and event.get("subtype") == "init":
                 self.session_id = event.get("session_id")
@@ -1808,26 +1946,53 @@ class ClaudeSession:
             if etype == "system" and isinstance(event.get("permissionMode"), str):
                 if self.broker:
                     self.broker.sync_cli_mode(event["permissionMode"])
-            if event.get("type") == "result":
+            self.hub.publish(event)
+            if etype == "result":
                 # Off-thread: the statusline is someone else's script, and the
                 # usage/rename control requests wait on THIS reader thread for
                 # their replies — doing either here deadlocks the event pump.
+                # AFTER the publish above, so the synthetic terminal state it
+                # may emit cannot overtake the result it belongs to.
                 threading.Thread(target=self._after_result,
                                  args=(event, generation), daemon=True).start()
-            self.hub.publish(event)
 
     def _after_result(self, result: dict, generation: int) -> None:
         """Everything that happens once a turn is finished, on one thread."""
         if generation != self._generation:
-            return   # a dead process's turn; start() already reset the count
-        with self._inflight_lock:
-            self._inflight = max(0, self._inflight - 1)
+            return   # a dead process's turn; start() already emptied the ledger
+        # A CLI with no command_lifecycle channel (anything before 2.1.241)
+        # never closes its own entries, so the wrapper closes one per result --
+        # exactly what it counted before the channel existed -- and SAYS so on
+        # that channel, so the window has one code path for both. A CLI that
+        # does have it always emits `queued`/`started` before the first result,
+        # so this never fires there.
+        if not self._lifecycle_seen:
+            self._close_one_command()
         try:
             self._title_session(generation)
             self._publish_usage(generation)
         except RuntimeError:
             pass   # the process went away mid-turn; there is nothing to ask
         self._publish_statusline(result, generation)
+
+    def _close_one_command(self) -> None:
+        """Close the OLDEST ledger entry ourselves, on the CLI's behalf.
+
+        The legacy contract is one result per message, in order, so the oldest
+        open entry is the one this result belongs to -- which is why the ledger
+        is insertion-ordered. Taking an arbitrary one closed the message still
+        sitting in the CLI's queue and promoted it into the transcript as
+        delivered while the CLI still held it. The window keys on the uuid, so
+        the closure is published rather than done silently -- it renders
+        identically to a real terminal state.
+        """
+        with self._outstanding_lock:
+            command_uuid = next(iter(self._outstanding), None)
+            if command_uuid is None:
+                return
+            self._outstanding.pop(command_uuid, None)
+        self.hub.publish({"type": "command_lifecycle", "state": "completed",
+                          "command_uuid": command_uuid, "synthetic": True})
 
     def _title_session(self, generation: int) -> None:
         """Name a fresh session after its first prompt.
@@ -1942,30 +2107,41 @@ class ClaudeSession:
             self.proc.stdin.write(payload)
             self.proc.stdin.flush()
 
-    def send_blocks(self, blocks: list[dict], recap: bool = False) -> None:
+    def send_blocks(self, blocks: list[dict], recap: bool = False) -> str:
+        """Send one message; returns the command_uuid the CLI will report on."""
         if not self._titled and self._first_prompt is None:
             self._first_prompt = next(
                 (b.get("text") for b in blocks if b.get("type") == "text"), None)
-        # Counted BEFORE the write: a fast result can land while _write_line is
-        # still returning, and incrementing afterwards would leave the count --
+        # The uuid is what turns the lifecycle channel ON for this message: the
+        # CLI emits no lifecycle events at all for a frame without one, and it
+        # validates the format, so uuid4 rather than anything of our own.
+        command_uuid = str(uuid.uuid4())
+        # Recorded BEFORE the write: a fast result can land while _write_line is
+        # still returning, and recording it afterwards would leave the ledger --
         # and therefore the tab -- stuck at "working" forever.
-        with self._inflight_lock:
-            self._inflight += 1
+        with self._outstanding_lock:
+            self._outstanding[command_uuid] = None
             # Set here rather than by the caller so that ANY ordinary send
             # clears it: a /recap whose answer never arrived would otherwise
             # leave the flag standing and eat the next real reply.
             self._recap_wanted = recap
+            # Disarm the silence backstop: the CLI has work again, so whatever
+            # quiet the last result armed is no longer evidence of anything.
+            self._idle_deadline = 0.0
         try:
-            self._write_line({"type": "user",
+            # The uuid goes at the TOP LEVEL of the frame, beside `type` -- not
+            # inside `message`. Measured on the wire, 2.1.241.
+            self._write_line({"type": "user", "uuid": command_uuid,
                               "message": {"role": "user", "content": blocks}})
         except Exception:
-            with self._inflight_lock:
-                self._inflight = max(0, self._inflight - 1)
+            with self._outstanding_lock:
+                self._outstanding.pop(command_uuid, None)
                 self._recap_wanted = False   # nothing was sent; nothing to swallow
             raise
+        return command_uuid
 
-    def send_text(self, text: str, recap: bool = False) -> None:
-        self.send_blocks([{"type": "text", "text": text}], recap=recap)
+    def send_text(self, text: str, recap: bool = False) -> str:
+        return self.send_blocks([{"type": "text", "text": text}], recap=recap)
 
     def request_recap(self) -> bool:
         """Ask the CLI for its own one-line session recap.
@@ -1982,7 +2158,7 @@ class ClaudeSession:
         """
         if self.busy or self._recap_wanted:
             return False
-        self.send_text("/recap", recap=True)
+        self._recap_uuid = self.send_text("/recap", recap=True)
         return True
 
     def control(self, subtype: str, timeout: float = CONTROL_TIMEOUT,
@@ -1993,7 +2169,20 @@ class ClaudeSession:
         control request subtype: X"} rather than failing silently -- that clean
         error is the feature-detection branch. Never gate on a CLI version.
         """
-        slot = {"event": threading.Event(), "response": None}
+        request_id, slot = self._send_control(subtype, wait, params)
+        if slot is None:
+            return {}
+        return self._await_control(subtype, request_id, slot, timeout)
+
+    def _send_control(self, subtype: str, wait: bool,
+                      params: dict) -> tuple[str, dict | None]:
+        """Write one control_request; returns its id and (if waiting) its slot.
+
+        Split out of control() so a caller can send on ITS OWN thread and wait
+        on another -- interrupt() must, because the reply arrives on the reader
+        thread and the HTTP handler may not sit on it (see _settle_interrupt).
+        """
+        slot = {"event": threading.Event(), "response": None} if wait else None
         # The counter mints the request_id, so it belongs under the same lock as
         # the pending table: spawn already fires initialize/get_settings/usage
         # concurrently, and two callers reading the same seq would produce one
@@ -2002,7 +2191,7 @@ class ClaudeSession:
         with self._pending_lock:
             self._control_seq += 1
             request_id = f"pcg-{subtype}-{self._control_seq}"
-            if wait:
+            if slot is not None:
                 self._pending[request_id] = slot
         try:
             self._write_line({
@@ -2014,8 +2203,10 @@ class ClaudeSession:
             with self._pending_lock:
                 self._pending.pop(request_id, None)
             raise
-        if not wait:
-            return {}
+        return request_id, slot
+
+    def _await_control(self, subtype: str, request_id: str, slot: dict,
+                       timeout: float) -> dict:
         if not slot["event"].wait(timeout):
             with self._pending_lock:
                 self._pending.pop(request_id, None)
@@ -2030,29 +2221,115 @@ class ClaudeSession:
         "aborted_streaming". The process stays alive, so the session — and
         therefore the conversation — survives. Do not kill instead.
 
-        Fire-and-forget: the turn's own result event is the real signal, and
-        blocking here would stall the caller's HTTP response.
+        Fire-and-forget for the CALLER: the receipt is read on a thread of its
+        own and the turn's own result event is still the real signal, so the
+        HTTP response never waits on either.
         """
-        # Sent even when we believe nothing is running. `_inflight` is our
+        # `cancel_queued` UNCONDITIONALLY, never gated on
+        # interrupt_cancel_queued_v1: capabilities live on system/init, which is
+        # not emitted until the first turn starts, so nothing can gate at spawn
+        # (measured 2026-08-24). An older CLI ignores the field and behaves as
+        # if false -- exactly what this build did before the flag existed, so
+        # the fallback costs nothing. Without it the CLI keeps the messages it
+        # had QUEUED and runs them after the stop: an answer arriving with no
+        # spinner and no way out.
+        #
+        # Sent even when we believe nothing is running. The ledger is our
         # bookkeeping, not the CLI's, and a stop button that quietly declines to
-        # send because OUR counter drifted is the failure the user reported --
+        # send because OUR view drifted is the failure the user reported --
         # pressing it twice is exactly what happens when the first press looked
         # like nothing. The CLI answers an interrupt it has no turn for with a
         # plain `success`, so the cost of being wrong here is one line on a pipe.
-        self.control("interrupt", wait=False)
-        # The CLI cancels the messages it had QUEUED as well as the running
-        # turn (interrupt_cancel_queued_v1), and those queued turns will never
-        # produce a result of their own -- so the count goes to 0 here rather
-        # than waiting for N results that are not coming. The aborted current
-        # turn does still emit one; the clamp in _after_result absorbs it.
-        self._reset_inflight()
-        # ONE path, busy or not. Zeroing the count on the line above means
-        # `busy` can no longer speak for the very turn being aborted, so SILENCE
-        # is what we wait on instead -- and silence answers the "we already knew
-        # nothing was running" case too, since a CLI with nothing to do is
-        # exactly the one that stays quiet.
-        self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+        request_id, slot = self._send_control("interrupt", True,
+                                              {"cancel_queued": True})
+        # Off-thread on purpose: the answer is delivered BY the reader thread,
+        # so waiting on this one would deadlock the event pump, and the HTTP
+        # handler must not sit on it either.
+        threading.Thread(target=self._settle_interrupt,
+                         args=(request_id, slot, self._generation),
+                         daemon=True).start()
+        # Whatever a pending /recap was waiting for is not coming; a flag left
+        # standing would refuse the next recap and (until the next ordinary
+        # send reset it) swallow an answer.
+        self._recap_wanted = False
+        # ONE path, busy or not, and the ledger is NOT emptied here: the receipt
+        # says which uuids the CLI actually cancelled, and the ones it lists as
+        # still queued will run and report for themselves. What covers the rest
+        # -- no receipt at all, an older CLI, the running command's terminal
+        # state (unmeasured, so never assumed) -- is SILENCE, which also answers
+        # the "we already knew nothing was running" case, since a CLI with
+        # nothing to do is exactly the one that stays quiet.
+        # Under the lock: send_blocks() disarms it there, and an unlocked arm
+        # here could land after a concurrent send had already cancelled it.
+        with self._outstanding_lock:
+            self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
         self._arm_idle_sync(IDLE_SYNC_SECONDS)
+
+    def cancel_queued(self, message_uuid: str) -> bool:
+        """Drop ONE pending message from the CLI's command queue, by uuid.
+
+        `cancel_async_message` is documented as a no-op for a message already
+        dequeued for execution, and answers {"cancelled": false} for it -- which
+        is the whole protocol the window needs: false means that message is
+        running and its own `started` will report it, so the row it belongs to
+        must stay. Measured free for a uuid that was never enqueued
+        (wiki/cli-stream-json-findings.md, probe_queue.py).
+
+        A true answer closes our ledger entry and SAYS so on the lifecycle
+        channel, exactly as _settle_interrupt does: the window keys its status
+        line on these uuids, so a cancellation nobody publishes would leave it
+        working forever. Whether the CLI also emits its own `cancelled` for the
+        uuid is unmeasured and does not matter -- discarding an entry that is
+        already gone is a no-op here and in the window.
+        """
+        reply = self.control("cancel_async_message",
+                             timeout=CANCEL_QUEUED_TIMEOUT,
+                             message_uuid=message_uuid)
+        if reply.get("subtype") != "success":
+            return False
+        if not (reply.get("response") or {}).get("cancelled"):
+            return False
+        with self._outstanding_lock:
+            ours = message_uuid in self._outstanding
+            self._outstanding.pop(message_uuid, None)
+        if ours:
+            self.hub.publish({"type": "command_lifecycle", "state": "cancelled",
+                              "command_uuid": message_uuid, "synthetic": True})
+        return True
+
+    def _settle_interrupt(self, request_id: str, slot: dict,
+                          generation: int) -> None:
+        """Close the ledger entries the interrupt's receipt says were cancelled.
+
+        The receipt (`interrupt_receipt_v1`) carries `cancelled[]` and
+        `still_queued[]`. Only the first list is acted on: a still-queued
+        command WILL run and report its own terminal state, and clearing it here
+        was the defect -- the window settled its status line while a message it
+        had sent was still on its way to an answer.
+
+        Idempotent by construction: the CLI may also emit its own `cancelled`
+        lifecycle for these uuids, and discarding one that is already gone is a
+        no-op both here and in the window (render.js ignores a uuid it never
+        sent). No receipt, or one this build does not answer, is not an error --
+        the silence backstop in _sync_idle() settles exactly as it did before.
+        """
+        receipt = self._await_control("interrupt", request_id, slot,
+                                      INTERRUPT_RECEIPT_TIMEOUT)
+        if generation != self._generation:
+            return   # a dead process's ledger; start()/cli exit emptied it
+        cancelled = (receipt.get("response") or {}).get("cancelled")
+        if receipt.get("subtype") != "success" or not isinstance(cancelled, list):
+            return
+        for command_uuid in cancelled:
+            with self._outstanding_lock:
+                if command_uuid not in self._outstanding:
+                    continue        # already closed, or never ours
+                self._outstanding.pop(command_uuid, None)
+            # Published, not dropped: the window keys its own status line on
+            # these uuids (the _close_one_command precedent) and a synthetic
+            # terminal state renders identically to a real one.
+            self.hub.publish({"type": "command_lifecycle", "state": "cancelled",
+                              "command_uuid": command_uuid, "synthetic": True})
 
     def _arm_idle_sync(self, delay: float) -> None:
         timer = threading.Timer(delay, self._sync_idle, (self._generation,))
@@ -2065,51 +2342,75 @@ class ClaudeSession:
         Cheap on purpose -- this runs once per stdout line. Re-arming a real
         timer per event would be one thread per event; the timer already out
         re-arms itself once, for whatever is left (see _sync_idle).
+
+        Under the lock, like every other read or write of the deadline: it is
+        uncontended, and once per stdout line is not a cost worth a race with
+        the timer thread that reads-then-clears it.
         """
-        if self._idle_deadline:
-            self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+        with self._outstanding_lock:
+            if self._idle_deadline:
+                self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
 
     def _sync_idle(self, generation: int) -> None:
         """Tell every window this conversation has nothing in flight.
 
-        The window counts turns for itself (render.js state.inflight) because
-        that is the only way a queued batch keeps ONE status line. Anything that
-        eats a `result` therefore strands it at "working" forever, and pressing
-        stop then interrupts a CLI that is already idle -- a no-op with no
-        aborted result to unstick anything. This is the wrapper saying what only
-        it can know.
+        The window keys its status line on the same uuid ledger this class
+        keeps, so anything that loses a terminal state strands it at "working"
+        forever -- an interrupt the CLI answered with silence, a turn that
+        failed by throwing, a reader thread that died mid-batch. This is the
+        wrapper saying what only it can know.
 
-        Three guards, each for a race that would produce a visible defect:
+        Two guards, each for a race that would produce a visible defect:
 
         - a deadline still in the FUTURE means the CLI has spoken since the
-          interrupt, so it is alive and its own result will do the cleanup. Wait
+          arming, so it is alive and its own events will do the cleanup. Wait
           out the rest of the silence rather than firing mid-stream, which would
           null the streaming bubble and drop the pulse and the stop button while
           output was still printing.
-        - a ZERO deadline means nobody is waiting. That also dedupes the second
-          timer left over by a second press of stop.
-        - `_inflight` is re-read UNDER THE LOCK, with the publish inside it.
-          send_blocks() increments under that same lock before it writes or
-          echoes, which closes the window where this thread reads 0, a
-          /api/message lands, and the stale sync publishes after its user_echo.
+        - a ZERO deadline means nobody is waiting. That dedupes the second timer
+          left over by a second press of stop, and it is how send_blocks()
+          cancels a sync whose window elapsed just as a message went out --
+          under the SAME lock this reads it, so there is no gap left.
 
-        Otherwise idempotent: the renderer's handler is a no-op on a window that
-        has already settled, so a late fire after a normal result costs nothing.
+        There is a THIRD guard, and it is the one that made silence an unsafe
+        proof on its own: a `can_use_tool` request the user has not answered yet
+        is the CLI BLOCKED, not the CLI idle -- it says nothing on stdout for as
+        long as the dialog is up, so the deadline expires mid-turn and the ledger
+        gets cleared under a running turn. The broker is the only side that knows,
+        so the deadline is pushed out for as long as it has anyone waiting.
+
+        The residual this leaves is a model that stalls for more than five
+        seconds between stream events with NO permission pending, which is
+        accepted: it settles the window early, and both halves of that are
+        harmless now -- a queued row is handed back to the composer rather than
+        lost (render.js clearQueued), and the settle buys no /recap, so it cannot
+        eat the answer that is still coming.
+
+        The ledger is then EMPTIED rather than consulted: it is armed only by an
+        interrupt or by a `result`, and after either of those a CLI that still
+        had work would be talking. Silence is the evidence. Idempotent -- the
+        renderer's handler is a no-op on a window that has already settled, so
+        the ordinary fire five seconds after a finished turn costs nothing.
         """
         if generation != self._generation:
             return
-        deadline = self._idle_deadline
-        if not deadline:
-            return
-        remaining = deadline - time.monotonic()
-        if remaining > 0:
-            self._arm_idle_sync(remaining)
-            return
-        self._idle_deadline = 0.0
-        with self._inflight_lock:
-            if self._inflight:
-                return   # a new turn owns the window; its own result will end it
-            self.hub.publish({"type": "wrapper", "subtype": "idle_sync"})
+        with self._outstanding_lock:
+            deadline = self._idle_deadline
+            if not deadline:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if self.broker and self.broker.has_pending():
+                    # Blocked on the user, not idle. Re-arm for a full window:
+                    # the answer is the event that makes the CLI speak again.
+                    self._idle_deadline = time.monotonic() + IDLE_SYNC_SECONDS
+                    remaining = IDLE_SYNC_SECONDS
+                else:
+                    self._idle_deadline = 0.0
+                    self._outstanding.clear()
+                    self.hub.publish({"type": "wrapper", "subtype": "idle_sync"})
+                    return
+        self._arm_idle_sync(remaining)
 
     def _answer_control_request(self, event: dict, generation: int) -> None:
         """Answer a control_request the CLI sent US.
@@ -2719,15 +3020,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "nothing to send"})
                 return
             try:
-                session.send_blocks(blocks)
+                command_uuid = session.send_blocks(blocks)
             except RuntimeError as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             # Echo locally so the window can render the user turn immediately:
             # the CLI does not replay user messages back to us. Through the
             # session's own TabHub, or the echo would land in no tab at all.
+            # The uuid rides along because the window keeps the same ledger the
+            # session does: this is the only place it learns which command the
+            # CLI will later report finished (command_lifecycle).
             session.hub.publish({
                 "type": "wrapper", "subtype": "user_echo",
+                "uuid": command_uuid,
                 "text": next((b["text"] for b in blocks if b["type"] == "text"), ""),
                 "images": sum(1 for b in blocks if b["type"] == "image"),
             })
@@ -2758,6 +3063,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True})
+        elif parsed.path == "/api/queue/cancel":
+            # One message out of the CLI's own command queue, by uuid. Not
+            # reachable through /api/control: that whitelist is for requests
+            # whose params are a fixed shape the page cannot abuse, and this one
+            # needs the ledger bookkeeping in cancel_queued() around it.
+            session = self._target(tab)
+            if session is None:
+                return
+            message_uuid = (body.get("uuid") or "").strip()
+            if not message_uuid:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "no uuid"})
+                return
+            try:
+                cancelled = session.cancel_queued(message_uuid)
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            # The CLI's own answer, unedited: false is not an error, it is
+            # "already running" (see ClaudeSession.cancel_queued).
+            self._send_json(HTTPStatus.OK, {"cancelled": cancelled})
         elif parsed.path == "/api/recap":
             # Fire-and-forget: the recap arrives over SSE as wrapper/recap, the
             # same way every other CLI answer does. `ok:false` means the window

@@ -5,7 +5,7 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble, label } from "./render.js";
+import { bubble, label, paintQueued } from "./render.js";
 /* One-way, and no new cycle: controls.js imports api.js and nothing else. */
 import { cyclePosture } from "./controls.js";
 
@@ -76,6 +76,35 @@ document.addEventListener("visibilitychange", () => {
    minutes are testable without waiting them out. */
 export function isAway(now = Date.now()) {
   return document.hidden || now - lastInput >= AWAY_AT;
+}
+
+/* The box grows with what is in it, up to 40% of the window. Shared, because
+   text also arrives here without a keystroke (restoreDraft below) and a box
+   that does not grow for it hides the message it was just handed. */
+function autoGrow() {
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px";
+}
+
+/* A message the CLI queued and then never ran comes back to the person who
+   typed it. Two rules, and each one is a way of losing text:
+
+   - APPENDED, never assigned: whatever is half-typed in the box right now
+     outranks a message from a minute ago.
+   - on its own line, so two returned messages are two messages.
+
+   There is deliberately no "already in the box" check. It used to be
+   `input.value.includes(text)`, to stop a reload from re-delivering an
+   hour-old cancellation off the SSE backlog — but that is the transport's
+   problem and it is solved there now (the server marks a fresh window's replay,
+   render.js suppresses the give-back for it). As a dedupe it was also wrong in
+   the direction that loses text: a returned message that happens to be a
+   SUBSTRING of what is being typed was swallowed silently. */
+export function restoreDraft(text) {
+  if (!input || !text) return;
+  input.value = input.value ? input.value + "\n" + text : text;
+  autoGrow();
 }
 
 /* No conversation is open at all (app.js blankView): every tab-less endpoint
@@ -228,6 +257,12 @@ export function restoreComposer(saved) {
   // After setBusy, which stamps «now» on a busy→idle edge — the restored
   // conversation's own clock wins, or a tab switch would reset its idle hour.
   lastActivity = s.lastActivity ?? null;
+  // The queued-message strip is this conversation's too, but its model lives in
+  // the RENDER scope (render.js state.queued) rather than in the snapshot
+  // above: it is built from stream events, which are routed per tab by the
+  // renderer. app.js swaps that scope in before calling this, so by now `state`
+  // is already the right conversation's — all that is left is to paint it.
+  paintQueued();
 }
 
 function ctxButton(text, note, cls, onClick) {
@@ -424,34 +459,13 @@ export function initComposer() {
       input.setRangeText("\u200C", selectionStart, selectionEnd, "end");
       return;
     }
-    /* Shift+Tab cycles the approval posture, as it does in the TUI. Through
-       controls.js's own cycler, which is the pill's code path — one choke
-       point, so the chip still waits for the server's echo. */
-    if (e.key === "Tab" && e.shiftKey) {
-      // Held down, the key auto-repeats around 30 times a second, and every one
-      // of those would POST /api/posture and push a set_permission_mode at the
-      // CLI. One press, one change.
-      if (e.repeat) {
-        e.preventDefault();
-        return;
-      }
-      // Nothing to cycle — no posture confirmed for this conversation yet — so
-      // the key is not ours: leave it to the browser's reverse focus nav rather
-      // than swallowing it into a no-op.
-      if (!cyclePosture()) return;
-      e.preventDefault();   // or focus leaves the box on the way past
-      return;
-    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       composer.requestSubmit();
     }
   });
 
-  input.addEventListener("input", () => {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px";
-  });
+  input.addEventListener("input", autoGrow);
 
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -510,6 +524,44 @@ export function initComposer() {
      whatever claims it after this was written (the sidebar's rename field
      already does). Idle Esc stays unbound on purpose: the TUI clears the box
      with it, and here the box holds the only copy of what was typed. */
+  /* Shift+Tab cycles the approval posture, as it does in the TUI — the TUI
+     has no "focus is elsewhere" state, so this binds on document rather than
+     the textarea. Through controls.js's own cycler, which is the pill's code
+     path — one choke point, so the chip still waits for the server's echo.
+
+     Bound on the document, it has to give the key back wherever Tab navigation
+     or typing is the actual point. The old back-off named only `dialog[open]`
+     and the slash popup, which exempted almost nothing: the sidebar's inline
+     rename field, the agents drawer and every menu are ordinary focusable
+     elements, and Shift+Tab in one of them silently stepped the approval
+     posture instead of moving focus. So the rule is inverted — the composer's
+     own textarea cycles, everything editable or focus-trapping does not, and
+     the inert parts of the page (body, the transcript) fall through to the
+     cycle as before. A closed `[popover]` is display:none, so focus cannot be
+     inside one and the bare attribute selector needs no state check.
+
+     Typing in the composer with the slash popup OPEN still cycles — that is
+     the pre-rework behaviour and it is deliberate: bare Tab accepts the
+     completion (see the popup's own handler), Shift+Tab was never its key. */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || !e.shiftKey) return;
+    if (e.target !== input && e.target?.closest?.(
+        "input, select, textarea, [contenteditable], " +
+        "dialog[open], [popover], #slash-popup:not([hidden])")) return;
+    // Held down, the key auto-repeats around 30 times a second, and every one
+    // of those would POST /api/posture and push a set_permission_mode at the
+    // CLI. One press, one change.
+    if (e.repeat) {
+      e.preventDefault();
+      return;
+    }
+    // Nothing to cycle — no posture confirmed for this conversation yet — so
+    // the key is not ours: leave it to the browser's reverse focus nav rather
+    // than swallowing it into a no-op.
+    if (!cyclePosture()) return;
+    e.preventDefault();   // or focus moves on the way past
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.defaultPrevented || !busy) return;
     if (document.querySelector("dialog[open], :popover-open, " +

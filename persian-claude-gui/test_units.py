@@ -467,6 +467,65 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         server.PROJECTS_DIR = old_projects_dir
 
+print("read_session: a folded mid-turn message (attachment/queued_command) survives replay")
+# CLI 2.1.241: a message sent while a turn is running gets folded into it and
+# written ONLY as an attachment line -- no type:"user" record anywhere in the
+# file. Shape measured verbatim from a real transcript (see server.py's
+# _normalize_transcript_event docstring / the task spec). queue-operation and
+# isMeta stay filtered exactly as before.
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    cwd = root / "proj3"
+    cwd.mkdir()
+    old_projects_dir = server.PROJECTS_DIR
+    server.PROJECTS_DIR = root / "projects"
+    folder = server.PROJECTS_DIR / str(cwd).replace(":", "-").replace("\\", "-").replace("/", "-")
+    folder.mkdir(parents=True)
+
+    ordinary_user = _line({
+        "type": "user", "timestamp": "2026-08-23T23:35:00.000Z",
+        "message": {"role": "user", "content": [{"type": "text", "text": "شروع کن"}]},
+    })
+    folded_prompt = "آهان یه نکنه دیگه بهتره لیست ایده ها رو یکم هم توضیح بدیم"
+    queued_command = _line({
+        "parentUuid": "p1", "isSidechain": False,
+        "attachment": {
+            "type": "queued_command",
+            "prompt": [{"type": "text", "text": folded_prompt}],
+            "commandMode": "prompt",
+            "timestamp": "2026-08-23T23:36:12.318Z",
+        },
+        "type": "attachment", "uuid": "4df59347-6f31-4147-8f6e-4e89b1bb55c3",
+        "timestamp": "2026-08-23T23:36:12.318Z", "userType": "external",
+        "entrypoint": "sdk-cli", "cwd": "D:\\Project",
+        "sessionId": "e9ecc3c6-…", "version": "2.1.241", "gitBranch": "HEAD",
+    })
+    queue_op_fold = _line({
+        "type": "attachment", "timestamp": "2026-08-23T23:36:13.000Z",
+        "attachment": {"type": "queue-operation", "operation": "enqueue"},
+    })
+    meta_user = _line({
+        "type": "user", "isMeta": True, "timestamp": "2026-08-23T23:36:14.000Z",
+        "message": {"role": "user", "content": [{"type": "text", "text": "hook noise"}]},
+    })
+    (folder / "s3.jsonl").write_text(
+        "\n".join([ordinary_user, queued_command, queue_op_fold, meta_user]) + "\n",
+        encoding="utf-8")
+
+    try:
+        events = server.read_session(cwd, "s3")
+        check("exactly two events replay -- the ordinary user turn and the folded one",
+              len(events) == 2)
+        check("the ordinary user turn comes first, in order",
+              events[0]["type"] == "user"
+              and events[0]["message"]["content"][0]["text"] == "شروع کن")
+        check("the folded queued_command's prompt text comes back as a user event",
+              events[1]["type"] == "user"
+              and events[1]["message"]["content"][0]["type"] == "text"
+              and events[1]["message"]["content"][0]["text"] == folded_prompt)
+    finally:
+        server.PROJECTS_DIR = old_projects_dir
+
 print("read_agent_events: after/next offset behaviour")
 with tempfile.TemporaryDirectory() as tmp:
     agent_file = Path(tmp) / "agent-f00d.jsonl"
@@ -827,6 +886,33 @@ check("a fresh window (no cursor) still replays everything",
 check("seq is global, so within-bucket order survives the filter",
       [e["seq"] for e in _drain(resumed.subscribe(1))] == [2, 3])
 
+print("Hub: a fresh window is told which of its events are BACKLOG")
+# The window has give-back paths -- a cancelled queued message hands its text
+# back to the composer -- and a fresh window replays the WHOLE history, so a
+# cancellation from an hour ago used to be re-delivered on every reload and grow
+# a zombie draft. A cursor-resume is deliberately NOT marked: those events have
+# never reached that window, so they are live-equivalent.
+marked = server.Hub()
+mtab = server.TabHub(marked, "t")
+mtab.publish({"subtype": "history"})
+stored = marked._history["t"][0]
+fresh_backlog = _drain(marked.subscribe())
+check("a fresh window's backlog is marked replayed",
+      [e.get("replayed") for e in fresh_backlog] == [True])
+check("the stored event itself is untouched -- the mark rides on a copy",
+      "replayed" not in stored and stored is not fresh_backlog[0])
+mtab.publish({"subtype": "later"})
+cursor_backlog = _drain(marked.subscribe(1))
+check("a cursor-resume is not marked: those events are new to that window",
+      [e.get("subtype") for e in cursor_backlog] == ["later"]
+      and "replayed" not in cursor_backlog[0])
+watcher = marked.subscribe(2)          # caught up: nothing to replay
+mtab.publish({"subtype": "live"})
+live_seen = _drain(watcher)
+check("and a live event is never marked",
+      [e.get("subtype") for e in live_seen] == ["live"]
+      and "replayed" not in live_seen[0])
+
 
 class _StubSession:
     """A ClaudeSession's tab-facing surface: no subprocess, no CLI."""
@@ -966,7 +1052,15 @@ check("and one result still ends it", counter.busy is False)
 counter.send_blocks([{"type": "text", "text": "four"}])
 counter.send_blocks([{"type": "text", "text": "five"}])
 counter.interrupt()
-check("interrupt drops the queued turns too (they never emit a result)",
+# This used to assert a blanket clear, and that clear was an ASSUMPTION: the
+# CLI keeps its queued commands unless the interrupt asks it not to, and even
+# then only the receipt says which ones actually went. Until one arrives the
+# ledger stands -- see "the receipt settles the ledger" below.
+check("an interrupt whose receipt has not arrived leaves the ledger standing",
+      counter.busy is True)
+counter._idle_deadline = time.monotonic() - 0.01
+counter._sync_idle(GEN)
+check("and the silence window still settles it, exactly as before",
       counter.busy is False)
 counter._after_result({}, GEN)   # the aborted turn's own result still arrives
 check("the aborted turn's result is absorbed by the clamp", counter.busy is False)
@@ -1077,6 +1171,205 @@ alive._idle_deadline = time.monotonic() - 0.01
 alive._sync_idle(alive._generation - 1)
 check("a stale generation publishes nothing either", alive.hub.events == [])
 alive._idle_deadline = 0.0          # disarm: nothing else here reads this session
+
+
+print("interrupt: the receipt settles the ledger, an assumption used to")
+# Measured contract (wiki/cli-stream-json-findings.md, "The message queue"):
+# "queued commands survive the interrupt and are listed under still_queued … A
+# stop-means-stop-everything client sets this true so one round-trip halts the
+# session". We sent a BARE interrupt and emptied the ledger anyway, so a message
+# the CLI had kept still ran -- while the window had already settled the pulse
+# and hidden the stop button. The answer then arrives with no spinner and no way
+# out. Both halves are fixed here: the field goes out, and the answer is READ.
+
+
+class _Lines:
+    """A CLI that says exactly these lines and then stops talking."""
+
+    stderr = ()
+
+    def __init__(self, *events):
+        self.stdout = [json.dumps(e) for e in events]
+
+    def poll(self):
+        return None
+
+
+def _eventually(cond, timeout=2.0):
+    """The receipt is settled off-thread (it arrives ON the reader thread)."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.01)
+    return cond()
+
+
+stop = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+frames = []
+stop._write_line = frames.append
+doomed = stop.send_blocks([{"type": "text", "text": "queued"}])
+kept = stop.send_blocks([{"type": "text", "text": "also queued"}])
+stop.interrupt()
+check("the interrupt frame carries cancel_queued: true, ungated",
+      frames[-1]["request"] == {"subtype": "interrupt", "cancel_queued": True})
+# Ungated on purpose: capabilities live on system/init, which is not emitted
+# until the first turn STARTS, so nothing can gate at spawn. An older CLI
+# ignores the field -- which is this build's behaviour before it existed.
+check("and it is a waited control_request, not fire-and-forget any more",
+      frames[-1]["type"] == "control_request"
+      and frames[-1]["request_id"] in stop._pending)
+
+stranger = "11111111-2222-3333-4444-555555555555"   # a uuid the CLI minted
+stop._pump_stdout(_Lines({
+    "type": "control_response",
+    "response": {"subtype": "success", "request_id": frames[-1]["request_id"],
+                 "response": {"cancelled": [doomed, stranger],
+                              "still_queued": [kept]}},
+}), stop._generation)
+check("the receipt's cancelled uuid leaves the ledger",
+      _eventually(lambda: doomed not in stop._outstanding))
+check("and the window is told, on the channel the CLI would have used itself",
+      [(e.get("type"), e.get("state"), e.get("command_uuid"), e.get("synthetic"))
+       for e in stop.hub.events]
+      == [("command_lifecycle", "cancelled", doomed, True)])
+check("a uuid we never sent is not ours to close -- no second event",
+      stranger not in stop._outstanding and len(stop.hub.events) == 1)
+check("the still-queued one STAYS: it will run and report for itself",
+      kept in stop._outstanding and stop.busy is True)
+stop._pump_stdout(_Lines({"type": "command_lifecycle", "state": "cancelled",
+                          "command_uuid": doomed}), stop._generation)
+check("the CLI's own cancelled for an already-closed uuid is a no-op",
+      stop.busy is True)
+stop._pump_stdout(_Lines({"type": "command_lifecycle", "state": "completed",
+                          "command_uuid": kept}), stop._generation)
+check("busy ends when THAT command reports, not when stop was pressed",
+      stop.busy is False)
+stop._idle_deadline = 0.0           # disarm the backstop this session armed
+
+# A receipt that is not a success (an older CLI, a timeout) settles nothing --
+# and must not: the silence window is what covers that case, unchanged.
+refused = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+refused._write_line = lambda obj: None
+lonely = refused.send_blocks([{"type": "text", "text": "still running"}])
+timed_out = {"event": threading.Event(),
+             "response": {"subtype": "error", "error": "interrupt: timed out"}}
+timed_out["event"].set()
+refused._settle_interrupt("pcg-interrupt-1", timed_out, refused._generation)
+check("a timed-out receipt leaves the ledger and the window alone",
+      lonely in refused._outstanding and refused.hub.events == [])
+
+print("idle_sync: an unanswered permission dialog is not silence")
+# The third and biggest way the watchdog was wrong: a `can_use_tool` request the
+# user is still READING. The CLI is blocked, not idle -- it says nothing on
+# stdout for as long as the dialog is up -- so the deadline expired under a turn
+# that was genuinely running and the ledger was cleared out from under it. The
+# broker is the only side that knows, so the watchdog asks it.
+gated_hub = _Hub()
+gated_broker = server.PermissionBroker(gated_hub)
+gated = server.ClaudeSession(Path("D:/x"), gated_hub, "claude.exe", gated_broker)
+gated._write_line = lambda obj: None
+gated_uuid = gated.send_blocks([{"type": "text", "text": "write the file"}])
+threading.Thread(
+    target=lambda: gated_broker.request("Write", {"file_path": "x"}, "tu-gate"),
+    daemon=True).start()
+check("the broker reports the request the user is still reading",
+      _eventually(gated_broker.has_pending))
+gated._idle_deadline = time.monotonic() - 0.01
+gated._sync_idle(gated._generation)
+check("an unanswered permission dialog defers the watchdog instead of force-idling",
+      [e.get("subtype") for e in gated_hub.events] == ["permission_request"]
+      and gated_uuid in gated._outstanding)
+check("and it re-arms for a full window rather than dropping the watch",
+      gated._idle_deadline > time.monotonic())
+gated_broker.respond(gated_hub.events[0]["request_id"], "allow", False, "Write")
+check("the answer releases it", _eventually(lambda: not gated_broker.has_pending()))
+gated._idle_deadline = time.monotonic() - 0.01
+gated._sync_idle(gated._generation)
+check("and the same silence then settles the ledger, exactly as before",
+      [e.get("subtype") for e in gated_hub.events][-1] == "idle_sync"
+      and gated.busy is False)
+gated._idle_deadline = 0.0
+
+print("_after_result: an older CLI closes one per result, the silence watchdog gets the rest")
+# 2.1.241's fold means N sends can produce ONE result (cli-stream-json-findings.md
+# "The message queue"). An older CLI has no command_lifecycle channel at all, so
+# _lifecycle_seen stays False and the compat path (_close_one_command) closes
+# exactly ONE entry per result -- not the whole batch. Whatever is left has no
+# other way to clear itself except the silence backstop.
+legacy = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+legacy._write_line = lambda obj: None
+legacy._publish_usage = lambda generation: None
+legacy._publish_statusline = lambda result, generation: None
+legacy_first = legacy.send_blocks([{"type": "text", "text": "one"}])
+legacy_second = legacy.send_blocks([{"type": "text", "text": "two"}])
+LEGACY_GEN = legacy._generation
+legacy._after_result({}, LEGACY_GEN)   # the ONE result the fold produced
+check("the compat path closes exactly one entry, not the whole batch",
+      len(legacy._outstanding) == 1 and legacy.busy is True)
+# And it closes the OLDEST one. The ledger used to be a set, so `next(iter(...))`
+# picked arbitrarily: it closed the message still sitting in the CLI's queue and
+# the window promoted it into the transcript as delivered, while the CLI still
+# held it. The legacy contract is one result per message, IN ORDER.
+check("the entry it closes is the FIRST one sent, not an arbitrary one",
+      legacy_first not in legacy._outstanding
+      and list(legacy._outstanding) == [legacy_second])
+check("and the window is told about that one, by uuid",
+      legacy.hub.events[-1].get("command_uuid") == legacy_first)
+# Eight in a row, because ONE close matches by luck half the time and a whole
+# batch in order does not: a set would have to guess 8! ways right.
+fifo = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+fifo._write_line = lambda obj: None
+fifo._publish_usage = lambda generation: None
+fifo._publish_statusline = lambda result, generation: None
+FIFO_GEN = fifo._generation
+fifo_sent = [fifo.send_blocks([{"type": "text", "text": str(n)}]) for n in range(8)]
+for _ in fifo_sent:
+    fifo._after_result({}, FIFO_GEN)
+check("a whole legacy batch closes in the order it was sent",
+      [e.get("command_uuid") for e in fifo.hub.events] == fifo_sent)
+fifo._idle_deadline = 0.0
+legacy._idle_deadline = time.monotonic() - 0.01
+legacy._sync_idle(LEGACY_GEN)
+check("the silence watchdog settles what the compat path could not",
+      legacy.busy is False)
+
+
+class _FakeProc:
+    """A process that exists and says nothing. start() only needs poll()."""
+
+    stdout = ()
+    stderr = ()
+    stdin = None
+
+    def poll(self):
+        return None
+
+
+print("start(): a deliberate respawn discards what the old process still held")
+# The process-DEATH path publishes a synthetic `discarded` per unreported uuid,
+# but start() threw the same list away -- and its generation bump suppresses the
+# old reader's own publish, so a queued message's text vanished on a restart
+# while the identical crash case handed it back to the composer.
+respawn = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+respawn._write_line = lambda obj: None
+respawn_a = respawn.send_blocks([{"type": "text", "text": "first"}])
+respawn_b = respawn.send_blocks([{"type": "text", "text": "second"}])
+respawn._read_stdout = lambda proc, generation: None
+respawn._read_stderr = lambda proc, generation: None
+respawn._fetch_init_info = lambda generation: None
+_real_popen = server.subprocess.Popen
+server.subprocess.Popen = lambda *a, **k: _FakeProc()
+try:
+    respawn.start()
+finally:
+    server.subprocess.Popen = _real_popen
+check("every uuid the old process still held is reported discarded, in order",
+      [(e.get("type"), e.get("state"), e.get("command_uuid"), e.get("synthetic"))
+       for e in respawn.hub.events]
+      == [("command_lifecycle", "discarded", respawn_a, True),
+          ("command_lifecycle", "discarded", respawn_b, True)])
+check("and the ledger is empty afterwards", respawn.busy is False)
 
 print("GET /api/projects: the sidebar answers with no tabs open")
 # Routing it through _target() 404d once the last tab closed, and the window
