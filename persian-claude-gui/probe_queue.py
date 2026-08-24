@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from server import CLAUDE_ARGS, find_claude          # noqa: E402  (same spawn, or the probe lies)
+from server import CLAUDE_ARGS, find_claude, transcript_dir  # noqa: E402  (same spawn, or the probe lies)
 
 QUIET_FOR = 12.0      # seconds of CLI silence that end a phase
 DEADLINE = 90.0       # hard cap per phase, so a hung CLI cannot hang the probe
@@ -211,6 +211,22 @@ def main() -> int:
         except Exception:
             pass
         p.proc.terminate()
+        try:
+            p.proc.wait(timeout=10)  # Windows won't delete a folder that is a process's cwd
+        except Exception:
+            pass
+        # Leave no project behind: the CLI wrote a transcript under
+        # ~/.claude/projects/<sanitized-tmp>, and the sidebar lists every such
+        # entry whose cwd still exists — a stray probe run shows up as a
+        # "pcg-probe-…" project in the window forever.
+        transcripts = transcript_dir(tmp)
+        for _ in range(20):
+            shutil.rmtree(tmp, ignore_errors=True)
+            if not tmp.exists():
+                break
+            time.sleep(0.25)
+        if transcripts:
+            shutil.rmtree(transcripts, ignore_errors=True)
 
     failed = [name for name, ok, _ in verdicts if not ok]
     print(f"\n{'FAIL' if failed else 'PASS'} -- "

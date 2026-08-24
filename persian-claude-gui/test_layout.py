@@ -122,6 +122,16 @@ const SCROLLERS = new Set(%SCROLLERS%);
      content: "npm ERR! could not resolve dependency @scope/some-very-long-package-name@1.2.3"}]}});
   await sleep(250);
 
+  // The chip row (pcg-tda): with a session's full chrome up — folder, model,
+  // effort, style, posture, audit counter — every visible chip must sit inside
+  // the composer box at one line of height. Before the fix the row could not
+  // wrap and the last chips were pushed out of the box.
+  const compNow = box(document.querySelector(".comp-box"));
+  const chips = [...document.querySelector(".comp-row").children]
+    .filter((c) => !c.hidden && getComputedStyle(c).display !== "none" &&
+                   c.getBoundingClientRect().width > 0)
+    .map((c) => ({id: c.id || c.className, ...box(c)}));
+
   document.getElementById("posture-chip").click();
   await sleep(150);
   const menu = document.getElementById("menu-popup");
@@ -139,6 +149,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
     view: [innerWidth, innerHeight],
     compBox: home.compBox,
     greeting: home.greeting,
+    comp: compNow, chips,
     menu: box(menu),
     rows: rows.length,
     overlap, squashed,
@@ -250,6 +261,21 @@ def main() -> int:
                     failures.append(f"{where}: {name} is above the window (y={rect['y']})")
             if m["clipped"]:
                 failures.append(f"{where}: content wider than its box - {m['clipped'][:4]}")
+            # The chip row (pcg-tda). 7 = attach + folder + model + effort +
+            # style + posture + audit counter; fewer means a chip never rendered
+            # and the check would pass vacuously.
+            comp = m["comp"]
+            if len(m["chips"]) < 7:
+                failures.append(f"{where}: only {len(m['chips'])} composer chips rendered")
+            for chip in m["chips"]:
+                if chip["h"] > 40:
+                    failures.append(f"{where}: chip {chip['id']} is {chip['h']}px tall - "
+                                    "more than one line")
+                if (chip["x"] < comp["x"] - 1 or chip["x"] + chip["w"] > comp["x"] + comp["w"] + 1
+                        or chip["y"] < comp["y"] - 1
+                        or chip["y"] + chip["h"] > comp["y"] + comp["h"] + 1):
+                    failures.append(f"{where}: chip {chip['id']} sits outside the composer box "
+                                    f"({chip} vs {comp})")
             if m["rows"] != 4:
                 failures.append(f"{where}: the posture menu drew {m['rows']} rows, not 4")
             if m["squashed"]:

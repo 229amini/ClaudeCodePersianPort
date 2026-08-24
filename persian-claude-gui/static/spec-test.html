@@ -1014,6 +1014,33 @@ check("the grouped MCP summary ellipses instead of overflowing the row",
     ? getComputedStyle(groupMcpVerb).textOverflow + " / " + getComputedStyle(groupMcpVerb).overflow
     : "no element");
 
+/* THE FRAME IS DRIVEN BY HAND, and it has to be. The renderer coalesces its
+   stream paint onto requestAnimationFrame, so every check that streams needs one
+   frame to have happened — but this page runs under `msedge --headless=new
+   --virtual-time-budget`, and that combination serves a handful of real
+   animation frames and then none at all (measured: the fourth rAF of the run
+   never fired, the harness hung on it, and the runner reported the whole
+   verdict as empty — a module-load error and a missing frame look identical
+   from outside). Waiting for a frame is therefore not a gate, it is a coin
+   toss, and one that fails CLOSED in the noisiest possible way.
+
+   `requestAnimationFrame` is resolved off `window` at call time, so holding the
+   renderer's own callback and running it here exercises the same code path with
+   no frame involved — and synchronously, which keeps the verdict written in one
+   task the way every other check in this file is. Restored at the end.
+
+   The stub must stand BEFORE the first event that touches the paint queue —
+   which is the thinking case below, not the text-stream cases further down. A
+   paint queued on the REAL rAF pins the renderer's one-callback guard
+   (paintFrame) to an id that may never fire under virtual time, and every
+   stream write after the swap then waits on it forever. */
+const frameQueue = [];
+const realRaf = window.requestAnimationFrame;
+window.requestAnimationFrame = (fn) => frameQueue.push(fn);   // a truthy id
+const flushFrame = () => {
+  for (const fn of frameQueue.splice(0)) fn(performance.now());
+};
+
 /* Interleaved thinking: the model thinks between every call, so a thinking card
    that ENDED the run shattered a fifteen-step turn into fifteen groups of one,
    each separated by an identical, content-free «در حال فکر کردن» row. Thinking
@@ -1045,6 +1072,21 @@ const thPeek = thGroup?.querySelector(".thinking > summary .tool-target")?.textC
 check("a collapsed thinking row previews its own thought, not just the word",
   thPeek?.startsWith("First I check the repo state."),
   thPeek ?? "no preview");
+
+// The O(n²) guard, thinking edition: deltas accumulate in state and the body
+// is written once per frame. A renderer that writes textContent per delta
+// shows the text before any frame has run — the same defect class the
+// text-stream case below pins, on the branch that used to have it.
+const thBodies = [...(thGroup?.querySelectorAll(".thinking > .card-body") ?? [])];
+const thEarly = thBodies.map((b) => b.textContent).join("");
+flushFrame();
+check("a thinking card paints once per frame, not once per delta",
+  thEarly === "" && thBodies.length === 2 &&
+  thBodies[0].textContent === "First I check the repo state." &&
+  thBodies[1].textContent === "Now the log.",
+  "before the frame: «" + thEarly.slice(0, 20) + "», after: «" +
+  (thBodies[0]?.textContent ?? "none") + "» / «" +
+  (thBodies[1]?.textContent ?? "none") + "»");
 
 /* The turn's pulse. Three things here are invisible to a textContent read and
    each one has already been a defect class in this file: that the line is
@@ -1400,6 +1442,22 @@ check("the live stream spells the same flag isSynthetic, and it is obeyed too",
   specLog.childElementCount === beforeSynth &&
   !specLog.textContent.includes("nor this one"),
   specLog.childElementCount + " vs " + beforeSynth);
+
+/* The third injected `user` shape, measured on 2.1.240 (pcg-9dj probe): a
+   synchronous Agent spawn echoes the AGENT's prompt as a live `user` event
+   carrying parent_tool_use_id and neither meta flag. Rendered, it is a phantom
+   English user bubble mid-turn — and it would resetTurn() under a running
+   stream. The real tool_result arrives with parent_tool_use_id null. */
+const beforeSide = specLog.childElementCount;
+window.renderEvent({ type: "user", parent_tool_use_id: "toolu_probe",
+  subagent_type: "general-purpose", task_description: "d",
+  message: { role: "user", content: [
+    { type: "text", text: "Reply with the single word PING." },
+] } });
+check("a subagent's sidechain prompt echo renders nothing",
+  specLog.childElementCount === beforeSide &&
+  !specLog.textContent.includes("single word PING"),
+  specLog.childElementCount + " vs " + beforeSide);
 
 /* The strip above the composer, painted from a synthetic /api/agents payload
    through the shipping builder (window.renderAgents). The description is Latin
@@ -1803,27 +1861,6 @@ check("#log never animates a programmatic scroll",
 
 const streamDelta = (text) => window.renderEvent(
   { type: "stream_event", event: { type: "content_block_delta", delta: { text } } });
-
-/* THE FRAME IS DRIVEN BY HAND, and it has to be. The renderer coalesces its
-   stream paint onto requestAnimationFrame, so every check below needs one frame
-   to have happened — but this page runs under `msedge --headless=new
-   --virtual-time-budget`, and that combination serves a handful of real
-   animation frames and then none at all (measured: the fourth rAF of the run
-   never fired, the harness hung on it, and the runner reported the whole
-   verdict as empty — a module-load error and a missing frame look identical
-   from outside). Waiting for a frame is therefore not a gate, it is a coin
-   toss, and one that fails CLOSED in the noisiest possible way.
-
-   `requestAnimationFrame` is resolved off `window` at call time, so holding the
-   renderer's own callback and running it here exercises the same code path with
-   no frame involved — and synchronously, which keeps the verdict written in one
-   task the way every other check in this file is. Restored at the end. */
-const frameQueue = [];
-const realRaf = window.requestAnimationFrame;
-window.requestAnimationFrame = (fn) => frameQueue.push(fn);   // a truthy id
-const flushFrame = () => {
-  for (const fn of frameQueue.splice(0)) fn(performance.now());
-};
 
 /* Where the first character of a bubble's text actually LANDED. A streamed
    bubble is plain text under `.msg { unicode-bidi: plaintext }`, which decides
