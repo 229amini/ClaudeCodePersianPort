@@ -364,15 +364,22 @@ async function pollDrawer() {
   if (events.length) {
     forDrawer.empty = false;
     forDrawer.body.querySelector(".ag-empty")?.remove();
+    // Decided ONCE, before the append changes scrollHeight: follow the tail
+    // only if the reader was already there (or the drawer is still empty — the
+    // first fill always lands pinned). An unconditional pin yanked a reader
+    // who had scrolled up back to the bottom on every poll.
+    const stick = !forDrawer.body.childElementCount ||
+      forDrawer.body.scrollHeight - forDrawer.body.scrollTop
+        - forDrawer.body.clientHeight < 80;
     withRenderTarget(forDrawer.body, forDrawer.scope, () => {
       // Every append in the loop would ask whether the reader is at the bottom
-      // and force a layout to answer — for nothing, since the line below pins
-      // the drawer regardless. Same skip chrome.js's replay takes.
+      // and force a layout to answer — for nothing, since `stick` above already
+      // decided for the whole batch. Same skip chrome.js's replay takes.
       bulkAppend(() => {
         for (const event of events) renderEvent(event);
       });
     });
-    forDrawer.body.scrollTop = forDrawer.body.scrollHeight;
+    if (stick) forDrawer.body.scrollTop = forDrawer.body.scrollHeight;
   }
   if (typeof data.next === "number") forDrawer.cursor = data.next;
 

@@ -428,6 +428,7 @@ export const state = {
   streamText: "",        // raw markdown accumulated during streaming
   thinkingBody: null,
   thinkingPeek: null,    // the collapsed row's one-line preview of that thought
+  thinkingText: "",      // raw thought accumulated during streaming
   pulse: null,           // the live "still working" line for the turn in flight
   // The command_uuid of every message sent from this window that the CLI has
   // not reported finished — the same ledger the server keeps (server.py
@@ -500,6 +501,7 @@ export function resetTurn(keepPulse = false) {
   state.streamText = "";
   state.thinkingBody = null;
   state.thinkingPeek = null;
+  state.thinkingText = "";
   state.run = null;
   // A turn boundary is not the middle of a polling loop. `repeat` goes too: it
   // holds DOM nodes, and a chain surviving into the next session is this
@@ -882,7 +884,7 @@ function clearQueued(giveBack = false) {
    can carry reaches setStatus in the first place. */
 export function newRenderScope(background = false) {
   return { streamBubble: null, streamText: "", thinkingBody: null,
-           thinkingPeek: null, pulse: null, outstanding: new Set(),
+           thinkingPeek: null, thinkingText: "", pulse: null, outstanding: new Set(),
            queued: new Map(), returned: [],
            recapWorthy: false, recapEligible: false, toolCards: new Map(),
            run: null, cycle: null, repeat: null,
@@ -1554,12 +1556,19 @@ export function renderEvent(ev) {
              state.thinkingPeek]).body;
           state.thinkingBody.setAttribute("dir", "auto");
         }
-        state.thinkingBody.textContent += delta.thinking;
+        // Same accumulate-then-coalesce shape as the text branch above:
+        // `textContent +=` is a full read AND a full write per delta — O(n²)
+        // over the thought — and the queue already carries the detached-buffer
+        // and direction rules this body needs.
+        state.thinkingText += delta.thinking;
+        queueStreamText(state.thinkingBody, log, state.thinkingText);
         // Shut, the row used to carry nothing but the word «فکر» — the same
         // label on every one of them. Its opening clause says what THIS thought
-        // is about, which is the only thing that tells two of them apart.
+        // is about, which is the only thing that tells two of them apart. The
+        // preview shows at most 100 collapsed characters, so a bounded prefix
+        // is all the regex may read — never the whole thought per delta.
         state.thinkingPeek.textContent =
-          state.thinkingBody.textContent.replace(/\s+/g, " ").trim().slice(0, 100);
+          state.thinkingText.slice(0, 400).replace(/\s+/g, " ").trim().slice(0, 100);
       }
       return;
     }
@@ -1620,6 +1629,7 @@ export function renderEvent(ev) {
       }
       state.thinkingBody = null;
       state.thinkingPeek = null;
+      state.thinkingText = "";
       // This message is closed, so its count is final: bank it and let the next
       // message's message_delta start from zero again. Falling back to the live
       // figure keeps the total honest on a build that sends no usage here.
@@ -1645,6 +1655,14 @@ export function renderEvent(ev) {
       // `<task-notification>`, the one injected message that MUST render, sets
       // none of the three (measured across real transcripts).
       if (ev.isMeta || ev.isSynthetic) return;
+      // A sidechain echo: when a turn spawns a synchronous subagent, the CLI
+      // repeats the AGENT's prompt as a live `user` event carrying
+      // parent_tool_use_id (+ subagent_type) — measured on 2.1.240, probe
+      // recording in pcg-9dj. Rendered, it is a phantom English user bubble
+      // mid-turn, and the resetTurn below would tear down the running stream.
+      // Replay never sees these (read_session drops isSidechain); this is the
+      // live half. The real tool_result arrives with parent_tool_use_id null.
+      if (ev.parent_tool_use_id) return;
       // Replay is always block-shaped: a transcript's bare-string prompt is
       // normalised (and envelope-filtered) by read_session before it gets
       // here — but that guarantee is replay-only. Whether a live

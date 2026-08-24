@@ -229,6 +229,17 @@ binary the colleague actually double-clicks.
 **Rule: the launcher is a separate interpreter from the one every test uses.** Two of the three
 launcher bugs so far were invisible to a fully green test suite for exactly that reason.
 
+## The setup's Persian was silently translated to English, once (2026-08-24)
+
+Commit `257d3ff` (the responsive-window session, 2026-08-23) rewrote **every user-facing string
+in `setup.ps1` into English** — all 49 of them, «نصب تمام شد» and the three-step login
+instructions included — with no mention in its own commit message, no doc updated, and no reason
+recorded anywhere. It contradicted the product (the colleague reads only Persian), M8-acceptance
+§0.5's own pass conditions, and this file's recorded Run-A behavior. Reverted 2026-08-24 by
+reverse-applying that commit's `setup.ps1` hunk (strings only — the branch logic was untouched
+either way); BOM re-verified (`EF BB BF`), parser clean. If a future session believes setup's
+console should be English, that is a user decision to ask for — not a drive-by rewrite.
+
 ## NOT verified anywhere — still needs a bare machine (M8)
 
 - the **`-Payload` offline** path. Note it covers **Python only**: Claude Code has no offline

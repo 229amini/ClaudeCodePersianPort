@@ -45,7 +45,7 @@ COOKIE_NAME = "pcg_token"
 # ({{VERSION}}), so the window title and the sidebar footer prove which
 # build is actually running after an update — the one question a
 # non-technical user cannot answer from a folder listing.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"

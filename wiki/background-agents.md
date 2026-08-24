@@ -70,6 +70,36 @@ tailing that file is deterministic for live *and* replay, and owes nothing to st
 The launch ack does stream (it is an ordinary tool_result), but treating the transcript as the
 one source keeps a single parser.
 
+## Answered 2026-08-24: the live stdout contract for a SYNCHRONOUS agent (2.1.240)
+
+Measured with one paid probe turn (`pcg-9dj`; recording kept in the bead close). A
+`run_in_background: false` Agent run emits, in order, all on stdout in `-p` mode:
+
+1. `assistant` with the `tool_use` named **`Agent`** (never `Task` — the built-in tool the CLI
+   ships is `Agent`; `Task` was this project's early shorthand).
+2. `system/task_started` — `{task_id, tool_use_id, description, subagent_type, prompt,
+   task_type: "local_agent", is_backgrounded, spawn_depth}`. Fires the moment the tool_use closes.
+3. **A `user` event that is a sidechain echo of the AGENT's own prompt**, carrying
+   `parent_tool_use_id`, `subagent_type`, `task_description` — and NEITHER `isMeta` nor
+   `isSynthetic`. Rendered naïvely this is a phantom English user bubble mid-turn (and a
+   `resetTurn()` under the running stream). `render.js` now drops any `user` event with a truthy
+   `parent_tool_use_id`; replay was already safe (`read_session` drops `isSidechain`). The real
+   `tool_result` arrives with `parent_tool_use_id: null`, so the guard cannot eat it.
+4. *Silence* while the agent works — the subagent's own assistant/stream events do NOT forward
+   to the parent stdout. A long run's only live progress is `tool_progress` heartbeats (already
+   on the card) and the agents drawer, which tails the subagent transcript on disk.
+5. `system/task_updated` — `{task_id, patch: {status: "completed", end_time}}`.
+6. `system/task_notification` — `{task_id, tool_use_id, status, output_file, summary,
+   usage: {total_tokens, tool_uses, duration_ms}}`. For a sync agent this does NOT also arrive
+   as an auto-submitted `user` turn; the report rides the ordinary `tool_result` instead.
+7. The `tool_result` (`user` event, parent null) → the model's closing text → `result`.
+
+Also observed: a top-level **`rate_limit_event`** after each API message (already a silent
+no-op case in `render.js`), and `system/thinking_tokens` (dropped, known since the 2.1.240
+re-probe). Decision recorded on `pcg-9dj`: **no new progress affordance** — the card already
+names the agent and carries elapsed heartbeats, and the drawer shows the live transcript;
+`system/task_started`/`task_updated` stay unrendered.
+
 ## Orphan detection: `live` alone cannot tell a running agent from a dead one
 
 `--resume` keeps `session_id` stable across a kill (see sessions-and-history.md), so a background

@@ -177,3 +177,14 @@ tokenised URL on stdout; the smoke test scrapes it with
 
 Set `PYTHONIOENCODING=utf-8` when driving it from PowerShell, or Persian in the console output
 mojibakes.
+
+## Any CLI run in a temp cwd pollutes the sidebar forever
+
+The CLI writes its transcript to `~/.claude/projects/<sanitized-cwd>/` and the sidebar's
+`/api/projects` lists every such entry whose cwd still exists — so an ad-hoc probe spawned in a
+`mkdtemp` folder shows up as a `pcg-…` project in the user's window, permanently (this bit the
+user 2026-08-24: three stray probe projects in the sidebar). Every script that spawns the CLI
+must clean up: wait for the process to exit (Windows won't delete a folder that is a process's
+cwd), `rmtree` the temp dir, `rmtree` `server.transcript_dir(tmp)`. `smoke_test.py`,
+`test_no_console.py` and `probe_queue.py` all do this — copy their `_cleanup` for any new probe,
+including one-off probes written inline in a session.
