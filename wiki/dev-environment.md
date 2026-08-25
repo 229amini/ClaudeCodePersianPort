@@ -1,9 +1,17 @@
 # Dev environment — this machine (author PC)
 
-> **The repo moved machines on/before 2026-08-05.** Everything below the "Second author PC"
-> section was measured on `ladyg` and no longer describes where you are running. In particular
-> **the `Python312` path in every older command in this repo is wrong now.** Read the next
-> section first.
+> **The repo has run on two PCs — check which one you are on before copying any command.**
+> `Lion` (2026-08-05, "Second author PC" below) uses `C:\Python314\python.exe`; `ladyg`
+> (everything under that section, and **again as of 2026-08-25**) uses
+> `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Neither path exists on the other machine,
+> so a hardcoded interpreter in this repo is wrong half the time. Resolve it instead:
+> `(Get-Command python).Source`, or the `probe python =>` line in
+> `persian-claude-gui\setup-log.txt`.
+>
+> **2026-08-25, back on `ladyg`:** repo root is now
+> `C:\Users\ladyg\Documents\Claude\ClaudeCodePersianPort` (not the old `Desktop\Claude`), python is
+> 3.12.10 at the `Python312` path, and plain `python` resolves to it — the Store-stub trap recorded
+> below did **not** reproduce. Smoke 15/15 on CLI 2.1.241.
 
 ## Second author PC — current, measured 2026-08-05
 

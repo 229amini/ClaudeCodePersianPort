@@ -483,14 +483,18 @@ node/npm/python/py/pip/cargo/rustc/uv/winget/claude/code, distinguishes real Pyt
 Store alias stub, reads the WebView2 version from the registry, tests for `msedge.exe`, and
 prints `claude --version`. `setup.ps1` step 1 is meant to run this inline and log it.
 
-Entry points (plan §0.5, §B-1). **The interpreter is `C:\Python314\python.exe` on this machine** —
-the `%LOCALAPPDATA%\Programs\Python\Python312` path quoted throughout the older docs belongs to
-the previous author PC and does not exist here (`wiki/dev-environment.md`). Shipped code must
-still use an absolute path: `python` is a Store alias stub on the target machine.
+Entry points (plan §0.5, §B-1). **`<python>` below is machine-dependent — resolve it, never copy
+it.** This repo has now run on two author PCs and a hardcoded interpreter has been wrong on each of
+them in turn: `C:\Python314\python.exe` is the `Lion` PC,
+`%LOCALAPPDATA%\Programs\Python\Python312\python.exe` is the `ladyg` PC, and neither exists on the
+other. Get the real one with `(Get-Command python).Source`, or read the `probe python =>` line in
+`persian-claude-gui\setup-log.txt` — that is the interpreter `setup.ps1` actually used. See
+`wiki/dev-environment.md`. Shipped code must still use an absolute path: `python` is a Store alias
+stub on the *target* machine (it is not on either author PC).
 
 | What | Command | Exists |
 |---|---|---|
-| Dev run with console | `C:\Python314\python.exe persian-claude-gui\server.py --cwd <project> --no-window` | **yes** |
+| Dev run with console | `<python> persian-claude-gui\server.py --cwd <project> --no-window` | **yes** |
 | Dev run with window | same, without `--no-window` (launches Edge app-mode) | **yes** |
 | Full bootstrap | double-click `setup.bat` (→ `powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1`) | **yes** |
 | Bootstrap into a test location | `setup.ps1 -DeployRoot <dir> -ProjectDir <dir> -ShortcutDir <dir> -SkipSmokeTest` | **yes** |
