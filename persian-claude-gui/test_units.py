@@ -1211,11 +1211,13 @@ stop._write_line = frames.append
 doomed = stop.send_blocks([{"type": "text", "text": "queued"}])
 kept = stop.send_blocks([{"type": "text", "text": "also queued"}])
 stop.interrupt()
-check("the interrupt frame carries cancel_queued: true, ungated",
-      frames[-1]["request"] == {"subtype": "interrupt", "cancel_queued": True})
-# Ungated on purpose: capabilities live on system/init, which is not emitted
-# until the first turn STARTS, so nothing can gate at spawn. An older CLI
-# ignores the field -- which is this build's behaviour before it existed.
+check("the interrupt frame leaves the queue alive (cancel_queued: false)",
+      frames[-1]["request"] == {"subtype": "interrupt", "cancel_queued": False})
+# False since 2026-08-31, matching the TUI's own Esc: the running turn aborts,
+# queued messages survive and run next. True (2026-08-24..31) drained the queue
+# on every stop -- parity debt once the uuid ledger let a surviving queue keep
+# the spinner. The receipt below still names cancelled uuids because the
+# MACHINERY must keep settling whatever a CLI reports, whichever flag went out.
 check("and it is a waited control_request, not fire-and-forget any more",
       frames[-1]["type"] == "control_request"
       and frames[-1]["request_id"] in stop._pending)

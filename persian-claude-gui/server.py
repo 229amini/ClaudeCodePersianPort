@@ -2225,14 +2225,16 @@ class ClaudeSession:
         own and the turn's own result event is still the real signal, so the
         HTTP response never waits on either.
         """
-        # `cancel_queued` UNCONDITIONALLY, never gated on
-        # interrupt_cancel_queued_v1: capabilities live on system/init, which is
-        # not emitted until the first turn starts, so nothing can gate at spawn
-        # (measured 2026-08-24). An older CLI ignores the field and behaves as
-        # if false -- exactly what this build did before the flag existed, so
-        # the fallback costs nothing. Without it the CLI keeps the messages it
-        # had QUEUED and runs them after the stop: an answer arriving with no
-        # spinner and no way out.
+        # `cancel_queued` FALSE, matching the CLI's own Esc: the interrupt
+        # aborts the turn that is RUNNING, and queued messages survive to run
+        # next -- "queued commands survive the interrupt", the CLI's own docs
+        # (wiki/cli-stream-json-findings.md, "The message queue"). This build
+        # sent True from 2026-08-24 to 2026-08-31 because a surviving queue
+        # then ran with no spinner and no way out; the uuid ledger closed that
+        # hole (still_queued rows keep the window busy, `started` promotes
+        # them), so True had become parity debt: the TUI's Esc keeps the queue,
+        # this window's stop drained it. The strip's per-row X
+        # (/api/queue/cancel) is the queue-cancel now; stop is not one.
         #
         # Sent even when we believe nothing is running. The ledger is our
         # bookkeeping, not the CLI's, and a stop button that quietly declines to
@@ -2241,7 +2243,7 @@ class ClaudeSession:
         # like nothing. The CLI answers an interrupt it has no turn for with a
         # plain `success`, so the cost of being wrong here is one line on a pipe.
         request_id, slot = self._send_control("interrupt", True,
-                                              {"cancel_queued": True})
+                                              {"cancel_queued": False})
         # Off-thread on purpose: the answer is delivered BY the reader thread,
         # so waiting on this one would deadlock the event pump, and the HTTP
         # handler must not sit on it either.
