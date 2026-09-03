@@ -201,7 +201,7 @@ interrupt, which produces no `aborted_streaming` result to unstick it either. Tw
    an interrupt (`interrupt_cancel_queued_v1` means the queued turns never report); the window
    only zeroes on an `aborted_streaming` result. When that result never comes, the two never
    reconcile.~~ **Superseded 2026-08-24.** `_inflight` is gone. The server now keeps a uuid ledger
-   (`_outstanding`); `interrupt()` sends `cancel_queued: true` and leaves the ledger standing
+   (`_outstanding`); `interrupt()` leaves the ledger standing
    until the CLI's own receipt says which uuids it actually cancelled — see "The message queue: one
    `result` does not mean one send" in `cli-stream-json-findings.md` and `server.py
    _settle_interrupt()`. The disagreement this bug named is closed at the source now; the silence
@@ -375,6 +375,16 @@ window clears only the uuids that are **not** in the strip on an `aborted_stream
 anything still parked there keeps `busy` true until its own lifecycle event arrives (the synthetic
 `cancelled` the receipt publishes, or the `started` of one the CLI kept). A stop with nothing
 queued still settles instantly, which is what keeps the button feeling instant.
+
+**A stop no longer cancels the queue (2026-08-31).** `interrupt()` sends `cancel_queued: false` —
+the TUI-parity the user asked for: Esc in the real CLI aborts the running turn and the queued
+messages survive to run next. True (2026-08-24..31) drained the strip on every stop and handed
+the text back, which read as "stop killed my queue". The window needed **nothing** for the flip:
+the aborted result already clears only non-strip uuids, the surviving rows keep `busy`, and each
+one's `started` promotes it — exactly the machinery the paragraph above describes. The strip's
+per-row ✕ is the queue-cancel now; the receipt's `cancelled[]` normally comes back empty but the
+settlement path stays, because it must keep acting on whatever any CLI reports. Re-measured on
+2.1.251 the same day: queue contract unchanged (`probe_queue.py` 8/8).
 
 Strip state (`state.queued`) lives in the same **render scope** as every other piece of
 per-conversation chrome, so a background tab records without painting and a fresh window rebuilds

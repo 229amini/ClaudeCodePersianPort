@@ -323,6 +323,34 @@ deliberate respawn both hand queued text back, and every `_idle_deadline` access
 ledger lock. Each fix negative-tested. Gates: spec **171/171**, units, layout, transcript
 guard, `test_no_console`, smoke **16/16** (re-run after the fixes — the SSE path changed).
 
+**2026-08-31 — CLI 2.1.251, two user reports, both TUI-parity defects.** The upgrade re-probed
+free (`probe_queue.py` 8/8, initialize dumped: 62 commands now including `/design`, six
+permission modes, new `messaging_socket_path`) — see `wiki/cli-stream-json-findings.md`
+§"2.1.251 re-verification". **Stop no longer cancels the queue**: `interrupt()` sends
+`cancel_queued: false`, matching the TUI's Esc — the running turn aborts, queued messages
+survive and run; the 2026-08-24 "no spinner, no way out" fear is exactly what the uuid ledger
+already fixed, so the window needed zero changes (per-row ✕ stays the queue-cancel; help.html
+updated). **Enter in the AskUserQuestion dialog submitted the Skip**: implicit form submission
+clicks the tree-first submit button, `#perm-deny`, so a typed «جواب دیگر» plus Enter left as
+allow-with-no-answers — "the user did not answer" with the form fully filled in. A keydown
+handler on `#perm-ask` makes Enter answer; the wire is spec-asserted through a fetch stub
+(`wiki/permission-transport.md` §"A fourth way"). Also measured (one paid turn): **`auto` mode
+still bypasses the wrapper entirely** — a Write and a shell `Remove-Item -Force` both ran with
+zero `can_use_tool` — so it stays out of the pill, now as a measurement
+(`wiki/approval-postures.md`). Gates: spec **174/174**, units, probe_queue 8/8, smoke PASS on
+2.1.251.
+
+**2026-09-03 — v2 planned: the terminal, drawn with the DOM.** The user's read after a month of
+use: the port lacks much of the CLI, and the problem was only Persian, never a need for a chat UI.
+`V2-PLAN.md` at the repo root is the plan — same `server.py` engine, `static/` rebuilt as a
+faithful DOM rendition of the Ink TUI (one column, TUI glyphs and keys, inline numbered dialogs,
+the TUI's own wording translated). The sidebar (projects then sessions) and in-window tabs stay as
+the one addition over the TUI, user decision the same day. Measured first (free, CLI **2.1.259** — it updated itself that morning; `probe_queue.py`
+8/8): 64 pipe commands vs ~40 TUI-only ones read out of the exe, TUI strings and keystroke hints
+greppable from the binary, `history.jsonl` shareable. See `wiki/cli-stream-json-findings.md`
+§"2.1.259 re-verification". Tracked as the v2 epic in `bd list --tree`; phases v2.0–v2.7 with exit
+criteria are in the plan §6. Nothing in `static/` has changed yet.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

@@ -1203,5 +1203,18 @@ export function initChrome() {
       // <form method="dialog"> closes natively; capture which button was used.
       resolvePermission(e.submitter?.value === "allow" ? "allow" : "deny");
     });
+
+    // Enter inside the question area ANSWERS, never skips. Implicit form
+    // submission "clicks" the form's default button — the tree-first submit
+    // button, which is #perm-deny — so typing a free-text answer (or picking a
+    // radio, where focus starts) and pressing Enter submitted the skip: the
+    // CLI reported "the user did not answer" with the form fully filled in
+    // (reported 2026-08-31). Only ask mode populates #perm-ask, so a plain
+    // permission never reaches this handler.
+    perm.ask?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      resolvePermission("allow");
+    });
   }
 }

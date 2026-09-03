@@ -645,6 +645,31 @@ check("ask: the option input still carries the raw label as its value",
   [...document.querySelectorAll("#perm-ask .ask-opt input")]
     .map(i => i.value).join("|") || "no options");
 
+/* Enter on a typed free-text answer must SUBMIT it. Implicit form submission
+   clicks the form's default button — the tree-first submit button, which is
+   #perm-deny — so «جواب دیگر» plus Enter used to leave the dialog as a skip:
+   an allow with an EMPTY answer set, and the CLI told the model "the user did
+   not answer" while the form sat fully filled in. The check reads the wire —
+   what /api/permission/respond was actually handed — because every rendered
+   pixel of that failure looks correct. */
+const freeField = document.querySelector("#perm-ask .ask-free");
+freeField.value = "هیچ‌کدام، فقط عکس را بردار";
+let askSent = null;
+const fetchBeforeAsk = window.fetch;
+window.fetch = (url, opts) => {
+  askSent = { url: String(url), body: JSON.parse(opts?.body ?? "{}") };
+  return Promise.resolve({ ok: true });
+};
+freeField.dispatchEvent(new KeyboardEvent("keydown",
+  { key: "Enter", bubbles: true, cancelable: true }));
+window.fetch = fetchBeforeAsk;
+check("ask: Enter on a typed free-text answer sends it, not a skip",
+  !!askSent && askSent.url.startsWith("/api/permission/respond")
+  && askSent.body.decision === "allow"
+  && askSent.body.answers?.[MD_QUESTIONS[0].question] === "هیچ‌کدام، فقط عکس را بردار",
+  askSent ? JSON.stringify(askSent.body.answers ?? {})
+          : "NOTHING SENT — implicit submit reached the default (skip) button");
+
 window.renderEvent({ type: "wrapper", subtype: "permission_resolved",
                      request_id: "spec14", tool_use_id: "spec14",
                      decision: "allow" });

@@ -126,6 +126,17 @@ this sits on the **event**, not on the `tool_result` part. `part.content` holds 
 model-facing English sentence, so rendering that instead is how a replayed question ends up
 showing English prose to a Persian user.
 
+### A fourth way, client-side (fixed 2026-08-31)
+
+**Enter in the dialog submitted the SKIP.** Implicit form submission clicks the form's default
+button — the tree-first submit button, which is `#perm-deny` — so a typed «جواب دیگر» (or a
+picked radio, where focus starts) plus Enter left as an allow with an **empty** answer set:
+failure mode 1 below, raised by the form itself with every field correctly filled in. The user
+reported it as "the free-text answer is never sent". A keydown handler on `#perm-ask` now makes
+Enter resolve as the answer (`chrome.js`); the wire is asserted in `spec-test.html` ("Enter on a
+typed free-text answer sends it, not a skip") via a fetch stub, because every rendered pixel of
+this failure looks correct.
+
 ### Three ways this fails silently, all now guarded in `server.py`
 
 1. **Allowing with the input unchanged answers nothing.** `answers` absent (or `{}`) comes back as

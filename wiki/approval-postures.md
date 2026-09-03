@@ -49,6 +49,16 @@ asks us**, so no `can_use_tool` arrives, the wrapper sees nothing, and there is 
 count. The posture that needs an audit trail the most would be the one with no audit trail at all.
 `bypassPermissions` is refused by the engine outright.
 
+**Re-measured 2026-08-31 on 2.1.251**, because `auto` had become the CLI's flagship classifier
+mode (announced as still asking on dangerous commands) and the paragraph above predates that: one
+paid turn in `auto` mode asked for a benign `Write` **and** a shell `Remove-Item -Force` on an
+existing file — both executed, **zero `can_use_tool` reached the wrapper**. Whatever the
+classifier's danger threshold is, a file delete sits below it, so for this product (a
+non-technical user) `auto` remains a mode with no consent UI at all — strictly worse than
+«خودکار», which approves just as silently but logs and counts every action. The exclusion stands,
+now as a measurement instead of an assumption. (`dontAsk`, new on the same build, is the same
+family and excluded for the same reason. `sync_cli_mode()` already ignores both echoes.)
+
 So the full-auto posture keeps the CLI in `default` — it still asks the wrapper about every tool —
 and the broker answers `allow` immediately, appends to `PermissionBroker.auto_log`, and publishes
 `wrapper/permission_resolved` with `auto: true` and the running count. The window shows

@@ -4,6 +4,69 @@
 on Windows 10 Home 19045, 2026-08-04. Every answer below is version-pinned — re-verify after a
 CLI upgrade.
 
+## 2.1.259 re-verification (2026-09-03, author PC)
+
+The native binary updated itself to 2.1.259 that morning (`~/.local/bin/claude.exe`, versions
+dir `~/.local/share/claude/versions/2.1.259`). Free probes only; `smoke_test.py` was **not**
+re-run. **The queue/interrupt contract holds** — `probe_queue.py` 8/8. Measured for `V2-PLAN.md`:
+
+- **`initialize.commands` is 64 entries** (62 on 2.1.251). Each entry carries only `name`,
+  `description`, `argumentHint` and sometimes `aliases` — there is **no `supportsNonInteractive`
+  key on the wire**; the list is already filtered to what the pipe accepts. Skills count as
+  commands (`/stop-slop`, `/dataviz`, …), so the number is per machine.
+- **The TUI's own command registry is greppable out of the native exe** and holds ~40 names the
+  pipe never advertises (`resume`, `help`, `status`, `export`, `copy`, `cd`, `add-dir`, `branch`,
+  `fork`, `btw`, `bash`, `tasks`, `plan`, `permissions`, `hooks`, `memory`, `config`, `theme`,
+  `keybindings`, `voice`, `radio`, `tui`, `teleport`, `desktop`, `mobile`, `remote-control`, …).
+  That is the window's "known differences" list. The method, which also pulls keystroke hints
+  and prompt wording verbatim:
+
+  ```
+  cd ~/.local/bin
+  LC_ALL=C grep -a -o -E 'name:"[a-z][a-z0-9-]{1,30}",(aliases:\[[^]]{0,60}\],)?description:"[^"]{0,50}' claude.exe | sort -u
+  LC_ALL=C grep -a -o -E "(ctrl|shift|alt|meta)\+[a-z0-9]+( to [a-z ]{3,28})?" claude.exe | sort | uniq -c | sort -rn
+  ```
+
+  Multi-byte glyphs (`⏺`, `✻`) do **not** grep as UTF-8 — the JS stores them escaped — but
+  `※` and every ASCII string («Pasted text», «don't ask again», «Would you like to proceed»,
+  «tell Claude what to do differently», «esc to interrupt») do.
+- `initialize` keys now: `account, agents, analytics_disabled, available_output_styles,
+  commands, current_permission_mode, fast_mode_disabled_reason, fast_mode_state,
+  ide_rc_auto_enable_gate, models, output_style, pid, remote_control_auto_enable,
+  remote_control_auto_on_by_default, remote_control_available, session_state` (`idle`).
+  Models: `default`, `opus[1m]`, `fable[1m]`, `sonnet` (all `supportsEffort`), `haiku` (none).
+  Output styles unchanged. Nothing reads the new keys; nothing broke.
+- **`~/.claude/history.jsonl` is the TUI's prompt history**: one object per line with `display`,
+  `pastedContents`, `timestamp`, `project`, `sessionId`. Plain file, appendable — the basis for
+  shared Up/Down history in v2 (`V2-PLAN.md` §1, probe §5.8 still open).
+- `~/.claude.json` carries no `theme` on this PC and `~/.claude/keybindings.json` does not exist,
+  so the TUI runs on defaults here.
+
+## 2.1.251 re-verification (2026-08-31, author PC)
+
+Free probes only, plus one deliberate paid auto-mode measurement (below). **The queue/interrupt
+contract holds** — `probe_queue.py` 8/8 (`msg_lifecycle_v1`, `interrupt_receipt_v1`,
+`interrupt_cancel_queued_v1` all still advertised), spec 174/174, units green. Drift found:
+
+- **`initialize.commands` is 62 entries** (was 61 on 2.1.240). **`/design` is one of them** —
+  the video-announced artboard skill. It appears in the slash popup by itself (capability
+  mirror); how its output renders in this window is unmeasured — unknown events fall back to
+  the raw-JSON card by design, so worst case is ugly, not broken.
+- **`set_permission_mode` accepts SIX modes** — its own refusal names them (free negative
+  probe): `acceptEdits, auto, bypassPermissions, default, dontAsk, plan`. New vs 2.1.221:
+  `auto` and `dontAsk`. The pill deliberately models neither — see
+  `approval-postures.md` §"Why the third one is not a CLI mode", re-measured this day: **in
+  `auto` mode a Write AND a shell `Remove-Item -Force` both executed with ZERO `can_use_tool`
+  reaching the wrapper** (one paid turn, $0.33, isolated cwd, transcript cleaned). The
+  classifier approves silently; there is no consent UI left to show. `system/status` echoes
+  `auto` and `sync_cli_mode()` already ignores it gracefully.
+- **`system/init` gained `messaging_socket_path`** — the cross-session-messaging plumbing from
+  the 2.1 announcements, present even on this Windows build. If a model ever calls
+  `ListAgents`/`SendMessage` here they render as generic tool rows (the MCP-fallback policy:
+  readable, no Persian verb until the tools are actually seen in use).
+- `initialize` gained `account`, `ide_rc_auto_enable_gate`, `remote_control_*`,
+  `session_state`, `pid` keys; nothing reads them, nothing broke.
+
 ## 2.1.240 re-verification (2026-08-23, author PC)
 
 Probed with the wrapper's exact flags (free: `initialize`, `set_permission_mode plan`,
@@ -315,6 +378,14 @@ emits, on stdout:
 So `{"subtype":"interrupt","cancel_queued":true}` is what this window wants, and the **response**
 carries `cancelled[]` and `still_queued[]`. `interrupt(wait=False)` throwing that receipt away is
 why `_reset_inflight()` after a stop is an assumption, not a fact.
+
+**Reversed 2026-08-31: this window sends `cancel_queued: false` now.** "Stop-means-stop-
+everything" was the wrong client to be — the user reported it as a defect against the TUI, whose
+Esc aborts only the running turn and lets the queue proceed. The 2026-08-24 fear (a surviving
+queue running with no spinner) is exactly what the uuid ledger fixed, so `false` costs nothing:
+still-queued rows keep the window busy and promote on their own `started`. Per-uuid cancel via
+`cancel_async_message` (the strip's ✕) is the remaining queue control, as the CLI's own docs
+above recommend for wrappers.
 
 **Resolved 2026-08-24.** `interrupt()` now reads the receipt (`server.py _settle_interrupt()`, off
 the reader thread so the HTTP handler never blocks on it) and closes only the uuids it names
