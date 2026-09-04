@@ -351,6 +351,18 @@ greppable from the binary, `history.jsonl` shareable. See `wiki/cli-stream-json-
 §"2.1.259 re-verification". Tracked as the v2 epic in `bd list --tree`; phases v2.0–v2.7 with exit
 criteria are in the plan §6. Nothing in `static/` has changed yet.
 
+**2026-09-04 — `APP_VERSION` 1.0.1 → 1.1.0, tagged `v1.1.0` on `main`. `2.x` is reserved.**
+This is a release of the **web shell** — the claude.ai-style window of Phase 5, unchanged in
+behaviour; the bump exists so the colleague can read which build is running off the title bar.
+Free gates re-run on `main`: units, spec **174/174**, `test_layout.py` at three widths, transcript
+guard, `test_no_console`. `smoke_test.py` was not re-run — it costs a turn and nothing here
+touches transport. The app was booted and answered on `127.0.0.1` with «کلاد فارسی — v1.1.0» in
+its title, so the `{{VERSION}}` substitution is proven end to end, not just in the constant.
+**«v2» means the terminal-shaped rewrite of `V2-PLAN.md` and nothing else** (user decision, this
+date): the TUI-rendition shell that replaces this web shell, phases v2.0–v2.7, of which only v2.0
+(Vocabulary) is built, on the `v2` branch. The tag `v2.0.0` is reserved until phase v2.7 closes.
+The web shell keeps releasing as `1.x` in the meantime.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see

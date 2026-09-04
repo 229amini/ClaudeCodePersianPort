@@ -1,5 +1,14 @@
 # V2-PLAN.md — the terminal, drawn with the DOM
 
+> **What "v2" names** (settled 2026-09-04, after a tag went out under the wrong meaning and was
+> withdrawn). **v2 is this rewrite and nothing else:** the terminal-shaped shell *replacing* the
+> current web shell — not a large release of the web shell, not a marketing number. The tag
+> **`v2.0.0` is reserved** until phase **v2.7** closes and the TUI-shaped window is what ships;
+> nobody spends it earlier. Until then the web shell releases as **`1.x`** (`v1.1.0`, 2026-09-04,
+> is the current one) and `APP_VERSION` in `server.py` stays on `1.x`. The `v2.0`–`v2.7` labels in
+> §6 are **phase names, not release tags** — meeting a phase's exit criteria is not a shipped
+> version.
+
 **Date:** 2026-09-03. Pinned to `claude` **2.1.259** (`probe_queue.py` 8/8 on that build, same day).
 Tracked as bead `pcg-qmy` (`bd list --tree`); phases are `pcg-qmy.1`–`.8`, v2.0 = `.1`.
 

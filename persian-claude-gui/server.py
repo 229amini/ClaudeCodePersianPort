@@ -45,7 +45,11 @@ COOKIE_NAME = "pcg_token"
 # ({{VERSION}}), so the window title and the sidebar footer prove which
 # build is actually running after an update — the one question a
 # non-technical user cannot answer from a folder listing.
-APP_VERSION = "1.0.1"
+#
+# 2.x is RESERVED for the terminal-shaped rewrite in V2-PLAN.md (phases v2.0
+# through v2.7). The web shell releases as 1.x until that ships — do not bump
+# this to 2.0.0 to mean "a big release".
+APP_VERSION = "1.1.0"
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
