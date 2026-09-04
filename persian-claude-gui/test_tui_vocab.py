@@ -154,11 +154,27 @@ def main() -> int:
               "not in this build's table")
 
     print("\n3. platform-computed chords resolved for Windows")
-    check(result["platform_chords"].get("de") == "alt+v",
+
+    def computed_for(action: str) -> str | None:
+        """What a computed key resolves to, looked up by the action it serves.
+
+        NOT by the variable's name. The minifier renames it every build — the mode-cycle
+        temporary was `V` on 2.1.260 and `q` on 2.1.261, and a gate keyed on the letter
+        reported drift that was only a rename. The action id is the stable identity.
+        """
+        for var, actions in result["computed_uses"].items():
+            if action in actions:
+                return result["platform_chords"].get(var)
+        return None
+
+    check(computed_for("chat:imagePaste") == "alt+v",
           "image paste resolves to alt+v on windows",
           str(result["platform_chords"]))
-    check(result["platform_chords"].get("V") == "shift+tab",
+    check(computed_for("chat:cycleMode") == "shift+tab",
           "mode cycle resolves to shift+tab",
+          str(result["platform_chords"]))
+    check(computed_for("confirm:cycleMode") == "shift+tab",
+          "the dialog's mode cycle is the same computed chord",
           str(result["platform_chords"]))
     check(any(b["action"] == "chat:imagePaste" and b["only_on"] == "wsl"
               for b in result["inactive_on_this_platform"]),

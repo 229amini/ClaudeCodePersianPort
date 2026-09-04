@@ -31,11 +31,16 @@ import sys
 TABLE_ANCHOR = re.compile(rb'\[\{context:"Global",bindings:\{')
 
 # Immediately before the table, the bundle resolves the two platform-dependent chords as
-# single-letter variables, which the table then uses as computed keys (`[de]:`, `[V]:`):
+# short variables, which the table then uses as computed keys (`[de]:`, `[q]:`):
 #   le = platform is windows or wsl;  de = le ? "alt+v" : "ctrl+v"      (chat:imagePaste)
-#   V  = ge ? "shift+tab" : "meta+m"                                    (chat:cycleMode)
+#   q  = ge ? "shift+tab" : "meta+m"                                    (chat:cycleMode)
 # `ge` is true on Windows with a modern Node, which is every machine this project ships to.
 # Both branches are captured so the report can say which one Windows takes and why.
+#
+# The variable NAMES are minifier output and they move: the mode-cycle chord was `V` on
+# 2.1.260 and `q` on 2.1.261. Nothing downstream may key on them — `computed_uses` below
+# reports which actions each one serves, so a caller can ask "what does chat:cycleMode
+# resolve to" without knowing what this build called the temporary.
 PLATFORM_CHORDS = re.compile(
     rb'(?P<paste_var>\w+)\s*=\s*le\?"(?P<paste_win>[^"]+)":"(?P<paste_other>[^"]+)".{0,400}?'
     rb'(?P<cycle_var>\w+)\s*=\s*ge\?"(?P<cycle_ok>[^"]+)":"(?P<cycle_fallback>[^"]+)"',
@@ -74,7 +79,11 @@ STRING_PATTERNS: list[tuple[str, bytes, str]] = [
     ("permission.feedback_hint", rb'shift\+tab to approve with this feedback', "dialog footer"),
     ("tool_result.expand", rb'\(ctrl\+o to expand\)', "collapsed tool result footer"),
     ("spinner.interrupt", rb'esc to interrupt', "spinner suffix"),
-    ("paste.placeholder", rb'\[Pasted text #\$\{e\} \+\$\{n\}', "composer paste chip"),
+    # The two interpolations are minified locals and they are renamed by every build:
+    # `#${e} +${n}` on 2.1.260, `#${e} +${t}` on 2.1.261. Match their shape, not their names.
+    ("paste.placeholder",
+     rb'\[Pasted text #\$\{[A-Za-z_$][\w$]*\} \+\$\{[A-Za-z_$][\w$]*\} lines\]',
+     "composer paste chip"),
     ("posture.accept_edits", rb'accept edits on', "status line posture"),
     ("posture.plan", rb'plan mode on', "status line posture"),
     ("posture.auto", rb'auto mode on', "status line posture"),
@@ -190,6 +199,9 @@ def parse(data: bytes) -> dict:
 
     contexts: list[dict] = []
     inactive: list[dict] = []
+    # var name -> the actions the table reaches through it. Keyed by name here only
+    # because that is what the table literal says; every consumer looks it up by action.
+    computed_uses: dict[str, list[str]] = {}
     for blk in BLOCK.finditer(table):
         ctx = blk.group("ctx").decode()
         body = blk.group("body")
@@ -217,6 +229,7 @@ def parse(data: bytes) -> dict:
                 # it as unresolved rather than inventing a chord for it.
                 var = pair.group("computed")
                 key = chords.get(var, f"<unresolved:{var}>")
+                computed_uses.setdefault(var, []).append(pair.group("action"))
             bindings.append({"chord": key, "action": pair.group("action")})
         if bindings:
             contexts.append({"context": ctx, "bindings": bindings})
@@ -273,6 +286,7 @@ def parse(data: bytes) -> dict:
         "context_docs": docs,
         "platform_chords": chords,
         "platform_chord_notes": chord_notes,
+        "computed_uses": computed_uses,
         "inactive_on_this_platform": inactive,
         "unbindable": unbindable,
         "strings": strings,
@@ -301,7 +315,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"binary: {path}")
     print(f"contexts: {len(result['contexts'])}   bindings: {total}")
     for var, chord in result["platform_chords"].items():
-        print(f"platform chord [{var}] -> {chord}   ({result['platform_chord_notes'][var]})")
+        uses = ", ".join(sorted(set(result["computed_uses"].get(var, [])))) or "unused"
+        print(f"platform chord [{var}] -> {chord}   ({result['platform_chord_notes'][var]})"
+              f"\n    serves: {uses}")
     for b in result["inactive_on_this_platform"]:
         print(f"inactive here: {b['chord']} -> {b['action']} ({b['only_on']} only)")
     print()
