@@ -85,7 +85,33 @@ STRING_PATTERNS: list[tuple[str, bytes, str]] = [
     ("queue.stop", rb'ctrl\+x to stop', "running-turn footer"),
     ("composer.newline", rb'ctrl\+j for newline', "composer footer"),
     ("composer.mention", rb'@ to mention', "composer footer"),
+    ("composer.commands", rb'/ for commands', "composer footer"),
+    ("composer.paste_images", rb'to paste images from your clipboard', "composer footer"),
     ("help.close", rb'\? to close', "help overlay footer"),
+    ("help.esc_quit", rb'esc to close \\xB7 esc again quits', "help overlay footer"),
+    ("plan.saved", rb'Plan saved!', "after a plan is accepted"),
+    ("posture.change_hint", rb'shift\+tab to change it', "status line suffix"),
+    ("tool_result.more", rb'\+\$\{[A-Za-z_$][\w$]*\} lines', "collapsed result line count"),
+    ("compact.banner", rb'Conversation compacted', "compaction divider; event shape unmeasured"),
+    ("usage.limit", rb'Approaching your 5-hour usage limit', "status line warning"),
+]
+
+# Glyphs the TUI draws with. Counted both raw and `\uXXXX`-escaped, because the bundle
+# uses whichever the minifier chose. A glyph that vanishes from the binary means the
+# renderer in wiki/tui-strings.md §1 is drawing something this build no longer draws.
+GLYPH_CODEPOINTS: list[tuple[int, str]] = [
+    (0x23FA, "assistant / tool row bullet"),
+    (0x23BF, "tool result branch"),
+    (0x2733, "thinking / spinner frame 1"),
+    (0x2734, "thinking / spinner frame 2"),
+    (0x203B, "recap note"),
+    (0x23F5, "posture arrow (doubled for accept-edits)"),
+    (0x2610, "todo: pending"),
+    (0x2611, "todo: done"),
+    (0x25B8, "todo: in progress"),
+    (0x2713, "success"),
+    (0x2717, "failure"),
+    (0x2026, "truncation ellipsis"),
 ]
 
 GLYPHS = [
@@ -226,6 +252,22 @@ def parse(data: bytes) -> dict:
             }
         )
 
+    glyphs = []
+    for cp, role in GLYPH_CODEPOINTS:
+        ch = chr(cp)
+        raw = data.count(ch.encode("utf-8"))
+        esc = data.count(("\\u%04x" % cp).encode()) + data.count(("\\u%04X" % cp).encode())
+        glyphs.append(
+            {
+                "codepoint": f"U+{cp:04X}",
+                "char": ch,
+                "raw": raw,
+                "escaped": esc,
+                "found": (raw + esc) > 0,
+                "role": role,
+            }
+        )
+
     return {
         "contexts": contexts,
         "context_docs": docs,
@@ -234,6 +276,7 @@ def parse(data: bytes) -> dict:
         "inactive_on_this_platform": inactive,
         "unbindable": unbindable,
         "strings": strings,
+        "glyphs": glyphs,
     }
 
 
@@ -279,8 +322,19 @@ def main(argv: list[str] | None = None) -> int:
         if not s["found"]:
             missing += 1
         print(f"    [{mark}] {s['id']:<28} {s['text']}")
+    print()
+    print("## glyphs")
+    for g in result["glyphs"]:
+        mark = "ok " if g["found"] else "MISS"
+        if not g["found"]:
+            missing += 1
+        print(
+            f"    [{mark}] {g['codepoint']}  {g['char']}  "
+            f"raw={g['raw']:<5} esc={g['escaped']:<5} {g['role']}"
+        )
     if missing:
-        print(f"\n{missing} string(s) not found — this build's wording moved.")
+        print(f"\n{missing} item(s) not found — this build's vocabulary moved.")
+        return 1
     return 0
 
 
