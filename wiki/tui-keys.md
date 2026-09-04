@@ -1,6 +1,6 @@
 # TUI keys — the default binding table, read out of the binary
 
-**Build:** `claude` **2.1.260**, author PC, 2026-09-04.
+**Build:** `claude` **2.1.261**, author PC, 2026-09-05 (re-verified; was 2.1.260 on 2026-09-04).
 **Source:** `persian-claude-gui/extract_tui_vocab.py` (free; reads `claude.exe`, spawns nothing).
 **Regenerate:** `C:\Python314\python.exe persian-claude-gui\extract_tui_vocab.py`
 **Gate:** `persian-claude-gui/test_tui_vocab.py` fails when this file and the binary disagree.
@@ -10,9 +10,17 @@ V2-PLAN.md §3.6: *"Lift the defaults from the binary, not from memory."* This i
 **out of scope for v2**, with the reason in the last column.
 
 > The binary updated itself from 2.1.259 to 2.1.260 overnight on 2026-09-04, between V2-PLAN.md
-> being written and this branch being cut. Nothing announced it. That is the argument for a
-> generated table: re-run the extractor, re-run the gate, and a moved default is a test failure
-> instead of a bug report from the colleague.
+> being written and this branch being cut, and again to **2.1.261** overnight on 2026-09-05.
+> Nothing announced either one. That is the argument for a generated table: re-run the
+> extractor, re-run the gate, and a moved default is a test failure instead of a bug report
+> from the colleague.
+>
+> **What 2.1.261 moved:** nothing about the keys — still 206 bindings across 25 contexts, every
+> load-bearing chord unchanged. What moved was **minifier output**: the mode-cycle temporary was
+> renamed `V` → `q`, and the paste chip's interpolations `#${e} +${n}` → `#${e} +${t}`. Both had
+> been pinned by name and both reported drift that was not drift. The extractor now matches
+> their *shape* and reports computed chords by the **action** they serve, so a rename is
+> invisible and a real change is not.
 
 ## How to read a chord
 
@@ -23,10 +31,13 @@ A chord with a space in it is a **two-stroke sequence**, not two keys at once:
 
 Two chords are platform-computed, resolved here for Windows:
 
-| Variable | Windows | Other | Used by |
+| Variable (2.1.261) | Windows | Other | Used by |
 |---|---|---|---|
 | `de` | **`alt+v`** | `ctrl+v` | `chat:imagePaste` |
-| `V` | **`shift+tab`** | `meta+m` | `chat:cycleMode`, `confirm:cycleMode` |
+| `q` (was `V` on 2.1.260) | **`shift+tab`** | `meta+m` | `chat:cycleMode`, `confirm:cycleMode` |
+
+The variable names are minifier output and change between builds. Nothing downstream keys on
+them: the extractor reports `computed_uses`, so a chord is looked up by the action it serves.
 
 `ctrl+v` → `chat:imagePaste` exists in the bundle but only under a `wsl` branch. It is **not**
 a Windows default. The window should still accept ctrl+v for paste because that is what a

@@ -1,6 +1,6 @@
 # TUI strings and glyphs — what the terminal says, and what v2 says instead
 
-**Build:** `claude` **2.1.260**, author PC, 2026-09-04.
+**Build:** `claude` **2.1.261**, author PC, 2026-09-05 (re-verified; was 2.1.260 on 2026-09-04).
 **Source:** `persian-claude-gui/extract_tui_vocab.py` (free; reads `claude.exe`, spawns nothing).
 **Gate:** `persian-claude-gui/test_tui_vocab.py` fails when a string in the «رشتهٔ TUI» column
 is no longer in the binary, or when a row here has no Persian.
@@ -22,7 +22,7 @@ they prove the glyph is this build's, not a remembered one.
 |---|---|---|---|---|
 | `⏺` | U+23FA | 0 / 6 | حاشیهٔ سطر دستیار و سطر ابزار | همان، به‌صورت `::before` |
 | `⎿` | U+23BF | 0 / 24 | شاخهٔ نتیجهٔ ابزار، زیر سطر ابزار | همان؛ در RTL باید آینه شود |
-| `✳ ✴ ✹ ✻` | U+2733/34/39/3B | — / 6,3,1,0 | قاب‌های چرخندهٔ «در حال فکر» و اسپینر | همان چهار قاب |
+| `✳ ✴ ✹ ✻` | U+2733/34/39/3B | 0,1 / 12,6 | قاب‌های چرخندهٔ «در حال فکر» و اسپینر | همان چهار قاب |
 | `※` | U+203B | 2 / 3 | یادداشت جمع‌بندی (`/recap`) | همان؛ در v1 هست |
 | `⏵` | U+23F5 | 1 / 5 | پیکان حالت اجازه؛ دوتایی: `⏵⏵` | همان؛ در RTL آینه می‌شود |
 | `☐` | U+2610 | 2 / 2 | کار انجام‌نشده | همان |
@@ -32,7 +32,7 @@ they prove the glyph is this build's, not a remembered one.
 | `✗` | U+2717 | 3 / 44 | ناموفق | همان |
 | `●` `○` | U+25CF / U+25CB | 1,2 / 13,5 | نشانگر پر/خالی در فهرست‌ها | همان |
 | `─` `│` | U+2500 / U+2502 | 43,19 / 954,62 | خط جداکننده و ستون | با `border` در CSS، نه با نویسه |
-| `…` | U+2026 | 22 / 1005 | کوتاه‌شدگی | همان |
+| `…` | U+2026 | 22 / 2028 | کوتاه‌شدگی | همان |
 | `·` | U+00B7 | 602 / 2 | جداکنندهٔ درون‌سطری | همان |
 
 **RTL note.** `⎿`, `⏵` and `▸` are directional shapes. In an RTL column they must mirror, and
