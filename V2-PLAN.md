@@ -12,6 +12,12 @@
 **Date:** 2026-09-03. Pinned to `claude` **2.1.259** (`probe_queue.py` 8/8 on that build, same day).
 Tracked as bead `pcg-qmy` (`bd list --tree`); phases are `pcg-qmy.1`–`.8`, v2.0 = `.1`.
 
+> **2026-09-04, branch `v2`.** The binary self-updated to **2.1.260** overnight. `probe_queue.py`
+> re-run: **8/8** — the engine contract in §0/§1 holds unchanged on the new build. v2.0 is done
+> (`wiki/tui-keys.md`, `wiki/tui-strings.md`, gated by `test_tui_vocab.py` 72/72); its measured
+> numbers below are restated against 2.1.260. The overnight update is itself the argument for
+> §3.6's "lift from the binary": a hand-written key table would already have been stale.
+
 **What changes:** the shell. **What stays:** everything under it. v1 reached behaviour parity with
 the CLI through `server.py` and then dressed it as a chat app (the 2026-08-05 claude.ai-style
 shell in `REWORK-PLAN.md` Phases 3 and 5). v2 reverses that one decision. The window becomes a
@@ -37,7 +43,7 @@ lacks is the sidebar, projects then sessions. It stays as it is (user decision, 
 | The binary updated itself to 2.1.259 that morning. `probe_queue.py` passes 8/8. | The engine contract holds. `smoke_test.py` was not re-run (paid); run it once at the start of Phase 2. |
 | `initialize.commands` lists 64 entries on this PC (skills included, so the count is per machine). Each carries only `name`, `description`, `argumentHint`, sometimes `aliases`. | Everything in the list is free parity: the `/` menu mirrors it. |
 | The binary's own command registry holds about 40 more names that never reach the pipe: `resume`, `help`, `status`, `export`, `copy`, `cd`, `add-dir`, `branch`, `fork`, `btw`, `bash`, `tasks`, `plan`, `permissions`, `hooks`, `memory`, `config`, `theme`, `keybindings`, `vim`, `voice`, `radio`, `tui`, `teleport`, `desktop`, `mobile`, `remote-control`, `ide`, `chrome`, `plugin`, `update`, `focus`, `brief`, `background`. | That is the honest gap list. §4 says which the window re-provides and which stay out. |
-| TUI strings are greppable in the native exe: `LC_ALL=C grep -a -o -E '...' claude.exe`. Keystroke hints (`ctrl+o to expand`, `ctrl+x to stop`, `shift+tab to approve with this feedback`), prompt wording («Would you like to proceed», «don't ask again», «tell Claude what to do differently»), «Pasted text», «※». | v2 Persian text is a translation of the TUI's own strings, pulled from the binary, one table, reviewed once. Nobody authors copy. |
+| TUI strings are greppable in the native exe. **Superseded 2026-09-04 by `extract_tui_vocab.py`**, which does this reproducibly and is gated: 21 strings and 12 glyphs, each verified present in the installed build. | v2 Persian text is a translation of the TUI's own strings, pulled from the binary, one table, reviewed once. Nobody authors copy. Table: `wiki/tui-strings.md`. |
 | `~/.claude/history.jsonl`: one JSON object per line, keys `display`, `pastedContents`, `timestamp`, `project`, `sessionId`. The TUI appends to it. | Up/Down and Ctrl+R can share history with the real TUI in both directions. |
 | `side_question` is a control subtype (bundle list, `wiki/control-protocol.md` §6). | `/btw` is reachable even though it is not in the 64. |
 | `--fork-session` is a spawn flag. | `/branch` is buildable as a respawn. Measure whether the fork keeps the session id family. |
@@ -160,9 +166,13 @@ it, the key, and status (**have** in v1 engine, **build**, **measure** first).
 
 ### 3.6 Keys
 
-Lift the defaults from the binary, not from memory. The grep in §1 already found the hint strings;
-the builder extracts the default binding table the same way and writes it to `wiki/tui-keys.md`
-before Phase 3 starts. `~/.claude/keybindings.json`, when present, overrides it. Keys the browser
+Lift the defaults from the binary, not from memory. **Done (2026-09-04):**
+`persian-claude-gui/extract_tui_vocab.py` parses the binding table out of `claude.exe` — it is a
+single-file Node SEA, so the bundled JS sits verbatim inside it and the table is findable as its
+own source text. 206 bindings, 25 contexts, written up in `wiki/tui-keys.md` with a «کلید v2»
+column and five deliberate deviations (ctrl+v, shift+Enter, digit-picked dialog options, ctrl+o
+for expand, and the seven "cannot be rebound" keys that are terminal facts a browser does not
+share). `~/.claude/keybindings.json`, when present, overrides it. Keys the browser
 owns (Ctrl+W, Ctrl+T, Ctrl+N) stay with the browser; Edge `--app` intercepts them anyway.
 
 ## 4. Known differences, will not build
@@ -199,7 +209,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| **v2.0** Vocabulary | `wiki/tui-keys.md`, `wiki/tui-strings.md`: every keystroke, glyph and prompt string pulled from the 2.1.259 binary with the grep in §1 | Both files exist; each string has a Persian column; reviewed once by the user |
+| **v2.0** Vocabulary ✅ | `wiki/tui-keys.md`, `wiki/tui-strings.md`: every keystroke, glyph and prompt string pulled from the 2.1.260 binary by `extract_tui_vocab.py` | **Done 2026-09-04**, except the user's one review of the Persian column (`wiki/tui-strings.md` §7 lists the six rows that need it). Gated by `test_tui_vocab.py` — 72/72 |
 | **v2.1** Probes | §5 answered in the wiki | Ten entries, each with the command that produced it |
 | **v2.2** Column | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | spec **174/174** unchanged; `test_layout.py` at three widths; the browser sweep of `M8-acceptance.md` §4 |
 | **v2.3** Prompt | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | `test_keys.py` (new, §7); shared history proven against the real TUI |
@@ -220,6 +230,11 @@ process per open project, as today. The sidebar is the one surface v2 leaves alo
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
 `test_transcript_path.py`, `test_no_console.py`, `probe_queue.py` (free), `smoke_test.py` (one
-paid turn). New in v2.3: `test_keys.py`, headless like the spec gate, dispatches each binding from
-`wiki/tui-keys.md` at the composer and asserts the action it maps to fired. New in v2.6: a strings
-check that fails when a key in the binary table has no entry in `strings.fa.js`.
+paid turn). **New in v2.0: `test_tui_vocab.py` (72), free** — the two wiki tables against the
+installed binary; see CLAUDE.md's gate table. New in v2.3: `test_keys.py`, headless like the spec
+gate, dispatches each binding from `wiki/tui-keys.md` at the composer and asserts the action it
+maps to fired. New in v2.6: a strings check that fails when a key in the binary table has no entry
+in `strings.fa.js`.
+
+`test_keys.py` (v2.3) should read its cases from `wiki/tui-keys.md`'s «کلید v2» column rather
+than repeat them, so the binding table has exactly one copy and the two gates cannot disagree.
