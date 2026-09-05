@@ -1036,7 +1036,7 @@ const TOOL_ICONS = {
    `⎿` and `▸` carry no Unicode mirroring property and will not flip on their
    own in an RTL column, so the flip is a class the shell can switch off
    (V2-PLAN §8.9, still open). */
-function glyph(ch, { mirror = false, cls = "", hidden = true } = {}) {
+export function glyph(ch, { mirror = false, cls = "", hidden = true } = {}) {
   const el = label(ch, "tool-icon glyph" + (mirror ? " mirror" : "") +
                        (cls ? " " + cls : ""));
   // Decoration on a row that already says what it is (the tool verb, the
@@ -1577,6 +1577,13 @@ const POSTURE_ROW = {
   auto:              { text: () => FA.slPostureAuto,        arrows: 2 },
   bypassPermissions: { text: () => FA.slPostureBypass,      arrows: 2, danger: true },
 };
+
+/* The same sentence without the row, for `/status` (js/commands.js): the
+   status block names the posture in the words the status line uses, so the two
+   surfaces cannot describe the same mode differently. */
+export function postureText(name) {
+  return POSTURE_ROW[name]?.text() ?? "";
+}
 
 function postureRow(name) {
   const entry = POSTURE_ROW[name];

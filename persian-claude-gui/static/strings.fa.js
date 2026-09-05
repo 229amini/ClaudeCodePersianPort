@@ -352,6 +352,38 @@ window.FA = {
      finished before they switch to it. */
   notifyDone: "پاسخ آماده است",
 
+  /* The window-local commands of V2-PLAN §3.5 (js/commands.js). Each one
+     answers in the column as a `meta` row: what happened, in one line. None of
+     them reached the model, so none of them may look like an answer. */
+  cmdCopied: "آخرین پاسخ کپی شد",
+  cmdCopyEmpty: "هنوز پاسخی برای کپی نیست",
+  cmdCopyFailed: "کپی کردن ممکن نشد",
+  // The two speakers, in the exported text file. Not in the window: this is
+  // the only place the conversation is read without its own layout.
+  exportYou: "شما:",
+  exportClaude: "کلاد:",
+  cmdExported: "گفتگو در این فایل ذخیره شد:",
+  cmdExportEmpty: "هنوز گفتگویی برای ذخیره نیست",
+  cmdExportFailed: "ذخیرهٔ گفتگو ممکن نشد",
+  statusTitle: "وضعیت این گفتگو",
+  statusVersion: "نسخه",
+  cmdResumeHint: "با ↑↓ نشست را انتخاب کنید · Enter برای باز کردن · Esc برای بازگشت",
+  cmdBranchDone: "شاخه‌ای تازه از این گفتگو باز شد؛ گفتگوی اصلی سر جای خودش است",
+  cmdBranchFailed: "شاخه‌زدن از این گفتگو ممکن نشد",
+  /* `/btw` is a real request to the model (measured — V2-PLAN §5.4), so the
+     window says so before it sends. A side answer that looked free would be
+     the one place this window lied about what costs money. */
+  cmdBtwCost: "پرسش جانبی مانند یک نوبت معمولی هزینه دارد",
+  cmdBtwFailed: "پاسخ به پرسش جانبی گرفته نشد",
+  cmdOpened: "این فایل باز شد:",
+  cmdOpenFailed: "باز کردن فایل ممکن نشد",
+  memoryTitle: "کدام حافظه؟",
+  memoryUser: "حافظهٔ شخصی",
+  memoryUserNote: "برای همهٔ پروژه‌ها",
+  memoryProject: "حافظهٔ این پروژه",
+  memoryProjectNote: "فقط برای پوشهٔ همین گفتگو",
+  cmdTasksEmpty: "کار پس‌زمینه‌ای در جریان نیست",
+
   /* model picker + approval posture — every label the CLI itself supplies
      (model names, descriptions) is rendered as it arrives, never translated:
      they are product names, and a wrong Persian guess would be worse. */

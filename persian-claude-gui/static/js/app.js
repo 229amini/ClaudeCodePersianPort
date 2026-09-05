@@ -9,6 +9,7 @@
      render.js    renderEvent: stream events -> DOM
      chrome.js    sidebar, home state, replay, permission dialog
      composer.js  input, ZWNJ, send/stop, attachments, slash
+     commands.js  the window-local commands of V2-PLAN §3.5
      agents.js    background-agents strip + per-agent drawer
      app.js       this file
 
@@ -21,6 +22,9 @@
    temporal-dead-zone crash with a very unhelpful stack. Nothing may import THIS
    module either (it is the entry: its body runs last), which is why chrome.js
    is handed setTabBridge() rather than importing the switch itself.
+
+   commands.js (v2.5) is imported BY composer.js and imports nothing that
+   imports it back, so the cycle above is still the only one.
 
    strings.fa.js and vendor/marked.min.js stay CLASSIC scripts: they set window
    globals and classic scripts finish before any module runs.

@@ -333,6 +333,12 @@ async function loadProjects() {
 let archOpen = false;   // the «بایگانی» section, collapsed by default
 
 function renderProjects(projects) {
+  // The sidebar repaints on every event, and `/resume` puts the KEYBOARD in it
+  // (V2-PLAN §3.5): a rebuild mid-browse threw focus to <body> the way the
+  // agents strip used to. Same fix as agents.js paint() — remember which
+  // session owned focus, hand it back to that session's new row.
+  const focusedSession = ui.projects.contains(document.activeElement)
+    ? document.activeElement.closest("li")?.dataset.session : null;
   ui.projects.replaceChildren();
   // Open the active project when you ARRIVE at it, not on every refresh. Any
   // event redraws the sidebar, so the unconditional add used to undo the user's
@@ -366,6 +372,88 @@ function renderProjects(projects) {
     ui.projects.append(head);
     if (archOpen) for (const proj of archived) ui.projects.append(projEl(proj, projects));
   }
+
+  if (focusedSession) {
+    sessionButton(focusedSession)?.focus();
+  }
+}
+
+/* --- /resume: the keyboard in the session list (V2-PLAN §3.5, §8.11B) -------
+
+   §3.3 asks for «moves focus into the sidebar's session list; Up/Down, Enter,
+   Esc back to the prompt». The list already exists and already opens what you
+   click — what it had no way to do was take the keyboard, so that is all this
+   adds. Roving tabindex, the pattern a listbox uses: exactly one row is in the
+   tab order at a time, so Tab still leaves the list in one press.
+
+   Enter is not handled anywhere below on purpose — these are <button>s, and a
+   button already activates on Enter. Binding it again would run the row twice
+   on any browser that fires both. */
+function sessionButtons() {
+  return ui.projects ? [...ui.projects.querySelectorAll(".sess")] : [];
+}
+
+function sessionButton(sessionId) {
+  return ui.projects?.querySelector(
+    `li[data-session="${CSS.escape(sessionId)}"] .sess`) ?? null;
+}
+
+function roveTo(target) {
+  if (!target) return false;
+  for (const row of sessionButtons()) row.tabIndex = row === target ? 0 : -1;
+  target.focus();
+  return true;
+}
+
+export function focusSessions() {
+  if (!ui.projects) return false;
+  // A collapsed project has no rows to focus. `/resume` means "which of my
+  // conversations", so the one you are in is the one that opens.
+  const key = currentCwd.toLowerCase();
+  if (key && !expanded.has(key)) {
+    expanded.add(key);
+    renderProjects(lastProjects);
+  }
+  const rows = sessionButtons();
+  if (!rows.length) return false;
+  return roveTo((currentSession && sessionButton(currentSession)) || rows[0]);
+}
+
+function sessionKeys(e) {
+  if (e.defaultPrevented) return;
+  const row = e.target instanceof Element ? e.target.closest(".sess") : null;
+  if (!row) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const rows = sessionButtons();
+    const next = rows[(rows.indexOf(row) + (e.key === "ArrowDown" ? 1 : -1)
+                       + rows.length) % rows.length];
+    e.preventDefault();
+    roveTo(next);
+  } else if (e.key === "Escape") {
+    // Back to the prompt, which is where every Esc in this window ends up.
+    e.preventDefault();
+    document.getElementById("input")?.focus();
+  }
+}
+
+/* `/branch` and `/cd` are window commands (js/commands.js) that end in exactly
+   what the sidebar's own buttons do. Exported rather than duplicated: the tab
+   bridge and the folder picker each have one owner. */
+export function switchToTab(tab) {
+  return tabBridge?.switchTo(tab);
+}
+
+export async function chooseProject(path) {
+  let folder = (path ?? "").trim();
+  if (!folder) {
+    try {
+      folder = (await api("/api/project/pick", {})).path;
+    } catch (err) {
+      bubble("error", FA.sendFailed);
+      return;
+    }
+  }
+  if (folder) await switchProject(folder);
 }
 
 function projEl(proj, projects) {
@@ -541,6 +629,9 @@ function startRename(top, head, proj) {
 function sessionRow(sess, projPath, isCurrent) {
   const li = document.createElement("li");
   li.dataset.current = String(isCurrent);
+  // Read back by renderProjects (focus survives a repaint) and by
+  // focusSessions() below, which starts on the conversation you are in.
+  li.dataset.session = sess.session_id;
   // Open in a tab right now — in ANY project, not just this one. Clicking it
   // must switch to that conversation rather than resume it a second time: two
   // CLI processes appending to one transcript is corruption, and the server
@@ -1344,15 +1435,12 @@ export function initChrome() {
     ui.home.hidden = false;   // visibility is class-driven from here on
     ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
 
-    ui.projChip.addEventListener("click", async () => {
-      // Blocks in a child process while the native dialog is up.
-      try {
-        const { path } = await api("/api/project/pick", {});
-        if (path) await switchProject(path);
-      } catch (err) {
-        bubble("error", FA.sendFailed);
-      }
-    });
+    // Blocks in a child process while the native dialog is up. Same call
+    // `/cd` with no argument makes, through the same function.
+    ui.projChip.addEventListener("click", () => chooseProject(""));
+
+    // `/resume` moves the keyboard here; these are the keys it then has.
+    ui.projects.addEventListener("keydown", sessionKeys);
 
     loadProjects();
     syncHome();

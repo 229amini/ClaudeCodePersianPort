@@ -6,6 +6,7 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking } from "./render.js";
+import { runWindowCommand } from "./commands.js";
 /* One-way, and no new cycle: controls.js imports api.js and nothing else. */
 import {
   cyclePosture, openModelPicker, openEffortPicker, openStylePicker,
@@ -1142,11 +1143,34 @@ function promptKeys(e) {
   }
 }
 
-/* Returns true when the text was a lifecycle verb and must not be sent. */
+/* The window-local commands that TAKE an argument, and are this module's own:
+   `!` is a composer mode, so `/bash ls` is the same call the `!` line makes
+   rather than a second implementation of it (V2-PLAN §3.5, «/bash (same as
+   `!`)»). Everything else window-local lives in js/commands.js. */
+const ARG_VERBS = {
+  bash: (arg) => {
+    if (!arg) return false;      // `/bash` alone is not a command to run
+    runBash(arg);
+    return true;
+  },
+};
+
+/* One line, one verb, and everything after it. A verb the window does not own
+   -- or one that had nothing to do -- answers false, and the line goes to the
+   CLI as ordinary text exactly as it always did.
+
+   The no-argument verbs stay no-argument: `/model sonnet` is the CLI's own
+   command with its own argument, and swallowing it would open a picker where
+   the user asked for a model. */
 function interceptLifecycle(text) {
-  const verb = /^\/([a-z-]+)\s*$/.exec(text)?.[1];
-  const open = verb && LIFECYCLE_VERBS[verb];
-  return open ? open() !== false : false;
+  const parts = /^\/([a-z-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!parts) return false;
+  const [, verb, rest] = parts;
+  const arg = (rest ?? "").trim();
+  const open = LIFECYCLE_VERBS[verb];
+  if (open) return arg ? false : open() !== false;
+  if (ARG_VERBS[verb]) return ARG_VERBS[verb](arg) !== false;
+  return runWindowCommand(verb, arg);
 }
 
 /* --- init ------------------------------------------------------------------ */
