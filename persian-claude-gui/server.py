@@ -119,6 +119,12 @@ CLAUDE_ARGS = [
 CONTROL_ALLOWED = frozenset({
     "set_model", "set_permission_mode", "set_max_thinking_tokens",
     "rename_session", "get_context_usage", "get_usage",
+    # `/btw` (V2-PLAN §3.5, probe 4). Its params are one question string and an
+    # optional history flag -- no settings blob, nothing that outlives the
+    # answer -- so it belongs on the whitelist rather than behind a route of its
+    # own. It COSTS A TURN: the CLI asks the model and there is no free refusal
+    # path, which is why the window says so before it sends.
+    "side_question",
 })
 # `apply_flag_settings` is deliberately NOT in that list even though the effort
 # chip needs it. Its params are a free-form settings blob, so whitelisting the
@@ -1538,6 +1544,73 @@ def edit_externally(text: str) -> tuple[str, bool]:
     return edited, changed
 
 
+# --- the shell's window-local commands (V2-PLAN §3.5) ------------------------
+
+# `/config`, `/permissions`, `/hooks`, `/memory`, `/keybindings`. The TUI opens
+# an editor for every one of these; so does the window, through the file
+# association the user already chose.
+#
+# A FIXED MAP, never a path off the request. This route hands a string to the
+# Windows shell, so the only defence that holds is that the page cannot name
+# the string: `/api/project/reveal` guards itself by requiring an existing
+# FOLDER, and a file has no equivalent check -- `os.startfile` on an arbitrary
+# path runs whatever is associated with it.
+def known_files(cwd: Path | None) -> dict[str, Path]:
+    home = Path.home() / ".claude"
+    files = {
+        # One file answers four commands: permissions, hooks and the rest all
+        # live in settings.json. Naming them separately in the window and
+        # opening one file is what the CLI does too.
+        "settings": home / "settings.json",
+        "keybindings": home / "keybindings.json",
+        "memory": home / "CLAUDE.md",
+    }
+    if cwd is not None:
+        files["project-memory"] = cwd / "CLAUDE.md"
+    return files
+
+
+# What an absent file is created with. A command whose whole purpose is "open
+# this so you can write it" must not fail on the machine where it has never
+# been written -- `~/.claude/keybindings.json` does not exist on a stock
+# install, and that is exactly the user who wants to make one.
+FILE_SEEDS = {".json": "{}\n", ".md": ""}
+
+
+def open_known_file(what: str, cwd: Path | None) -> tuple[str | None, str | None]:
+    """Open one of the files above. Returns (path, error)."""
+    target = known_files(cwd).get(what)
+    if target is None:
+        return None, "unknown file"
+    try:
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(FILE_SEEDS.get(target.suffix.lower(), ""),
+                              encoding="utf-8")
+        os.startfile(str(target))   # noqa: S606 - Windows-only by design
+    except OSError as exc:
+        return None, str(exc)
+    return str(target), None
+
+
+def export_transcript(text: str) -> tuple[str | None, str | None]:
+    """`/export`: spill the conversation to a file and open it.
+
+    Shares EDITOR_DIR with Ctrl+G but NOT its wait: nothing is coming back from
+    this one, so the file is left on disk for the person reading it rather than
+    polled and unlinked.
+    """
+    try:
+        EDITOR_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = EDITOR_DIR / f"export-{stamp}-{uuid.uuid4().hex[:6]}.md"
+        target.write_text(text, encoding="utf-8")
+        os.startfile(str(target))   # noqa: S606 - Windows-only by design
+    except OSError as exc:
+        return None, str(exc)
+    return str(target), None
+
+
 def pick_files(interpreter: Path) -> list[str]:
     """Native file dialog, in a child process (same reasoning as pick_folder)."""
     code = (
@@ -2044,7 +2117,8 @@ class ClaudeSession:
             self._recap_wanted = False
             return dropped
 
-    def start(self, resume_id: str | None = None) -> None:
+    def start(self, resume_id: str | None = None,
+              fork_id: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
         # A DELIBERATE respawn (a resume, a restart) kills whatever the old
@@ -2065,8 +2139,19 @@ class ClaudeSession:
 
         # --resume reuses the same session_id rather than forking (verified,
         # B-9.8), so recovery after a crash is idempotent.
-        resume_args = ["--resume", resume_id] if resume_id else []
-        self.session_id = resume_id
+        #
+        # `/branch` is the same flag plus --fork-session, which is the opposite
+        # promise: the CLI reads the old transcript and then writes a NEW
+        # session id into a NEW file in the same project folder (V2-PLAN §5.5,
+        # measured). So the id we spawn with is NOT the id this session will
+        # have -- it is left unknown until system/init names it, exactly as for
+        # a session started from scratch.
+        if fork_id:
+            resume_args = ["--resume", fork_id, "--fork-session"]
+            self.session_id = None
+        else:
+            resume_args = ["--resume", resume_id] if resume_id else []
+            self.session_id = resume_id
 
         # No --settings: hooks supplied that way are ignored entirely by claude
         # 2.1.221 (wiki/permission-hook-broken.md). Approvals arrive in-band as
@@ -2100,6 +2185,9 @@ class ClaudeSession:
         self.model = None
         # Only a session started from scratch gets an auto-title: a resumed one
         # already has its own history (and possibly a title the user chose).
+        # A FORK is neither -- it inherits the history but not the title, and
+        # its transcript is brand new -- so it takes the auto-title path, or
+        # every branch would sit in the sidebar under its own bare id.
         self._titled = resume_id is not None
         self._first_prompt = None
         if self.broker:
@@ -3009,7 +3097,8 @@ class Handler(BaseHTTPRequestHandler):
     # --- tabs ----------------------------------------------------------
 
     @classmethod
-    def open_tab(cls, cwd: Path, resume_id: str | None = None) -> str | None:
+    def open_tab(cls, cwd: Path, resume_id: str | None = None,
+                 fork_id: str | None = None) -> str | None:
         """Spawn one more conversation and make it active, or None at the cap.
 
         The boot tab comes through here too, so there is one spawn path rather
@@ -3030,7 +3119,7 @@ class Handler(BaseHTTPRequestHandler):
             # slow CLI launch cannot block the other tabs' endpoints.
             cls.sessions[tab] = session
             cls.active = tab
-        session.start(resume_id=resume_id)
+        session.start(resume_id=resume_id, fork_id=fork_id)
         return tab
 
     @classmethod
@@ -3596,6 +3685,31 @@ class Handler(BaseHTTPRequestHandler):
                 return
             edited, changed = edit_externally(text)
             self._send_json(HTTPStatus.OK, {"text": edited, "changed": changed})
+        elif parsed.path == "/api/open-file":
+            # `/config`, `/permissions`, `/hooks`, `/memory`, `/keybindings`
+            # (V2-PLAN §2, §3.5). `what` is a KEY into a fixed map, never a
+            # path: see known_files() for why that is the whole security model
+            # of this route.
+            what = str(body.get("what") or "")
+            session = self.sessions.get(tab or self.active)
+            path, error = open_known_file(what, session.cwd if session else None)
+            if error is not None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": error})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "path": path})
+        elif parsed.path == "/api/export":
+            # `/export`. The transcript is already text in the window (the
+            # reader built it), so the server's whole job is a file and a
+            # double-click -- there is no second transcript reader here.
+            text = body.get("text")
+            if not isinstance(text, str) or not text.strip():
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "no text"})
+                return
+            path, error = export_transcript(text)
+            if error is not None:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": error})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "path": path})
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
         elif parsed.path == "/api/attach/paste":
@@ -3752,6 +3866,28 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
                                             "adopted": False,
                                             "session_id": session_id})
+        elif parsed.path == "/api/session/fork":
+            # `/branch`: keep this conversation and continue a COPY of it.
+            # Measured (V2-PLAN §5.5): --fork-session gives a new session id and
+            # a second transcript in the same project folder, so the sidebar
+            # lists both with no new code. Unlike a resume there is nothing to
+            # adopt -- forking a session that is open is the normal case, and
+            # the two processes write different files.
+            session = self._target(tab)
+            if session is None:
+                return
+            source = (body.get("session_id") or session.session_id or "").strip()
+            if not source:
+                self._send_json(HTTPStatus.CONFLICT,
+                                {"error": "session has no id yet"})
+                return
+            new_tab = self.open_tab(session.cwd, fork_id=source)
+            if new_tab is None:
+                self._send_json(HTTPStatus.CONFLICT,
+                                {"error": "too many tabs", "max_tabs": MAX_TABS})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
+                                            "forked_from": source})
         elif parsed.path == "/api/session/delete":
             session_id = (body.get("session_id") or "").strip()
             if not session_id:

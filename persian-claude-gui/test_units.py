@@ -1435,7 +1435,8 @@ with tempfile.TemporaryDirectory() as tmp:
     httpd = None
     try:
         # Stubbed spawn: no CLI, but slow enough to keep the threads overlapping.
-        server.ClaudeSession.start = lambda self, resume_id=None: time.sleep(0.02)
+        server.ClaudeSession.start = (
+            lambda self, resume_id=None, fork_id=None: time.sleep(0.02))
         server.RECENTS_FILE = Path(tmp) / "recents.json"
         server.Handler.token = "unit-token"
         server.Handler.hub = server.Hub()
@@ -1750,6 +1751,91 @@ _eventually(blank_broker.has_pending)
 blank_broker.respond(blank_hub.events[0]["request_id"], "deny", False, "Bash", None, "   ")
 check("whitespace is not a note: the plain refusal survives",
       _eventually(lambda: blank_answer.get("reason") == "user decision"))
+
+print("start(fork_id=): /branch is a respawn, and it is NOT a resume")
+# V2-PLAN §5.5, measured: --fork-session reads the old transcript and then
+# writes a NEW session id into a NEW file in the same folder. So the id we
+# spawn with must not be adopted as this session's own — a fork that reported
+# its parent's id would have two live processes claiming one transcript in the
+# sidebar, which is the corruption /api/session/resume exists to refuse.
+spawned: list[list[str]] = []
+
+
+def _capture_popen(*a, **k):
+    spawned.append(list(a[0]))
+    return _FakeProc()
+
+
+fork = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+fork._read_stdout = lambda proc, generation: None
+fork._read_stderr = lambda proc, generation: None
+fork._fetch_init_info = lambda generation: None
+fork._publish_resume_prefill = lambda generation: None
+_real_popen = server.subprocess.Popen
+server.subprocess.Popen = _capture_popen
+try:
+    fork.start(fork_id="parent-session-id")
+    forked_argv = spawned[-1]
+    forked_id = fork.session_id
+    fork.start(resume_id="parent-session-id")
+    resumed_argv = spawned[-1]
+    resumed_id = fork.session_id
+finally:
+    server.subprocess.Popen = _real_popen
+check("a fork spawns --resume <id> --fork-session",
+      forked_argv[-3:] == ["--resume", "parent-session-id", "--fork-session"])
+check("and refuses to claim the parent's id", forked_id is None)
+check("a plain resume is unchanged: no --fork-session",
+      resumed_argv[-2:] == ["--resume", "parent-session-id"]
+      and "--fork-session" not in resumed_argv)
+check("and it still adopts the id it resumed", resumed_id == "parent-session-id")
+
+print("open_known_file: a KEY into a fixed map, never a path off the request")
+# This route hands a string to the Windows shell. /api/project/reveal guards
+# itself by demanding an existing FOLDER; a file has no such check, so the only
+# defence that holds is that the page cannot name the string at all.
+opened: list[str] = []
+_real_startfile = server.os.startfile
+server.os.startfile = lambda path: opened.append(str(path))
+_seed_home = Path(tempfile.mkdtemp(prefix="pcg-home-"))
+_real_home = server.Path.home
+server.Path.home = classmethod(lambda cls: _seed_home)
+try:
+    check("an unknown key opens nothing",
+          server.open_known_file("../../../windows/system32/calc.exe", None)
+          == (None, "unknown file") and not opened)
+    check("and so does a name that is not in the map",
+          server.open_known_file("settings.json", None) == (None, "unknown file"))
+    seeded, seed_err = server.open_known_file("keybindings", None)
+    check("a file that has never existed is created, then opened",
+          seed_err is None and seeded is not None
+          and Path(seeded).read_text(encoding="utf-8") == "{}\n"
+          and opened == [seeded])
+    project = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
+    memo, memo_err = server.open_known_file("project-memory", project)
+    check("the project's own CLAUDE.md is the session's, not the home one",
+          memo_err is None and Path(memo).parent == project)
+    check("and a project file is unreachable when no session is open",
+          server.open_known_file("project-memory", None) == (None, "unknown file"))
+
+    print("export_transcript: /export writes the text and opens it")
+    opened.clear()
+    out_path, out_err = server.export_transcript("گفتگو\nline two")
+    check("the file holds exactly what the window sent",
+          out_err is None and out_path is not None
+          and Path(out_path).read_text(encoding="utf-8") == "گفتگو\nline two")
+    check("and it is handed to the shell, not polled like a draft",
+          opened == [out_path])
+finally:
+    server.os.startfile = _real_startfile
+    server.Path.home = _real_home
+    shutil.rmtree(_seed_home, ignore_errors=True)
+
+print("CONTROL_ALLOWED: /btw is reachable, a settings blob still is not")
+check("side_question is whitelisted (V2-PLAN §3.5)",
+      "side_question" in server.CONTROL_ALLOWED)
+check("apply_flag_settings is still NOT — that is the whole point of a whitelist",
+      "apply_flag_settings" not in server.CONTROL_ALLOWED)
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)
