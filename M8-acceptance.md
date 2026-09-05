@@ -1,18 +1,31 @@
 # M8 — Acceptance on the colleague's PC
 
 Run this **on the target machine, with the colleague present**. It is the plan's §B-10 acceptance
-pass plus the specific failure modes M0–M7 actually uncovered.
+pass, rewritten for the TUI-shaped shell v2.2–v2.6 built, plus the specific failure modes M0–M7
+actually uncovered.
+
+**Rewritten 2026-09-05 for v2.7.** The window this checklist exercised through v1 was a mouse-driven
+web chat: a greeting with four action cards, a clickable model chip, a clickable posture pill,
+composer capability chips. None of that ships any more. v2.2–v2.6 replaced it with a column that
+looks and answers like the real `claude` terminal — `⏺`/`⎿` rows, a status-line stack, numbered
+in-flow dialogs, and slash commands — while the sidebar and tabs (v1's own surfaces) stayed
+untouched. Every step below was cross-checked against `static/js/*.js`, `static/index.html` and
+`static/help.html`, and against what `test_column.py`, `test_keys.py`, `test_dialogs.py`,
+`test_shell.py` and `test_strings.py` actually assert. Nothing here describes a control that no
+test or module implements — where v2 deliberately does not build something (rewind, `/theme`
+switching, a diff panel), it is named as **not built** rather than left off silently.
 
 Everything before this point was verified on the author's PC only. Four install branches have
 **never executed anywhere** (see `wiki/packaging.md`), and they all execute here for the first
-time. Expect to find something.
+time. Expect to find something in the installer; the shell itself has 174/174 spec, six free gate
+files and a dry run behind it, so surprises there should be smaller.
 
 Take the USB payload folder with you (§0 below) — if the machine blocks downloads you cannot
 improvise it on site.
 
 ---
 
-## 0. Before you go
+## 0. Before you go — **free**
 
 - [ ] Prepare the offline payload folder: `python-3.12.10-amd64.exe` from
       `https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe`, plus the whole
@@ -23,10 +36,13 @@ improvise it on site.
       machine or the trip is wasted.
 - [ ] Confirm the colleague's Claude account credentials are available — **login cannot be
       automated** and is the one manual step.
+- [ ] Know the installed `claude` version before you go (`claude --version` on the author PC is
+      **2.1.261** as of 2026-09-05 — see `wiki/tui-keys.md`/`wiki/tui-strings.md` headers). The
+      target machine's own `claude` may have moved since; §8 below is where that gets recorded.
 
 ---
 
-## 0.5 Pre-flight: run the install branches in a clean VM — **before** the trip
+## 0.5 Pre-flight: run the install branches in a clean VM — **before the trip, free**
 
 A restructure must not meet its first bare machine and its first install-branch execution on the
 same day. `clean-machine.wsb` at the repo root boots a throwaway Windows with the package mapped to
@@ -36,7 +52,8 @@ the Desktop, read-only. Enable Sandbox once, elevated, then reboot:
 DISM /Online /Enable-Feature /FeatureName:Containers-DisposableClientVM /All
 ```
 
-Status of the four branches as of 2026-08-07 (`wiki/packaging.md`):
+Status of the four branches as of 2026-08-07 (`wiki/packaging.md`) — **unaffected by v2.2–v2.6**,
+which changed the window's own screen, not the installer:
 
 | branch | state |
 |---|---|
@@ -94,7 +111,7 @@ Record anything that broke in `wiki/packaging.md` before travelling.
 
 ---
 
-## 1. Probe the target PC (before installing anything)
+## 1. Probe the target PC (before installing anything) — **free**
 
 Run the probe block from `claude-persian-rtl-options.md` §"Probe the target PC first". Record the
 answers; they decide what happens next.
@@ -105,7 +122,7 @@ answers; they decide what happens next.
 | Real Python, or the Store alias stub? | | Stub → setup installs real Python |
 | `winget` present? | | Absent is fine — setup never uses it |
 | `msedge.exe` present? WebView2? | | Absent → degraded to a normal browser tab |
-| **Are installs permitted at all?** | | Forbidden → B2 is impossible, re-plan (plan Phase 0) |
+| **Are installs permitted at all?** | | Forbidden → this section is impossible, re-plan |
 
 One more the plan's probe does not ask, and it silently breaks things:
 
@@ -115,7 +132,7 @@ One more the plan's probe does not ask, and it silently breaks things:
 
 ---
 
-## 2. Install — `setup.bat` only
+## 2. Install — `setup.bat` only — **free**
 
 The whole point is that nothing else is needed.
 
@@ -130,8 +147,8 @@ The whole point is that nothing else is needed.
 - [ ] Claude Code install branch, if `claude` is absent — **first execution ever**.
 - [ ] If not logged in: setup prints Persian instructions. Run `claude` once, log in, re-run
       `setup.bat`.
-- [ ] Smoke test reports success (`آزمایش موفق بود`). It is 10 checks, one paid CLI turn — a
-      failure line names which check fell over.
+- [ ] Smoke test reports success (`آزمایش موفق بود`). **Costs one paid CLI turn** — a
+      failure line names which check fell over (16 checks; see CLAUDE.md's gate table).
 - [ ] Desktop shortcut «کلاد فارسی» exists, with the coral prompt mark (**not** Anthropic's Claude
       logo, and never the pre-rebrand «کلود» name — if that one is on the desktop too, the
       idempotency cleanup in step 5 of `setup.ps1` did not run).
@@ -142,10 +159,15 @@ If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-e
 
 ---
 
-## 3. Launch
+## 3. Launch — **free**
 
-- [ ] Double-click «کلاد فارسی». A chrome-less window opens on the home state (greeting + action
-      cards), not an empty chat.
+- [ ] Double-click «کلاد فارسی». A chrome-less window opens on the **TUI's own welcome box** —
+      `✻` + «Welcome to Claude Code» (Persian) + the version, the folder being worked in, and the
+      composer's own three footer hints (`/` for commands, `@` to mention a file, `?` on an empty
+      prompt for the key sheet) — **not** an empty chat and **not** the old greeting-plus-four-cards
+      home state, which v2.5 deleted (V2-PLAN §6, v2.5 decision 6).
+- [ ] If no project folder is open yet, the same box says so instead of naming a folder — open one
+      from the sidebar or the folder button beside the composer.
 - [ ] **No console window appears at any point.**
 - [ ] The window shows the Persian UI, right-aligned, with joined letterforms.
 - [ ] Close the window. Within ~15 s: no `pythonw` and no wrapper-spawned `claude` process
@@ -153,20 +175,21 @@ If downloads are blocked: `setup.ps1 -Payload <usb-folder>` — **also a first-e
 
 ---
 
-## 4. Spec test cases 1–12 — **in both live view and history replay**
+## 4. Spec test cases 1–12 — **in both live view and history replay — free**
 
 Plan §B-10 item 1. The automated harness covers the mechanics; this is the human check on a real
-machine with the colleague's own fonts and display scaling.
+machine with the colleague's own fonts and display scaling. Unchanged by v2.2–v2.6 — the BiDi
+rules are message content, not the shell around it.
 
 > **Dry-run on the author PC, 2026-08-06** (browser-driven, ~2 paid turns): §4 and §5 both pass
 > now, but only after three shell-layout defects were fixed — see `wiki/rtl-rendering-notes.md`
 > §"Three defects the spec gate could not see". Still never exercised anywhere: the **folder
 > picker** and **attachment chips** (both open a native tkinter dialog that automation cannot
-> answer) and the **three-card home state** (needs a folder with no history). Check those by hand
-> on the target.
+> answer) and the **welcome box with no project open**. Check those by hand on the target.
 
 - [ ] Open `/static/spec-test.html?t=<token>` (token from the address bar). Verdict bar reads
-      `PASS — 20/20`.
+      `PASS — 174/174` (grown from the 20 the harness started with — every phase's own gates added
+      to this same run rather than a separate file).
 - [ ] Then, in the **live chat**, send each case as a real message and eyeball it:
 
 | # | Send | Must look like |
@@ -179,8 +202,8 @@ machine with the colleague's own fonts and display scaling.
 | 6 | type `می` + Shift+Space + `رود` | renders `می‌رود`, not `میرود` |
 | 7 | Persian paragraph then a code block | neither disturbs the other |
 | 8 | long Persian paragraph | right-aligned on every line, descenders not clipped |
-| 9 | ask it to write a file whose content is Persian | the tool card's `content` shows Persian lines right-aligned, Latin lines left-aligned, in one box |
-| 10 | approve that write | the **permission dialog** shows the same content, just as readable — this is the moment of consent |
+| 9 | ask it to write a file whose content is Persian | the tool card's `content` shows Persian lines right-aligned, Latin lines left-aligned, in one box, marked with `⏺`/`⎿` like every other tool row |
+| 10 | approve that write | the **numbered permission list** shows the same content, just as readable — this is the moment of consent |
 | 11 | ask it to read a file with mixed Persian/Latin lines | every line takes its own direction; order unchanged |
 | 12 | make sure one of those lines has Latin digits in it | digits stay in place inside the Persian line |
 
@@ -189,108 +212,214 @@ machine with the colleague's own fonts and display scaling.
 
 ---
 
-## 5. Chrome-path sweep (plan §B-10 item 2)
+## 5. Chrome-path sweep (plan §B-10 item 2) — **free**
 
 The spec's cases are message-focused and will not catch these. Every Windows path in the UI
 chrome must read left-to-right with separators in the right places:
 
-- [ ] statusline cwd (bottom bar)
+- [ ] status-line stack, row 3 (bottom bar) — the «پوشه» field
 - [ ] top bar project name + cwd
 - [ ] **sidebar project names** (hover one: the `title` tooltip shows the full path — check it too)
 - [ ] sidebar session previews (mixed Persian/Latin previews must each read correctly)
-- [ ] the project chip in the composer (name + tooltip path)
-- [ ] folder picker result after switching project
+- [ ] the project chip in the composer (name + tooltip path) — this one survived v2.4's chip
+      cleanup; only the four **capability** chips (model, posture, effort, style) were removed
+- [ ] folder picker result after switching project — still a native dialog, still `/api/project/pick`
 - [ ] tool card summary line and its parameters
 - [ ] **permission dialog parameters** — must show `C:\Users\…`, never `C:\\Users\\…`
-- [ ] attachment chips
+- [ ] attachment chips — still in the composer row (`#attachments`), unaffected by the capability
+      chips' removal
 - [ ] **session hover preview card** (rest on a session row for a moment) — each of the 2–3 lines
       picks its own direction; a Windows path inside an assistant line still reads LTR
-- [ ] **home action cards** — the «ادامه آخرین گفتگو» note is the previous session's own title, so
-      it can be Persian, English or mixed
-- [ ] the home cards must show **four** on a project with history and **three** on a fresh folder
-      (no last session ⇒ no resume card, never a dead button)
+- [ ] **the welcome box's own path row** — reads the open folder, right-to-left label / left-to-right
+      path, and says so plainly when no folder is open (there is no "four cards vs three" case any
+      more — v2.5 deleted the home action cards; see §3)
 
 ---
 
-## 6. Feature pass (plan §B-10 item 3)
+## 6. Feature pass (plan §B-10 item 3) — **free unless noted**
 
-> **Dry-run on the author PC, 2026-08-06.** Everything below passes except the folder picker (its
-> native dialog cannot be driven by automation) — but only after four fixes, three of them in the
-> approval path (`wiki/approval-postures.md`). One trap for whoever repeats this: the CLI
-> auto-approves shell commands it classifies as read-only, so testing «ویرایش آزاد» with `echo`
-> shows no prompt and looks like a broken posture. Use something that mutates.
+> **Dry-run on the author PC, 2026-08-06,** predating v2.2–v2.6; re-verify every item below against
+> the current build, since the controls it describes (model chip, posture pill) no longer exist.
+> The folder picker's native dialog still cannot be driven by automation — check it by hand.
 
-- [ ] Persian prompt → reply streams in token by token.
+- [ ] Persian prompt → reply streams in token by token, as `⏺` rows.
 - [ ] **Reply comes back in Persian.** If it does not, that is the colleague's `~/.claude` config,
-      not a wrapper bug — the wrapper inherits their real settings and hooks (found in M4). Fix
-      their `CLAUDE.md` / output style.
-- [ ] Trigger a tool that needs approval → Persian dialog appears with a readable path.
-- [ ] **Approve** → the action happens.
-- [ ] **Deny** → the action does not happen, and the reply says so calmly.
-- [ ] Tick "تا پایان این نشست … دوباره نپرس" → the next same-tool call does not prompt.
-- [ ] Press Escape on a dialog → treated as **deny**, never as approve.
+      not a wrapper bug — the wrapper inherits their real settings and hooks. Fix their
+      `CLAUDE.md` / output style.
+- [ ] Trigger a tool that needs approval → a **numbered permission list** appears above the
+      composer, in the flow, not a popup — with a readable path.
+- [ ] **Option 1 (بله)** → the action happens once.
+- [ ] **Option "نه" (renumbered ۲ or ۳ depending on whether a remember scope applies)** → the
+      action does not happen, and the reply says so calmly. Typing a note first and choosing this
+      option sends that note as the model's reason.
+- [ ] **`Esc` on a permission or plan dialog is a refusal ("نه"), never an approval.** Dismissing
+      is never consent.
+- [ ] Tick **"بله، و دیگر برای … نپرس"** (the remember option, present only when a remember scope
+      applies) → the next same-tool call in this conversation does not prompt; the composer's audit
+      counter climbs and every auto-approved card says «اجازه داده شد».
+- [ ] **`Shift+Tab` on an open permission dialog** approves the tool AND hands your typed note to
+      the composer via `restoreDraft()` — "approve and say this", not silent text loss.
+- [ ] Trigger a **question** (`AskUserQuestion`, not a permission) → the dialog title reads «کلاد
+      یک پرسش دارد» with an **«ارسال پاسخ»** button, not «اجازه بده». **`Esc` here is not a
+      refusal** — it sends an allow with no answers, because a question is not a request for
+      consent (v2.4 decision 5). This is the one dialog where Esc and a permission's Esc behave
+      differently; confirm both in the same session.
+- [ ] A **plan** approval (posture «طرح‌ریزی») draws only two options (accept / refuse) — there is
+      no third "ask again" call to make, so the list is not padded to three.
+- [ ] Approve a plan → the tool card says «طرح ذخیره شد» (plan **kept**, nothing executed) — not
+      «اجازه داده شد», which would claim something ran. The posture then leaves «طرح‌ریزی» on its
+      own, because the CLI exits plan mode itself; a pill still reading «طرح‌ریزی» while files are
+      being written would be the defect this item exists for (there is no pill any more — watch
+      the status line's posture row instead).
 
-The composer's two capability controls (Phase 4) are rendered from what the CLI's `initialize`
-returned, so on the colleague's machine they may list different models than they do here — that is
-correct behaviour, not a bug. What must hold:
+The composer's model, effort, output-style and permission controls are **commands and a chord now,
+not clickable chips** — v2.4 removed all four capability chips, and the pickers are opened by
+verb (`chat.js`/`composer.js` `openModelPicker()` etc.), never by `.click()` on an element that no
+longer exists:
 
-- [ ] **Model picker** («مدل») lists the models the CLI reported, with the current one marked.
-      Pick another, send a turn → the reply actually comes from it (the statusline/model label
-      follows the new turn, not the click).
-- [ ] **Posture pill** («سطح اجازه») offers exactly «طرح‌ریزی» / «محتاط» / «ویرایش آزاد» / «خودکار».
-      Switch to «ویرایش آزاد» → a file edit stops prompting; a shell command still prompts.
-- [ ] Switch to «طرح‌ریزی» and ask for a change → nothing is edited; the turn ends with a plan
-      card («طرح کار») whose body is **formatted text, not a `plan:` parameter blob**. Approve it →
-      the pill leaves «طرح‌ریزی» on its own (it follows the engine, which exits plan mode itself).
-      A pill still reading «طرح‌ریزی» while files are being written is the defect this item exists
-      for.
-- [ ] Switch to «خودکار» → nothing prompts, and the counter «N اقدام خودکار» climbs next to the
-      pill. Click it: every auto-approved action is listed. **A silent full-auto mode is a defect** —
-      the count and the per-card «اجازه داده شد» note are the whole justification for the posture.
-- [ ] **The pill never moves on its own click** — if the CLI refuses, it snaps back and «تغییر سطح
-      اجازه ممکن نشد» appears. Watch for it once: a safety control that looks engaged and is not is
-      the exact failure this project already shipped and fixed.
-- [ ] Switch project (or resume a session) → the pill is back at «محتاط» with an empty count.
-- [ ] Stop button mid-generation → «متوقف شد», **not** a red error. Conversation still usable
-      afterwards.
+- [ ] **`/model`** (or `Alt`+`P`) opens a numbered list of the models this CLI account reports,
+      current one marked. Pick another, send a turn → the reply actually comes from it (the status
+      line's model field follows the new turn, not the click). An account with nothing to pick from
+      makes `/model` fall through to the CLI as plain text — not a broken picker.
+- [ ] **`Shift`+`Tab`** (composer focused, no dialog open) cycles the permission posture through
+      the CLI's four: «محتاط» → «ویرایش آزاد» → «خودکار» → «طرح‌ریزی» → … . **`Shift`+`Tab` inside
+      a text field with a selection, or with nothing to cycle yet (`initialize` not answered),
+      belongs to the field/browser, not to the posture** — confirmed by `test_keys.py`.
+- [ ] **`/permissions`** opens the same four postures as a numbered list, for picking one directly
+      instead of cycling.
+- [ ] Switch to «ویرایش آزاد» → a file edit stops prompting; a shell command still prompts.
+- [ ] Switch to «خودکار» → nothing prompts, and the counter «N اقدام خودکار» climbs on the
+      composer row (a label, not a control — no hover state, no pointer cursor). Click it: every
+      auto-approved action is listed.
+- [ ] **The posture never changes on its own without confirmation from the CLI.** There is no pill
+      to snap back visually any more; watch the status line's posture row instead — if the CLI
+      refuses a mode switch, the row must not silently claim the new one.
+- [ ] Switch project (or resume a session) → the posture is back at «محتاط» with an empty count
+      (a fresh conversation always starts there).
+- [ ] `/effort` opens a numbered list of thinking-effort levels for this model; falls through to
+      the CLI as text on a model with no effort levels.
+- [ ] `/output-style` opens a numbered list of output styles the CLI reports; same fallback rule.
+- [ ] `/clear` presses the same "new conversation" action the sidebar's own button does.
+- [ ] Stop button (or `Esc` while a turn runs) mid-generation → the spinner's own line stops, cost
+      shows `$0.0000` for that turn (what the CLI reports for an interrupted one), **not** a red
+      error. Conversation still usable afterwards.
 - [ ] Kill the wrapper mid-session (Task Manager) → relaunch → open the session from the list →
-      "ادامه" → it remembers the earlier conversation.
+      the sidebar's session row → it remembers the earlier conversation. `/resume` (or focusing the
+      sidebar) also works: it moves a roving tab stop onto the session list — `↑`/`↓` to move,
+      `Esc` back to the prompt, `Enter` opens the highlighted row.
 - [ ] Open an old session from history and read it.
 - [ ] Switch project with the folder picker; the session list changes with it.
-- [ ] Type `/` → command list appears; pick one; it runs.
-- [ ] Attach an image and ask about it → the model describes it.
-- [ ] Attach a non-image file → arrives as an `@path` mention and the model can read it.
+- [ ] Type `/` → command list appears; pick one with `↑`/`↓` + `Tab` (or click); **`Enter` always
+      sends the message, even with the list open** — it never accepts a completion (v2.3 decision
+      7, the same rule the `@` menu and the history search follow).
+- [ ] Type `@` → file list opens; `Tab` accepts a file into the message, `Enter` still sends,
+      `Esc` closes the menu.
+- [ ] Type `!` at the start of a line → the composer visibly switches to shell mode (border
+      colour change); the command runs in the project folder through `cmd.exe`, and its output
+      rides in **front of the next real message** rather than being sent on its own (v2.3 decision
+      4 — running `!` alone spends no turn).
+- [ ] `Ctrl`+`R` opens history search over this project's own sent prompts; typing narrows it,
+      `Ctrl`+`R` again goes to the next match, `Esc` **or** `Tab` accepts the match into the box
+      (search has no destructive exit — v2.3 decision 15), `Enter` accepts and sends immediately.
+- [ ] `↑`/`↓` on an empty or single-line composer walk this project's own prompt history; a
+      half-typed draft is restored when you return past the newest entry.
+- [ ] `Ctrl`+`G` opens the draft in your external text editor; saving and closing it brings the
+      edited text back into the composer (waits for the file to stop changing, with a one-second
+      settle).
+- [ ] `Ctrl`+`L` clears the **composer box**, not the screen — the TUI's own default for this
+      chord on Windows (v2.5/§8.6; there is no Windows "clear screen" chord to imitate).
+- [ ] `Ctrl`+`O` expands every tool result in the column at once; press again to collapse them all.
+- [ ] `Ctrl`+`T` toggles the todo list; `Alt`+`T` toggles "در حال فکر کردن" (thinking) text.
+- [ ] `?` on an **empty** composer opens the key sheet — the same list `composer.js`'s own
+      `KEY_SHEET` dispatches from, so it cannot show a key that does not work. `Esc` closes it.
+- [ ] Paste a long block (≥800 characters or >2 newlines) → it collapses to a
+      «متن چسبانده‌شده #N» chip; what is actually **sent** is the full pasted text, expanded back
+      before the request goes out.
+- [ ] Attach an image (paperclip button, native dialog) and ask about it → the model describes it.
+- [ ] Attach a non-image file → arrives as an attachment the model can read, shown as a chip in the
+      composer row before sending.
+- [ ] `/copy` copies the last reply; `/export` writes the visible column to a file and names the
+      path — both read what is on screen, not a separate transcript file.
+- [ ] `/branch` opens a fork of the current conversation in a new tab; a note about the fork lands
+      in the **new** tab's own column, not the one you branched from.
+- [ ] `/btw <question>` warns **before sending** that it costs a turn, then answers as a dimmed
+      `※` row that never enters the conversation's own context.
+- [ ] `/tasks` unfolds the background-agents strip if anything is running, or says so if nothing is.
+- [ ] `/status` opens a numbered (inert-digit) block with this tab's model, folder, session id and
+      permission posture.
+- [ ] `/help` opens the numbered list of everything the window answers (`/help`, `/resume`,
+      `/status`, `/copy`, `/export`, `/branch`, `/btw`, `/bash`, `/tasks`, `/cd`/`/add-dir`,
+      `/memory`, `/config`, `/hooks`, `/keybindings`, `/model`, `/effort`, `/output-style`,
+      `/permissions`, `/clear`, plus rows for `/` and `?`), with a last row that opens
+      `static/help.html` in a new tab.
+- [ ] `/config`, `/hooks`, `/keybindings`, `/memory` each open the real underlying file in your
+      text editor — not a picker.
+- [ ] `/cd` and `/add-dir` both open the folder picker (one conversation has one cwd, so there is
+      no second meaning for "add a directory" here).
+- [ ] A verb the window does not own (or a known verb with an argument it does not take, e.g.
+      `/model sonnet`) falls straight through to the CLI as ordinary text.
 
 ---
 
-## 7. The real test (plan §B-10 item 4)
+## 7. The real test (plan §B-10 item 4) — **free, needs the colleague**
 
-- [ ] **The colleague completes a genuine small task of their own, end to end, without touching a
-      terminal, and without you driving.**
+- [ ] **The colleague completes a genuine small task of their own, end to end, by keyboard alone —
+      no mouse for anything the keyboard can already do, no terminal, and no hint from you.**
 
-Sit on your hands. Watch where they hesitate — that is the actual finding, not the checkboxes.
+This is the phase table's exit criterion for v2.7. Sit on your hands. Watch where they hesitate —
+that is the actual finding, not the checkboxes.
+
+**Pass/fail rubric:**
+
+| Criterion | Pass looks like |
+|---|---|
+| Starts without help | Types into the composer within a few seconds of the window opening — no "where do I type" |
+| Sends and reads a reply | `Enter` sends; they read the streamed `⏺` reply without asking what it means |
+| Handles at least one permission dialog on their own | Picks an option (digit, `↑`/`↓` + `Enter`, or a click) without you naming the option for them |
+| Recovers from one wrong move | If they Esc out of something or send the wrong thing, they continue without your intervention |
+| Finishes the task | The task they set out to do is actually done, confirmed by them, not by you |
+
+Pass = all five. Any row that needed you to say a key or a command name is a fail on that row, and
+the note that follows records **which one**, not just pass/fail overall.
 
 - [ ] Note every point of confusion, in their words.
 
+**Record the run:**
+
+| Field | Value |
+|---|---|
+| Date | |
+| PC (make/model or asset tag) | |
+| `claude --version` on this PC | |
+| Task attempted | |
+| Result (pass / fail, and which rubric row if fail) | |
+| Points of confusion (colleague's own words) | |
+
 ---
 
-## 8. After
+## 8. After — **free**
 
 - [ ] Record probe results and anything that broke in `wiki/` — especially any install branch that
       failed, since those are the untested ones.
-- [ ] Note the tested `claude --version` on that machine. Every finding in `wiki/` is pinned to
-      2.1.221; if theirs differs, the permission design in particular needs re-verification
-      (`wiki/permission-transport.md`).
-- [ ] Hand over `راهنما` (the Persian guide) — it opens from the «راهنما» button in the app.
+- [ ] Note the tested `claude --version` on that machine (also recorded in §7's table). If it
+      differs from the author PC's 2.1.261, re-run `test_tui_vocab.py` against a copy of that
+      version's `claude.exe` before trusting any key or string claim above — the whole vocabulary
+      (keys, strings, glyphs, thresholds) is pulled from one binary and is a gate, not a memory.
+- [ ] Hand over `راهنما` (the Persian guide) — it opens from the last row of `/help`, or from
+      `static/help.html` directly.
 
 ## Known differences from the real CLI — tell them up front
 
-Not defects; deliberately not built (plan §B-7):
+`static/help.html`'s own «تفاوت با ترمینال» section is the one to hand them; the short version:
 
-- No plan mode. Permission level **is** switchable mid-session, but only through the three pill
-  postures — the CLI's other modes (`auto`, `dontAsk`, `bypassPermissions`) are deliberately not
-  offered, because in them the CLI approves before it asks the wrapper and nothing can be shown or
-  counted (`wiki/approval-postures.md`).
-- No `!` shell passthrough.
-- `Esc` does not interrupt — the «توقف» button does. (`Esc` closes a dialog or the slash popup.)
+- No `!` shell passthrough as a bare terminal replacement — `!` output does not enter the
+  conversation on its own; it rides into the *next* real message.
+- No rewind (`double-tap Esc`) — the capability exists on the wire but v2 has not built the dialog
+  or the column truncation for it yet (V2-PLAN §8.11C, still open).
+- No light theme — the window is dark-only by design decision (V2-PLAN §8.12A); `/theme` falls
+  through to the CLI, which refuses it locally and free.
+- `Esc` does not exit the window — the close button does, and `Ctrl+C`/`Ctrl+D` stay the browser's
+  own copy/nothing rather than the terminal's exit chords.
 - Cost shows `$0.0000` for an interrupted turn; that is what the CLI reports.
+- The four v1 capability chips (model, posture, effort, style) are gone — the same actions are
+  `/model`, `Shift+Tab`/`/permissions`, `/effort`, `/output-style` now.

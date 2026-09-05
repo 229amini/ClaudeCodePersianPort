@@ -251,7 +251,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | **v2.4** Dialogs ✅ | §3.3 as numbered inline lists; chips removed; pickers behind commands | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+4 over the refusal note), `test_layout.py` 3/3 widths — now measuring the picker in the flow, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60** (+20, the whole `Confirmation` context). New gate `test_dialogs.py` — **31/31**, free, no browser: the shape the keys are dispatched at. §3.3's `/resume`, `/help` and `/status` rows are not built — see 8.11. Decisions below |
 | **v2.5** Shell ✅ | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+14 over the four new routes), `test_layout.py` 3/3 widths — now measuring the welcome box, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60**, `test_dialogs.py` **31/31**. New gate `test_shell.py` — **29/29**, free, no `claude` process. `smoke_test.py` NOT run: it spends a paid turn and `/api/tabs`, `/api/projects`, `/api/sessions` are untouched in the diff. Decisions below |
 | **v2.6** Words ✅ | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py`, `test_layout.py` 3/3 widths, `test_transcript_path.py`, `test_no_console.py`, `test_column.py` **22/22**, `test_keys.py` **60/60**, `test_dialogs.py` **31/31**, `test_shell.py` **29/29**. `test_tui_vocab.py` **82/82** (+3: the five-hour threshold re-derived from the bundle). New gate `test_strings.py` — **24/24**, free, no browser and no `claude` process. `/help` is built (8.11A closed); the authored copy §8.10B parked is listed for one review in `wiki/tui-strings.md` §8. Decisions below |
-| **v2.7** Acceptance | `M8-acceptance.md` updated for the TUI-shaped shell; bare-machine run | The colleague completes one task by keyboard without a hint |
+| **v2.7** Acceptance | `M8-acceptance.md` updated for the TUI-shaped shell; bare-machine run | **docs ✅ 2026-09-05** — `M8-acceptance.md` rewritten end to end for the shell v2.2–v2.6 actually built (§3–§7: welcome box, numbered dialogs with Esc/shift+Tab semantics, status-line stack, slash commands, `/help`), cross-checked against `test_column.py`/`test_keys.py`/`test_dialogs.py`/`test_shell.py`/`test_strings.py` so no control is claimed that no test implements; the stale v1 posture-pill/model-chip claims are corrected. CLAUDE.md's gate table: `test_tui_vocab.py`'s stale count fixed **72 → 82**, and `test_column.py` (22), `test_keys.py` (60), `test_dialogs.py` (31), `test_shell.py` (29) and `test_strings.py` (24) added. Free gates re-run green: units, `run_spec_test.py` **174/174**, layout, transcript_path, no_console, tui_vocab **82/82**, column **22/22**, keys **60/60**, dialogs **31/31**, shell **29/29**, strings **24/24**. **Bare-machine run + colleague task pending (owner)** — needs a physical PC and a human, neither available unattended. |
 
 Typography, decided here so v2.2 does not stall: prose in Vazirmatn, tool rows, paths and code in
 a mono Persian face. Vendor Vazir Code (OFL) into `static/fonts/` if its glyph coverage passes the
@@ -587,6 +587,48 @@ is at the end and in `wiki/tui-strings.md` §8.
 rewind and 8.12's two are all still open; 8.10B is closed as a *scheduling* item and reopened as
 a reading task — `wiki/tui-strings.md` §8 lists every authored string by key, grouped by the
 phase that wrote it.
+
+### v2.7 Acceptance — decisions taken while writing the docs, 2026-09-05
+
+This phase's exit criterion is a human at a physical machine, so only the documentation half was
+in scope tonight. What changed and why:
+
+1. **`M8-acceptance.md` was rewritten, not patched.** The old file described a mouse-driven web
+   chat — a greeting with four action cards, a clickable model chip, a clickable posture pill,
+   composer capability chips — none of which v2.2–v2.6 ship any more. A patch that left the
+   structure and corrected sentence by sentence would have missed the controls that were deleted
+   outright (the pill, the four chips) rather than reworded. §0–§2 (installer, packaging, probe)
+   are untouched: they describe the setup script, which no phase from v2.2 on touched.
+2. **Every claimed control was checked against a module or a test, not against memory of the
+   plan.** `static/js/composer.js`, `chrome.js`, `commands.js` and `controls.js` were read
+   directly for what `/model`, `Shift+Tab`, `/permissions`, `Esc` and `Ctrl+O` actually do today,
+   and `static/help.html` — already rewritten for v2.6 — was cross-read as a second source that
+   should agree. Where the two disagreed with a decision in this file (e.g. whether the
+   attachment chips survived v2.4's chip cleanup — they did; only the four capability chips went)
+   the code won.
+3. **The Esc/shift+Tab split between a permission dialog and a question is now explicit.** v2.4
+   decision 5 made these opposites — Esc refuses a permission but *skips* a question, sending an
+   allow with no answers — and the old M8 had one blanket "Escape = deny" line inherited from v1,
+   which is simply wrong for half the dialogs v2.4 built. §6 now tests both, in the same session,
+   on purpose.
+4. **The bare-machine colleague task got a rubric and a recording table**, because "sit on your
+   hands and watch" has no pass/fail line to point at afterwards. The five rows (starts without
+   help, sends/reads a reply, handles a permission alone, recovers from one wrong move, finishes
+   the task) are the ones the transcript of a real session can actually answer without the
+   observer's judgement call being the whole test.
+5. **CLAUDE.md's `test_tui_vocab.py` count (72) was three phases stale** — v2.2–v2.6 grew it to
+   79 and then 82 (§7 of this file already said so), but the gate table nobody reads on every run
+   still said 72. Fixed by re-running the file rather than trusting the wiki's own count, in case
+   the two had also drifted from each other; they had not. The five new gate files
+   (`test_column.py`, `test_keys.py`, `test_dialogs.py`, `test_shell.py`, `test_strings.py`) had
+   no row at all — each was run once tonight and its current pass count is what CLAUDE.md now
+   quotes, not the number from the phase it shipped in, in case a later phase's fixes moved it.
+6. **`APP_VERSION` and the v1.1.0 tag are untouched.** The reservation at the top of this file
+   holds until v2.7's bare-machine run and the colleague task both pass — a docs pass is not that.
+
+**Left for the owner:** the bare-machine run itself (§0.5 through §7 of `M8-acceptance.md`) and
+the colleague completing one task by keyboard without a hint — neither is answerable without a
+physical PC and a human, so v2.7 stays open past tonight.
 
 ## 7. Gates
 
