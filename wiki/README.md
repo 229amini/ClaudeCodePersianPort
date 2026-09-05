@@ -48,6 +48,14 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   why agent state must come from the transcript file, never the stdout stream.
 - [packaging.md](packaging.md) — `setup.ps1`/shortcut, the encoding rules that
   each silently corrupt Persian, and exactly which install branches are still unproven.
+- [tui-keys.md](tui-keys.md) — every keystroke the TUI binds, parsed out of `claude.exe` by
+  `extract_tui_vocab.py`, with a «کلید v2» column that `test_keys.py` reads its cases from. The
+  binary self-updates overnight, so a hand-written key table would already be stale — regenerate,
+  never transcribe.
+- [tui-strings.md](tui-strings.md) — the same for the TUI's words: every string v2 translates,
+  the key it ships as in `static/strings.fa.js`, and the ones deliberately dropped with the reason.
+  §8 is the list of strings v2 **authored**, grouped by phase, waiting on one review by a native
+  speaker. Gated by `test_tui_vocab.py` (against the binary) and `test_strings.py` (against the file).
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

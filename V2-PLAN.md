@@ -250,7 +250,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | **v2.3** Prompt ✅ | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+26 over the four new routes), `test_layout.py`, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**. New gate `test_keys.py` — **40/40**, headless, no `claude` process, its chords read out of `wiki/tui-keys.md`. The one half left is §5b's: pressing Up in the REAL terminal, which needs a human at one. Decisions below |
 | **v2.4** Dialogs ✅ | §3.3 as numbered inline lists; chips removed; pickers behind commands | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+4 over the refusal note), `test_layout.py` 3/3 widths — now measuring the picker in the flow, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60** (+20, the whole `Confirmation` context). New gate `test_dialogs.py` — **31/31**, free, no browser: the shape the keys are dispatched at. §3.3's `/resume`, `/help` and `/status` rows are not built — see 8.11. Decisions below |
 | **v2.5** Shell ✅ | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+14 over the four new routes), `test_layout.py` 3/3 widths — now measuring the welcome box, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60**, `test_dialogs.py` **31/31**. New gate `test_shell.py` — **29/29**, free, no `claude` process. `smoke_test.py` NOT run: it spends a paid turn and `/api/tabs`, `/api/projects`, `/api/sessions` are untouched in the diff. Decisions below |
-| **v2.6** Words | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | Every string in the binary table has a translation; `stop-slop` pass on `help.html` |
+| **v2.6** Words ✅ | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py`, `test_layout.py` 3/3 widths, `test_transcript_path.py`, `test_no_console.py`, `test_column.py` **22/22**, `test_keys.py` **60/60**, `test_dialogs.py` **31/31**, `test_shell.py` **29/29**. `test_tui_vocab.py` **82/82** (+3: the five-hour threshold re-derived from the bundle). New gate `test_strings.py` — **24/24**, free, no browser and no `claude` process. `/help` is built (8.11A closed); the authored copy §8.10B parked is listed for one review in `wiki/tui-strings.md` §8. Decisions below |
 | **v2.7** Acceptance | `M8-acceptance.md` updated for the TUI-shaped shell; bare-machine run | The colleague completes one task by keyboard without a hint |
 
 Typography, decided here so v2.2 does not stall: prose in Vazirmatn, tool rows, paths and code in
@@ -519,6 +519,75 @@ Every one of these was decidable without the owner. What is left for them is at 
 **Left for the owner** (product taste, not engineering): 8.9's glyph mirroring, 8.10's two, 8.11's
 `/help` scheduling and rewind, and the two 8.12 adds.
 
+### v2.6 Words — decisions taken while building it, 2026-09-05
+
+Every one of these was decidable without the owner. The words themselves are not: the review list
+is at the end and in `wiki/tui-strings.md` §8.
+
+1. **`/help` is generated from the command tables, not lifted from the binary.** §3.3 says «the
+   TUI's help text, translated», and §3.6's standing rule is to lift rather than remember — but
+   the help screen is a `local-jsx` component in a lazily loaded chunk and its prose is not
+   findable in the SEA as source text, unlike the binding table and the status strings, which
+   are. What is findable says «Show help and available commands» and nothing more. And the screen
+   itself is a page *about a terminal program*: how to launch it, which flags it takes, where its
+   docs live. A window that is already open answers none of those. What translates is its **job**
+   — what can I ask this window to do — so the list is built from `WINDOW_COMMANDS`,
+   `LIFECYCLE_VERBS` and `ARG_VERBS`, and `test_strings.py` fails in both directions: a verb the
+   window answers and the list does not name, and a row with nothing behind it.
+2. **`COMPOSER_VERBS` in `commands.js` is a copy, and the gate is what makes it safe.**
+   `composer.js` imports `commands.js`, so its six verbs cannot be imported back without closing
+   a second cycle. Same shape as v2.3's key sheet: binary → wiki → page, one arrow, one gate.
+3. **The `strings.fa.js` key lives in the wiki table, not in a map inside the test.** The table
+   is where a translator looks; a mapping hidden in a Python file would be a second table, and
+   the second one always rots. `test_strings.py` reads the column.
+4. **Three rows had a translation and no key at all**, and each needed a line of renderer to have
+   somewhere to live: the running turn's line now ends with «Esc برای توقف» (§3.1 always listed
+   it), an accepted plan says «طرح ذخیره شد» rather than «اجازه داده شد» — nothing was run, a
+   plan was kept, which is why the TUI has its own word for it — and the status line grows a
+   warning row when the five-hour window is nearly spent (§3.4 row 4). A translation with no
+   surface is not a shipped string.
+5. **The five-hour threshold is the binary's `0.95`, not the per-plan `0.99`/`0.9975`.** The
+   bundle raises the bar for `default_claude_max_5x` and `_20x`, but which plan the account is on
+   never reaches the wrapper — `get_usage` hands over `rate_limits.five_hour.utilization` and
+   nothing else. So the window warns at the conservative default, and `test_tui_vocab.py` §10
+   re-derives all three numbers from the installed build so a change upstream is a failing gate
+   rather than a window that warns at the wrong moment.
+6. **`queue.stop` is dropped the way §8.5 dropped `exit.hint`.** «ctrl+x to stop» describes the
+   TUI's running-turn footer; in v2 `ctrl+x` is the queue prefix (v2.3 decision 8) and stopping
+   is Esc, which the spinner line now says out loud. Translating it would document a key that
+   does nothing — §8.5's rule, applied a second time.
+7. **`rewind.hint` keeps its translation in the wiki and ships nothing.** The feature is 8.11C's
+   and still unbuilt; a key in `strings.fa.js` with no surface is exactly the dead copy this
+   phase deleted eight of. The row stays in the table against the day it is built.
+8. **Eight keys nothing reads any more are deleted** — `appTagline`, `connecting`,
+   `deleteFailed`, `independence`, `slNone`, `slashHint`, `toolResult`, `waiting`. All were the
+   v1 shell's. The visible independence notice is in `help.html` and `README.md`, which is where
+   the branding decision put it; the JS copy had no reader.
+9. **The orphan check runs in the direction `test_dialogs.py` does not.** That gate asks whether
+   every `FA.*` the modules read exists; this one asks whether every key in the file is read. The
+   second question is what found the eight, and it is the one a Words phase is for.
+10. **`/help` renders through the same numbered picker every other list uses**, digits inert, the
+    way `/status` does (v2.5 decision 17). One row is not a command: it opens `help.html`, which
+    is the guide for someone who has never used the window and does not know what to ask it.
+11. **The «تفاوت با ترمینال» list is grouped by *why*, not alphabetised.** Fifteen slash commands
+    in a row tells a non-technical reader nothing; «other places to run Claude» tells them they
+    are not missing anything. `test_strings.py` reads the names out of §4 rather than repeating
+    them, so a name that leaves the plan — as `/tasks` and `/background` did — stops being
+    demanded of the page the same day.
+12. **`ultracode` is deliberately not on that page.** §4 lists it, but it is a prompt keyword
+    rather than a surface, and naming it to this audience would advertise a one-word way to spend
+    the subscription. The gate only checks the `/commands` §4 names, so this is a choice and not
+    a hole.
+13. **`help.html` was corrected in place, not regenerated.** More than half of it — approvals,
+    questions, the context notice, the sidebar, tabs, the queue, attachments, troubleshooting —
+    describes surfaces v2 kept and v2.4/v2.5 had already corrected. Rewriting those paragraphs
+    would have been churn with a real chance of losing a sentence that was right.
+
+**Left for the owner:** the Persian itself. 8.9's glyph mirroring, 8.10A's shell choice, 8.11C's
+rewind and 8.12's two are all still open; 8.10B is closed as a *scheduling* item and reopened as
+a reading task — `wiki/tui-strings.md` §8 lists every authored string by key, grouped by the
+phase that wrote it.
+
 ## 7. Gates
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
@@ -527,14 +596,15 @@ paid turn). **New in v2.1: `probe_v21.py` (25), free** — the §5 answers that 
 process, re-measured against whatever build is installed today.
 **New in v2.2: `test_column.py` (22), free** — the §3.1 rows, Ctrl+O, the glyph mirror
 switch and the paste chip, driven headless out of the real `index.html`.
-**New in v2.0: `test_tui_vocab.py` (79), free** — the two wiki tables against the
-installed binary; see CLAUDE.md's gate table.
+**New in v2.0: `test_tui_vocab.py` (82), free** — the two wiki tables against the
+installed binary; see CLAUDE.md's gate table. v2.6 added §10: the five-hour warning threshold
+and the two per-plan ones, re-derived from the bundle beside the warning string itself.
 **New in v2.3: `test_keys.py` (40), free** — every chord the «کلید v2» column binds in the five
 contexts the prompt owns, dispatched at the real composer in the real `index.html` with the four
 new routes stubbed in the page, plus the `!`, `@`, `\`+Enter and `?` cases that are characters
 rather than chords. It fails in both directions: a key the table binds with nothing behind it,
-and a case here for a key the table never bound. New in v2.6: a strings check that fails when a
-key in the binary table has no entry in `strings.fa.js`.
+and a case here for a key the table never bound. The strings check this row promised is its own
+gate, below.
 **New in v2.4: `test_dialogs.py` (31), free** — the *shape* `test_keys.py` dispatches keys at:
 the chips and the popup gone from `index.html`, both dialogs inside `#stage` above the prompt, no
 submit button in the permission form, `show()` and never `showModal()`, the four verbs mapped to
@@ -548,8 +618,20 @@ replayed one) and every window-local command of §3.5: the route each one calls,
 and the two that still fall through to the CLI. Driven headlessly out of the real `index.html`
 with every route stubbed inside the page, so no `claude` process and no login.
 
+**New in v2.6: `test_strings.py` (24), free** — the two arrows in the middle of the chain
+`claude.exe → wiki/tui-strings.md → static/strings.fa.js → the page`. Every row of the wiki's
+§2–§5 tables names the key it ships as and that key is in the file; the two texts still agree; a
+row that ships nothing says so in both columns and says why. Then the four rules that only matter
+in a phase about words: no English in a Persian string outside a named allowlist of chords and
+product names, no key in the file that nothing reads (the direction `test_dialogs.py` does not
+check, and the one that found eight dead strings), `/help` listing exactly the verbs the window
+answers, and `help.html` naming every command V2-PLAN §4 says the window will not build — read
+out of §4 rather than repeated. It reads files and spawns nothing.
+
 `test_keys.py` (v2.3) reads its cases from `wiki/tui-keys.md`'s «کلید v2» column rather than
 repeating them, so the binding table has exactly one copy and the two gates cannot disagree.
+`test_strings.py` (v2.6) does the same with `wiki/tui-strings.md`'s «strings.fa.js» column and
+with §4 of this file.
 
 ## 8. The decisions v2.0 flagged, settled 2026-09-05
 
@@ -573,7 +655,8 @@ technical. In RTL a digit glued to the front of a Persian run is reordered by th
 algorithm and lands where nobody put it — the numbering has to be chrome the renderer places,
 not text the paragraph contains. And the list is keyboard-navigable, so the digit is a property
 of the row's position, which changes when option 2 is absent (it only exists when a remember
-scope applies). **v2.4 renders the digit; v2.6 strips it from `strings.fa.js`.**
+scope applies). **v2.4 renders the digit; v2.6 took it out of the wiki table too, which is what
+`strings.fa.js` had shipped all along. Closed.**
 
 **8.3 `posture.bypass` keeps the blunt wording.** «دور زدن اجازه‌ها» is what
 `bypassPermissions` does: every prompt is skipped. A softer phrase would misdescribe the one
@@ -588,6 +671,7 @@ gracefully. A mode the window can receive but not set still needs a name on scre
 exit» and «esc again quits» describe a terminal that closes when you insist. A window closes
 from its close button, and Edge `--app` owns Ctrl+C anyway. Translating them would document a
 key that does nothing. `help.esc_quit` keeps only its first half, «Esc برای بستن». **Drop.**
+**v2.6 shipped that half** as `keysEscHint`, under the `?` sheet where the TUI prints it.
 
 **8.6 `ctrl+l` clears the input, and "clear screen" gets no key.**
 `wiki/tui-keys.md` marked this «نیاز به تصمیم» because §3.2 assigned Ctrl+L to *clear screen*
@@ -660,6 +744,12 @@ says these things in English in places v2 does not copy, so there was nothing to
 the text is written rather than lifted. They belong in the same one review pass §7 of that file
 already asks for, at v2.6.
 
+**Done 2026-09-05, and it grew.** v2.4 and v2.5 authored more of the same kind, so the pass is
+now **eighty strings, not twenty-five**. `wiki/tui-strings.md` §8 lists every one of them by key,
+grouped by the phase that wrote it, and `test_strings.py` fails when that list names a key the
+file no longer has — so the review can be a read-through of one section instead of a diff. The
+scheduling question is closed; the reading is the owner's and still open.
+
 ### 8.11 Open — the three §3.3 rows v2.4 did not build, and rewind
 
 Not taste in the usual sense: each is a scope call about where a piece of §3.3 belongs, and the
@@ -676,6 +766,12 @@ calls over strings that phase authors anyway.
 **Half-answered 2026-09-05.** v2.5 built `/status`: every value on that block is data this window
 already holds (`state.status`, the same object the status line paints from), so there was no text
 to write and nothing for v2.6 to do twice. `/help` is the half that IS prose and stays in v2.6.
+
+**Built 2026-09-05, closed.** v2.6 wrote it — and not as a translation of the TUI's help screen,
+which is a page about a terminal program and is not findable in the bundle as source text either.
+It is generated from the window's own command tables, so it lists the twenty verbs the window
+answers and cannot list a twenty-first. Reasoning in the v2.6 decisions, gated by
+`test_strings.py`.
 
 **B. `/resume` needs the sidebar to take focus, and v2.5's row says the sidebar is untouched.**
 §3.3 asks for «moves focus into the sidebar's session list; Up/Down, Enter, Esc back to the
