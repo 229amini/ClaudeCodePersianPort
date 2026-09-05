@@ -23,9 +23,11 @@ what v2.5 is answerable for:
     /btw /bash /config /hooks /keybindings /memory /tasks;
   - /btw says it costs a turn before it sends (measured, §5.4) and renders its
     answer as a side row rather than as a turn in the conversation;
-  - and the two that are NOT built — /help (v2.6 owns the text) and /theme
-    (V2-PLAN §8.12, taste) — still fall through to the CLI as text, along with
-    any verb carrying an argument the window does not own.
+  - /help opens the window's own command list (v2.6 wrote it; test_strings.py
+    gates its contents against the command tables) and sends nothing;
+  - and the one that is still NOT built — /theme (V2-PLAN §8.12, taste) —
+    falls through to the CLI as text, along with any verb carrying an argument
+    the window does not own.
 
 Free: no CLI turn, no login. Every route is stubbed inside the page; the probe
 page is deleted again on the way out.
@@ -270,8 +272,19 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   await send("/tasks");
   out.tasksNote = metaSaid(FA.cmdTasksEmpty);
 
+  /* --- /help, whose text v2.6 owns ----------------------------------------- */
+  mark = calls.length;
+  await send("/help");
+  out.helpOpen = !!picker?.open;
+  out.helpTitle = document.getElementById("picker-title")?.textContent ?? "";
+  out.faHelpTitle = FA.helpTitle;
+  out.helpRows = [...picker.querySelectorAll(".opt-title")].map((el) => el.textContent);
+  out.helpNotSent = !since("/api/message", mark);
+  keyAt(picker.querySelector(".opts"), "Escape");
+  await sleep(40);
+
   /* --- what still goes to the CLI ------------------------------------------ */
-  for (const [name, text] of [["help", "/help"], ["theme", "/theme"],
+  for (const [name, text] of [["theme", "/theme"],
                               ["modelArg", "/model sonnet"], ["unknown", "/naparsi"]]) {
     mark = calls.length;
     await send(text);
@@ -420,8 +433,16 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("/tasks says so when nothing is running",
           m.get("tasksNote") is True, str(m.get("tasksNote")))
 
-    check("/help still goes to the CLI \u2014 v2.6 owns its text",
-          m.get("sent_help") is True, str(m.get("sent_help")))
+    # v2.6 took /help off the fall-through list: the phase that owns the words
+    # is the one that could write them (V2-PLAN \u00a78.11A). The list's CONTENT is
+    # gated in test_strings.py, which can compare it against the command tables
+    # without a browser; what needs a page is that the verb opens it at all and
+    # that nothing is sent to the CLI when it does.
+    rows = m.get("helpRows") or []
+    check("/help opens the window's own command list, and sends nothing",
+          m.get("helpOpen") is True and m.get("helpNotSent") is True
+          and m.get("helpTitle") == m.get("faHelpTitle") and len(rows) > 10,
+          f"{len(rows)} rows / open={m.get('helpOpen')} / sent={not m.get('helpNotSent')}")
 
     check("/theme too \u2014 V2-PLAN \u00a78.12, and the owner owns it",
           m.get("sent_theme") is True, str(m.get("sent_theme")))

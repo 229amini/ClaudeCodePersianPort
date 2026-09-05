@@ -1645,6 +1645,18 @@ button.round {
   background: var(--surface-2);
 }
 .key-what { color: var(--fg-muted); }
+/* The sheet's footer: the way out on the right, the key that also does it on
+   the left. `<menu>` is a list by UA default, which is why padding and markers
+   are cleared rather than inherited. */
+#keys menu {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
 
 /* --- a `!` row in the column ---------------------------------------------------
    A shell transcript: mono and LTR as a block, each line still free to resolve
@@ -1873,6 +1885,11 @@ button.round {
 #statusline .sl-posture.is-danger .sl-arrow,
 #statusline .sl-posture.is-danger .sl-posture-text { color: var(--danger); }
 #statusline .sl-hint { opacity: .6; }
+
+/* The five-hour window is nearly spent. Warning colour, full opacity: the rest
+   of this bar is reference data the eye skips, and this one line is the reason
+   the next answer will be shorter than the last. */
+#statusline .sl-warn { color: var(--danger); }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */

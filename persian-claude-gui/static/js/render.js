@@ -623,6 +623,11 @@ function paintPulse(p) {
   const parts = [fmtDuration(Date.now() - p.started)];
   const tokens = p.base + p.live;
   if (tokens) parts.push(fmtTokens(tokens));
+  // Last, and only while the turn is still running: the TUI ends this line
+  // with «esc to interrupt» (V2-PLAN §3.1, wiki/tui-strings.md §4). The
+  // settled line is a record of a turn that finished — there is nothing left
+  // to interrupt — and settlePulse() rewrites `meta` without calling here.
+  parts.push(FA.spinnerInterrupt);
   p.meta.textContent = parts.join(" · ");
 }
 
@@ -1532,6 +1537,11 @@ function renderRaw(event) {
 /* A percentage the user has to act on (context left, quota burned) reads far
    faster as a bar than as digits. <progress> is the native element for it:
    it carries the value accessibly and needs no JS to stay in sync. */
+/* Percent of the five-hour window at which the CLI itself starts saying so.
+   `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
+   table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
+const QUOTA_WARN_AT = 95;
+
 function meter(pct) {
   const wrap = document.createElement("span");
   wrap.className = "sl-meter";
@@ -1669,6 +1679,19 @@ export function setStatus(patch) {
     facts.append(wrap);
   }
   if (facts.childElementCount) statusline.append(facts);
+
+  /* FOURTH LINE, and only when there is something to warn about: the five-hour
+     window is nearly spent. The threshold is the binary's own default — `0.95`
+     in the bundle, re-derived by test_tui_vocab.py §10 — and not a number
+     chosen here. The two richer plans raise their own bar (0.99, 0.9975), but
+     which plan this account is on never reaches the wrapper, so the window
+     warns at the conservative one. */
+  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) {
+    const warn = document.createElement("div");
+    warn.className = "sl-line sl-warn";
+    warn.append(label(FA.slQuotaWarn));
+    statusline.append(warn);
+  }
 }
 
 /* --- ctrl+o: the TUI's transcript mode --------------------------------------
@@ -2254,9 +2277,12 @@ export function renderEvent(ev) {
         dismissPermission(ev.request_id);
         const card = state.toolCards.get(ev.tool_use_id);
         // A question was answered, not "allowed" — same event, different act.
+        // So is an accepted plan: nothing was run, a plan was kept, which is
+        // why the TUI writes «Plan saved!» there (wiki/tui-strings.md §2).
         const note = label(
           ev.tool_name === "AskUserQuestion" ? FA.askAnswered
-            : ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
+            : ev.decision !== "allow" ? FA.permDenied
+              : ev.tool_name === "ExitPlanMode" ? FA.planSaved : FA.permAllowed,
           "meta");
         if (card) card.append(note);
         // Approved by the wrapper rather than by the user — either the
