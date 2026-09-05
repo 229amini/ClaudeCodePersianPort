@@ -246,7 +246,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 |---|---|---|
 | **v2.0** Vocabulary ✅ | `wiki/tui-keys.md`, `wiki/tui-strings.md`: every keystroke, glyph and prompt string pulled from the 2.1.260 binary by `extract_tui_vocab.py` | **Done 2026-09-04**, except the user's one review of the Persian column (`wiki/tui-strings.md` §7 lists the six rows that need it). Gated by `test_tui_vocab.py` — 72/72 |
 | **v2.1** Probes ✅ | §5 answered in the wiki | **Done 2026-09-05.** Eleven entries (ten asked, one found), each with the command or the bundle site that produced it, in `wiki/cli-stream-json-findings.md`. `probe_v21.py` re-runs the live half free — 25/25. Only §5.8's "press Up in the real TUI" is left, and it needs a human |
-| **v2.2** Column | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | spec **174/174** unchanged; `test_layout.py` at three widths; the browser sweep of `M8-acceptance.md` §4 |
+| **v2.2** Column ✅ | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | **Done 2026-09-05.** spec **174/174** unchanged, `test_layout.py` 3/3 widths, `test_units.py`, `test_transcript_path.py`, `test_no_console.py` green, `test_tui_vocab.py` **79/79**. New gate `test_column.py` — **22/22**, headless, no `claude` process. Decisions below |
 | **v2.3** Prompt | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | `test_keys.py` (new, §7); shared history proven against the real TUI |
 | **v2.4** Dialogs | §3.3 as numbered inline lists; chips removed; pickers behind commands | `M8-acceptance.md` §6 permission and plan cases pass by keyboard alone |
 | **v2.5** Shell | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | `smoke_test.py` **16/16**; `/api/tabs`, `/api/projects`, `/api/sessions` unchanged |
@@ -261,13 +261,63 @@ Structure, decided 2026-09-03: the sidebar and in-window tabs stay. One server, 
 process per open project, as today. The sidebar is the one surface v2 leaves alone, so `pcg-p7g`
 (its visual pass) stays open and applies to v2 as well.
 
+### v2.2 Column — decisions taken while building it, 2026-09-05
+
+Each of these was decidable without the owner. The one thing that was not is §8.9, still open.
+
+1. **The `⎿` result branch is a chip on the `<summary>` row, not a second line.** `spec-test.html`
+   pins `.card-body > .tool-output` as a direct child *and* asserts the summary stays one line, so
+   a footer under the result would have to break one of them. §3.1's "+N lines" describes the TUI;
+   v2's own column spec is "collapsed by default, Ctrl+O toggles every result at once", and a shut
+   `<details>` already is that. What was missing was the toggle and a count of what is hidden.
+2. **Ctrl+O opens every card if any is shut, otherwise shuts them all.** One binding, one state,
+   matching `app:toggleTranscript`. The TUI's third state (`ctrl+e`, show-all) belongs to a
+   Transcript context v2 does not build — §6's "contexts v2 does not build" table.
+3. **The `⏺` marker is placed with physical `right`/`padding-right`, not logical insets.** `.msg`
+   is `unicode-bidi: plaintext` with `dir="auto"`; a logical property would put the marker of a
+   Persian answer and an English one on opposite sides of the same column. The one place in
+   `style.css` where physical is correct, and it carries that comment.
+4. **Glyphs are lifted from the 2.1.261 bundle, not recalled** (§3.6): the twelve pulse frames and
+   the settled `✻`, the `☑ ▸ ☐` checklist marks, `⎿`. The unused `think` icon path was deleted
+   rather than left as a second source of truth.
+5. **Paste thresholds are the binary's: 800 characters or more than 2 newlines** (`var o9=800`,
+   `S.length>o9||T>2`), and both placeholder shapes come from `cue()`. `test_tui_vocab.py` §9
+   re-derives all four from the installed build, so they cannot drift into disagreeing with the
+   terminal beside the window — the failure mode where nothing looks broken.
+6. **A parked paste never reaches the server as a placeholder.** The chip holds the text in the
+   page; submit expands `[متن چسبانده‌شده #N]` back before the POST. The wire contract, the
+   uuid ledger and `command_lifecycle` are untouched by this phase.
+7. **Subagent rows nest inside the `Agent` card by swapping the render target**, the same
+   scope-swap shape the agents drawer already uses, and the sidechain guard narrowed from "drop
+   every event carrying a `parent_tool_use_id`" to "drop all of it except a `tool_result` for a
+   card we know". `wiki/background-agents.md` measured both halves: the phantom English echo the
+   old guard existed to kill still carries that key, and the real `tool_result` arrives with
+   `parent_tool_use_id: null`, so the narrower guard still cannot eat it. Live runs are
+   unaffected — the same file records that a subagent's own events never reach the parent's
+   stdout — this is what a replayed transcript now shows instead of a blank card.
+8. **Diff rows needed no work.** They have been `+`/`−` tinted lines since 2026-08-07; §3.1's
+   "restyle as +/- lines" was already satisfied, and re-doing it would have been churn.
+9. **Vazir Code is not vendored.** §6 makes it conditional on glyph coverage passing the spec
+   cases, which needs a human looking at rendered text; the sanctioned fallback is the current
+   mono stack, where Persian already falls back to Vazirmatn. No cell grid, as ever.
+10. **The `!` shell-output row is deferred to v2.3**, which owns `!` in §3.2 — there is no
+    `/api/shell` yet, so a row for its output would render nothing.
+11. **The compaction divider reads `pre_tokens`/`post_tokens` and nothing else**, because
+    `wiki/cli-stream-json-findings.md` §5.9 measured that those are the only fields
+    `system/compact_boundary` carries.
+12. **One code commit, not three.** The column and the paste chip share `index.html`,
+    `style.css` and `strings.fa.js`, and `test_column.py` covers both; splitting them would have
+    produced an intermediate commit whose own gate was red, which is worse than a wide one.
+
 ## 7. Gates
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
 `test_transcript_path.py`, `test_no_console.py`, `probe_queue.py` (free), `smoke_test.py` (one
 paid turn). **New in v2.1: `probe_v21.py` (25), free** — the §5 answers that need a live
 process, re-measured against whatever build is installed today.
-**New in v2.0: `test_tui_vocab.py` (73), free** — the two wiki tables against the
+**New in v2.2: `test_column.py` (22), free** — the §3.1 rows, Ctrl+O, the glyph mirror
+switch and the paste chip, driven headless out of the real `index.html`.
+**New in v2.0: `test_tui_vocab.py` (79), free** — the two wiki tables against the
 installed binary; see CLAUDE.md's gate table. New in v2.3: `test_keys.py`, headless like the spec
 gate, dispatches each binding from `wiki/tui-keys.md` at the composer and asserts the action it
 maps to fired. New in v2.6: a strings check that fails when a key in the binary table has no entry
@@ -359,3 +409,9 @@ B's benefit is recognition, which the sidebar and the Persian text already spend
 
 Cheap to defer: the renderer flips with one `transform: scaleX(-1)` on a class, so this can be
 a toggle in v2.2 and be decided by looking at it. **v2.2 should build it as a class and ask.**
+
+**Built, 2026-09-05, still open.** It is `data-mirror-glyphs` on `<html>` in `index.html`, and
+the class is `.glyph.mirror`. It ships on **A** — the recommendation above — so `⎿` and the
+running `▸` flip; `"off"` is the whole of option B, and dropping `mirror: true` from the todo
+mark in `render.js` is the whole of option C. `test_column.py` asserts both positions of the
+switch, so answering this is a one-word edit, not a rebuild. **The owner still has to look at it.**
