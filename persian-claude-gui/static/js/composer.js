@@ -283,7 +283,14 @@ function ctxButton(text, note, cls, onClick) {
   button.className = "ctx-btn " + cls;
   button.setAttribute("dir", "auto");
   button.append(label(text, "ctx-btn-text"));
-  if (note) button.append(label(note, "ctx-btn-note"));
+  // v2.5: the notice is a one-line warning row now (V2-PLAN §3.4), so the
+  // per-action explanation moves to the hover. The node stays — it is what
+  // the spec harness reads — and the title is where a line-long row can still
+  // say «خلاصه می‌شود و همین گفتگو ادامه پیدا می‌کند» without becoming a card.
+  if (note) {
+    button.append(label(note, "ctx-btn-note"));
+    button.title = note;
+  }
   button.addEventListener("click", onClick);
   return button;
 }

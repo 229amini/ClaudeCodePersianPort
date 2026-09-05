@@ -178,7 +178,11 @@ function effortLevels() {
   return levels.filter((level) => !refused.has(level));
 }
 
-function effortLabel(level) {
+/* Exported for the status line (v2.5): the chips are gone, so the one place
+   that knows a level's Persian name has to hand it out rather than paint it.
+   A level the CLI added and this file has not heard of falls back to its own
+   name — the same rule the picker itself lives by. */
+export function effortLabel(level) {
   return FA.effortLevels?.[level] ?? level;
 }
 
@@ -227,6 +231,12 @@ let style = null;
 export function setOutputStyle(name) {
   if (name) style = name;
   paintStyle();
+}
+
+/* Same contract as effortLabel(): a machine can add its own style file, so a
+   name with no Persian label is shown as itself rather than guessed at. */
+export function styleLabel(name) {
+  return FA.styleNames?.[name] ?? name;
 }
 
 function paintStyle() {

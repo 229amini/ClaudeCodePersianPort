@@ -76,68 +76,32 @@
 
   <main id="log" aria-live="polite" aria-label="گفتگو"></main>
 
-  <!-- Home / empty state: big greeting above the composer, claude.ai-style.
+  <!-- Home / empty state: THE TUI'S WELCOME BOX (V2-PLAN §2 «Delete», §6).
+       The greeting and its four action cards are gone. What the terminal
+       prints when it opens is a bordered box — `✻ Welcome to Claude Code`
+       and its version, read out of the 2.1.261 bundle — followed by the
+       folder it is working in and the composer's own footer hints
+       (wiki/tui-strings.md §5). Every card this replaced pressed something
+       that is still one click away in the sidebar.
+
        Visibility is driven by whether #log has children (js/chrome.js). -->
   <section id="home" hidden>
-    <h1 class="greeting">
-      <svg class="mark" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor"
-           stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M17.1 7.4L11.9 12l5.2 4.6"/>
-        <path d="M6.9 16.6h4"/>
-      </svg>
-      <span id="greeting-text"></span>
-    </h1>
-
-    <!-- Four ways in, none of them new capability: each card presses something
-         the user could already have reached (js/chrome.js). No server code was
-         added for this section. -->
-    <div id="home-cards">
-      <button type="button" class="home-card" id="home-resume" hidden>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <!-- The note is the session's own title: user text, either script. -->
-          <span class="hc-note" dir="auto"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card" id="home-open">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card" id="home-explain">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20.5 14.5a3 3 0 01-3 3H8.5l-4.5 3.2V6a3 3 0 013-3h10.5a3 3 0 013 3z"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card" id="home-help">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.2"/>
-          <path d="M9.4 9.2a2.6 2.6 0 115.1.9c-.5 1.5-2 1.7-2 3.2"/>
-          <circle cx="12.4" cy="16.8" r=".4" fill="currentColor"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
-      </button>
+    <div class="welcome">
+      <p class="wel-head">
+        <!-- The TUI's own star, not the product mark: this box is the
+             terminal's, and the mark already sits in the sidebar head. -->
+        <span class="glyph wel-star" aria-hidden="true">✻</span>
+        <span id="wel-title"></span>
+        <bdi class="wel-ver" dir="ltr">v{{VERSION}}</bdi>
+      </p>
+      <p class="wel-cwd">
+        <span id="wel-cwd-label" class="wel-key"></span>
+        <span id="wel-cwd" class="path"></span>
+      </p>
+      <!-- The three hints the TUI keeps under an empty prompt. Built in JS
+           from one list, so the box cannot advertise a key the page does not
+           bind (js/chrome.js). -->
+      <ul class="wel-tips" id="wel-tips"></ul>
     </div>
   </section>
 

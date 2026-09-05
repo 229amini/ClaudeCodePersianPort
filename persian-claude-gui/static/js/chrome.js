@@ -44,14 +44,15 @@ const ui = {
   projChip: document.getElementById("proj-chip"),
   projChipName: document.getElementById("proj-chip-name"),
   home: document.getElementById("home"),
-  greeting: document.getElementById("greeting-text"),
+  welTitle: document.getElementById("wel-title"),
+  welCwdLabel: document.getElementById("wel-cwd-label"),
+  welCwd: document.getElementById("wel-cwd"),
+  welTips: document.getElementById("wel-tips"),
   banner: document.getElementById("replay-banner"),
-  cardResume: document.getElementById("home-resume"),
 };
 
 let currentCwd = "";
 let currentSession = null;
-let lastSession = null;   // newest OTHER session here: {id, path, label}
 const expanded = new Set();   // lowercased project paths open in the sidebar
 let autoExpanded = null;      // the project `expanded` was last auto-opened for
 let lastProjects = [];        // what /api/projects last answered, for a repaint
@@ -63,6 +64,7 @@ let lastProjects = [];        // what /api/projects last answered, for a repaint
    yet has to do — its session id genuinely is not known. */
 export function setCurrentSession(sessionId) {
   if (sessionId !== undefined) currentSession = sessionId;
+  syncWindowTitle();
 }
 
 /* --- open conversations (tabs) ---------------------------------------------
@@ -212,8 +214,26 @@ function whenLabel(epochSeconds) {
   return WHEN_FORMAT.format(new Date(epochSeconds * 1000));
 }
 
-/* Project name and cwd everywhere in chrome: topbar, composer chip, tab-title
-   stays the constant «کلاد فارسی» (an OS titlebar cannot carry <bdi>). */
+/* The window title is the session's own title (V2-PLAN §3.4, last-but-two
+   row). It used to be the constant «کلاد فارسی — vX», on the grounds that an
+   OS titlebar cannot carry <bdi> — true, and it is why the title is ONE run
+   plus the product name rather than a title glued to a path or a version:
+   a titlebar has no isolation, so anything mixed into it is at the mercy of
+   the platform's own bidi pass. A conversation title and a Persian product
+   name resolve together; a Windows path next to either would not, which is
+   why the cwd stays out of here and lives in the status line.
+
+   `document.title` is set from the same map the sidebar draws from, so the
+   window and the session row can never disagree about what a conversation is
+   called. */
+const BASE_TITLE = document.title;
+
+function syncWindowTitle() {
+  const title = currentSession && sessionTitles.get(currentSession);
+  document.title = title ? `${title} — ${FA.appName}` : BASE_TITLE;
+}
+
+/* Project name and cwd everywhere in chrome: topbar, composer chip. */
 export function setChrome(cwd) {
   if (cwd) currentCwd = cwd;
   // render.js calls this on system/init with a bare cwd, before any projects
@@ -228,40 +248,46 @@ export function setChrome(cwd) {
   }
 }
 
-/* --- home / empty state ---------------------------------------------------- */
+/* --- home / empty state: the TUI's welcome box ------------------------------
 
-function greetingText() {
-  const h = new Date().getHours();
-  if (h >= 5 && h < 12) return FA.greetMorning;
-  if (h >= 12 && h < 17) return FA.greetDay;
-  if (h >= 17 && h < 22) return FA.greetEvening;
-  return FA.greetNight;
+   V2-PLAN §2 deletes the greeting and the four action cards; what a terminal
+   shows on an empty session is a box saying which program this is, which
+   folder it is in, and how to start typing. Everything the cards did is still
+   reachable: «باز کردن پوشه» is the folder chip and the sidebar, «راهنما» is
+   the sidebar's own button, and «ادامه آخرین گفتگو» is the session list one
+   line below the project — which is also the surface `/resume` now moves
+   focus into (§3.3).
+
+   The three hints are the TUI's composer footer (wiki/tui-strings.md §5), and
+   they name keys this page really binds: `/` opens the slash popup, `@` the
+   file menu, `?` the key sheet (js/composer.js). */
+const WELCOME_TIPS = [
+  ["/", "welTipCommands"],
+  ["@", "welTipMention"],
+  ["?", "welTipKeys"],
+];
+
+function paintWelcome() {
+  if (!ui.welTitle) return;
+  ui.welTitle.textContent = FA.welcomeTitle;
+  ui.welCwdLabel.textContent = FA.welcomeCwd;
+  // A Windows path in chrome: .path + <bdi>, the sweep plan §B-10 item 2 is
+  // about. Empty until a project is open, which is what the placeholder says.
+  ui.welCwd.textContent = currentCwd || FA.welcomeNoProject;
+  ui.welCwd.classList.toggle("is-empty", !currentCwd);
+  ui.welTips.replaceChildren();
+  for (const [key, stringKey] of WELCOME_TIPS) {
+    const li = document.createElement("li");
+    li.append(label(key, "wel-tip-key"), label(FA[stringKey], "wel-tip-text"));
+    ui.welTips.append(li);
+  }
 }
 
 function syncHome() {
   if (!ui.home) return;   // spec-test.html has no home section
   const empty = log.childElementCount === 0;
-  if (empty) ui.greeting.textContent = greetingText();
+  if (empty) paintWelcome();
   document.body.classList.toggle("home", empty);
-}
-
-/* The «ادامه آخرین گفتگو» card is the only one whose availability is data-
-   dependent: a brand-new folder has nothing to resume, and offering a dead
-   button is worse than offering three. */
-function syncResumeCard() {
-  if (!ui.cardResume) return;
-  ui.cardResume.hidden = !lastSession;
-  if (lastSession) {
-    ui.cardResume.querySelector(".hc-note").textContent = lastSession.label;
-  }
-}
-
-function cardText(id, title, note) {
-  const el = document.getElementById(id);
-  if (!el) return null;
-  el.querySelector(".hc-title").textContent = title;
-  if (note !== undefined) el.querySelector(".hc-note").textContent = note;
-  return el;
 }
 
 /* --- sidebar data ---------------------------------------------------------- */
@@ -300,15 +326,8 @@ async function loadProjects() {
   renderProjects(lastProjects);
   paintOpenTabs();   // titles may have only just arrived
 
-  const here = (data.projects ?? []).find(
-    (p) => p.path.toLowerCase() === currentCwd.toLowerCase());
-  const prev = (here?.sessions ?? []).find((s) => s.session_id !== currentSession);
-  lastSession = prev && {
-    id: prev.session_id,
-    path: here.path,
-    label: prev.title || prev.preview || prev.session_id.slice(0, 8),
-  };
-  syncResumeCard();
+  syncHome();          // the welcome box names the folder, which may have changed
+  syncWindowTitle();   // and this is where a session's title finally arrives
 }
 
 let archOpen = false;   // the «بایگانی» section, collapsed by default
@@ -1325,26 +1344,6 @@ export function initChrome() {
     ui.home.hidden = false;   // visibility is class-driven from here on
     ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
 
-    /* Home action cards. Every one of them presses a control that already
-       exists — no second implementation to keep in sync, and a card whose
-       control is missing simply never fires. Same idiom as the composer's
-       lifecycle verbs. */
-    cardText("home-resume", FA.homeResume)
-      ?.addEventListener("click", () => {
-        if (lastSession) resumeSession(lastSession.id, lastSession.path);
-      });
-    cardText("home-open", FA.homeOpen, FA.homeOpenNote)
-      ?.addEventListener("click", () => ui.projChip.click());
-    cardText("home-explain", FA.homeExplain, FA.homeExplainNote)
-      ?.addEventListener("click", () => {
-        // The card's own label goes into the composer verbatim, so the user
-        // sees exactly what is about to be sent — no hidden prompt.
-        const input = document.getElementById("input");
-        input.value = FA.homeExplain;
-        document.getElementById("composer").requestSubmit();
-      });
-    cardText("home-help", FA.homeHelp, FA.homeHelpNote)
-      ?.addEventListener("click", () => document.getElementById("btn-help").click());
     ui.projChip.addEventListener("click", async () => {
       // Blocks in a child process while the native dialog is up.
       try {

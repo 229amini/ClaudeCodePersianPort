@@ -24,7 +24,7 @@ import {
 import { api, token } from "./api.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
-  setEffortState, setOutputStyle, resetControls,
+  setEffortState, setOutputStyle, resetControls, effortLabel, styleLabel,
 } from "./controls.js";
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
    background agent's transcript back through this renderer. Same invariant —
@@ -728,10 +728,48 @@ function settlePulse() {
    same event, so `request_recap`'s busy-guard passes, `/recap` goes down the
    stdin pipe of a CLI that is still working, and `_recap_wanted` then swallows
    the running turn's real reply (wiki/parity-chrome.md "The session recap"). */
-function endBatch(settled = true) {
+/* «The turn is over and you are not looking» (V2-PLAN §3.4, last row).
+   A DESKTOP notification, no sound: this window is a terminal replacement and
+   a terminal does not chime.
+
+   Three guards, and each one is a defect it prevents. `live` is false for the
+   SSE backlog a reloading window replays — every finished turn in the history
+   runs through endBatch() again, and without it a refresh at 3 a.m. would fire
+   a notification per turn ever taken. `document.hidden` is the whole point: a
+   turn that ended while the person was watching needs no announcement. And
+   permission is asked for only at the moment there is something to say, never
+   at load — a prompt on startup is the thing everyone denies for ever. */
+function notifyTurnEnd() {
+  if (typeof Notification === "undefined") return;
+  const say = () => {
+    // Between the ask and the answer the user may have come back.
+    if (Notification.permission !== "granted" || !document.hidden) return;
+    try {
+      const note = new Notification(FA.notifyDone, {
+        body: state.status.cwd || FA.appName, silent: true,
+      });
+      note.addEventListener("click", () => window.focus());
+    } catch (err) {
+      // Notifications are a nicety; a browser that refuses to construct one
+      // (or a page that lost its permission mid-session) must not break the
+      // settle it is hanging off.
+    }
+  };
+  if (Notification.permission === "granted") say();
+  else if (Notification.permission === "default") {
+    Notification.requestPermission().then(say).catch(() => {});
+  }
+}
+
+/* `live` is false when this settle is replaying history rather than watching
+   it happen — an SSE backlog, a reconnect. Nothing that ANNOUNCES anything may
+   run on a replay (see the closing line's own rule above: a transcript entry
+   is a function of the events, not of the clock). */
+function endBatch(settled = true, live = true) {
   settlePulse();
   resetTurn();
   toChrome("busy", false, setBusy);
+  if (live && settled && !state.background && document.hidden) notifyTurnEnd();
   const recap = settled && state.recapWorthy;
   state.recapWorthy = false;
   // The CLI writes its own «※ recap: …» when you come back to a turn you were
@@ -1519,6 +1557,44 @@ export function resetStatus() {
   toChrome("context", 0, noteContext);
 }
 
+/* The TUI's own posture row — `⏵⏵ accept edits on (shift+tab to cycle)`,
+   translated (wiki/tui-strings.md §4). v2.5 draws it INSTEAD of the pill the
+   composer row used to carry (V2-PLAN §3.4), which is why it also carries the
+   key: the affordance left with the chip and the sentence has to replace it.
+
+   Driven by the WRAPPER's posture, with the CLI's own `permissionMode` as the
+   fallback. The CLI cannot tell the two apart on its own — «محتاط» and
+   «خودکار» are both `default` down the pipe, and the difference is the
+   wrapper's auto-approve flag (server.py POSTURES) — while a mode nobody here
+   set (`bypassPermissions`, `auto`) only ever arrives as a mode. §8.4: a mode
+   the window can receive but not set still needs a name on screen. */
+const POSTURE_ROW = {
+  plan:              { text: () => FA.slPosturePlan,        arrows: 1 },
+  ask:               { text: () => FA.slPostureAsk,         arrows: 1 },
+  default:           { text: () => FA.slPostureAsk,         arrows: 1 },
+  acceptEdits:       { text: () => FA.slPostureAcceptEdits, arrows: 2 },
+  autoApprove:       { text: () => FA.slPostureAuto,        arrows: 2 },
+  auto:              { text: () => FA.slPostureAuto,        arrows: 2 },
+  bypassPermissions: { text: () => FA.slPostureBypass,      arrows: 2, danger: true },
+};
+
+function postureRow(name) {
+  const entry = POSTURE_ROW[name];
+  if (!entry) return null;
+  const row = document.createElement("div");
+  row.className = "sl-line sl-posture";
+  row.dataset.posture = name;
+  if (entry.danger) row.classList.add("is-danger");
+  // `⏵` is one of §8.9's three directional glyphs: it points the way the text
+  // runs, so it mirrors with `⎿` and `▸` under the same switch.
+  for (let i = 0; i < entry.arrows; i++) {
+    row.append(glyph("⏵", { mirror: true, cls: "sl-arrow" }));
+  }
+  row.append(label(entry.text(), "sl-posture-text"));
+  row.append(label(FA.slPostureHint, "sl-hint"));
+  return row;
+}
+
 export function setStatus(patch) {
   Object.assign(state.status, patch);
   // One number, two readers: the meter below and the notice above the composer.
@@ -1532,30 +1608,15 @@ export function setStatus(patch) {
   statusline.replaceChildren();
   const s = state.status;
 
-  const items = [
-    [FA.slModel, s.model && label(s.model, "mono")],
-    [FA.slFolder, s.cwd && pathEl(s.cwd)],
-    [FA.slMode, s.mode && label(s.mode, "mono")],
-    [FA.slContext, s.context !== undefined && meter(s.context)],
-    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
-    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
-  ];
-
-  for (const [name, valueEl] of items) {
-    if (!valueEl) continue;
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(label(name + ":", "sl-label"), valueEl);
-    statusline.append(wrap);
-  }
-
-  // The machine's own statusLine command output, inherited rather than
-  // reimplemented (plan §B-7). It is terminal text: keep it LTR-isolated, and
-  // keep its colours — the script uses them to mean something (which mode is
-  // on, how full the context is). server.py parsed the SGR codes into runs;
-  // building spans from data is also why none of this can inject markup.
+  // FIRST LINE: the machine's own statusLine command output, inherited rather
+  // than reimplemented (plan §B-7, V2-PLAN §3.4 row 1 — «Keep, first line»).
+  // It is terminal text: keep it LTR-isolated, and keep its colours — the
+  // script uses them to mean something (which mode is on, how full the context
+  // is). server.py parsed the SGR codes into runs; building spans from data is
+  // also why none of this can inject markup.
   if (s.custom?.length) {
+    const line = document.createElement("div");
+    line.className = "sl-line";
     const bdi = pathEl("");
     bdi.classList.add("sl-custom");
     for (const seg of s.custom) {
@@ -1568,8 +1629,39 @@ export function setStatus(patch) {
       if (seg.italic) span.style.fontStyle = "italic";
       bdi.append(span);
     }
-    statusline.append(bdi);
+    line.append(bdi);
+    statusline.append(line);
   }
+
+  // SECOND LINE: the posture, in the TUI's words, where the pill used to be.
+  const posture = postureRow(s.posture ?? s.mode);
+  if (posture) statusline.append(posture);
+
+  /* THIRD LINE: everything the four chips used to say, plus what the bar
+     already carried. Muted, one line, wrapping (V2-PLAN §3.4 rows 3–4). The
+     `.sl-item` / `.sl-label` shape is unchanged — spec-test.html reads the
+     context meter through it. */
+  const items = [
+    [FA.slModel, s.model && label(s.model, "mono")],
+    [FA.slEffort, s.effort && label(effortLabel(s.effort))],
+    [FA.slStyle, s.style && label(styleLabel(s.style))],
+    [FA.slFolder, s.cwd && pathEl(s.cwd)],
+    [FA.slContext, s.context !== undefined && meter(s.context)],
+    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
+    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
+    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
+  ];
+
+  const facts = document.createElement("div");
+  facts.className = "sl-line sl-facts";
+  for (const [name, valueEl] of items) {
+    if (!valueEl) continue;
+    const wrap = document.createElement("span");
+    wrap.className = "sl-item";
+    wrap.append(label(name + ":", "sl-label"), valueEl);
+    facts.append(wrap);
+  }
+  if (facts.childElementCount) statusline.append(facts);
 }
 
 /* --- ctrl+o: the TUI's transcript mode --------------------------------------
@@ -1713,6 +1805,10 @@ export function renderEvent(ev) {
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
         toChrome("outputStyle", ev.output_style, setOutputStyle);
+        // …and into the status line, which is where the style chip's text went
+        // (V2-PLAN §3.4). setStatus writes the TAB's own status object, so a
+        // background conversation records its style without painting it.
+        if (ev.output_style) setStatus({ style: ev.output_style });
       } else if (ev.subtype === "compact_boundary") {
         renderCompactBoundary(ev.compact_metadata);
       } else if (ev.subtype === "status" && ev.permissionMode) {
@@ -2034,7 +2130,7 @@ export function renderEvent(ev) {
         // Nothing outstanding — either every terminal state already arrived
         // (a folded command reports BEFORE the result) or this send carried no
         // uuid at all, which is the pre-2.1.241 contract: one result, one turn.
-        endBatch();
+        endBatch(true, !ev.replayed);
       }
       if (!state.background) {
         refreshProjects();   // the turn changed this session's preview/mtime
@@ -2072,7 +2168,7 @@ export function renderEvent(ev) {
       // channel. Those are not this window's turns. delete() answers both
       // questions at once: false means we never sent it.
       if (!state.outstanding.delete(ev.command_uuid)) return;
-      if (state.outstanding.size === 0) endBatch();
+      if (state.outstanding.size === 0) endBatch(true, !ev.replayed);
       return;
     }
 
@@ -2175,6 +2271,10 @@ export function renderEvent(ev) {
         // Everything the CLI can do, answered at spawn and free
         // (wiki/control-protocol.md §1). Richer than system/init.
         toChrome("initInfo", ev.info, applyInitInfo);
+        // The spawn value for the style, so the status line is not blank until
+        // the user changes something (§3.4: it replaces a chip that was
+        // painted from this same reply).
+        if (ev.info?.output_style) setStatus({ style: ev.info.output_style });
         if (Array.isArray(ev.info?.commands)) {
           toChrome("slash", ev.info.commands, setSlashCommands);
         }
@@ -2186,6 +2286,7 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "output_style") {
         // Published after a change only; the spawn value rode in on init_info.
         toChrome("outputStyle", ev.style, setOutputStyle);
+        if (ev.style) setStatus({ style: ev.style });
       } else if (ev.subtype === "posture") {
         if (state.background) {
           state.chrome.posture = ev.posture;
@@ -2193,9 +2294,13 @@ export function renderEvent(ev) {
         } else {
           setPostureState(ev.posture, ev.auto_count);
         }
+        // The `⏵⏵` row. Recorded for every tab, painted only for the visible
+        // one — the pill it replaces had exactly this rule.
+        if (ev.posture) setStatus({ posture: ev.posture });
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
         toChrome("effort", ev.effort, setEffortState);
+        if (ev.effort) setStatus({ effort: ev.effort });
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — the
         // only source of `context`; the `result` case publishes no estimate.
