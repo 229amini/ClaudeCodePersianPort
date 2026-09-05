@@ -1593,14 +1593,74 @@ export function toggleTranscript() {
   return true;
 }
 
+/* A `!` line and what it printed (V2-PLAN §3.1, last row). The same card shape
+   a tool row uses, deliberately: it IS one — the wrapper ran a command in the
+   project folder and its output is going into the conversation with the next
+   message (server.py park_context). So it collapses like one, counts its lines
+   like one, and opens with the same ctrl+o.
+
+   The command and its output are a shell transcript: mono and LTR as a block,
+   with each line free to resolve its own direction (spec rule 8) because a
+   Persian filename in an `ls` is still Persian. */
+function renderShell(ev) {
+  const command = String(ev.command ?? "");
+  const stdout = String(ev.stdout ?? "");
+  const stderr = String(ev.stderr ?? "");
+  const failed = ev.code !== 0;
+  const line = label(command, "shell-cmd");
+  line.setAttribute("dir", "ltr");
+  const { body } = card("shell", [glyph("$", { cls: "shell-mark" }), line]);
+  if (failed) {
+    // The exit code only when it is news: `0` on every successful line would
+    // be noise on a row that is already saying it worked by saying nothing.
+    body.parentElement.querySelector(":scope > summary")
+      ?.append(label(FA.shellExit.replace(
+        "{n}", ev.code === null || ev.code === undefined ? "—" : faNum(ev.code)),
+        "tool-repeat"));
+  }
+  const text = [stdout, stderr].filter(Boolean).join("\n");
+  const out = block("tool-output", "");
+  out.append(linesAuto(text || FA.shellNoOutput));
+  if (stderr && !stdout) out.style.color = "var(--danger)";
+  body.append(out);
+  markResult(body, text, failed);
+}
+
+/* The same view action, aimed at one KIND of card. `ctrl+t` is the TUI's
+   `app:toggleTodos` and `alt+t` its `chat:thinkingToggle`; both are "show me
+   the thing I collapsed", and neither is a mode — see the note above. */
+function toggleKind(selector) {
+  const cards = [...log.querySelectorAll(selector)];
+  if (!cards.length) return false;
+  const opening = cards.some((card) => !card.open);
+  for (const card of cards) card.open = opening;
+  return true;
+}
+
+export function toggleTodos() {
+  return toggleKind("details.card.todos");
+}
+
+export function toggleThinking() {
+  return toggleKind("details.card.thinking");
+}
+
 export function initTranscript() {
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "o" || !e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
     if (e.defaultPrevented) return;
-    // Edge would open its file picker over the window, and there is no way
-    // back to the conversation from it that a non-technical user will find.
-    e.preventDefault();
-    toggleTranscript();
+    // Edge would open its file picker (ctrl+o) or a new tab (ctrl+t) over the
+    // window, and there is no way back to the conversation from either that a
+    // non-technical user will find. Edge --app intercepts ctrl+t before the
+    // page ever sees it, which is why the checklist toggle is only reachable
+    // in a normal tab — the browser's key wins, as wiki/tui-keys.md says.
+    if (e.key === "o") {
+      e.preventDefault();
+      toggleTranscript();
+    } else if (e.key === "t") {
+      e.preventDefault();
+      toggleTodos();
+    }
   });
 }
 
@@ -2077,6 +2137,8 @@ export function renderEvent(ev) {
         // whose pulse died still gets a fresh one, queued row or not: the stop
         // button is showing and something has to say what it stops.
         if (!queued) startPulse(ev.text ?? "");
+      } else if (ev.subtype === "shell") {
+        renderShell(ev);
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {

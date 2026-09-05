@@ -66,7 +66,7 @@ This is the context v2.3 implements. Everything else in this file is reference.
 | `escape` | `chat:cancel` | `Esc` | قطع نوبت؛ همین حالا هست |
 | `ctrl+l` | `chat:clearInput` | `ctrl+l` | **توجه:** پاک‌کردن نوشتهٔ جعبه است، نه پاک‌کردن صفحه |
 | `cmd+k` | `chat:clearScreen` | — | روی ویندوز هیچ کلیدی ندارد؛ پس v2 هم کلیدی نمی‌سازد (V2-PLAN §8.6) |
-| `ctrl+x ctrl+k` | `chat:killAgents` | `ctrl+x ctrl+k` | بستن عامل‌های پس‌زمینه |
+| `ctrl+x ctrl+k` | `chat:killAgents` | — | بستن عامل‌های پس‌زمینه؛ با فاز `/tasks` می‌آید (V2-PLAN §5.10) |
 | `shift+tab` | `chat:cycleMode` | `shift+tab` | چرخش حالت اجازه؛ همین حالا هست |
 | `meta+p` | `chat:modelPicker` | `alt+p` | انتخاب مدل (V2-PLAN §3.3) |
 | `meta+o` | `chat:fastMode` | — | `fast_mode` روی لوله تأیید نشده — کاوش v2.1 |

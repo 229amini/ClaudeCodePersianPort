@@ -155,6 +155,12 @@
            slash_commands list, authoritative for this machine. -->
       <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
 
+      <!-- `@` file completion. A second list rather than a second mode on the
+           one above: the two open on different characters and close on
+           different rules, and one element holding both states was how the
+           slash popup used to lose its selection (js/composer.js). -->
+      <ul id="file-popup" hidden role="listbox" aria-label="فایل‌ها"></ul>
+
       <!-- One popup serves both the model picker and the approval pill: they
            are never open at the same time, and it keeps a single
            click-outside/Escape handler (js/controls.js). -->
@@ -166,6 +172,15 @@
       <div id="pastes" hidden></div>
 
       <div id="attachments" hidden></div>
+
+      <!-- Ctrl+R, the TUI's reverse history search. The box holds the query
+           while this row shows the match, so there is one text field and not
+           two (js/composer.js). -->
+      <div id="history-search" hidden>
+        <span id="hs-label"></span>
+        <bdi id="hs-match" dir="auto"></bdi>
+        <span id="hs-hint" class="meta"></span>
+      </div>
 
       <label class="sr-only" for="input">پیام</label>
       <textarea id="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
@@ -283,6 +298,17 @@
       <button value="allow" id="perm-allow"></button>
     </menu>
   </form>
+</dialog>
+
+<!-- The TUI's `?` table, translated: every chord the window binds, built from
+     the one list js/composer.js dispatches from, so the sheet cannot describe a
+     key the page does not have (V2-PLAN §3.2). -->
+<dialog id="keys">
+  <h2 id="keys-title"></h2>
+  <div id="keys-body"></div>
+  <menu>
+    <button type="button" id="keys-close" class="ghost"></button>
+  </menu>
 </dialog>
 
 <!-- Classic scripts on purpose: they set window globals (STRINGS, marked) and

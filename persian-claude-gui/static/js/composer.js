@@ -5,7 +5,7 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble, label, paintQueued } from "./render.js";
+import { bubble, label, paintQueued, toggleThinking } from "./render.js";
 /* One-way, and no new cycle: controls.js imports api.js and nothing else. */
 import { cyclePosture } from "./controls.js";
 
@@ -243,6 +243,15 @@ export function snapshotComposer() {
 
 export function restoreComposer(saved) {
   const s = saved ?? {};
+  // History is per PROJECT and the menus describe the conversation that was on
+  // screen a moment ago. Dropped rather than snapshotted: the list is one GET
+  // away, and a stale one would offer another project's prompts under Up.
+  historyList = null;
+  historyIndex = null;
+  historyDraft = "";
+  searchOn = false;
+  paintSearch();
+  closeFiles();
   slashCommands = s.slashCommands ?? [];
   dismissedAt = s.dismissedAt ?? null;
   lastContext = s.lastContext ?? 0;
@@ -541,6 +550,395 @@ function acceptSlash() {
   input.focus();
 }
 
+/* --- the prompt's own keys (V2-PLAN §3.2, wiki/tui-keys.md «Chat») ----------
+
+   Everything below is one context of the TUI's binding table, lifted from the
+   binary rather than from memory. The table is the spec and `test_keys.py`
+   reads it: a row there with no behaviour here is a failing gate, which is the
+   only way a key table and a key handler stay in agreement.
+
+   ONE list, two consumers — the dispatcher below and the `?` sheet — so the
+   window cannot advertise a chord it does not have. */
+
+/* Does this event match a chord written the way wiki/tui-keys.md writes them?
+   `ctrl+x ctrl+e` is a SEQUENCE (press, release, press) and is handled by the
+   prefix state below, not here. */
+function chordOf(e) {
+  const parts = [];
+  if (e.ctrlKey) parts.push("ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  const key = e.key === " " ? "space" : e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  parts.push(key);
+  return parts.join("+");
+}
+
+/* The two-stroke prefix. `ctrl+x` alone is CUT in a browser, and a textarea
+   with a selection is exactly where someone means cut — so the prefix only
+   arms on an empty selection, where cut would have done nothing anyway. */
+let prefixArmed = false;
+let prefixTimer = 0;
+const PREFIX_WINDOW = 3000;
+
+function armPrefix() {
+  prefixArmed = true;
+  clearTimeout(prefixTimer);
+  // The TUI waits forever for the second stroke; a window that did would eat
+  // the next ctrl+e the user meant for the browser.
+  prefixTimer = setTimeout(() => { prefixArmed = false; }, PREFIX_WINDOW);
+}
+
+function dropPrefix() {
+  prefixArmed = false;
+  clearTimeout(prefixTimer);
+}
+
+/* --- history: the same file the terminal walks ------------------------------
+
+   ~/.claude/history.jsonl, filtered to this project, oldest first. Loaded once
+   per conversation and appended to locally on send, so Up after a send walks
+   what was just typed without a round-trip. The unsent draft is kept and comes
+   back when the walk runs off the newest end — V2-PLAN §3.2 asks for exactly
+   that, and it is the difference between a history walk and losing a message. */
+let historyList = null;     // null = never loaded for this conversation
+let historyIndex = null;    // null = not walking
+let historyDraft = "";
+
+async function loadHistory() {
+  if (historyList) return historyList;
+  try {
+    const data = await api("/api/history");
+    historyList = Array.isArray(data.prompts) ? data.prompts : [];
+  } catch (err) {
+    historyList = [];
+  }
+  return historyList;
+}
+
+/* Which line the caret is on decides whether the arrows belong to history or
+   to the box: the TUI's rule, and the only one that keeps a multi-line message
+   editable. */
+function onFirstLine() {
+  const caret = input.selectionStart ?? 0;
+  return !input.value.slice(0, caret).includes("\n");
+}
+
+function onLastLine() {
+  const caret = input.selectionEnd ?? 0;
+  return !input.value.slice(caret).includes("\n");
+}
+
+function putInBox(text) {
+  input.value = text;
+  input.setSelectionRange(text.length, text.length);
+  prunePastes();
+  autoGrow();
+  refreshBashMode();
+}
+
+async function walkHistory(step) {
+  const list = await loadHistory();
+  if (!list.length) return;
+  if (historyIndex === null) {
+    if (step > 0) return;             // Down with no walk in progress: nothing
+    historyDraft = input.value;
+    historyIndex = list.length;
+  }
+  const next = historyIndex + step;
+  if (next >= list.length) {
+    // Past the newest entry: back to whatever was being written.
+    historyIndex = null;
+    putInBox(historyDraft);
+    return;
+  }
+  historyIndex = Math.max(0, next);
+  putInBox(list[historyIndex]);
+}
+
+/* Typing ends the walk: from here the box is the person's again, and a stray
+   Down should not overwrite it with a five-day-old prompt. */
+function endHistoryWalk() {
+  historyIndex = null;
+}
+
+/* --- Ctrl+R, the reverse search --------------------------------------------
+
+   The box holds the QUERY while it is open and the row above shows the match,
+   which is how the TUI does it with one line of input. Esc and Tab put the
+   match in the box, Enter puts it there and sends — the actions the binary
+   binds to `historySearch:accept` and `historySearch:execute`. */
+const hsRow = document.getElementById("history-search");
+const hsMatch = document.getElementById("hs-match");
+let searchOn = false;
+let searchDraft = "";
+let searchMatches = [];
+let searchIndex = 0;
+
+function paintSearch() {
+  if (!hsRow) return;
+  hsRow.hidden = !searchOn;
+  if (!searchOn || !hsMatch) return;
+  hsMatch.textContent = searchMatches.length
+    ? searchMatches[searchIndex] : FA.searchNone;
+  hsMatch.classList.toggle("empty", !searchMatches.length);
+}
+
+function refreshSearch() {
+  const query = input.value.trim().toLowerCase();
+  const list = historyList ?? [];
+  // Newest first: the answer to "what did I type last week" is almost always
+  // the most recent one, and ctrl+r walks back from there.
+  searchMatches = query
+    ? list.filter((line) => line.toLowerCase().includes(query)).reverse()
+    : [...list].reverse();
+  searchIndex = 0;
+  paintSearch();
+}
+
+async function openSearch() {
+  await loadHistory();
+  searchOn = true;
+  searchDraft = input.value;
+  endHistoryWalk();
+  input.value = "";
+  autoGrow();
+  refreshSearch();
+  input.focus();
+}
+
+/* `accept` false is the way out that changes nothing — nothing binds it today
+   (the TUI's own cancel is ctrl+c, which belongs to the browser), but the two
+   exits are different acts and collapsing them would make Esc destructive. */
+function closeSearch(accept) {
+  if (!searchOn) return;
+  searchOn = false;
+  const chosen = accept && searchMatches.length ? searchMatches[searchIndex]
+                                                : searchDraft;
+  paintSearch();
+  putInBox(chosen);
+  input.focus();
+}
+
+/* --- `@` file completion ----------------------------------------------------
+
+   The list is the CLI's own index (server: /api/files → `file_suggestions`),
+   so the window offers the files the terminal offers. Two measured quirks live
+   here: the first query after a spawn comes back empty because the index warms
+   on demand, so the menu asks again; and what is inserted is `@path` as TEXT —
+   the CLI expands it itself (wiki/cli-stream-json-findings.md §5.2). */
+const filePopup = document.getElementById("file-popup");
+let fileMatches = [];
+let fileIndex = 0;
+let fileTimer = 0;
+let fileQuery = null;
+let fileRetried = false;
+const FILE_DEBOUNCE = 120;
+const FILE_RETRY = 400;
+
+function fileOpen() {
+  return !!filePopup && !filePopup.hidden;
+}
+
+function closeFiles() {
+  if (filePopup) filePopup.hidden = true;
+  fileQuery = null;
+  clearTimeout(fileTimer);
+}
+
+/* The `@…` run the caret is sitting in, or null. Mirrors currentSlashQuery():
+   the active LINE, not the whole box, and the mention must start a word — an
+   e-mail address in the middle of a sentence is not a file mention. */
+function currentFileQuery() {
+  const { text } = activeSegment();
+  const match = /(?:^|\s)@([^\s@]*)$/.exec(text);
+  return match ? match[1] : null;
+}
+
+function renderFiles() {
+  filePopup.replaceChildren();
+  fileMatches.forEach((path, index) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", String(index === fileIndex));
+    // A path is a technical token: LTR and monospace, whatever the row's
+    // direction (spec rule 2, the same treatment .slash-name gets).
+    const name = document.createElement("span");
+    name.className = "slash-name";
+    name.setAttribute("dir", "ltr");
+    name.textContent = path;
+    li.append(name);
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      fileIndex = index;
+      acceptFile();
+    });
+    filePopup.append(li);
+  });
+  filePopup.children[fileIndex]?.scrollIntoView({ block: "nearest" });
+}
+
+async function askFiles(query, retry) {
+  let files = [];
+  try {
+    const data = await api("/api/files?q=" + encodeURIComponent(query));
+    files = Array.isArray(data.files) ? data.files : [];
+  } catch (err) {
+    files = [];
+  }
+  // The query moved on while the answer was out.
+  if (fileQuery !== query || !filePopup) return;
+  if (!files.length) {
+    // Measured: the CLI's index answers the FIRST query after a spawn with
+    // nothing at all, so one empty answer is not evidence of no files.
+    if (!retry && !fileRetried) {
+      fileRetried = true;
+      fileTimer = setTimeout(() => askFiles(query, true), FILE_RETRY);
+      return;
+    }
+    // Say so rather than vanishing: a menu that disappears on the second
+    // keystroke reads as a broken window, not as an empty answer.
+    fileMatches = [];
+    filePopup.replaceChildren();
+    const empty = document.createElement("li");
+    empty.className = "is-empty";
+    empty.append(label(FA.fileNone, "slash-desc"));
+    filePopup.append(empty);
+    filePopup.hidden = false;
+    return;
+  }
+  fileRetried = false;
+  fileMatches = files;
+  fileIndex = 0;
+  renderFiles();
+  const box = filePopup.offsetParent?.getBoundingClientRect();
+  if (box) filePopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
+  filePopup.hidden = false;
+}
+
+function refreshFiles() {
+  if (!filePopup) return;
+  const query = currentFileQuery();
+  if (query === null) {
+    closeFiles();
+    return;
+  }
+  fileQuery = query;
+  clearTimeout(fileTimer);
+  // An empty `@` is a legitimate query for the index; it is also the moment
+  // the user has typed one character, so the debounce covers both.
+  fileTimer = setTimeout(() => askFiles(query, false), FILE_DEBOUNCE);
+}
+
+function acceptFile() {
+  const path = fileMatches[fileIndex];
+  if (!path) return;
+  const { start, caret, text } = activeSegment();
+  const at = text.lastIndexOf("@");
+  if (at < 0) return;
+  input.setRangeText("@" + path + " ", start + at, caret, "end");
+  closeFiles();
+  autoGrow();
+  input.focus();
+}
+
+/* --- `!` bash mode ----------------------------------------------------------
+
+   The TUI turns the prompt bar a different colour while the line starts with
+   `!` and runs the line itself. So does this: the CLI cannot run it (§5.1) and
+   would read it as a sentence, so the wrapper runs it and parks the tagged
+   output for the next message — which is where the terminal puts it too. */
+function bashCommand(text) {
+  return text.startsWith("!") ? text.slice(1).trim() : null;
+}
+
+function refreshBashMode() {
+  const box = document.querySelector(".comp-box");
+  if (box) box.classList.toggle("bash", input.value.startsWith("!"));
+}
+
+async function runBash(command) {
+  try {
+    await api("/api/shell", { command });
+  } catch (err) {
+    bubble("error", FA.shellFailed);
+  }
+}
+
+/* --- Ctrl+G, the external editor ------------------------------------------- */
+
+let editing = false;
+
+async function editExternally() {
+  if (editing) return;
+  editing = true;
+  const wasPlaceholder = input.placeholder;
+  input.disabled = true;
+  input.placeholder = FA.editorWaiting;
+  try {
+    const data = await api("/api/editor", { text: input.value });
+    if (data.changed && typeof data.text === "string") putInBox(data.text);
+  } catch (err) {
+    bubble("error", FA.editorFailed);
+  } finally {
+    editing = false;
+    input.disabled = false;
+    input.placeholder = wasPlaceholder;
+    input.focus();
+  }
+}
+
+/* --- the `?` sheet ---------------------------------------------------------
+
+   The TUI's shortcuts table, translated, built from the same list the
+   dispatcher reads. `?` opens it only on an EMPTY prompt: in a sentence it is
+   a question mark and nothing else. */
+const KEY_SHEET = [
+  ["Enter", "keySend"],
+  ["Shift+Enter · Ctrl+J · \\+Enter", "keyNewline"],
+  ["Esc", "keyStop"],
+  ["↑ / ↓", "keyHistory"],
+  ["Ctrl+R", "keySearch"],
+  ["/", "keySlash"],
+  ["@", "keyFiles"],
+  ["!", "keyBash"],
+  ["Ctrl+G", "keyEditor"],
+  ["Ctrl+L", "keyClear"],
+  ["Ctrl+O", "keyExpand"],
+  ["Ctrl+T", "keyTodos"],
+  ["Alt+T", "keyThinking"],
+  ["Alt+P", "keyModel"],
+  ["Shift+Tab", "keyPosture"],
+  ["Shift+Space", "keyZwnj"],
+  ["Ctrl+V", "keyPaste"],
+  ["Ctrl+X Enter", "keyQueue"],
+  ["?", "keySheet"],
+];
+
+const keysDialog = document.getElementById("keys");
+
+function paintKeySheet() {
+  const body = document.getElementById("keys-body");
+  if (!body || body.childElementCount) return;
+  for (const [chord, key] of KEY_SHEET) {
+    const row = document.createElement("div");
+    row.className = "key-row";
+    // The chord is Latin chrome in an RTL row: isolated, or `Shift+Enter`
+    // reorders against the Persian beside it (spec rule 2).
+    const kbd = document.createElement("kbd");
+    kbd.setAttribute("dir", "ltr");
+    kbd.textContent = chord;
+    row.append(kbd, label(FA[key] ?? key, "key-what"));
+    body.append(row);
+  }
+}
+
+export function showKeySheet() {
+  if (!keysDialog) return false;
+  paintKeySheet();
+  if (!keysDialog.open) keysDialog.showModal();
+  return true;
+}
+
 /* --- lifecycle verbs ------------------------------------------------------- */
 
 /* Commands that change the WRAPPER's state, not the conversation's. Sent to the
@@ -558,6 +956,167 @@ const LIFECYCLE_BUTTONS = {
   clear: "#btn-new",
 };
 
+/* --- the dispatcher ---------------------------------------------------------
+
+   Capture phase on the textarea, and registered FIRST, so it sees Enter before
+   the submit handler and Tab before the slash popup — the two keys whose
+   meaning depends on what else is open. Anything it does not claim falls
+   through to the browser, which is the rule the whole table is built on: a key
+   the window does not bind is a key the textarea still has. */
+function clearComposer() {
+  input.value = "";
+  dropPastes();
+  endHistoryWalk();
+  input.style.height = "auto";
+  refreshBashMode();
+  input.focus();
+}
+
+function insertNewline() {
+  input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+  autoGrow();
+}
+
+function promptKeys(e) {
+  if (e.defaultPrevented || editing) return;
+  // A modifier on its own is not a chord; it is the first half of one.
+  if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+  const chord = chordOf(e);
+
+  // The search owns every key while it is open: the box is its query field.
+  if (searchOn) {
+    if (chord === "ctrl+r") {
+      e.preventDefault();
+      if (searchMatches.length) {
+        searchIndex = (searchIndex + 1) % searchMatches.length;
+        paintSearch();
+      }
+      return;
+    }
+    if (chord === "Escape" || chord === "Tab") {
+      e.preventDefault();
+      closeSearch(true);
+      return;
+    }
+    if (chord === "Enter") {
+      e.preventDefault();
+      closeSearch(true);
+      composer.requestSubmit();
+      return;
+    }
+    return;
+  }
+
+  if (prefixArmed) {
+    dropPrefix();
+    if (chord === "ctrl+e") {           // ctrl+x ctrl+e, the TUI's editor chord
+      e.preventDefault();
+      editExternally();
+      return;
+    }
+    if (chord === "Enter") {            // ctrl+x Enter: send it to the queue
+      e.preventDefault();
+      composer.requestSubmit();
+      return;
+    }
+    // Any other second stroke: the prefix is spent and the key means itself.
+  }
+  // Cut is what ctrl+x means with a selection, and that has to keep working;
+  // with none it does nothing, which is where the prefix fits.
+  if (chord === "ctrl+x" && input.selectionStart === input.selectionEnd) {
+    e.preventDefault();
+    armPrefix();
+    return;
+  }
+
+  // The `?` sheet, on an empty prompt only — inside a sentence it is
+  // punctuation, and Persian uses «؟» for its own.
+  if ((e.key === "?" || e.key === "؟") && !e.ctrlKey && !e.altKey
+      && !input.value.trim()) {
+    e.preventDefault();
+    showKeySheet();
+    return;
+  }
+
+  switch (chord) {
+    case "ctrl+l":                      // chat:clearInput — NOT clear screen
+      e.preventDefault();
+      clearComposer();
+      return;
+    case "ctrl+j":                      // chat:newline, beside shift+Enter
+      e.preventDefault();
+      insertNewline();
+      return;
+    case "ctrl+g":
+      e.preventDefault();
+      editExternally();
+      return;
+    case "ctrl+r":
+      e.preventDefault();
+      openSearch();
+      return;
+    case "alt+t":
+      e.preventDefault();
+      toggleThinking();
+      return;
+    case "alt+p": {
+      const chip = document.getElementById("model-chip");
+      // Nothing to pick from yet: the key is not ours, the way shift+Tab is
+      // not ours before a posture is confirmed.
+      if (!chip || chip.hidden) return;
+      e.preventDefault();
+      chip.click();
+      return;
+    }
+    default:
+      break;
+  }
+
+  // A line ending in `\` continues on the next one — the shell habit the TUI
+  // keeps, and the only newline chord that needs no modifier at all.
+  if (chord === "Enter" && input.selectionStart === input.selectionEnd) {
+    const caret = input.selectionStart ?? 0;
+    if (input.value.slice(0, caret).endsWith("\\")) {
+      e.preventDefault();
+      input.setRangeText("\n", caret - 1, caret, "end");
+      autoGrow();
+      return;
+    }
+  }
+
+  if (fileOpen()) {
+    if (chord === "ArrowDown" || chord === "ArrowUp") {
+      e.preventDefault();
+      const step = chord === "ArrowDown" ? 1 : -1;
+      fileIndex = (fileIndex + step + fileMatches.length) % fileMatches.length;
+      renderFiles();
+      return;
+    }
+    if (chord === "Tab") {
+      e.preventDefault();
+      acceptFile();
+      return;
+    }
+    if (chord === "Escape") {
+      e.preventDefault();
+      closeFiles();
+      return;
+    }
+    return;
+  }
+
+  // History, but only where the arrows are not already doing something: an
+  // open menu owns them, and so does a multi-line message the caret is inside.
+  if (slashOpen()) return;
+  if (chord === "ArrowUp" && onFirstLine()) {
+    e.preventDefault();
+    walkHistory(-1);
+  } else if (chord === "ArrowDown" && onLastLine() && historyIndex !== null) {
+    e.preventDefault();
+    walkHistory(1);
+  }
+}
+
 /* Returns true when the text was a lifecycle verb and must not be sent. */
 function interceptLifecycle(text) {
   const verb = /^\/([a-z-]+)\s*$/.exec(text)?.[1];
@@ -573,11 +1132,20 @@ function interceptLifecycle(text) {
 /* Every side effect this module used to run at load time. app.js calls it once,
    in the same order the single-file version ran in. */
 export function initComposer() {
+  /* FIRST, and in the capture phase: the chords below decide what Enter, Tab
+     and the arrows mean, and every handler after this one assumes that
+     decision has already been taken (wiki/tui-keys.md «Chat»). */
+  input.addEventListener("keydown", promptKeys, true);
+
   /* ZWNJ (نیم‌فاصله, U+200C) has no key on a standard layout but Persian needs
      it for correct word forms — می‌رود vs میرود. Spec rule 6 maps it to
      Shift+Space. setRangeText keeps native undo; the spec's execCommand is
      deprecated. */
   input.addEventListener("keydown", (e) => {
+    // The dispatcher above ran first and may already have spent this key --
+    // `\`+Enter inserts a newline, and without this check Enter went on to
+    // submit the line it had just broken.
+    if (e.defaultPrevented) return;
     if (e.key === " " && e.shiftKey) {
       e.preventDefault();
       const { selectionStart, selectionEnd } = input;
@@ -594,14 +1162,43 @@ export function initComposer() {
   // A placeholder the user deleted takes its parked text with it.
   input.addEventListener("input", prunePastes);
 
+  input.addEventListener("input", () => {
+    // While the search is open the box is its query field and nothing else.
+    if (searchOn) {
+      refreshSearch();
+      return;
+    }
+    // Typing ends a history walk: from here the box is the person's again.
+    endHistoryWalk();
+    refreshBashMode();
+    refreshFiles();
+  });
+
+  document.getElementById("keys-close")?.addEventListener("click",
+    () => keysDialog?.close());
+
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
     // Enter ALWAYS sends. The popup used to swallow it to accept a completion,
     // which meant Enter did different things depending on invisible state —
     // Tab, click and the arrow keys accept instead.
     slashPopup && (slashPopup.hidden = true);
+    closeFiles();
     const text = input.value.trim();
     if (!text && !attachments.length) return;
+    /* `!` is a MODE, not a prefix the CLI understands: measured (§5.1), the
+       model would just read the line. The wrapper runs it instead, and its
+       output reaches the conversation with the next message. */
+    const command = bashCommand(text);
+    if (command !== null) {
+      input.value = "";
+      input.style.height = "auto";
+      dropPastes();
+      refreshBashMode();
+      endHistoryWalk();
+      if (command) runBash(command);
+      return;
+    }
     if (interceptLifecycle(text)) {
       input.value = "";
       input.style.height = "auto";
@@ -615,6 +1212,15 @@ export function initComposer() {
     input.value = "";
     input.style.height = "auto";
     dropPastes();
+    // Up after a send walks what was just typed, without a round-trip: the
+    // server appends the same text to history.jsonl at the same moment.
+    if (historyList && payload.text
+        && historyList[historyList.length - 1] !== payload.text) {
+      historyList.push(payload.text);
+    }
+    endHistoryWalk();
+    historyDraft = "";
+    refreshBashMode();
     setAttachments([]);
     setBusy(true);
     try {
@@ -770,10 +1376,19 @@ export function initComposer() {
 
   setAttachments([]);
   setBusy(false);
+  // Chrome the modules own rather than index.html: every one of these labels
+  // belongs to a surface built here, and index.html keeps only the ids.
+  for (const [id, key] of [["hs-label", "searchLabel"], ["hs-hint", "searchHint"],
+                           ["keys-title", "keysTitle"], ["keys-close", "keysClose"]]) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = FA[key];
+  }
   const hint = document.getElementById("composer-hint");
   if (hint) {
+    // Four hints was already the ceiling for one line; the rest of the table
+    // lives behind `?`, which is where the TUI keeps it too.
     hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.hintExpand,
-                        FA.slashHint].join(" · ");
+                        FA.hintKeys].join(" · ");
   }
   input.focus();
 }
