@@ -9,9 +9,10 @@ V2-PLAN.md §1: *"v2 Persian text is a translation of the TUI's own strings, pul
 binary, one table, reviewed once. Nobody authors copy."* This is that table. v2.6 regenerates
 `static/strings.fa.js` from it.
 
-**Status of the Persian column: DRAFT — not yet reviewed by the user.** The bead's exit
-criterion is «reviewed once by the user»; §"نیاز به تصمیم کاربر" at the bottom lists the rows
-where a translation was a judgement call rather than a rendering.
+**Status of the Persian column: settled, one row excepted.** §7 listed six rows where the
+translation was a judgement call. **Five are decided in `V2-PLAN.md` §8.1–8.5** on technical
+grounds; the sixth — mirroring `⎿ ⏵ ▸` in an RTL column — has no technical tiebreaker and is
+the plan's one open question (§8.9). Nothing below is a draft any more.
 
 ## 1. Glyphs
 
@@ -103,22 +104,15 @@ build (V2-PLAN §4), or is a terminal fact that has no meaning in a window.
 `pin to top` / `unpin`, `no job focused`, `Cannot be rebound — …` (all seven),
 `macOS system copy` and its five siblings, every `Diff …` string, every `Plugin …` string.
 
-## 7. نیاز به تصمیم کاربر — rows where the translation was a judgement call
+## 7. The six judgement calls — five decided, one open
 
-The bead's exit criterion is that the user reviews this column once. These are the rows where
-review actually changes something; the rest are literal renderings.
+Decided on 2026-09-05. Full reasoning in `V2-PLAN.md` §8; the short version:
 
-1. **`permission.yes_remember`** — the TUI's scope is «for `<tool>` commands in `<dir>`». v1
-   already decided the scope is *this project, this session* (2026-08-06). The Persian says
-   «دیگر برای … نپرس» without naming a directory. Confirm that stays.
-2. **Numbering the options.** The TUI shows `1. / 2. / 3.` as part of the select component, not
-   as part of the label. This table folds the digit into the Persian label. If v2 renders the
-   digit as a separate element, the digits must come out of these strings.
-3. **`posture.bypass`** — «دور زدن اجازه‌ها» is accurate and alarming. A softer wording would be
-   dishonest for a mode that skips every prompt. Confirm the blunt version.
-4. **`posture.auto`** — v2 does not build auto mode, but the CLI can still report it in
-   `system/status` if the user sets it elsewhere. Kept as a display-only string. Confirm.
-5. **`exit.hint` and `help.esc_quit`** — dropped rather than translated, because the window has
-   no "press it again to quit". Confirm nothing should replace them.
-6. **`⎿` `⏵` `▸` mirroring** — flipping these in RTL is a rendering decision with no precedent
-   in the TUI, which never runs RTL. Confirm the mirror is wanted before v2.2 builds it.
+| # | Row | Decision |
+|---|---|---|
+| 1 | `permission.yes_remember` | **Keep** «دیگر برای … نپرس» with no directory. v1's scope is *this project, this session*, not a path — naming a directory would describe a scope the window does not implement (§8.1) |
+| 2 | Numbering the options | **The digit comes out of the string.** In RTL a digit glued to a Persian run is reordered by bidi and lands where nobody put it; and option 2 only exists when a remember scope applies, so the number is a property of the row's position. v2.4 renders it, v2.6 strips it from `strings.fa.js` (§8.2) |
+| 3 | `posture.bypass` | **Keep the blunt «دور زدن اجازه‌ها».** It is what the mode does (§8.3) |
+| 4 | `posture.auto` | **Keep, display-only.** The CLI reports the mode even though v2 cannot set it (§8.4) |
+| 5 | `exit.hint`, `help.esc_quit` | **Dropped, not translated.** They describe a terminal that closes when you insist; a window has a close button (§8.5) |
+| 6 | `⎿` `⏵` `▸` mirroring | **Open — the plan's one unanswered question.** Three options and a recommendation in `V2-PLAN.md` §8.9. v2.2 builds it as a CSS class so it can be decided by looking at it |

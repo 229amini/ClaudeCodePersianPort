@@ -37,13 +37,17 @@ DEADLINE = 90.0       # hard cap per phase, so a hung CLI cannot hang the probe
 
 
 class Probe:
-    def __init__(self, cwd: Path) -> None:
+    def __init__(self, cwd: Path, extra_args: list[str] | None = None) -> None:
+        """`extra_args` is appended to the wrapper's own spawn flags, never replaces
+        them -- probe_v21.py needs `--resume <id> --fork-session` on top of the exact
+        flags server.py uses, because a probe on different flags measures a different
+        program."""
         self.events: list[dict] = []
         self.raw: list[str] = []
         self.last_line = time.monotonic()
         self.lock = threading.Lock()
         self.proc = subprocess.Popen(
-            [find_claude(), *CLAUDE_ARGS],
+            [find_claude(), *CLAUDE_ARGS, *(extra_args or [])],
             cwd=str(cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, encoding="utf-8",
             errors="replace", bufsize=1,

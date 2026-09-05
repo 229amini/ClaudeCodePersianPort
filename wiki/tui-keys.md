@@ -65,7 +65,7 @@ This is the context v2.3 implements. Everything else in this file is reference.
 |---|---|---|---|
 | `escape` | `chat:cancel` | `Esc` | قطع نوبت؛ همین حالا هست |
 | `ctrl+l` | `chat:clearInput` | `ctrl+l` | **توجه:** پاک‌کردن نوشتهٔ جعبه است، نه پاک‌کردن صفحه |
-| `cmd+k` | `chat:clearScreen` | `ctrl+l` روی صفحه؟ | «نیاز به تصمیم» — روی ویندوز کلیدی ندارد |
+| `cmd+k` | `chat:clearScreen` | — | روی ویندوز هیچ کلیدی ندارد؛ پس v2 هم کلیدی نمی‌سازد (V2-PLAN §8.6) |
 | `ctrl+x ctrl+k` | `chat:killAgents` | `ctrl+x ctrl+k` | بستن عامل‌های پس‌زمینه |
 | `shift+tab` | `chat:cycleMode` | `shift+tab` | چرخش حالت اجازه؛ همین حالا هست |
 | `meta+p` | `chat:modelPicker` | `alt+p` | انتخاب مدل (V2-PLAN §3.3) |
@@ -80,7 +80,7 @@ This is the context v2.3 implements. Everything else in this file is reference.
 | `ctrl+_` `ctrl+-` `ctrl+shift+-` `ctrl+shift+_` | `chat:undo` | `ctrl+z` | مرورگر خودش `ctrl+z` را در `textarea` دارد |
 | `ctrl+x ctrl+e` | `chat:externalEditor` | `ctrl+g` | یک کلید بس است |
 | `ctrl+g` | `chat:externalEditor` | `ctrl+g` | ویرایش پیش‌نویس در ویرایشگر بیرونی، از راه `/api/editor` (V2-PLAN §2) |
-| `ctrl+s` | `chat:stash` | — | «نیاز به تصمیم» — رفتارش اندازه‌گیری نشده |
+| `ctrl+s` | `chat:stash` | — | کنارگذاشتن پیش‌نویس؛ در مرورگر `ctrl+s` مال خود مرورگر است (V2-PLAN §8.7) |
 | `ctrl+x ctrl+a` | `abovePrompt:toggle` | — | افزونه‌ها ساخته نمی‌شوند |
 | `ctrl+x tab` | `abovePrompt:focus` | — | افزونه‌ها ساخته نمی‌شوند |
 | `alt+v` | `chat:imagePaste` | `ctrl+v` | انحراف عمدی؛ §«انحراف‌ها» |

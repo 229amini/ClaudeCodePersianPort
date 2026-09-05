@@ -70,9 +70,9 @@ rows in the column, which is what the TUI does), the context notice card.
 
 | Route | For | Notes |
 |---|---|---|
-| `GET/POST /api/history` | Up/Down, Ctrl+R | Read the tail of `history.jsonl` filtered by `project`; append one line per sent prompt in the TUI's exact shape so the real TUI sees it too. |
-| `GET /api/files?q=` | `@` completion | `os.walk` under the session cwd, prefix match, capped. The TUI's own fuzzy list is in-process and unreachable. |
-| `POST /api/shell` | `!` bash mode | `subprocess` in the session cwd, output streamed on the hub. Whether it enters the model's context depends on the §5 probe. |
+| `GET/POST /api/history` | Up/Down, Ctrl+R | Read the tail of `history.jsonl` filtered by `project`; append one line per sent prompt in the TUI's exact shape so the real TUI sees it too. **Take `history.jsonl.lock` first** — the CLI runs a retention prune that rewrites the whole file (§5.8). |
+| `GET /api/files?q=` | `@` completion | **Proxy the CLI's own `file_suggestions` control request** (§5.11) and inherit its ranking; `os.walk` only as the fallback while the index is cold. The first query after a spawn returns nothing, so the menu re-asks. |
+| `POST /api/shell` | `!` bash mode | `subprocess` in the session cwd, output streamed on the hub. **Measured (§5.1): the CLI will not run it, and the TUI's own bash output DOES enter context** — send it back as a user message tagged `<bash-input>`/`<bash-stdout>`/`<bash-stderr>`, which is what the transcript reader expects. |
 | `POST /api/editor` | Ctrl+G | Write the draft to a temp file, `os.startfile`, poll mtime, hand the text back. The TUI does the same with `$EDITOR`. |
 | `POST /api/control` subtype `side_question` | `/btw` | Already routed; needs the reply rendered as a side answer, not a turn. |
 | `POST /api/open-file` | `/permissions`, `/hooks`, `/memory`, `/config`, `/keybindings` | `os.startfile` on the real file. The TUI opens an editor for most of these too. |
@@ -122,7 +122,8 @@ it, the key, and status (**have** in v1 engine, **build**, **measure** first).
 | Image paste / attach | `image` content block | Keep | Ctrl+V, drop | have |
 | External editor | `/api/editor` | | Ctrl+G | build |
 | Posture cycle | `set_permission_mode` | Keep `pickPosture()` | Shift+Tab | have |
-| Clear screen | local | Scroll the column so the prompt sits at the top | Ctrl+L | build |
+| Clear the composer | local | Empty the prompt box — this is what the binary binds Ctrl+L to (`chat:clearInput`), corrected §8.6 | Ctrl+L | build |
+| Clear screen | local | Scroll the column so the prompt sits at the top. **No chord:** the TUI binds it to `cmd+k`, which has no Windows binding (§8.6) | — | build |
 | Line editing | native `textarea` | Nothing to build; Ctrl+A/E/U/K/W are the browser's | | native |
 | Vim mode | TUI-only | Out (§4) | | — |
 | Shortcuts overlay | binary strings | The TUI's `?` table, translated | `?` on an empty prompt | build |
@@ -178,30 +179,64 @@ owns (Ctrl+W, Ctrl+T, Ctrl+N) stay with the browser; Edge `--app` intercepts the
 ## 4. Known differences, will not build
 
 `/vim`, `/voice`, `/radio`, `/tui`, `/teleport`, `/desktop`, `/mobile`, `/remote-control`,
-`/ide`, `/chrome`, `/plugin` screens, `/update`, `/focus`, `/brief`, `/background`, `#` memory
+`/ide`, `/chrome`, `/plugin` screens, `/update`, `/focus`, `/brief`, `#` memory
 shortcut, `auto` posture (measured: zero `can_use_tool`, `wiki/approval-postures.md`), `ultracode`
-(`wiki/control-protocol.md` §8). Esc-Esc rewind stays out unless the §5 probe finds a control
-subtype. `help.html` lists these under «تفاوت با ترمینال».
+(`wiki/control-protocol.md` §8), `ctrl+s` `chat:stash` (decided §8.7).
+`help.html` lists these under «تفاوت با ترمینال».
 
-## 5. Measure first, free
+**Two names left this list on 2026-09-05, because §5 measured them reachable:**
 
-Each probe reuses `probe_queue.py`'s `Probe`/`control` in an isolated cwd. Record every answer in
-`wiki/cli-stream-json-findings.md` under a 2.1.259 heading before writing a line of shell.
+- **`/tasks` and `/background`** — background tasks emit a full event family on the pipe
+  (§5.10). In scope.
+- **Esc-Esc rewind** — the plan said it "stays out unless the §5 probe finds a control
+  subtype". The probe found two (§5.6). The exclusion is lifted; whether v2 *spends* a phase on
+  it is the one scope question left open in §8.
 
-1. `!ls` as user text over the pipe: does the CLI run it locally, does it enter context, or does
-   the model see a literal `!ls`? Decides whether `/api/shell` is display-only.
-2. `@README.md` as user text: does the CLI attach the file? Decides whether `/api/files` sends
-   `@path` or the file content as a block.
-3. `#note` as user text: expect a plain turn. Confirms `#` stays out.
-4. `side_question` control: request shape, response shape, whether it writes the transcript.
-5. `--fork-session` spawn with `--resume <id>`: new session id, same project, transcript on disk.
-6. Any `rewind`/`checkpoint` subtype: grep the binary's control-subtype list on 2.1.259.
-7. `/export` and `/copy` as text: expect refusal in `-p`; confirms window-local.
-8. Append one line to `history.jsonl` in the TUI's shape, open the real TUI, press Up. Confirms
-   shared history is bidirectional.
-9. `/compact` live event shape, so §3.1's divider renders from data.
-10. Background tasks: run a `run_in_background` Bash in one paid turn if nothing free reveals the
-    event shape. Decides `/tasks`.
+## 5. Measure first — ANSWERED 2026-09-05 on 2.1.261 (`pcg-qmy.2`)
+
+Full write-up with evidence: `wiki/cli-stream-json-findings.md`, §"2.1.261 — V2-PLAN §5".
+`persian-claude-gui/probe_v21.py` re-runs the live half for free (**25/25**). Total spend for
+the whole phase: **$0.107**, from one probe that turned out to be paid and is now pinned so
+nobody pays for it twice.
+
+The method the plan did not anticipate: **six of the ten were answered by reading the bundle**,
+not by running it. `extract_tui_vocab.py` already proved the SEA carries its JS verbatim, so
+"what shape does this event have" is answerable at the construction site — exactly, for free,
+and without a login. A black-box turn is the weaker measurement *and* the expensive one.
+
+| # | Question | Answer | Consequence |
+|---|---|---|---|
+| 1 | `!ls` over the pipe | **The model sees literal text.** `!` is a TUI *input mode* (`mode:"bash"`), stripped in the input-state constructor; a stream-json frame has no `mode` | `/api/shell` runs the command itself. **Not display-only:** the TUI feeds output back as a user message tagged `<bash-input>`/`<bash-stdout>`/`<bash-stderr>`, so it enters context and v2 must do the same |
+| 2 | `@README.md` over the pipe | **The CLI attaches it.** At-mention extraction is a pure text scan with no interactive gate | v2 sends `@path` as text; `/api/files` never sends file content |
+| 3 | `#note` over the pipe | Plain turn, as expected (`#` is the `<user-memory-input>` mode) | `#` stays out, now measured |
+| 4 | `side_question` | Routed. `{question, history?}` → `{response, synthetic, refusal_fallback?}`. **It costs a turn** — no malformed payload gets refused before the model sees it | `/btw` is buildable and renders as a side answer, not a turn. It is a paid action and the window should not pretend otherwise |
+| 5 | `--fork-session` | **New session id, same project folder, both transcripts on disk** | `/branch` is a respawn. The sidebar already lists both — no new code |
+| 6 | rewind subtype | **Two of them.** `rewind_conversation {target_message_uuid, interrupt_if_running?}` → `{rewound, prefillText, precedingAssistantUuid, error}`, routed. `rewind_files {user_message_id, dry_run?}`, routed but feature-gated off on this PC | §4's exclusion is **lifted**. Now a scope question, not a capability one — see §8 |
+| 7 | `/export`, `/copy` | Refused locally, free, with a full uuid lifecycle. So is any unknown command | Window-local, confirmed. And the spinner ends on the event, not on the silence watchdog |
+| 8 | `history.jsonl` | Shape confirmed (`display`, `pastedContents`, `timestamp` ms, `project`, `sessionId`). **But the CLI rewrites the file** under a `history.jsonl.lock` retention prune | **v2 takes the lock before appending.** A blind append can be dropped by a concurrent prune. The other half — press Up in the real TUI — needs a human at a terminal |
+| 9 | `/compact` shape | `system/compact_boundary` with `compact_metadata{trigger, pre_tokens, post_tokens?, …}`; TUI content string `Conversation compacted` | §3.1's divider renders from data. No paid compaction needed |
+| 10 | background tasks | **They emit.** `background_tasks_changed`, `task_started`, `task_progress`, `task_notification`, `task_summary`, plus a `stop_task` control request | **`/tasks` is IN.** §4's "out if not" does not apply, and the paid turn this probe budgeted was never needed |
+| **11** | *(not in the plan)* `file_suggestions` | **The CLI's own fuzzy file index is a control subtype.** `{query}` → `{suggestions:[{path, score}]}` | §2's "in-process and unreachable" is measurably wrong. `/api/files` proxies it and inherits the CLI's ranking |
+
+### 5a. What the probes settled
+
+Decided here, on the measurements above, so no later phase re-opens them:
+
+- **`/api/files` proxies `file_suggestions`**, keeping `os.walk` only as the fallback for the
+  cold-index window. Measured quirks the `@` menu has to handle: the **first query after spawn
+  returns zero** (the index warms on demand); results come back cwd-relative first and then as
+  **absolute** paths from `~/.claude/skills` and `~/.claude/agents`, which the menu filters;
+  matching is on filename substrings, so `src/` is not a query.
+- **`/api/shell` executes locally and injects the TUI's tags.** Display-only was the other
+  option and it is now measurably the wrong one.
+- **`/api/history` takes `history.jsonl.lock`** before appending. Non-negotiable: the CLI
+  rewrites that file under it.
+- **`/tasks`, `/branch` and `/btw` are in scope**, all three moved out of §4 or off "measure".
+
+### 5b. Still open, and only a human can close it
+
+- **§5.8's second half.** Append a line to `history.jsonl`, open the real TUI, press Up. Needs
+  an interactive terminal and a person watching it. Everything up to it is measured.
 
 ## 6. Phases
 
@@ -210,7 +245,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
 | **v2.0** Vocabulary ✅ | `wiki/tui-keys.md`, `wiki/tui-strings.md`: every keystroke, glyph and prompt string pulled from the 2.1.260 binary by `extract_tui_vocab.py` | **Done 2026-09-04**, except the user's one review of the Persian column (`wiki/tui-strings.md` §7 lists the six rows that need it). Gated by `test_tui_vocab.py` — 72/72 |
-| **v2.1** Probes | §5 answered in the wiki | Ten entries, each with the command that produced it |
+| **v2.1** Probes ✅ | §5 answered in the wiki | **Done 2026-09-05.** Eleven entries (ten asked, one found), each with the command or the bundle site that produced it, in `wiki/cli-stream-json-findings.md`. `probe_v21.py` re-runs the live half free — 25/25. Only §5.8's "press Up in the real TUI" is left, and it needs a human |
 | **v2.2** Column | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | spec **174/174** unchanged; `test_layout.py` at three widths; the browser sweep of `M8-acceptance.md` §4 |
 | **v2.3** Prompt | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | `test_keys.py` (new, §7); shared history proven against the real TUI |
 | **v2.4** Dialogs | §3.3 as numbered inline lists; chips removed; pickers behind commands | `M8-acceptance.md` §6 permission and plan cases pass by keyboard alone |
@@ -230,7 +265,9 @@ process per open project, as today. The sidebar is the one surface v2 leaves alo
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
 `test_transcript_path.py`, `test_no_console.py`, `probe_queue.py` (free), `smoke_test.py` (one
-paid turn). **New in v2.0: `test_tui_vocab.py` (72), free** — the two wiki tables against the
+paid turn). **New in v2.1: `probe_v21.py` (25), free** — the §5 answers that need a live
+process, re-measured against whatever build is installed today.
+**New in v2.0: `test_tui_vocab.py` (73), free** — the two wiki tables against the
 installed binary; see CLAUDE.md's gate table. New in v2.3: `test_keys.py`, headless like the spec
 gate, dispatches each binding from `wiki/tui-keys.md` at the composer and asserts the action it
 maps to fired. New in v2.6: a strings check that fails when a key in the binary table has no entry
@@ -238,3 +275,87 @@ in `strings.fa.js`.
 
 `test_keys.py` (v2.3) should read its cases from `wiki/tui-keys.md`'s «کلید v2» column rather
 than repeat them, so the binding table has exactly one copy and the two gates cannot disagree.
+
+## 8. The decisions v2.0 flagged, settled 2026-09-05
+
+`wiki/tui-strings.md` §7 listed six rows as «نیاز به تصمیم کاربر», and `wiki/tui-keys.md` marked
+two more chords the same way. Eight items. **Seven of them turned out to be engineering
+questions with a defensible answer, and are decided below.** One is a genuine matter of taste
+with no technical tiebreaker, and stays open — §8.9.
+
+A decision is recorded here rather than in the wiki tables so the tables stay generated.
+
+**8.1 `permission.yes_remember` — the scope is not named, and that is correct.**
+The TUI's option 2 reads «for `<tool>` commands in `<dir>`». v1's scope has been *this project,
+this session* since 2026-08-06 (`respond_permission`'s broker is per tab, and `test_units.py`
+asserts «دوباره نپرس» stays in the tab that granted it). Naming a directory would describe a
+scope the window does not implement. The Persian stays «دیگر برای … نپرس», with the tool name
+in the ellipsis and no path. **Keep.**
+
+**8.2 The option digits are a separate element, not part of the string.**
+`wiki/tui-strings.md` folded «۱.» into the label; that has to come back out. Two reasons, both
+technical. In RTL a digit glued to the front of a Persian run is reordered by the bidi
+algorithm and lands where nobody put it — the numbering has to be chrome the renderer places,
+not text the paragraph contains. And the list is keyboard-navigable, so the digit is a property
+of the row's position, which changes when option 2 is absent (it only exists when a remember
+scope applies). **v2.4 renders the digit; v2.6 strips it from `strings.fa.js`.**
+
+**8.3 `posture.bypass` keeps the blunt wording.** «دور زدن اجازه‌ها» is what
+`bypassPermissions` does: every prompt is skipped. A softer phrase would misdescribe the one
+mode where the window stops asking before something destructive. **Keep, in the warning colour.**
+
+**8.4 `posture.auto` stays as a display-only string.** v2 does not offer auto mode (§4, and
+`wiki/approval-postures.md` measured zero `can_use_tool` in it), but the CLI reports it in
+`system/status` if the user set it elsewhere, and `sync_cli_mode()` already handles that
+gracefully. A mode the window can receive but not set still needs a name on screen. **Keep.**
+
+**8.5 `exit.hint` and `help.esc_quit` are dropped, not translated.** «Press Ctrl-C again to
+exit» and «esc again quits» describe a terminal that closes when you insist. A window closes
+from its close button, and Edge `--app` owns Ctrl+C anyway. Translating them would document a
+key that does nothing. `help.esc_quit` keeps only its first half, «Esc برای بستن». **Drop.**
+
+**8.6 `ctrl+l` clears the input, and "clear screen" gets no key.**
+`wiki/tui-keys.md` marked this «نیاز به تصمیم» because §3.2 assigned Ctrl+L to *clear screen*
+while the binary assigns it to `chat:clearInput` — clearing the composer. The binary wins:
+§3.6's rule is "lift the defaults from the binary, not from memory", and the TUI's own
+`chat:clearScreen` is bound to `cmd+k`, which **has no Windows binding at all**. So the terminal
+this window imitates has no clear-screen key on the platform this window ships to, and inventing
+one would be a divergence with nothing to imitate. **`Ctrl+L` = clear the composer.** §3.2's
+"Clear screen / Ctrl+L" row is wrong and is corrected. Scrolling the column to put the prompt at
+the top remains available as a command if v2.5 wants it, not as a chord.
+
+**8.7 `ctrl+s` `chat:stash` is out.** The TUI parks a half-typed draft under it. In a browser
+Ctrl+S is Save Page, and §3.6's standing rule is that keys the browser owns stay with the
+browser. The feature also has no home in v2: the draft already survives navigation, because
+history Up/Down restores the unsent draft on return (§3.2). **Out, listed in §4.**
+
+**8.8 Rewind: the capability is proven, the scope is not committed.** §5.6 found
+`rewind_conversation` routed, returning exactly what a window needs (`prefillText` to refill the
+composer, `precedingAssistantUuid` to truncate the column). It is no longer in §4's "will not
+build" list. It is **not** scheduled into v2.2–v2.7 either: it is one more dialog plus a
+truncation path in the column, and it arrived after the phases were costed. Recommendation:
+**build it in v2.4** alongside the other dialogs, where the numbered-list machinery already
+exists. Flagged rather than assumed because it moves a phase's size.
+
+### 8.9 Open — the one that is taste, not engineering
+
+**Do `⎿`, `⏵` and `▸` mirror in an RTL column?**
+
+These three glyphs are directional and carry **no Unicode mirroring property**, so nothing
+flips them automatically. The TUI has never run RTL, so there is no precedent to copy and no
+"what does Claude Code do" to appeal to. Whatever v2 picks, it picks first.
+
+| | What it looks like | Argument for |
+|---|---|---|
+| **A. Mirror them** (`⎿`→flipped, `⏵⏵`→`⏴⏴`, `▸`→`◂`) | The result branch hangs off the right edge under its tool row; arrows point the way the text runs | The glyphs are *pointers into the layout*. In an RTL column a branch that hangs left points away from the thing it belongs to. Every other directional affordance in the window already mirrors |
+| **B. Leave them** | Same shapes as the terminal, pointing left in a right-to-left column | A screenshot from the window matches a screenshot from the terminal. The colleague who has seen the real CLI recognises the shape |
+| **C. Mirror the branch, keep the arrows** | `⎿` flips because it is structural; `⏵⏵` and `▸` stay because they are status markers, not layout | Splits the difference honestly: only the glyph that draws a *connection* has a direction the layout can contradict |
+
+**My recommendation: A, mirror all three.** The window's entire premise is that the DOM shapes
+Persian correctly where a terminal cannot — mirroring is the same argument one level up. A
+connector pointing away from what it connects is the kind of small wrongness that makes a UI
+feel foreign, and it is the only one of the three options that is wrong in *no* direction.
+B's benefit is recognition, which the sidebar and the Persian text already spend.
+
+Cheap to defer: the renderer flips with one `transform: scaleX(-1)` on a class, so this can be
+a toggle in v2.2 and be decided by looking at it. **v2.2 should build it as a class and ask.**

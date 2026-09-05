@@ -4,6 +4,242 @@
 on Windows 10 Home 19045, 2026-08-04. Every answer below is version-pinned — re-verify after a
 CLI upgrade.
 
+## 2.1.261 — V2-PLAN §5, the v2.1 probes (2026-09-05, author PC)
+
+The binary self-updated again overnight, 2.1.260 → 2.1.261. It moved no keys (206 bindings, 25
+contexts, unchanged) and no behaviour found here; it renamed two minified temporaries, which
+`test_tui_vocab.py` caught and now ignores by design.
+
+**All ten §5 probes are answered, and one the plan did not know to ask.** Method, in order of
+preference: read the bundle at the construction site (free, exact, and it survives having no
+login), then a live control request (free), and only then a turn. **Total spend for the whole
+of v2.1: $0.107**, from one probe that turned out to be paid and is now pinned so nobody pays
+for it twice. `probe_v21.py` re-runs the live half for free — 25/25.
+
+`probe_v21.py` also fixed two ways of measuring wrongly, both of which had produced a
+confident wrong answer first:
+
+- **`result.total_cost_usd` is the SESSION total, not the turn's.** Summing it across a run
+  bills every later phase for an earlier one's turn. The first run charged `/export` $0.107
+  for a `side_question` that had run before it. Phases now take a *delta*.
+- **`settle()` returns instantly if the CLI was already quiet.** After any previous phase it
+  has been, so a command that answers in two seconds was recorded as answering never. Three
+  local commands were written down as "emits no events at all" — they emit a full lifecycle.
+  A probe now sleeps past the settle window before it is allowed to conclude silence.
+
+### §5.1 `!ls` — the CLI will not run it (bundle)
+
+`!` is a **TUI input mode, not a text prefix**. The input state is constructed as
+`m = ize() && c.startsWith("!"); {query: m ? c.slice(1) : c, cursorOffset: …, mode: m ? "bash" : "prompt"}`
+— the `!` is stripped and becomes a `mode` field, in a constructor that also builds a text
+cursor, i.e. the TUI's own input state. A stream-json `user` frame carries no `mode`, so
+**`!ls` over the pipe is literal text in mode `prompt` and reaches the model.**
+
+What the TUI does with bash mode, and therefore what `/api/shell` must imitate: it runs the
+command locally and injects the result into the conversation as a user message tagged
+`<bash-input>…</bash-input>`, with `<bash-stdout>` and `<bash-stderr>` siblings
+(`/^<bash-input>([\s\S]*?)<\/bash-input>/` is in the transcript reader). So **bash output does
+enter the model's context** — `/api/shell` is not display-only, and to match the TUI it must
+send the tagged text back as a user turn.
+
+`#` memory mode is the same shape, tagged `<user-memory-input>` (§5.3).
+
+### §5.2 `@README.md` — the CLI DOES expand it (bundle)
+
+At-mention extraction is a pure text scan over the prompt, `Lps(e)`:
+
+```
+/(^|[\s\u3002\u3001\uFF1F\uFF01])@"([^"]+)"/g     @"path with spaces"
+/(^|[\s\u3002\u3001\uFF1F\uFF01])@([^\s]+)\b/g    @path
+```
+
+with siblings for `@server:resource` (MCP), `@agent-name` / `@"name (agent)"` (subagents), and
+a `#L10-20` line-range suffix. Its caller gathers `at_mentioned_files` alongside
+`mcp_resources`, `agent_mentions`, `peer_mentions`, `queued_commands`, `todo_reminders`. The
+**only** gates on that path are `CLAUDE_CODE_DISABLE_ATTACHMENTS`, `CLAUDE_CODE_SIMPLE`,
+`options.bareFork` and `CLAUDE_CODE_EVAL_CONFINED` — **there is no interactive-mode gate**, and
+the one sibling that *is* interactivity-gated (`peer_mentions`, on `isHumanTypedPrompt`) proves
+the author writes that gate explicitly when they want it.
+
+**Consequence:** v2 sends `@path` as plain text and the CLI attaches the file. `/api/files`
+never needs to read file content.
+
+### §5.3 `#note` — plain turn, `#` stays out (bundle)
+
+Same mechanism as `!`: a TUI input mode whose product is a `<user-memory-input>` user message.
+Nothing on the stream-json path builds it. V2-PLAN §4's decision to leave `#` out stands, and
+now on a measurement rather than an assumption.
+
+### §5.4 `side_question` — routed, and it COSTS A TURN (live, paid once)
+
+```
+request   {subtype:"side_question", question:"…", history?:[…]}
+response  {response: string|null, synthetic: bool,
+           refusal_fallback?: {original_model, fallback_model, content}}
+```
+
+The measurement that matters is not the schema, it is the price. Sent with **no** `question`
+field, expecting the schema complaint every other malformed control request gives, it instead
+**asked the model**, which answered «Question empty — no text came through. Ask again with
+actual question.» That sentence is nowhere in the binary, which is how we know it was
+generated. **$0.107.** There is no free negative probe for this subtype: nothing malformed gets
+refused before the model sees it. Pinned in `probe_v21.py`; `--paid` re-measures.
+
+It does **not** write the main transcript: the answer arrives only inside the
+`control_response`, no `assistant` event carries it, and the TUI logs `[btw] panel mounted` —
+it renders in a panel, not in the column. `/btw` in v2 is a side answer, as §2 assumed.
+
+### §5.5 `--fork-session` — new id, same project (live, free)
+
+`claude <wrapper flags> --resume <id> --fork-session`, then a free `/recap`:
+
+| | |
+|---|---|
+| parent | `088497c9-fab6-4643-9d2f-0063884b4ad0` |
+| fork | `03a867a6-8457-4275-9821-2a0e7b030e64` |
+| project folder | the same `~/.claude/projects/<sanitized-cwd>/` |
+| transcripts | one `.jsonl` each, both present |
+
+**A fork mints a new session id in the same project.** `/branch` is buildable as a respawn, and
+the sidebar sees the branch as a second session with no new code — it already lists every
+transcript in the project folder.
+
+### §5.6 rewind — there IS a control subtype. Two of them. (live, free)
+
+V2-PLAN §4 leaves Esc-Esc rewind out *"unless the §5 probe finds a control subtype"*. It found
+one, so that exclusion is **lifted pending a build decision**, not settled:
+
+```
+{subtype:"rewind_conversation", target_message_uuid:"<uuid>", interrupt_if_running?:bool}
+  -> {rewound:false, prefillText:null, precedingAssistantUuid:null, error:"target not found"}
+  -> {subtype:"error", error:"rewind_conversation: target_message_uuid must be a string"}
+
+{subtype:"rewind_files", user_message_id:"<uuid>", dry_run?:bool}
+  -> {canRewind:false, error:"File rewinding is not enabled."}
+```
+
+Both are routed on this build. `rewind_conversation` reaches its own logic and reports on the
+uuid; the typed refusal names the parameter, which is a free schema read. `rewind_files` is
+routed but **gated off** by a file-history feature this machine does not have enabled — so
+conversation rewind is reachable and file rewind is not, and the two are separate subtypes.
+
+The response shape is exactly what a window needs: `prefillText` is the rewound prompt to put
+back in the composer, `precedingAssistantUuid` is where to truncate the column.
+
+The TUI's `MessageSelector` context (15 bindings, `wiki/tui-keys.md`) and the string
+«Double-tap esc to rewind the conversation to a previous point in time» are the UI on the other
+end of these.
+
+### §5.7 `/export`, `/copy`, `/resume` — refused locally, for free (live, free)
+
+All three, plus an invented `/nonesuch-probe`, answer **without reaching the model**:
+
+| Sent | Answer | Spent | Lifecycle |
+|---|---|---|---|
+| `/export` | `/export isn't available in this environment.` | $0 | queued → started → completed |
+| `/copy` | `/copy isn't available in this environment.` | $0 | queued → started → completed |
+| `/resume` | `/resume isn't available in this environment.` | $0 | queued → started → completed |
+| `/nonesuch-probe` | `Unknown command: /nonesuch-probe` | $0 | queued → started → completed |
+
+The bundle's branch: `options.isNonInteractiveSession && AI().has(d)` →
+``` `/${…} isn't available in this environment.` ``` with `shouldQuery:!1` and telemetry
+`cmd_unavailable_headless`, wrapped in `<local-command-stdout>`. The longer form is
+«… opens an interactive panel and isn't available in this environment. Run it from the Claude
+Code terminal instead.»
+
+Two things follow. **They are window-local, as §3.5 says** — the CLI will not do them. And
+**the uuid ledger always closes**: every one of them runs the full lifecycle, so v2's spinner
+ends on the event rather than waiting for the silence watchdog.
+
+### §5.8 `~/.claude/history.jsonl` — shape confirmed, and it is not append-only (free)
+
+8,674 lines on this PC. Every line:
+
+```json
+{"display":"<the prompt, verbatim>","pastedContents":{},
+ "timestamp":1788564003407,"project":"D:\\Project\\Example",
+ "sessionId":"<uuid>"}
+```
+
+`timestamp` is epoch **milliseconds**; `project` is the absolute cwd; `pastedContents` is an
+object, `{}` when there is none.
+
+**The part the plan did not know:** the CLI **rewrites** this file. It runs a retention prune
+that takes a lock and rewrites the whole thing, and it says so in its own error strings —
+«History retention prune deferred: history.jsonl changed under the scan», «history.jsonl was
+rewritten under the head an earlier scan judged», «the history lock could not be acquired». The
+lock is a sibling built as `` `${path}.lock` `` (proper-lockfile, directory-based).
+
+So the §5.8 conclusion is *not* "append a line and you are done". A blind append during a
+prune rewrite is a lost line, or worse. **v2 must take `history.jsonl.lock` before appending.**
+
+The remaining half of §5.8 — append a line, open the real TUI, press Up — needs an interactive
+terminal and a human, and is the one probe that cannot be automated from here.
+
+### §5.9 `/compact` — the event shape, from the construction site (bundle)
+
+```json
+{"type":"system","subtype":"compact_boundary","session_id":"…","uuid":"…",
+ "compact_metadata":{"trigger":"…","pre_tokens":N,"post_tokens":N,
+                     "cumulative_dropped_tokens":N,"duration_ms":N,"user_context":"…",
+                     "messages_summarized":N,"precomputed":…,
+                     "pre_compact_discovered_tools":…,"preserved_segment":…}}
+```
+
+Only `trigger` and `pre_tokens` are always present; everything after is spread conditionally.
+The TUI's own content string for it is `"Conversation compacted"`, level `info` — which is the
+string `wiki/tui-strings.md` already translates as «گفتگو فشرده شد». §3.1's divider can render
+from data without a paid compaction run.
+
+### §5.10 background tasks — they DO emit on the pipe, so `/tasks` is buildable (bundle)
+
+The plan budgeted a paid turn for this. It was not needed; the emit sites are all in the
+bundle, and they are a whole family:
+
+```json
+{"type":"system","subtype":"background_tasks_changed",
+ "tasks":[{"task_id":"…","task_type":"…","description":"…","ambient":true}]}
+
+{"type":"system","subtype":"task_started","task_id","tool_use_id","description",
+ "subagent_type","owned_by_subagent","is_backgrounded","spawn_depth"}
+{"type":"system","subtype":"task_progress","task_id","tool_use_id","description",
+ "subagent_type","usage":{"total_tokens","tool_uses","duration_ms"},
+ "last_tool_name","summary","workflow_progress"}
+{"type":"system","subtype":"task_notification","task_id","tool_use_id","status",
+ "output_file","summary","usage","resource_links","skip_transcript"}
+{"type":"system","subtype":"task_summary","detail": … | null}
+```
+
+and a control request to kill one: `{subtype:"stop_task", task_id}` (plus
+`{subtype:"background_tasks", tool_use_id}` → `{backgrounded:bool}` to send one to the
+background). **§4's "out if not" for `/tasks` does not apply: it is in.**
+
+### §5.11 (not in the plan) `file_suggestions` — the CLI's own file index IS reachable
+
+V2-PLAN §2 says the TUI's fuzzy file list "is in-process and unreachable". **Measurably wrong.**
+It is a control subtype the CLI answers, free and fast:
+
+```
+{subtype:"file_suggestions", query:"nested_module"}
+  -> {suggestions:[{path:"src\\deep\\nested_module.py", score:…}, …]}
+```
+
+Measured behaviour, which the `@` menu has to live with:
+
+- **Project files come back cwd-relative and rank first**; after them the index returns
+  **absolute** paths from outside the project — `~/.claude/skills/…`, `~/.claude/agents/…`.
+  The window must show the relative ones and decide, deliberately, what to do with the rest.
+- **The first query after spawn returns zero.** The index warms on demand, and the warm-up
+  outlasts a 3-second sleep. The `@` menu must tolerate an empty first answer and re-ask.
+- It matches **filename substrings**, not paths: `nested_module` → 1 hit, `main.py` → 1 hit,
+  `src/` → **0**. A path prefix is not a query.
+- Case matters in practice: `READ` came back empty on a cold index that then answered `main`.
+
+**Consequence for V2-PLAN §2:** `GET /api/files?q=` does not need `os.walk`. It can proxy
+`file_suggestions` and inherit the CLI's own ranking, with `os.walk` as the fallback for the
+cold-index window. That is one fewer place where the window and the terminal disagree about
+what a file is called.
+
 ## 2.1.259 re-verification (2026-09-03, author PC)
 
 The native binary updated itself to 2.1.259 that morning (`~/.local/bin/claude.exe`, versions
