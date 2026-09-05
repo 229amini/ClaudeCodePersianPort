@@ -391,7 +391,7 @@ export function closePicker() {
 
 /* Returns false when there is nothing to pick -- the caller uses that to decide
    whether the key was ours at all, the way Alt+P and Shift+Tab both do. */
-function openPicker(owner, title, rows, onPick) {
+export function openPicker(owner, title, rows, onPick) {
   if (!ui.picker || !ui.pickerBody) return false;
   if (!rows.length) return false;
   if (pickerOwner === owner && ui.picker.open) {   // the same key shuts it again

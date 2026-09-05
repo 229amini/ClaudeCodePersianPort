@@ -762,7 +762,7 @@ body.home #statusline { align-self: end; }
    assistant bodies that are NOT transcript entries: a plan inside a permission
    dialog, a helper's report inside its own card, and the one-line notes
    («متوقف شد») that are chrome about the turn rather than the turn talking. */
-.msg.assistant:not(.meta):not(.plan-body):not(.nested)::before {
+.msg.assistant:not(.meta):not(.plan-body):not(.nested):not(.side)::before {
   content: "⏺";
   position: absolute;
   top: 1px;
@@ -781,6 +781,30 @@ body.home #statusline { align-self: end; }
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid var(--danger);
+}
+
+/* `/btw` — a side question and the answer to it (V2-PLAN §3.5, measured §5.4).
+   It is a real request and it costs a turn, but it is not a turn IN this
+   conversation: the CLI answers it out of band and neither row enters the
+   context. So both carry the TUI's `※` and sit against a rule, beside the
+   column rather than in it — and the assistant row gives up its ⏺, which is
+   the mark of a turn this conversation actually took. */
+.msg.side {
+  align-self: stretch;
+  max-width: none;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 8px;
+  background: transparent;
+  border-inline-start: 2px solid var(--border);
+  opacity: .85;
+}
+
+.msg.side .side-mark {
+  flex: none;
+  color: var(--accent);
+  font-size: .85em;
 }
 
 .msg > :first-child { margin-top: 0; }
