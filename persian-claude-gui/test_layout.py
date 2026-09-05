@@ -2,8 +2,8 @@
 
 The spec gate (run_spec_test.py) asserts rendering rules on message content and
 runs at one window size, so it is structurally blind to the shell: a 500px
-window handed #stage 194px for 244px of content and drew the composer, the
-greeting and the home cards OFF the start edge of the window, with every spec
+window handed #stage 194px for 244px of content and drew the composer and
+the welcome box OFF the start edge of the window, with every spec
 assertion still green. This measures the real page instead - the same
 index.html the app serves, with `data-render-only` (so the SSE stream that
 makes --dump-dom hang never opens) and one measuring script appended.
@@ -111,7 +111,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
 
   // The home state, which is what the window opens on.
   const home = {compBox: box(document.querySelector(".comp-box")),
-                greeting: box(document.querySelector(".greeting")),
+                welcome: box(document.querySelector(".welcome")),
                 clipped: clipped()};
 
   // ...and then the state it spends the rest of its life in. A transcript is
@@ -156,7 +156,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify({
     view: [innerWidth, innerHeight],
     compBox: home.compBox,
-    greeting: home.greeting,
+    welcome: home.welcome,
     comp: compNow, chips,
     menu: box(menu),
     rows: rows.length,
@@ -260,7 +260,7 @@ def main() -> int:
                 failures.append(f"{where}: {err}")
                 continue
             view = m["view"][0]
-            for name, rect in (("composer", m["compBox"]), ("greeting", m["greeting"]),
+            for name, rect in (("composer", m["compBox"]), ("welcome", m["welcome"]),
                                ("picker menu", m["menu"])):
                 if rect["x"] < 0 or rect["x"] + rect["w"] > view + 1:
                     failures.append(f"{where}: {name} is off the window "

@@ -245,22 +245,16 @@ window.FA = {
   openInExplorer: "باز کردن پوشه پروژه",
   archiveSection: "بایگانی",
   chooseProject: "انتخاب پروژه",
-  greetMorning: "صبح بخیر! امروز چه کنیم؟",
-  greetDay: "سلام! چه کاری انجام دهیم؟",
-  greetEvening: "عصر بخیر! چه کاری انجام دهیم؟",
-  greetNight: "شب‌زنده‌داری؟",
-
-  /* Home action cards. `homeExplain` is both the card's label and the text it
-     puts in the composer, so the user sees exactly what they are about to
-     send — no hidden prompt. */
-  homeResume: "ادامه آخرین گفتگو",
-  homeResumeNote: "همان‌جا که رهایش کردید",
-  homeOpen: "باز کردن پوشه",
-  homeOpenNote: "روی پروژه دیگری کار کنید",
-  homeExplain: "این پوشه را برایم توضیح بده",
-  homeExplainNote: "شروع سریع در همین پروژه",
-  homeHelp: "راهنما",
-  homeHelpNote: "چطور با این برنامه کار کنم؟",
+  /* The empty state is the TUI's welcome box now (V2-PLAN §2): the greeting,
+     its four action cards and their strings are gone. What the terminal
+     prints is its own name, its version, the folder, and the three hints it
+     keeps under an empty prompt (wiki/tui-strings.md §5). */
+  welcomeTitle: "خوش آمدید به کلاد فارسی",
+  welcomeCwd: "پوشه:",
+  welcomeNoProject: "هنوز پروژه‌ای باز نیست",
+  welTipCommands: "برای فرمان‌ها",
+  welTipMention: "برای اشاره به یک فایل",
+  welTipKeys: "برای دیدن کلیدها",
 
   previewEmpty: "متنی برای پیش‌نمایش نیست",
 
@@ -335,7 +329,28 @@ window.FA = {
   slSession: "نشست",
   slContext: "متن",
   slQuota: "سهمیه ۵ ساعته",
+  slEffort: "تفکر",
+  slStyle: "لحن",
   slNone: "—",
+
+  /* The `⏵⏵` posture row (V2-PLAN §3.4), which replaces the pill the composer
+     row used to carry. These are the TUI's OWN status-line sentences
+     (wiki/tui-strings.md §4 `posture.*`), not the picker's short titles: the
+     picker names a choice you are making, this line reports a mode you are
+     already in. «محتاط» has no TUI counterpart — the terminal prints nothing
+     at all in its default mode — so its sentence is written to the same shape
+     as the four that were lifted. */
+  slPostureAsk: "حالت محتاط روشن",
+  slPosturePlan: "حالت طرح روشن",
+  slPostureAcceptEdits: "پذیرش خودکار ویرایش‌ها روشن",
+  slPostureAuto: "حالت خودکار روشن",
+  slPostureBypass: "دور زدن اجازه‌ها",
+  slPostureHint: "shift+tab برای تغییر",
+
+  /* The turn ended while the window was not being looked at. The body is the
+     folder, so a person with several conversations open knows which one
+     finished before they switch to it. */
+  notifyDone: "پاسخ آماده است",
 
   /* model picker + approval posture — every label the CLI itself supplies
      (model names, descriptions) is rendered as it arrives, never translated:

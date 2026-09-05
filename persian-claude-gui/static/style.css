@@ -555,9 +555,9 @@ body.home #replay-banner { display: none; }
 
 body.home #stage {
   display: grid;
-  /* Greeting + cards bottom-aligned above the composer. The first row never
-     drops below its content (the cards would be clipped from the top on a short
-     window); the trailing empty row is what gives way instead. */
+  /* The welcome box sits just above the prompt, the way the terminal's does.
+     The first row never drops below its content; the trailing empty row is
+     what gives way on a short window. */
   grid-template-rows: minmax(min-content, 1fr) auto minmax(0, 1.2fr);
 }
 body.home #home {
@@ -569,58 +569,73 @@ body.home #home {
 }
 body.home #statusline { align-self: end; }
 
-.greeting {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 0;
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.5;
-}
-.greeting .mark { color: var(--accent); flex: none; }
+/* --- the TUI's welcome box (V2-PLAN §2) --------------------------------------
+   A drawn box, because that is what the terminal prints — but with a CSS
+   border rather than `─ │ ╭ ╮` characters, for the reason the whole plan
+   exists: a box drawn out of glyphs has to be padded to a cell count, and
+   Persian has no cell count (wiki/tui-strings.md §1, last row of the table).
 
-/* --- home action cards ------------------------------------------------------ */
-/* Same reading column as the composer below them, so the home state reads as
-   one block rather than two centred things of different widths. */
-#home-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+   Same reading column as the composer below it, so the empty state reads as
+   one block and not two centred things of different widths. */
+.welcome {
   width: min(50rem, calc(100% - 40px));
-  margin-block-start: 28px;
-}
-
-/* A <button>, so it inherits the coral button:hover unless it says otherwise —
-   the sidebar rows learned this the hard way. (0,2,0) beats button:hover's
-   (0,1,1) regardless of source order. */
-.home-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 62px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--fg);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  line-height: 1.9;
 }
-.home-card:hover { background: var(--surface-2); border-color: #57544e; }
-.home-card svg { flex: none; color: var(--accent); }
+.welcome p { margin: 0; }
 
-.hc-text { display: flex; flex-direction: column; min-width: 0; }
-.hc-title { font-size: .92em; font-weight: 500; }
-.hc-note {
-  color: var(--fg-muted);
+.wel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+}
+.wel-star { color: var(--accent); font-weight: 400; }
+.wel-ver {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: .78em;
-  line-height: 1.7;
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.wel-cwd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-block-start: 6px !important;
+  font-size: .86em;
+  min-width: 0;
+}
+.wel-key { color: var(--fg-muted); flex: none; }
+.wel-cwd .path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: none;
+}
+.wel-cwd .path.is-empty { color: var(--fg-muted); font-family: inherit; }
+
+.wel-tips {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+.wel-tips li { display: flex; align-items: baseline; gap: 6px; }
+/* The key is a technical token in a Persian line: isolate it or the bidi
+   algorithm moves `/` and `@` to the wrong end of their own hint. */
+.wel-tip-key {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  color: var(--fg);
+  unicode-bidi: isolate;
+  direction: ltr;
 }
 
 /* --- session hover preview --------------------------------------------------- */
@@ -1795,20 +1810,45 @@ button.round {
 .proj-sessions li:has(.kebab-menu:popover-open) .sess-act { display: inline-flex; }
 
 /* --- statusline -------------------------------------------------------------- */
+/* Three lines, in the TUI's own order (V2-PLAN §3.4): the machine's own
+   statusLine script first, then the `⏵⏵` posture row that replaced the pill,
+   then everything the four chips used to say. A column of rows rather than one
+   wrapping row, because the posture line is a sentence and must not be broken
+   up by whatever fits beside it. */
 #statusline {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
   padding: 5px 16px 8px;
   color: var(--fg-muted);
   font-size: .74em;
   line-height: 1.6;
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
+#statusline .sl-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
 #statusline .sl-item { display: flex; gap: 6px; align-items: center; }
 #statusline .sl-label { opacity: .7; }
+
+/* `⏵⏵ پذیرش خودکار ویرایش‌ها روشن · shift+tab برای تغییر`. The pill is gone,
+   so this line carries the affordance too — a mode nobody can see how to
+   change is a mode that stays where it was left. */
+#statusline .sl-posture { gap: 4px 8px; color: var(--fg); }
+#statusline .sl-arrow {
+  color: var(--accent);
+  inline-size: auto;
+  margin-inline-end: -3px;   /* `⏵⏵` is one shape, not two words */
+}
+#statusline .sl-posture.is-danger .sl-arrow,
+#statusline .sl-posture.is-danger .sl-posture-text { color: var(--danger); }
+#statusline .sl-hint { opacity: .6; }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
@@ -1955,46 +1995,63 @@ button.round {
    Sits above the composer, in the flow — not a floating toast. This is a
    decision the user has to make before the conversation can continue, and a
    toast that times out would hide it. */
+/* v2.5 (V2-PLAN §3.4, last row of the context pair): this used to be a card
+   with a heading and three stacked buttons — a dialog in everything but name,
+   in a window whose whole premise is that the terminal does not have those.
+   The TUI writes a WARNING ROW: one dim line where the prompt is, saying what
+   is wrong and which command fixes it. So the markup is unchanged (the ids and
+   classes the 174 spec assertions read are all still here, and the actions
+   still press exactly what they pressed) and only its shape moved: one line,
+   the buttons inline, the per-button explanations dropped to their titles. */
 #context-notice {
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--surface);
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-inline-start: 2px solid var(--accent);
+  border-radius: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: .82em;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
+  align-items: baseline;
+  gap: 2px 12px;
 }
 #context-notice[hidden] { display: none; }   /* beats the flex above */
 #context-notice.urgent { border-inline-start-color: var(--danger); }
+#context-notice.urgent .ctx-title { color: var(--danger); }
 
-.ctx-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 16rem; min-width: 0; }
-.ctx-title { font-weight: 700; }
-.ctx-body { color: var(--fg-muted); font-size: .9em; }
+/* One line: the title and the sentence after it, the way a terminal warning
+   reads. `flex: 1 1 auto` rather than a fixed basis — it must give way to the
+   actions on a narrow window instead of pushing them onto a third row. */
+.ctx-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+            flex: 1 1 auto; min-width: 0; }
+.ctx-title { font-weight: 700; color: var(--fg); }
+.ctx-body { color: var(--fg-muted); }
 
-.ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ctx-actions { display: flex; gap: 4px 12px; flex-wrap: wrap; }
+/* A command you can press, not a card. Underlined on hover, like the CLI's own
+   hint text — nothing here is a primary action, because the decision is the
+   user's and both answers are ordinary. */
 .ctx-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-side);
-  color: inherit;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg-muted);
   font: inherit;
   cursor: pointer;
 }
-.ctx-btn:hover { border-color: var(--accent); }
-.ctx-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ctx-btn.primary:hover { background: var(--accent-strong); }
-.ctx-btn.ghost { background: none; border-color: transparent; color: var(--fg-muted); }
-.ctx-btn.ghost:hover { color: var(--fg); border-color: var(--border); }
-.ctx-btn-text { font-weight: 600; font-size: .92em; }
-.ctx-btn-note { font-size: .78em; opacity: .8; }
+.ctx-btn:hover { color: var(--fg); text-decoration: underline; }
+.ctx-btn.primary { color: var(--accent); }
+.ctx-btn.primary:hover { color: var(--accent-strong); }
+.ctx-btn-text { font-weight: 600; }
+/* The note stays in the DOM — it is the button's own explanation and rides in
+   its `title` — but a warning row has no room to print it. */
+.ctx-btn-note { display: none; }
 
 /* --- the queued-message strip ------------------------------------------------
    A message sent while the CLI is still answering is not delivered: it waits in
@@ -2389,12 +2446,12 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    Measured before this block existed (headless, real markup): a 760px window
    left the stage 438px and wrapped the composer row onto three lines; a 500px
    window left it 194px for 244px of content, which is not a squeeze but an
-   overflow — the composer, the greeting and the cards were drawn off the start
+   overflow — the composer and the empty state's box were drawn off the start
    edge of the window entirely.
 
    The order things give way in: the sidebar first (it is chrome, and its rows
-   already ellipsis), then the reading column's 20px gutters, then the home
-   grid's second column. The composer row itself needs nothing — it has wrapped
+   already ellipsis), then the reading column's 20px gutters, then the welcome
+   box's own gutter. The composer row itself needs nothing — it has wrapped
    since the effort chip vanished off it. */
 @media (max-width: 1000px) {
   body.app { grid-template-columns: 244px minmax(0, 1fr); }
@@ -2408,10 +2465,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   #context-notice { margin-inline: 12px; }
   #queue-strip { margin-inline: 12px; }
   #replay-banner { width: calc(100% - 24px); }
-  /* Two columns of 97px fit neither a title nor its note: the cards grew to
-     215px tall and clipped their own text. One column, full width. */
-  #home-cards { grid-template-columns: minmax(0, 1fr); width: calc(100% - 24px); }
-  .greeting { font-size: 1.5rem; gap: 10px; }
+  .welcome { width: calc(100% - 24px); }
 }
 }
 
