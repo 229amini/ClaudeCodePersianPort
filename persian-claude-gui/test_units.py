@@ -11,6 +11,7 @@ import http.client
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1558,6 +1559,163 @@ except RuntimeError:
     pass
 check("a recap that failed to send leaves nothing armed to swallow the next answer",
       recap._recap_wanted is False and recap.busy is False)
+
+# --- v2.3: the prompt box's four routes --------------------------------------
+# History, `@` completion, `!` bash mode and the external editor. Everything
+# here fails quietly in production if it is wrong: a lost history line, a menu
+# offering paths that cannot be mentioned, bash output that never reaches the
+# model, or a `!` command echoed as though the user had typed it.
+
+print("read_history / append_history: one file, shared with the real TUI")
+hist_dir = Path(tempfile.mkdtemp(prefix="pcg-history-"))
+_old_history = server.HISTORY_FILE
+try:
+    server.HISTORY_FILE = hist_dir / "history.jsonl"
+    project = Path("D:/proj/one")
+    other = Path("D:/proj/two")
+    lines = [
+        {"display": "aval", "pastedContents": {}, "timestamp": 1,
+         "project": "D:\\proj\\one", "sessionId": "s1"},
+        {"display": "dovom", "pastedContents": {}, "timestamp": 2,
+         "project": "D:\\proj\\two", "sessionId": "s2"},
+        {"display": "aval", "pastedContents": {}, "timestamp": 3,
+         "project": "D:/PROJ/ONE", "sessionId": "s1"},
+        {"display": "sevom", "pastedContents": {}, "timestamp": 4,
+         "project": "D:\\proj\\one\\", "sessionId": "s1"},
+    ]
+    server.HISTORY_FILE.write_text(
+        "\n".join(json.dumps(x, ensure_ascii=False) for x in lines) + "\nnot json\n",
+        encoding="utf-8")
+    check("history is filtered to the project, case and separators aside",
+          server.read_history(project) == ["aval", "sevom"])
+    check("another project's prompts are not this project's",
+          server.read_history(other) == ["dovom"])
+    check("a line the prune left half-written is skipped, not fatal",
+          server.read_history(Path("D:/nope")) == [])
+
+    check("a sent prompt is appended in the TUI's own shape",
+          server.append_history(project, "چهارم", "s9") is True)
+    written = json.loads(server.HISTORY_FILE.read_text(encoding="utf-8")
+                         .strip().splitlines()[-1])
+    check("with display, project, sessionId and ms timestamp",
+          written["display"] == "چهارم" and written["project"] == str(project)
+          and written["sessionId"] == "s9" and written["pastedContents"] == {}
+          and written["timestamp"] > 1_700_000_000_000)
+    check("and the window can read back what it just wrote",
+          server.read_history(project)[-1] == "چهارم")
+
+    # The CLI's retention prune holds `history.jsonl.lock` (a DIRECTORY, the
+    # proper-lockfile shape) while it rewrites the whole file. Appending
+    # through that is how a line is lost.
+    lock = server.HISTORY_FILE.with_name(server.HISTORY_FILE.name + ".lock")
+    lock.mkdir()
+    before = server.HISTORY_FILE.read_text(encoding="utf-8")
+    old_wait = server.HISTORY_LOCK_WAIT
+    server.HISTORY_LOCK_WAIT = 0.1
+    try:
+        check("a prune holding the lock blocks the append instead of racing it",
+              server.append_history(project, "پنجم", "s9") is False
+              and server.HISTORY_FILE.read_text(encoding="utf-8") == before)
+        # A lock left behind by a process that died must not lock the user out
+        # of their own history until they reboot.
+        os.utime(lock, (time.time() - 3600, time.time() - 3600))
+        check("a stale lock is stolen, not obeyed",
+              server.append_history(project, "پنجم", "s9") is True)
+    finally:
+        server.HISTORY_LOCK_WAIT = old_wait
+        if lock.is_dir():
+            lock.rmdir()
+    check("the lock is released again after a successful append", not lock.exists())
+finally:
+    server.HISTORY_FILE = _old_history
+    shutil.rmtree(hist_dir, ignore_errors=True)
+
+print("suggest_files: the CLI's index first, os.walk only while it is cold")
+walk_dir = Path(tempfile.mkdtemp(prefix="pcg-walk-"))
+try:
+    (walk_dir / "src").mkdir()
+    (walk_dir / "src" / "nested_module.py").write_text("x", encoding="utf-8")
+    (walk_dir / ".git").mkdir()
+    (walk_dir / ".git" / "nested_module.py").write_text("x", encoding="utf-8")
+    check("os.walk matches filename substrings, cwd-relative",
+          server.walk_files(walk_dir, "nested") == [str(Path("src/nested_module.py"))])
+    check("and never offers the repository's own plumbing",
+          server.walk_files(walk_dir, "nested_module") ==
+          [str(Path("src/nested_module.py"))])
+    check("a path prefix is not a query — the CLI's index does not match one either",
+          server.walk_files(walk_dir, "src/") == [])
+
+    class _IndexSession:
+        def __init__(self, answer):
+            self.cwd = walk_dir
+            self.answer = answer
+            self.asked = []
+
+        def control(self, subtype, timeout=None, wait=True, **params):
+            self.asked.append((subtype, params.get("query")))
+            return self.answer
+
+    warm = _IndexSession({"subtype": "success", "response": {"suggestions": [
+        {"path": "src\\nested_module.py", "score": 9},
+        # Measured: the index also returns ABSOLUTE paths from ~/.claude/skills
+        # and ~/.claude/agents, which are not files in this project.
+        {"path": "C:\\Users\\x\\.claude\\skills\\nested\\SKILL.md", "score": 3},
+    ]}})
+    files, source = server.suggest_files(warm, "nested")
+    check("a warm index answers, and the window asks it by the right subtype",
+          source == "cli" and warm.asked == [("file_suggestions", "nested")])
+    check("absolute suggestions are dropped: an @mention has to be relative",
+          files == ["src\\nested_module.py"])
+
+    cold = _IndexSession({"subtype": "success", "response": {"suggestions": []}})
+    files, source = server.suggest_files(cold, "nested")
+    check("the cold first query falls back to the walk rather than to nothing",
+          source == "walk" and files == [str(Path("src/nested_module.py"))])
+
+    class _DeadSession(_IndexSession):
+        def control(self, subtype, timeout=None, wait=True, **params):
+            raise RuntimeError("claude process is not running")
+
+    files, source = server.suggest_files(_DeadSession({}), "nested")
+    check("a CLI that cannot answer does not take the menu down with it",
+          source == "walk" and files == [str(Path("src/nested_module.py"))])
+finally:
+    shutil.rmtree(walk_dir, ignore_errors=True)
+
+print("`!` bash mode: run it here, tag it the way the TUI tags it")
+shell_dir = Path(tempfile.mkdtemp(prefix="pcg-shell-"))
+try:
+    ran = server.run_shell("echo pcg-hello", shell_dir)
+    check("the command runs in the session's own folder and reports its code",
+          ran["code"] == 0 and "pcg-hello" in ran["stdout"])
+    check("a failure is a result, not an exception",
+          server.run_shell("exit 3", shell_dir)["code"] == 3)
+    tagged = server.bash_message("echo pcg-hello", ran)
+    check("the message opens with <bash-input>, which is what the reader matches",
+          tagged.startswith("<bash-input>echo pcg-hello</bash-input>"))
+    check("and carries stdout in the TUI's own tag",
+          "<bash-stdout>" in tagged and "pcg-hello" in tagged)
+    check("no stderr, no empty <bash-stderr>",
+          "<bash-stderr>" not in tagged)
+    check("stderr gets its own tag when there is any",
+          "<bash-stderr>boom</bash-stderr>" in server.bash_message(
+              "x", {"code": 1, "stdout": "", "stderr": "boom"}))
+    check("output is clipped, so a `!` on a log file cannot flood the context",
+          len(server.run_shell(
+              f'"{sys.executable}" -c "print(\'x\' * 100000)"',
+              shell_dir)["stdout"]) < server.SHELL_MAX_OUTPUT + 200)
+finally:
+    shutil.rmtree(shell_dir, ignore_errors=True)
+
+print("parked context: bash output waits for the next message, it does not buy a turn")
+parking = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+parking.park_context("<bash-input>ls</bash-input>")
+parking.park_context("<bash-input>pwd</bash-input>")
+check("parked blocks come back in the order they were run",
+      parking.take_context() == ["<bash-input>ls</bash-input>",
+                                 "<bash-input>pwd</bash-input>"])
+check("and only once — the next message must not re-send them",
+      parking.take_context() == [])
 
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)
