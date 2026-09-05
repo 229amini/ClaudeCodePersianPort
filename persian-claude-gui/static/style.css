@@ -721,7 +721,40 @@ body.home #statusline { align-self: end; }
   max-width: none;
   background: transparent;
   padding-block: 1px;
-  padding-inline: 2px;
+  /* PHYSICAL, not logical, and deliberately so — same reason `.code-copy`
+     below is. `.msg` is `unicode-bidi: plaintext` and carries `dir="auto"`, so
+     an English answer computes `direction: ltr` and every logical property on
+     this box flips with it; the gutter it has to line up with belongs to the
+     COLUMN, which is RTL by the shell's own decision and does not move. A
+     logical padding here put the ⏺ of a Persian answer and the ⏺ of an English
+     one on opposite sides of the same transcript. */
+  padding-left: 2px;
+  padding-right: 35px;   /* 12 (summary padding) + 15 (icon) + 8 (gap) */
+  position: relative;
+}
+
+/* «⏺ …» — the TUI's own mark on a line the assistant wrote (V2-PLAN §3.1,
+   glyph table in wiki/tui-strings.md). A pseudo-element rather than a node:
+   it is decoration, it must never reach a screen reader, and it must never
+   land in the `textContent` that closeCycle() compares two loop cycles on.
+
+   It stands in the same 15px gutter the tool icons and the pulse glyph use, so
+   the column reads as ONE rail — the answer, the steps it took and the closing
+   line all hanging off the same edge. The three excluded classes are the
+   assistant bodies that are NOT transcript entries: a plan inside a permission
+   dialog, a helper's report inside its own card, and the one-line notes
+   («متوقف شد») that are chrome about the turn rather than the turn talking. */
+.msg.assistant:not(.meta):not(.plan-body):not(.nested)::before {
+  content: "⏺";
+  position: absolute;
+  top: 1px;
+  right: 12px;
+  inline-size: 15px;
+  text-align: center;
+  font-size: .72em;
+  line-height: var(--lh-fa);
+  color: var(--accent);
+  pointer-events: none;
 }
 
 .msg.error {
@@ -937,7 +970,53 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
   opacity: .8;
 }
 
+/* A TUI glyph standing in the icon gutter (render.js glyph()). The stroke
+   icons above are sized boxes; a character is not, so it gets the same width
+   and is centred in it — that is what keeps the rail straight when a row is
+   drawn with ✻ or ⎿ instead of a path. */
+.tool-icon.glyph {
+  block-size: auto;
+  line-height: 1;
+  text-align: center;
+  opacity: 1;
+}
+
+/* THE ONE OPEN QUESTION IN THE PLAN (V2-PLAN.md §8.9). `⎿`, `⏵` and `▸` are
+   directional shapes carrying no Unicode mirroring property, so nothing flips
+   them: in an RTL column a result branch drawn `⎿` hangs off the LEFT of a row
+   whose text runs from the right, pointing away from the thing it connects.
+   The plan's recommendation is to mirror all three, and it asked v2.2 to build
+   it as a class so the choice can be made by looking at it.
+
+   This is that class. `html[data-mirror-glyphs]` (index.html) is the switch —
+   set it to "off" and every one of them draws exactly as the terminal does.
+   Nothing else depends on which way it is set: the glyphs are decoration,
+   aria-hidden where they are not the only signal, and the layout is unchanged
+   either way. */
+html[data-mirror-glyphs="on"] .glyph.mirror {
+  display: inline-block;
+  transform: scaleX(-1);
+}
+
 .tool-verb { color: var(--fg); }
+
+/* The `⎿` branch: how much output the row has, before you open it (render.js
+   markResult). Same end of the row as the elapsed counter and the same
+   `flex: none` — spec-test.html measures this row's height AND its overflow,
+   so the branch may shrink what is beside it and must never grow the row. */
+.tool-branch {
+  margin-inline-start: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+.tool-branch.is-error { color: var(--danger); }
+.tool-branch .glyph { opacity: .7; inline-size: 12px; }
+/* Open, the row's own output is on screen: the count stops being news. */
+details.card[open] > summary .tool-branch { opacity: .45; }
 
 /* Pushed to the row's end: the tool that is still running says how long. */
 .tool-elapsed {
@@ -1154,8 +1233,40 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .recap-body :is(p, ul, ol):first-child { margin-block-start: 0; }
 .recap-body :is(p, ul, ol):last-child { margin-block-end: 0; }
 
+/* --- the compaction divider -------------------------------------------------
+   «گفتگو فشرده شد». Everything above this line has been replaced, for the
+   model, by a summary of itself — the reader is still looking at it, so the
+   line has to be a real break in the column rather than another muted row.
+   The rules are drawn with `border`, not with `─` characters: the glyph table
+   (wiki/tui-strings.md §1) says so, because a repeated box-drawing character
+   at a proportional width is a ragged line, not a rule. */
+.divider {
+  align-self: stretch;
+  max-width: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block: 6px;
+  color: var(--fg-muted);
+  font-size: .85em;
+}
+.divider::before, .divider::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--border);
+}
+.divider-note {
+  color: var(--fg-muted);
+  opacity: .75;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- todos ------------------------------------------------------------------ */
 .todos { align-self: stretch; max-width: none; }
+/* The TUI's own checklist marks (render.js renderTodos). `.tool-icon` gives
+   them the shared 15px gutter; the ▸ is the one that mirrors. */
+.todos .todo-mark { opacity: .85; }
 .todos ul { list-style: none; padding: 0; margin: 0; }
 .todos li { display: flex; gap: 8px; align-items: flex-start; }
 .todos li[data-status="completed"] { color: var(--fg-muted); text-decoration: line-through; }
@@ -1315,6 +1426,18 @@ button.round {
 /* --- attachments ------------------------------------------------------------- */
 #attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
 #attachments[hidden] { display: none; }
+
+/* Long pastes, parked (js/composer.js). Same row shape as the attachments
+   above it — they are the same kind of thing: something riding along with the
+   message that is not the sentence being written. */
+#pastes { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 0; }
+#pastes[hidden] { display: none; }
+.paste-chip { max-width: 40ch; }
+.paste-chip bdi {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .chip {
   display: inline-flex;

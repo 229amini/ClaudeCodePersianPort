@@ -1,5 +1,11 @@
 <!doctype html>
-<html dir="rtl" lang="fa">
+<!-- data-mirror-glyphs: the plan's one open question (V2-PLAN.md §8.9). `⎿`,
+     `⏵` and `▸` are directional shapes with no Unicode mirroring property, so
+     in an RTL column they point away from what they connect unless something
+     flips them. "on" is the plan's recommendation and can be judged by looking
+     at it: set it to "off" here and every glyph draws exactly as the terminal
+     does. Nothing but style.css reads it. -->
+<html dir="rtl" lang="fa" data-mirror-glyphs="on">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -153,6 +159,11 @@
            are never open at the same time, and it keeps a single
            click-outside/Escape handler (js/controls.js). -->
       <div id="menu-popup" hidden role="menu"></div>
+
+      <!-- Long pastes, parked as chips the way the TUI parks them: the box
+           keeps a «[متن چسبانده‌شده #N +M سطر]» placeholder and the real text
+           rides along until send (js/composer.js). -->
+      <div id="pastes" hidden></div>
 
       <div id="attachments" hidden></div>
 
