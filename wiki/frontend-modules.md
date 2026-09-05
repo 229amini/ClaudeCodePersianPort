@@ -16,6 +16,7 @@ ES modules under `static/js/`. (The gate is 20/20 since rule 8 and the two 2026-
 | `render.js` | `renderEvent`, renderer `state`, bubble/card/label/block builders, todos, raw cards, statusline |
 | `chrome.js` | sidebar (projects → sessions), home state, replay banner, the permission / plan / question dialog |
 | `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete, lifecycle verbs, and since v2.3 the whole key dispatcher: history, Ctrl+R search, `@`, `!`, Ctrl+G, the `?` sheet |
+| `commands.js` | v2.5: the window-local commands of V2-PLAN §3.5 — `/resume` `/status` `/copy` `/export` `/cd` `/add-dir` `/branch` `/btw` `/config` `/hooks` `/keybindings` `/memory` `/tasks`. **Imported BY `composer.js`; imports nothing that imports it back**, so it adds no cycle |
 | `app.js` | entry: `window.renderEvent`/`window.renderMarkdown`, init order, SSE transport |
 
 `controls.js` reports failures **inside its own picker**, not through `bubble()`, purely so it never
@@ -28,6 +29,14 @@ the job; the chips are gone (V2-PLAN §2), so `composer.js` now imports the open
 the cycle, so the arrow only ever points into it. Each opener answers `false` when there is
 nothing to offer (no model list yet, a model with no effort levels) and the verb falls through to
 the CLI as ordinary text, exactly as a hidden chip used to.
+
+**`commands.js` is v2.5's new node, and it is a sink.** `composer.js` dispatches to it; it imports
+`render.js`, `chrome.js`, `controls.js`, `agents.js`, `api.js` and `bidi.js`, and none of them
+imports it. Every entry in its table answers `true`/`false` synchronously — `false` means "not
+mine" and the line goes to the CLI as ordinary text, the same contract v2.4 gave the pickers — and
+the network half of a command is started, never awaited, so no command holds the composer shut.
+Two verbs deliberately live elsewhere: `/bash` in `composer.js` (it IS the `!` path) and
+`/permissions` on `controls.js`'s posture picker (it changes live state).
 
 **`chrome.js` → `composer.js` is a v2.4 edge inside the cycle** (`restoreDraft`, for the note that
 rides back to the message box when shift+Tab approves a tool). It is safe by the same invariant

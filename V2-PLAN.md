@@ -249,7 +249,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | **v2.2** Column ✅ | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | **Done 2026-09-05.** spec **174/174** unchanged, `test_layout.py` 3/3 widths, `test_units.py`, `test_transcript_path.py`, `test_no_console.py` green, `test_tui_vocab.py` **79/79**. New gate `test_column.py` — **22/22**, headless, no `claude` process. Decisions below |
 | **v2.3** Prompt ✅ | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+26 over the four new routes), `test_layout.py`, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**. New gate `test_keys.py` — **40/40**, headless, no `claude` process, its chords read out of `wiki/tui-keys.md`. The one half left is §5b's: pressing Up in the REAL terminal, which needs a human at one. Decisions below |
 | **v2.4** Dialogs ✅ | §3.3 as numbered inline lists; chips removed; pickers behind commands | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+4 over the refusal note), `test_layout.py` 3/3 widths — now measuring the picker in the flow, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60** (+20, the whole `Confirmation` context). New gate `test_dialogs.py` — **31/31**, free, no browser: the shape the keys are dispatched at. §3.3's `/resume`, `/help` and `/status` rows are not built — see 8.11. Decisions below |
-| **v2.5** Shell | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | `smoke_test.py` **16/16**; `/api/tabs`, `/api/projects`, `/api/sessions` unchanged |
+| **v2.5** Shell ✅ | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+14 over the four new routes), `test_layout.py` 3/3 widths — now measuring the welcome box, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60**, `test_dialogs.py` **31/31**. New gate `test_shell.py` — **29/29**, free, no `claude` process. `smoke_test.py` NOT run: it spends a paid turn and `/api/tabs`, `/api/projects`, `/api/sessions` are untouched in the diff. Decisions below |
 | **v2.6** Words | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | Every string in the binary table has a translation; `stop-slop` pass on `help.html` |
 | **v2.7** Acceptance | `M8-acceptance.md` updated for the TUI-shaped shell; bare-machine run | The colleague completes one task by keyboard without a hint |
 
@@ -439,6 +439,86 @@ Every one of these was decidable without the owner. What is left for them is at 
 **Left for the owner** (product taste, not engineering): 8.9's glyph mirroring and 8.10's two are
 still open; 8.11 adds what this phase deliberately did not build.
 
+### v2.5 Shell — decisions taken while building it, 2026-09-05
+
+Every one of these was decidable without the owner. What is left for them is at the end and in 8.12.
+
+1. **The status line is a stack of three rows, in §3.4's own order.** The machine's `statusLine`
+   output first, the `⏵⏵` posture row second, the muted facts row third. §3.4 lists four sources and
+   v2.4 deleted the pill and the chips that carried two of them; a stack is the only shape where a
+   line that is absent (no custom command, no posture yet) costs no space.
+2. **The posture row follows the WRAPPER's posture, with the CLI's `permissionMode` as the
+   fallback.** «محتاط» and «خودکار» are BOTH `default` down the pipe — the difference is the
+   wrapper's own auto-approve flag (`server.py POSTURES`) — while a mode nobody here set
+   (`bypassPermissions`, `auto`) only ever arrives as a mode. The fallback is what keeps §8.4's
+   display-only names on screen.
+3. **`posture`, `effort` and `style` live in `state.status`, the per-tab render scope.** That is
+   already the object `applySwitch()` repaints a tab from, so a background conversation records its
+   own style without painting it — and `controls.js` needs no new edge back into the render cycle.
+4. **The turn-end notification is gated on `!ev.replayed`, threaded through
+   `endBatch(settled, live)`.** An SSE backlog runs every finished turn through the same settle; a
+   refresh at 3 a.m. would otherwise fire one notification per turn ever taken.
+5. **Notification permission is asked at the moment there is something to say, never at load.** A
+   permission prompt on startup is the one everybody denies for ever.
+6. **The home state is the binary's own welcome box.** `✻` + title + dim version, the folder, and
+   the three hints the TUI keeps under an empty prompt — read out of `claude.exe`, not remembered.
+   The greeting, the four action cards and the resume card are deleted: the sidebar and `/resume`
+   already answer «which conversation», and §2 deletes controls the terminal does not have.
+7. **The window title is the session title plus the app name, and falls back to the app name
+   alone.** §3.4's «Window title = session title» row was «Keep» against a title that was never
+   actually set; `syncWindowTitle()` is called from the two places a title can arrive.
+8. **`#context-notice` is a restyle, not a rewrite.** The «گفتگو پر شده» notice becomes the TUI's
+   one-line warning row in CSS only: its `.ctx-*` elements and its 2-or-3 button counts are read by
+   the 174 spec assertions, and the per-button note moved to a `title` attribute rather than out of
+   the DOM.
+9. **The window-local commands are their own module, `static/js/commands.js`.** It is imported BY
+   `composer.js` and imports nothing that imports it back, so the `render ↔ chrome ↔ composer` cycle
+   `app.js` documents is still the only one.
+10. **Every command answers true/false synchronously; false sends the line to the CLI as text.**
+    The same contract v2.4 gave the pickers — a verb with nothing to do falls through — and the
+    network half is started and left to finish, so no command holds the composer shut.
+11. **`/bash` stays in `composer.js` and `/permissions` stays on the posture picker.** `!` is a
+    composer mode, so `/bash ls` is the same call the `!` line makes rather than a second copy of
+    it; the picker is the surface that names the four levels and changes the LIVE posture, which is
+    what the TUI's screen does first. The real file is reachable as `/config`.
+12. **`/cd` and `/add-dir` are the same command.** One conversation has exactly one cwd —
+    `server.py` spawns the CLI in it — so «add a directory» has no second meaning here, and both
+    open the folder the way the sidebar's own button does.
+13. **`/copy` and `/export` read the column, not a transcript file.** The window already has the
+    conversation as text because it drew it; a second reader would be a second answer to «what was
+    said», and the two would disagree the first time the renderer changed.
+14. **`/branch` switches to the fork, and says so in the fork's own column.** Switching tabs swaps
+    the render target, so a note written before the switch is left behind in the conversation that
+    was forked.
+15. **`/btw` says it costs a turn BEFORE it sends, and its answer is a side row.** Measured
+    (§5.4): `side_question` is routed and paid. The `※` rows are dimmed, sit against a rule and
+    give up the transcript's `⏺` — the mark of a turn this conversation actually took, which this
+    is not: the CLI answers out of band and neither row enters the context.
+16. **`/tasks` unfolds the agents strip rather than building a second list.** The strip is already
+    the registry of background helpers and already hides finished rows behind a toggle. The pipe's
+    own task event family (§5.10) is NOT subscribed to: `background_tasks_changed` and its four
+    siblings are renderer work — new row shapes, a `stop_task` control — and this phase's subject
+    is the shell. Deferred to whichever phase takes the renderer next.
+17. **`/status` renders through the same numbered list every other dialog uses.** Its digits do
+    nothing, exactly as on the audit list; one list shape is worth more than a read-only variant of
+    it. Every value comes from this tab's own status object, so the block answers while a turn runs.
+18. **`/resume` is a roving tabindex on the session rows, and nothing else.** §8.11B asked for
+    focus in the sidebar: exactly one row is in the tab order at a time (so Tab still leaves the
+    list in one press), Up/Down move it, Esc goes back to the prompt, and Enter is left alone —
+    the rows are `<button>`s and already activate on it. Focus now survives a sidebar repaint, the
+    way `agents.js` already handed it back.
+19. **`/help` is still v2.6's, per 8.11A, and `/theme` is the owner's, per 8.12.** Both fall
+    through to the CLI, which refuses them locally and free.
+20. **Rewind (8.8, 8.11C) was not built here either.** It is a renderer change — its own dialog
+    plus a truncation path in the column — and this phase's diff is the shell. Still the owner's
+    call whether it ships in v2 at all.
+21. **`test_layout.py` now measures `.welcome` where it measured `.greeting`.** The element it was
+    named for is gone; the gate's question — does the empty state stay on the window at 500px — is
+    unchanged.
+
+**Left for the owner** (product taste, not engineering): 8.9's glyph mirroring, 8.10's two, 8.11's
+`/help` scheduling and rewind, and the two 8.12 adds.
+
 ## 7. Gates
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
@@ -461,6 +541,12 @@ submit button in the permission form, `show()` and never `showModal()`, the four
 openers, `choice.js` still a leaf, §8.1's scope wording and §8.2's «the digit is not in the
 string», and every `FA.*` key the window reads present in `strings.fa.js`. It reads files and
 spawns nothing, so it is the one gate that runs in under a second.
+
+**New in v2.5: `test_shell.py` (29), free** — §3.4's stack (the three rows in order, the posture
+row following the wrapper rather than the CLI, one notification on a live settle and none on a
+replayed one) and every window-local command of §3.5: the route each one calls, the body it sends,
+and the two that still fall through to the CLI. Driven headlessly out of the real `index.html`
+with every route stubbed inside the page, so no `claude` process and no login.
 
 `test_keys.py` (v2.3) reads its cases from `wiki/tui-keys.md`'s «کلید v2» column rather than
 repeating them, so the binding table has exactly one copy and the two gates cannot disagree.
@@ -587,6 +673,10 @@ picker they would render into are built and exported; what is missing is the tex
 v2.6 skip the one screen that is mostly text. **Recommendation: both in v2.6**, as `openPicker()`
 calls over strings that phase authors anyway.
 
+**Half-answered 2026-09-05.** v2.5 built `/status`: every value on that block is data this window
+already holds (`state.status`, the same object the status line paints from), so there was no text
+to write and nothing for v2.6 to do twice. `/help` is the half that IS prose and stays in v2.6.
+
 **B. `/resume` needs the sidebar to take focus, and v2.5's row says the sidebar is untouched.**
 §3.3 asks for «moves focus into the sidebar's session list; Up/Down, Enter, Esc back to the
 prompt». The sidebar's session rows are buttons in a `<nav>` with no roving focus and no Esc
@@ -594,9 +684,38 @@ route home; giving them one is sidebar work, not dialog work, and it is the one 
 does not render into the column at all. **Recommendation: v2.5**, with the status line, where the
 shell is the subject.
 
+**Built 2026-09-05, closed.** A roving tabindex on the session rows: one row in the tab order at a
+time, Up/Down to move, Esc back to the prompt, Enter left to the buttons that already had it. The
+sidebar is otherwise untouched, and focus now survives its repaint. Gated in `test_shell.py`.
+
 **C. Rewind (8.8) is still not scheduled.** 8.8 recommended building it in v2.4 «where the
 numbered-list machinery already exists». The machinery now exists and is exported, which is the
 part that was expensive; what rewind still needs is its own dialog *and* a truncation path in the
 column — a renderer change, not a dialog one, in a phase whose renderer was v2.2's. It was left
 out to keep this phase's diff to §3.3. **Recommendation: v2.5 or a phase of its own; the owner
 owns whether it ships in v2 at all.**
+
+**Not built in v2.5 either, and for the same reason it was not built in v2.4:** it is a renderer
+change in a phase whose subject was the shell. Still open, still the owner's.
+
+### 8.12 Open — the two v2.5 raised, both taste
+
+**A. `/theme`, against a decision that is already recorded.** §3.5 lists `/theme` among the
+window-local commands, «dark and light from the CLI's own palette». `static/style.css` carries
+«Dark-only by user decision 2026-08-04» at the top of its token layer. Those two cannot both stand.
+The engineering half is cheap — the whole stylesheet is token-driven, so a light theme is one
+`:root` block and a switch — which is exactly why this is not an engineering call: it decides
+whether the window has a setting the owner already said it should not have. **My recommendation:
+keep dark-only and strike `/theme` from §3.5.** A second palette is a second thing to check on
+every future screen, and the terminal this window imitates ships dark. `/theme` currently falls
+through to the CLI, which refuses it locally and free, so answering this costs one line either way.
+
+**B. Should the window ever ask for desktop-notification permission?** §3.4's last row asks for a
+`Notification` on a turn that ends while the window is hidden, and v2.5 built it: permission is
+requested at the first moment there is something to announce, never at load. But the browser's own
+prompt is a chrome-coloured box in English, and the audience for this window is a colleague who
+does not read English UI — the first thing it ever asks them is the one thing v2 cannot translate.
+**My recommendation: keep it.** The alternative is a turn that finishes silently while nobody is
+looking, which is the whole problem the row exists for, and the prompt appears once. The other
+answers are a one-line edit: drop the `Notification.requestPermission()` branch in `render.js`
+`notifyTurnEnd()` and the feature is permission-only, or drop the call and it is gone.
