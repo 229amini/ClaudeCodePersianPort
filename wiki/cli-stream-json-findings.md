@@ -340,6 +340,15 @@ The user-reported "finished session still says thinking" was NOT 2.1.240 drift �
 documented-unfixed SSE reconnect replay (parity-chrome.md §"The third way"), fixed the same day
 with a `Last-Event-ID` cursor on the Hub.
 
+## 2.1.241 (2026-08-25, `ladyg` PC) — same contract
+
+The CLI auto-updated itself 2.1.240 → 2.1.241 minutes after `setup.ps1` probed it (setup logged
+`2.1.227`, the pre-update binary; `claude.exe.old.*` is left behind in `~/.local/bin`, so a
+version printed by setup is only as fresh as the moment it ran). Smoke re-run against 2.1.241:
+**15/15 PASS**, no drift beyond 2.1.240 — `initialize` now reports **5 models / 66 commands**
+(was 61 commands), `system/thinking_tokens` still emitted (×5) and still dropped. Nothing to
+change.
+
 ## B-9.1 — `--verbose` is REQUIRED
 
 Without it:
