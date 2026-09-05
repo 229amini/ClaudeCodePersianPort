@@ -1425,7 +1425,8 @@ export function initComposer() {
   // Chrome the modules own rather than index.html: every one of these labels
   // belongs to a surface built here, and index.html keeps only the ids.
   for (const [id, key] of [["hs-label", "searchLabel"], ["hs-hint", "searchHint"],
-                           ["keys-title", "keysTitle"], ["keys-close", "keysClose"]]) {
+                           ["keys-title", "keysTitle"], ["keys-close", "keysClose"],
+                           ["keys-esc", "keysEscHint"]]) {
     const el = document.getElementById(id);
     if (el) el.textContent = FA[key];
   }

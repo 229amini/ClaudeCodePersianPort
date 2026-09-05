@@ -307,6 +307,34 @@ def main() -> int:
     check(b"return`[Pasted text #${e}]`" in data
           and b"return`[Pasted text #${e} +${t} lines]`" in data,
           "cue() still mints two placeholder shapes")
+    print("\n10. the five-hour warning fires where the binary's own does")
+    # v2.6 gave the status line the TUI's «Approaching your 5-hour usage limit»
+    # row. The threshold is the binary's default, not a number picked here:
+    #   var Obo=0.95, Kwn="Approaching your 5-hour usage limit — ..."
+    #   function Dbo(e){switch(e){case"default_claude_max_5x":return 0.99; ...
+    #                            default:return Obo}}
+    # The richer plans raise their own bar, but which plan this account is on
+    # never reaches the wrapper, so the window warns at the conservative one.
+    warn = re.search(rb'(?P<var>\w+)=(?P<pct>0\.\d+),\w+="Approaching your 5-hour',
+                     data)
+    check(warn is not None,
+          "the default threshold still sits beside the warning string",
+          "the bundle reshaped; re-read it before trusting the constant")
+    if warn:
+        binary_pct = round(float(warn.group("pct")) * 100)
+        render = (Path(__file__).resolve().parent / "static" / "js"
+                  / "render.js").read_text(encoding="utf-8")
+        ours = re.search(r"const QUOTA_WARN_AT = (\d+);", render)
+        check(ours is not None and int(ours.group(1)) == binary_pct,
+              f"QUOTA_WARN_AT is the binary's default ({binary_pct}%)",
+              f"render.js says {ours and ours.group(1)}")
+        # The per-plan branches, recorded so a future reader knows the window is
+        # choosing the low one on purpose rather than missing them.
+        plans = re.findall(rb'case"default_claude_max_\d+x":return (0\.\d+)', data)
+        check(len(plans) >= 2,
+              f"the two per-plan thresholds are still there ({[p.decode() for p in plans]})",
+              "the plan table changed shape")
+
     short = re.search(r"pastePlaceholderShort: \"([^\"]+)\"", strings_js)
     long = re.search(r"pastePlaceholder: \"([^\"]+)\"", strings_js)
     check(short is not None and "{n}" in short.group(1) and "{lines}" not in short.group(1)

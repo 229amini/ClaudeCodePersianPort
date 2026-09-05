@@ -10,12 +10,9 @@ window.FA = {
      never «کلود», and never Anthropic's mark: this is an independent front-end
      (REWORK-PLAN.md "Two judgment calls", option b). */
   appName: "کلاد فارسی",
-  appTagline: "رابط فارسی برای Claude Code",
-  independence: "این پروژه مستقل است و وابسته به Anthropic نیست.",
 
   stopped: "متوقف شد",
   removeAttachment: "حذف",
-  slashHint: "برای دیدن دستورها / را بزنید",
   hintZwnj: "نیم‌فاصله: Shift+Space",
   hintPosture: "سطح اجازه: Shift+Tab",
 
@@ -39,9 +36,13 @@ window.FA = {
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
   elapsedMinSec: "{m} دقیقه و {s} ثانیه",
+  /* The tail of the running line, and the TUI's own («esc to interrupt»,
+     wiki/tui-strings.md §4). The stop button says the same thing in its
+     tooltip, but a tooltip is not on screen — the line that says the turn is
+     still going is where the way out belongs. */
+  spinnerInterrupt: "Esc برای توقف",
 
   tool: "ابزار",
-  toolResult: "نتیجه",
   todos: "کارها",
   rawEvent: "رویداد ناشناخته",
   diffTruncated: "{n} خط دیگر نشان داده نشد",
@@ -97,6 +98,11 @@ window.FA = {
   hintKeys: "کلیدها: ?",
   keysTitle: "کلیدها",
   keysClose: "بستن",
+  /* The TUI's own footer under the same table is «esc to close · esc again
+     quits». Only the first half survives here: a window is closed from its
+     close button, so «خروج دوباره» would name a key that does nothing
+     (V2-PLAN §8.5). */
+  keysEscHint: "Esc برای بستن",
   keySend: "فرستادن پیام",
   keyNewline: "سطر تازه",
   keyStop: "توقف نوبت در حال اجرا",
@@ -191,7 +197,6 @@ window.FA = {
   queuedTag: "در صف",
   queuedCancel: "حذف از صف",
 
-  connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
   pasteFailed: "چسباندن تصویر ناموفق بود",
@@ -201,7 +206,6 @@ window.FA = {
   elapsedSeconds: "{n} ثانیه",
   elapsedMinutes: "{n} دقیقه",
   cliExited: "پردازش کلاد بسته شد",
-  waiting: "در انتظار…",
 
   help: "راهنما",
   sessionsEmpty: "هنوز گفتگویی در این پوشه نیست",
@@ -209,7 +213,6 @@ window.FA = {
   viewSession: "نمایش",
   deleteSession: "حذف",
   confirmDelete: "مطمئنید؟",
-  deleteFailed: "حذف ناموفق بود",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
   resumed: "گفتگو از سر گرفته شد",
 
@@ -291,6 +294,11 @@ window.FA = {
      screen is a plan to read, not a tool call to allow. */
   planTitle: "طرح کار",
   planBody: "کلاد این طرح را نوشته است:",
+  /* What the tool card says once the plan is accepted. «اجازه داده شد» is the
+     answer to a request to run something; a plan that was accepted is not run,
+     it is kept — which is why the TUI writes «Plan saved!» here and not its
+     own approval word (wiki/tui-strings.md §2). */
+  planSaved: "طرح ذخیره شد",
 
   /* AskUserQuestion. Not an approval — the model is asking something and waits
      for the answer, so the wording never says «اجازه». «رد کردن» skips the
@@ -329,9 +337,15 @@ window.FA = {
   slSession: "نشست",
   slContext: "متن",
   slQuota: "سهمیه ۵ ساعته",
+  /* The TUI prints this under the prompt when the five-hour window is nearly
+     spent, and it is the one status number the person cannot do anything about
+     — so it says what happens next instead of asking for an action. The
+     threshold is the binary's own default (0.95); gated in test_tui_vocab.py
+     so a change upstream shows up as a failure rather than as a window that
+     warns at the wrong moment. */
+  slQuotaWarn: "نزدیک سقف ۵‌ساعته — کلاد کار را جمع می‌کند",
   slEffort: "تفکر",
   slStyle: "لحن",
-  slNone: "—",
 
   /* The `⏵⏵` posture row (V2-PLAN §3.4), which replaces the pill the composer
      row used to carry. These are the TUI's OWN status-line sentences
@@ -383,6 +397,47 @@ window.FA = {
   memoryProject: "حافظهٔ این پروژه",
   memoryProjectNote: "فقط برای پوشهٔ همین گفتگو",
   cmdTasksEmpty: "کار پس‌زمینه‌ای در جریان نیست",
+
+  /* `/help` (V2-PLAN §3.3 «the TUI's help text, translated», §8.11A). The
+     terminal's own help screen is a page ABOUT a terminal program — how to
+     start it, which flags it takes, where its docs live — and none of that is
+     true of a window that is already open. What translates is its job: what
+     can I ask this window to do, and with which key.
+
+     So the list is generated from the command table in js/commands.js rather
+     than written out here, and `cmdHelp` holds one line per verb. A verb with
+     no line is a gate failure, and a line with no verb behind it is the same
+     failure from the other side (test_strings.py) — the same binary → wiki →
+     page discipline the key sheet already lives by. */
+  helpTitle: "دستورهای این پنجره",
+  cmdHelp: {
+    help: "همین فهرست",
+    resume: "رفتن به فهرست گفتگوهای این پوشه",
+    status: "مدل، پوشه، نشست و سطح اجازهٔ همین گفتگو",
+    copy: "کپی آخرین پاسخ",
+    export: "ذخیرهٔ متن این گفتگو در یک فایل",
+    cd: "باز کردن پوشه‌ای دیگر",
+    "add-dir": "همان دستور بالا — هر گفتگو یک پوشه دارد و بس",
+    branch: "باز کردن شاخه‌ای تازه از همین گفتگو، بدون دست زدن به اصلش",
+    btw: "پرسش کوتاه بیرون از رشتهٔ گفتگو — به اندازهٔ یک نوبت هزینه دارد",
+    config: "باز کردن فایل تنظیم‌ها",
+    hooks: "همان فایل تنظیم‌ها؛ قلاب‌ها آنجا نوشته می‌شوند",
+    keybindings: "باز کردن فایل کلیدها",
+    memory: "باز کردن فایل حافظه — شخصی یا این پروژه",
+    tasks: "نشان دادن کارهای پس‌زمینه",
+    bash: "اجرای یک دستور در پوشهٔ پروژه؛ با «!» هم می‌شود",
+    model: "انتخاب مدل",
+    effort: "میزان تفکر",
+    "output-style": "لحن پاسخ",
+    permissions: "سطح اجازه",
+    clear: "شروع یک گفتگوی تازه",
+  },
+  /* Three rows that are not commands: the two keys that open the other two
+     lists, and the guide written for someone who has never used this window. */
+  helpSlash: "فهرست دستورهای خود کلاد روی این کامپیوتر",
+  helpKeys: "برگهٔ همهٔ کلیدها",
+  helpGuide: "راهنمای کامل",
+  helpGuideNote: "در یک برگهٔ تازه باز می‌شود",
 
   /* model picker + approval posture — every label the CLI itself supplies
      (model names, descriptions) is rendered as it arrives, never translated:

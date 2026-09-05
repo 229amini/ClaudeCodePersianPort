@@ -11,9 +11,12 @@
         LIFECYCLE_VERBS — they change wrapper state and v2.4 built them.
      /bash                                              composer.js runBash()
         it IS the `!` path (§3.2); a second copy would drift from it.
-     /help /theme                                       neither, deliberately —
-        see V2-PLAN §8.12. They fall through to the CLI, which refuses them
+     /theme                                             neither, deliberately —
+        see V2-PLAN §8.12. It falls through to the CLI, which refuses it
         locally and free.
+
+   `/help` WAS in that list until v2.6, which is the phase that owns its text
+   (§8.11A). It is here now, and it is generated from the tables below.
 
    Every entry is SYNCHRONOUS and answers true/false: false means "not mine",
    and the caller then sends the line to the CLI as ordinary text, exactly as
@@ -232,12 +235,64 @@ function tasks() {
   return true;
 }
 
+/* --- /help -----------------------------------------------------------------
+
+   §3.3 asks for «the TUI's help text, translated». The TUI's help SCREEN is a
+   page about a terminal program — how to launch it, which flags it takes,
+   where its docs are — and a window that is already open answers none of those
+   questions. What translates is the screen's job: what can I ask this window
+   to do, and with which key.
+
+   So the list is GENERATED from the command tables, not written out. A verb
+   the window answers and this list does not name would be a command nobody
+   could find; a row here with nothing behind it would be a promise the window
+   cannot keep. test_strings.py fails on either, which is the same discipline
+   the `?` sheet already lives by (v2.3 decision 12).
+
+   `LIFECYCLE_VERBS` and `ARG_VERBS` live in composer.js, which imports THIS
+   module — so they cannot be imported back without closing a cycle. They are
+   named here and the gate compares the two files instead: one arrow, checked. */
+const COMPOSER_VERBS = ["bash", "model", "effort", "output-style",
+                        "permissions", "clear"];
+
+/* The order the rows are drawn in: what the window does for the CONVERSATION
+   first, then what it opens on the machine, then the settings. Object key
+   order would work and would also silently reorder the help the next time
+   someone alphabetised a table. */
+const HELP_ORDER = ["help", "resume", "status", "copy", "export", "branch",
+                    "btw", "bash", "tasks", "cd", "add-dir", "memory",
+                    "config", "hooks", "keybindings", "model", "effort",
+                    "output-style", "permissions", "clear"];
+
+function helpRows() {
+  const rows = HELP_ORDER.map((verb) => ({
+    key: "",
+    // The verb is Latin in an RTL row; `dir="auto"` on the title element
+    // isolates it, which is why it can be written as plain text here.
+    title: "/" + verb,
+    note: FA.cmdHelp?.[verb] ?? "",
+  }));
+  // The two keys that open the other two lists — the CLI's own commands and
+  // the key sheet — and then the guide, which is the only row that acts.
+  rows.push({ key: "", title: "/", note: FA.helpSlash },
+            { key: "", title: "?", note: FA.helpKeys },
+            { key: "guide", title: FA.helpGuide, note: FA.helpGuideNote });
+  return rows;
+}
+
+function helpBlock() {
+  return openPicker("help", FA.helpTitle, helpRows(), (row) => {
+    if (row?.key === "guide") window.open("/static/help.html", "_blank", "noopener");
+  });
+}
+
 /* --- the table -------------------------------------------------------------
 
    `arg` is whatever followed the verb, trimmed. A verb that ignores its
    argument still receives it: `/status now` is not `/status`, and the caller
    decides what to do with a command that answers false. */
 export const WINDOW_COMMANDS = {
+  help: helpBlock,
   resume: resumeList,
   status: statusBlock,
   copy: copyLast,
