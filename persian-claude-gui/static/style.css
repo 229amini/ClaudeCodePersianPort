@@ -1619,62 +1619,111 @@ button.round {
 }
 .card.shell > summary .shell-mark { opacity: .7; }
 
-/* --- model picker / approval pill menu --------------------------------------- */
-/* Same anchoring as the slash popup: absolutely positioned inside .comp-box.
-   One popup, both menus (js/controls.js). */
-#menu-popup {
-  position: absolute;
-  inset-block-end: calc(100% + 8px);
-  inset-inline-start: 0;
-  max-width: min(30rem, 100%);
-  max-height: 46vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 5px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / .4);
-  z-index: 40;
-}
-#menu-popup[hidden] { display: none; }
+/* --- the inline dialogs (v2.4) ------------------------------------------------
 
-.menu-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  /* Never shrink. The popup is a flex column with a max-height, so a row with
-     `min-height: 0` gave up its own content size once the list was taller than
-     the box — the notes then drew ON TOP of the next row's title instead of
-     scrolling. Same defect, same fix, as `#log > * { flex: none }`. */
+   V2-PLAN §3.3 puts the confirmation and every picker IN THE FLOW above the
+   prompt, which is where the Ink TUI draws them. They are still <dialog>
+   elements — the ids, the classes and `open` all stay what they were — but
+   they are opened with show() rather than showModal(), so the UA's modal
+   positioning has to be undone here: a dialog defaults to `position: absolute`
+   and auto margins, which would float it over the transcript instead of
+   pushing the prompt down.
+
+   The popup menu these replaced is gone, and with it positionMenu(): a box
+   that hangs off a chip has to be measured against a shrink-to-fit width and
+   the room above it (the 2026-08-23 "the picker menu was sizing itself"
+   report). A row in the flow is laid out by the browser. */
+#perm,
+#picker {
+  position: static;
+  display: none;
+  /* #stage is a flex column: without this the dialog is squeezed instead of
+     pushing the prompt down — the `#log > * { flex: none }` family. */
   flex: none;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
+  inline-size: auto;
+  max-inline-size: none;
+  /* The same centred column the prompt uses (#composer's padding), so the
+     list sits exactly over the box it is answering for instead of drifting
+     wider on a big window and narrower on a small one. */
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
-  text-align: start;
+  line-height: var(--lh-fa);
+  max-block-size: 52vh;
+  overflow-y: auto;
+}
+#perm[open],
+#picker[open] { display: block; }
+
+#picker h2 { margin: 0 0 .5em; font-size: .95rem; font-weight: 700; }
+
+/* --- the numbered option list (js/choice.js) ---------------------------------
+   One list, three owners: the permission dialog, the pickers and the audit
+   trail. It is ONE tab stop with a moving highlight, the way the TUI's is —
+   the arrows move the highlight, the digits answer outright. */
+.opts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.opts:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.opt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* Never shrink: the list has a max-height, and a row that gives up its own
+     content size draws its note on top of the next row's title instead of
+     scrolling. Third appearance of the same family. */
+  flex: none;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   cursor: pointer;
 }
-.menu-row:hover { background: var(--surface-2); }
-.menu-row[aria-checked="true"] { background: var(--accent-soft); }
-.menu-row[aria-checked="true"] .menu-title { color: var(--accent); font-weight: 600; }
-.menu-title { font-size: .92em; }
-.menu-note { color: var(--fg-muted); font-size: .78em; line-height: 1.7; }
+.opt:hover { background: var(--surface-2); }
+.opt[aria-selected="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.opt[aria-selected="true"] .opt-title { color: var(--accent); font-weight: 600; }
+
+/* The digit is chrome the renderer places, never text inside the label
+   (V2-PLAN §8.2). It is a Latin-ordered token in an RTL row, so it is
+   isolated and given a fixed column of its own — otherwise «۱.» and «۲.»
+   sit at different distances from their labels. */
+.opt-num,
+.ask-opt .opt-num {
+  flex: none;
+  min-inline-size: 1.9ch;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+.opt-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.opt-title { font-size: .92em; }
+.opt-esc { color: var(--fg-muted); font-weight: 700; unicode-bidi: isolate; }
+.opt-note { color: var(--fg-muted); font-size: .78em; line-height: 1.7; }
+
+.dlg-hint {
+  display: block;
+  margin-block-start: 10px;
+  color: var(--fg-muted);
+  font-size: .78em;
+}
 
 /* The audit counter is a label, not a control: no hover, no pointer. */
 .chip-btn.is-info {
   cursor: default;
   border-style: dashed;
   color: var(--fg-muted);
-}
-.chip-btn[data-posture="autoApprove"] {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* --- row overflow menu (⋯) ---------------------------------------------------- */
@@ -1805,19 +1854,6 @@ button.round {
 #statusline .sl-custom span:not(:empty) { padding-block: 1px; }
 
 /* --- permission dialog -------------------------------------------------------- */
-#perm {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--fg);
-  padding: 20px;
-  max-width: min(560px, 92vw);
-  font: inherit;
-  line-height: var(--lh-fa);
-  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
-}
-#perm::backdrop { background: rgb(0 0 0 / .55); }
-
 #perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: 700; }
 #perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
 
@@ -1874,14 +1910,6 @@ button.round {
   color: var(--fg-muted);
 }
 #perm-remember-row input { width: 18px; height: 18px; accent-color: var(--accent); }
-
-#perm menu {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-start;   /* RTL start = right edge */
-  margin: 0;
-  padding: 0;
-}
 
 /* --- diffs -------------------------------------------------------------------
    .diff already carries direction:ltr + isolate + monospace + its own scroll box
@@ -2239,6 +2267,49 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 #perm.asking #perm-tool,
 #perm.asking #perm-params,
 #perm.asking #perm-remember-row { display: none; }
+
+/* The two modes answer with different chrome. A permission answers with the
+   numbered list and its note box; a question answers with its own inputs and
+   the two buttons, because "send the answers" and "skip" are not options in a
+   list — they are what happens to whatever the inputs hold.
+
+   #perm-remember-row is the harness's copy of this markup (spec-test.html) and
+   is what its «a question offers no remember» assertion reads; in the window
+   the remember scope is «۲.» in the list and this row never shows. */
+#perm menu { display: none; }
+#perm.asking menu {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;   /* RTL start = right edge */
+  margin: 12px 0 0;
+  padding: 0;
+}
+#perm #perm-remember-row { display: none; }
+#perm.asking #perm-proceed,
+#perm.asking #perm-opts,
+#perm.asking #perm-feedback { display: none; }
+
+#perm #perm-proceed {
+  margin: 2px 0 8px;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: .95em;
+}
+#perm-feedback {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-side);
+  color: inherit;
+  font: inherit;
+  line-height: var(--lh-fa);
+  resize: vertical;
+}
+#perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#perm #perm-hint { margin: 8px 0 0; font-size: .78em; }
 
 .ask-q {
   border: 1px solid var(--border);

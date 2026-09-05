@@ -19,6 +19,16 @@ import {
   bubble, bulkAppend, label, renderEvent, renderToolDetail, resetTurn, state,
   setStatus, questionProse, questionOption,
 } from "./render.js";
+/* The numbered list every v2.4 dialog is made of. A leaf: it imports nothing,
+   so sharing it with controls.js — which sits outside this cycle — costs no
+   new edge (frontend-modules.md). */
+import { optionList, digitIndex } from "./choice.js";
+/* Adds chrome.js -> composer.js to the existing render/chrome/composer cycle.
+   Safe by the same invariant the cycle already rests on: nothing here runs at
+   evaluation time, and restoreDraft is a hoisted function declaration. It is
+   imported rather than reimplemented because "append, never assign, on its own
+   line" is a rule about not losing text that already has exactly one home. */
+import { restoreDraft } from "./composer.js";
 
 const FA = window.STRINGS;
 
@@ -908,8 +918,13 @@ const perm = {
   source: document.getElementById("perm-source"),
   allow: document.getElementById("perm-allow"),
   deny: document.getElementById("perm-deny"),
+  proceed: document.getElementById("perm-proceed"),
+  opts: document.getElementById("perm-opts"),
+  feedback: document.getElementById("perm-feedback"),
+  hint: document.getElementById("perm-hint"),
   queue: [],
   current: null,
+  list: null,          // the live optionList controller, or null in ask mode
 };
 
 /* AskUserQuestion travels over the permission pipe but is NOT a permission: the
@@ -919,6 +934,9 @@ const perm = {
    "allow", the remember checkbox is meaningless, and dismissing must skip the
    question rather than refuse a tool call. */
 const ASK_TOOL = "AskUserQuestion";
+/* The plan approval of V2-PLAN §3.3. It travels the same pipe and renders with
+   the same numbered options; what it does not get is «don't ask again». */
+const PLAN_TOOL = "ExitPlanMode";
 
 function askQuestions(req) {
   const list = req?.tool_name === ASK_TOOL && req.tool_input?.questions;
@@ -940,8 +958,15 @@ function nextPermission() {
   const questions = askQuestions(perm.current);
   paintPermSource(perm.current.tab);
   perm.dialog.classList.toggle("asking", !!questions);
-  if (perm.title) perm.title.textContent = questions ? FA.askTitle : FA.permTitle;
-  if (perm.text) perm.text.textContent = questions ? FA.askBody : FA.permBody;
+  const planning = perm.current.tool_name === PLAN_TOOL;
+  if (perm.title) {
+    perm.title.textContent = questions ? FA.askTitle
+                           : planning ? FA.planTitle : FA.permTitle;
+  }
+  if (perm.text) {
+    perm.text.textContent = questions ? FA.askBody
+                          : planning ? FA.planBody : FA.permBody;
+  }
   if (perm.allow) perm.allow.textContent = questions ? FA.askSubmit : FA.permAllow;
   if (perm.deny) perm.deny.textContent = questions ? FA.askSkip : FA.permDeny;
 
@@ -955,10 +980,96 @@ function nextPermission() {
     renderParams(perm.current.tool_name, perm.current.tool_input ?? {});
   }
   if (perm.remember) perm.remember.checked = false;
-  if (!perm.dialog.open) perm.dialog.showModal();
-  // A permission defaults to the safe answer (deny). A question has no unsafe
-  // answer, so focus goes to the first option instead of to Skip.
-  (questions ? perm.ask?.querySelector("input") : perm.deny)?.focus();
+  paintOptions(questions);
+  /* show(), not showModal(): v2.4 puts the dialog IN THE FLOW above the prompt,
+     where the Ink TUI draws it (V2-PLAN §3.3). `open` still reads true, the CSS
+     is unchanged, and what is given up — the backdrop and the focus trap — is
+     exactly what made it a modal rather than a row. */
+  if (!perm.dialog.open) perm.dialog.show();
+  // A question has no unsafe answer, so focus goes to its first option. A
+  // permission focuses the LIST, whose highlight starts on «۱. بله» — the
+  // digit, not the highlight, is what actually answers it, and Esc is still
+  // one key away from the safe reply.
+  (questions ? perm.ask?.querySelector("input") : perm.list?.el)?.focus();
+}
+
+/* The three options, in the TUI's own order (wiki/tui-strings.md §2). Option 2
+   exists ONLY when a remember scope applies, which is why the digit cannot be
+   part of the label — «۳.» is the refusal whether or not «۲.» was drawn
+   (V2-PLAN §8.2). */
+function permOptions(req) {
+  const tool = req?.tool_name ?? "?";
+  const rows = [{ key: "allow", title: FA.permYes }];
+  if (rememberable(req)) {
+    // No directory in the wording: v1's remember scope is THIS PROJECT, THIS
+    // SESSION, and naming a path would describe a scope the window does not
+    // implement (V2-PLAN §8.1).
+    rows.push({ key: "remember", title: FA.permYesRemember.replace("{tool}", tool) });
+  }
+  rows.push({ key: "deny", title: FA.permNoFeedback, esc: true });
+  return rows;
+}
+
+/* «دیگر نپرس» is a standing grant for a TOOL. A plan is approved once —
+   ExitPlanMode has no next call to skip — and a question is not an approval at
+   all, so neither offers the row. */
+function rememberable(req) {
+  return !!req?.tool_name && req.tool_name !== ASK_TOOL
+      && req.tool_name !== PLAN_TOOL;
+}
+
+function paintOptions(questions) {
+  if (!perm.opts) return;          // spec-test.html carries a copy of this markup
+  perm.list = null;
+  perm.opts.replaceChildren();
+  if (perm.feedback) {
+    perm.feedback.value = "";
+    perm.feedback.placeholder = FA.permFeedbackPlaceholder;
+  }
+  if (perm.proceed) perm.proceed.textContent = FA.permProceed;
+  if (perm.hint) perm.hint.textContent = questions ? FA.askHint : FA.permHint;
+  if (questions) return;           // ask mode answers with its own inputs
+  perm.list = optionList(permOptions(perm.current), {
+    onPick: (key) => resolvePermission("allow", { remember: key === "remember" }),
+    onCancel: () => resolvePermission("deny"),
+    onKey: permListKey,
+  });
+  perm.opts.append(perm.list.el);
+}
+
+/* The two Confirmation-context keys the list itself does not own
+   (wiki/tui-keys.md). Tab is `confirm:nextField` — here there are exactly two
+   fields, the options and the note — and shift+tab is the TUI's «approve with
+   this feedback». */
+function permListKey(e) {
+  if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault();
+    perm.feedback?.focus();
+    return;
+  }
+  if (e.key === "Tab" && e.shiftKey) {
+    e.preventDefault();
+    approveWithFeedback();
+  }
+}
+
+/* «shift+tab to approve with this feedback», as far as this pipe allows it.
+   `can_use_tool`'s ALLOW reply carries `updatedInput` and nothing else
+   (wiki/permission-transport.md), so there is no field a note can ride in
+   alongside an approval — inventing one would be a sentence the model never
+   sees. The tool is approved and the note is handed to the composer instead,
+   where the person can read it, edit it and send it as the next message. */
+function approveWithFeedback() {
+  const note = feedbackText();
+  resolvePermission("allow");
+  if (note) {
+    restoreDraft(note);
+    bubble("meta", FA.permFeedbackMoved);
+  }
+}
+
+function feedbackText() {
+  return perm.feedback?.value.trim() ?? "";
 }
 
 /* ONE dialog serves every open conversation, so when the asking one is not the
@@ -1010,7 +1121,7 @@ function renderQuestions(questions) {
     set.append(questionProse(text, q.question));
     if (q.multiSelect) set.append(label(FA.askMulti, "ask-hint"));
 
-    for (const option of q.options ?? []) {
+    (q.options ?? []).forEach((option, at) => {
       const row = document.createElement("label");
       row.className = "ask-opt";
       const box = document.createElement("input");
@@ -1020,11 +1131,22 @@ function renderQuestions(questions) {
       // the CLI matches the answer against (wiki/permission-transport.md).
       box.value = option.label ?? "";
       row.append(box);
+      /* Numbered like every other v2.4 dialog (V2-PLAN §3.3, «options
+         numbered»), and for the same reason the permission list is: the digit
+         is chrome the renderer places, never text inside the Persian label
+         (§8.2). It is aria-hidden because the input beside it already carries
+         the row's name and position for a screen reader. */
+      const num = document.createElement("span");
+      num.className = "opt-num";
+      num.setAttribute("dir", "ltr");
+      num.setAttribute("aria-hidden", "true");
+      num.textContent = (at + 1).toLocaleString("fa-IR") + ".";
+      row.append(num);
       const stack = document.createElement("span");
       stack.className = "ask-opt-text";
       row.append(questionOption(stack, option, "ask-label", "ask-desc"));
       set.append(row);
-    }
+    });
 
     /* The tool always offers a free-text answer, so the dialog must too —
        otherwise a question whose real answer is none of the options can only be
@@ -1063,6 +1185,48 @@ function collectAnswers() {
   return answers;
 }
 
+/* AskUserQuestion's own Confirmation keys (wiki/tui-keys.md). The native
+   radio/checkbox behaviour would cover the arrows and Space on a real key
+   press, but it is a DEFAULT ACTION — it does not run for a synthetic event,
+   so a gate could never see it, and «the browser probably does this» is not a
+   promise this project keeps anywhere else. Bound explicitly, and
+   preventDefault stops the native move from happening twice. */
+function askOptionRows(from) {
+  const set = from?.closest?.(".ask-q") ?? perm.ask?.querySelector(".ask-q");
+  return [set, [...(set?.querySelectorAll(".ask-opt input") ?? [])]];
+}
+
+function askKeys(e) {
+  const [, inputs] = askOptionRows(e.target);
+  if (!inputs.length) return;
+  const at = Math.max(0, inputs.indexOf(e.target));
+
+  const digit = digitIndex(e);
+  if (digit >= 0 && digit < inputs.length) {
+    e.preventDefault();
+    askChoose(inputs[digit]);
+    return;
+  }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const step = e.key === "ArrowDown" ? 1 : -1;
+    inputs[(at + step + inputs.length) % inputs.length].focus();
+    return;
+  }
+  if (e.key === " " || e.key === "Spacebar") {
+    // `confirm:toggle`. A checkbox flips; a radio is a choice and cannot be
+    // un-chosen, so the same key simply picks the row it is on.
+    e.preventDefault();
+    askChoose(inputs[at], true);
+  }
+}
+
+function askChoose(box, toggle = false) {
+  if (!box) return;
+  box.checked = box.type === "checkbox" ? (toggle ? !box.checked : true) : true;
+  box.focus();
+}
+
 /* The dialog and the tool card render parameters with the SAME function
    (render.js). They used to differ, and the dialog's version forced every
    string LTR through pathEl — so a Persian Write.content or Edit.new_string
@@ -1078,12 +1242,17 @@ function renderParams(toolName, toolInput) {
   perm.params?.replaceChildren(renderToolDetail(toolName, toolInput));
 }
 
-async function resolvePermission(decision) {
+async function resolvePermission(decision, { remember = false } = {}) {
   const req = perm.current;
   const asking = !!askQuestions(req);
   // Read the form before anything closes or the queue moves on.
   const answers = asking && decision === "allow" && perm.ask ? collectAnswers() : {};
+  // Option 3's «tell Claude what to do differently»: the note only means
+  // anything on a refusal, which is the one reply that carries a message back
+  // to the model (server.py PermissionBroker.respond).
+  const feedback = !asking && decision === "deny" ? feedbackText() : "";
   perm.current = null;
+  perm.list = null;
   if (perm.dialog.open) perm.dialog.close();
   if (!req) return;
 
@@ -1097,9 +1266,13 @@ async function resolvePermission(decision) {
         // reach the model as a tool failure.
         request_id: req.request_id,
         decision: asking ? "allow" : decision,
-        remember: !asking && perm.remember.checked,
+        // The checkbox is the harness's copy of this markup; the numbered list
+        // is the window's «۲. بله، و دیگر برای … نپرس». Either one is consent
+        // given once, and neither exists in ask mode.
+        remember: !asking && (remember || !!perm.remember?.checked),
         tool_name: req.tool_name,
         ...(asking ? { answers } : {}),
+        ...(feedback ? { feedback } : {}),
       }),
     });
   } catch (err) {
@@ -1191,17 +1364,36 @@ export function initChrome() {
     // differ between an approval and a question (nextPermission).
     document.getElementById("perm-remember-label").textContent = FA.permRemember;
 
-    // Escape / backdrop dismissal must resolve as deny. Closing a window is not
-    // consent, and leaving it unanswered would block the CLI until the timeout.
-    // In ask mode resolvePermission turns that same deny into a skip.
-    perm.dialog.addEventListener("cancel", (e) => {
+    document.getElementById("perm-hint");   // labels are set per request
+
+    /* Escape must resolve as deny wherever focus is inside the dialog. A
+       non-modal <dialog> fires no `cancel` event, so this replaces the handler
+       that used to rely on one — and it is bound on the dialog rather than the
+       list so that Escape out of the feedback box means the same thing. In ask
+       mode resolvePermission turns the same deny into a skip. */
+    perm.dialog.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       e.preventDefault();
       resolvePermission("deny");
     });
 
-    perm.form.addEventListener("submit", (e) => {
-      // <form method="dialog"> closes natively; capture which button was used.
-      resolvePermission(e.submitter?.value === "allow" ? "allow" : "deny");
+    /* Two buttons, no submit: the dialog's form has no submit button at all
+       any more, which retires by construction the 2026-08-31 defect where
+       implicit submission clicked the tree-first one (#perm-deny) and turned a
+       typed answer into a skip. The keydown handler below still claims Enter
+       inside the question area for the same reason it always did. */
+    perm.allow?.addEventListener("click", () => resolvePermission("allow"));
+    perm.deny?.addEventListener("click", () => resolvePermission("deny"));
+
+    /* The feedback box is the second of the confirmation's two fields
+       (`confirm:nextField`). Tab goes back to the options; shift+tab is the
+       TUI's «approve with this feedback». Enter is left alone — a note is
+       prose and may need more than one line. */
+    perm.feedback?.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      if (e.shiftKey) approveWithFeedback();
+      else perm.list?.focus();
     });
 
     // Enter inside the question area ANSWERS, never skips. Implicit form
@@ -1212,9 +1404,16 @@ export function initChrome() {
     // (reported 2026-08-31). Only ask mode populates #perm-ask, so a plain
     // permission never reaches this handler.
     perm.ask?.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      resolvePermission("allow");
+      if (e.key === "Enter") {
+        e.preventDefault();
+        resolvePermission("allow");
+        return;
+      }
+      // Inside the free-text box every other key is a character the person is
+      // typing — a digit is a digit and a space is a space. Only Enter, above,
+      // is claimed there, which is what the 2026-08-31 fix is.
+      if (e.target?.classList?.contains("ask-free")) return;
+      askKeys(e);
     });
   }
 }

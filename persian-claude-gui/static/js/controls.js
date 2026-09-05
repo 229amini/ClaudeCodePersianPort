@@ -14,11 +14,26 @@
 "use strict";
 
 import { api } from "./api.js";
+/* A leaf, like api.js: the numbered list every v2.4 dialog is made of. Sharing
+   it with chrome.js costs no import edge in either direction. */
+import { optionList, dialogHint } from "./choice.js";
 
 const FA = window.STRINGS;
 
 const ui = {
-  menu: document.getElementById("menu-popup"),
+  /* v2.4: one inline dialog, in the flow above the prompt, for every picker —
+     `/model`, `/effort`, `/output-style`, `/permissions` and the audit list.
+     The composer chips it replaced are gone (V2-PLAN §2); the state below did
+     not move, and v2.5's status line reads the same fields.
+
+     The chip ids are still looked up because spec-test.html keeps a stub for
+     them: three of its assertions prove a background tab's model never leaks
+     into the visible one, and they read the label this module writes. Every
+     paint below is element-optional, so index.html simply has nothing to
+     paint. */
+  picker: document.getElementById("picker"),
+  pickerTitle: document.getElementById("picker-title"),
+  pickerBody: document.getElementById("picker-body"),
   modelChip: document.getElementById("model-chip"),
   modelName: document.getElementById("model-chip-name"),
   postureChip: document.getElementById("posture-chip"),
@@ -113,7 +128,6 @@ function paintModel() {
 }
 
 async function pickModel(item) {
-  closeMenu();
   const previous = chosen;
   chosen = item.key;
   paintModel();
@@ -125,7 +139,7 @@ async function pickModel(item) {
     chosen = previous;
     paintModel();
     console.error("set_model failed", err);
-    openMenu("model", [{ title: FA.modelFailed }]);
+    reportPicker("model", FA.modelTitle, FA.modelFailed);
   }
 }
 
@@ -178,7 +192,6 @@ function paintEffort() {
 }
 
 async function pickEffort(item) {
-  closeMenu();
   try {
     const res = await api("/api/effort", { level: item.key });
     // `effort` is what is really in force. A refused level comes back as the
@@ -187,11 +200,11 @@ async function pickEffort(item) {
     if (res.effort) setEffortState(res.effort);
     if (!res.ok) {
       refused.add(item.key);
-      openMenu("effort", [{ title: FA.effortRefused }]);
+      reportPicker("effort", FA.effortTitle, FA.effortRefused);
     }
   } catch (err) {
     console.error("set effort failed", err);
-    openMenu("effort", [{ title: FA.effortRefused }]);
+    reportPicker("effort", FA.effortTitle, FA.effortRefused);
   }
 }
 
@@ -226,7 +239,6 @@ function paintStyle() {
 }
 
 async function pickStyle(item) {
-  closeMenu();
   try {
     const res = await api("/api/output-style", { style: item.key });
     // What is in force, read back out of get_settings — never the ack, which
@@ -235,7 +247,7 @@ async function pickStyle(item) {
     if (!res.ok) throw new Error(res.error || "output style refused");
   } catch (err) {
     console.error("set output style failed", err);
-    openMenu("style", [{ title: FA.styleFailed }]);
+    reportPicker("style", FA.styleTitle, FA.styleFailed);
   }
 }
 
@@ -336,152 +348,128 @@ export function cyclePosture() {
 }
 
 async function pickPosture(item) {
-  closeMenu();
   try {
     const res = await api("/api/posture", { posture: item.key });
     if (!res.ok) throw new Error(res.error || "posture refused");
     // Deliberately no repaint here — see setPostureState().
   } catch (err) {
     console.error("posture change failed", err);
-    openMenu("posture", [{ title: FA.postureFailed }]);
+    reportPicker("posture", FA.postureTitle, FA.postureFailed);
   }
 }
 
-/* --- the shared popup ------------------------------------------------------ */
+/* --- the inline picker ------------------------------------------------------
 
-/* The popup is pinned to the composer's start edge in CSS, which was fine while
-   two chips shared it and merely odd with three: every picker opened in the
-   same place, nowhere near the chip that was pressed. Line its start edge up
-   with the chip's instead. Physical `right` on purpose — the CSS `inset`
-   shorthand it overrides is physical too, and the shell is dir="rtl". */
-function positionMenu(anchor) {
-  const parent = ui.menu.offsetParent;
-  if (!anchor || !parent) return;
-  // Measure at the CSS anchor: the popup is shrink-to-fit, so whatever `right`
-  // the last open left behind is part of the width read below.
-  ui.menu.style.right = "";
-  const box = parent.getBoundingClientRect();
-  const chip = anchor.getBoundingClientRect();
+   V2-PLAN §3.3 renders every picker as the same numbered list the permission
+   dialog uses, in the flow above the prompt rather than as a popup hanging off
+   a chip. Three whole classes of defect leave with the popup: it had to be
+   positioned by hand against a shrink-to-fit box (the 2026-08-23 "the picker
+   menu was sizing itself" report), it opened upward into whatever room the
+   home state left it, and it was reachable only by clicking a chip. A row in
+   the flow is laid out by the browser and answered by a digit. */
 
-  // It opens UPWARD (CSS inset-block-end), and 46vh of room is not the same as
-  // 46vh of window: in the home state the composer sits mid-screen, so a full
-  // menu was clipped by the TOP of the window rather than scrolled — measured
-  // at 1280x800, the first posture row sat at y = -64, off screen.
-  ui.menu.style.maxHeight = Math.max(140, box.top - 16) + "px";
+let pickerOwner = "";
 
-  // Shrink-to-fit again: the width left for the popup is the distance from its
-  // start edge to the box, so an offset larger than the slack does not move the
-  // menu, it squeezes it into a column. The posture chip is the last one on the
-  // row, which is why THAT menu was the one that came back 201px wide in a
-  // 760px window and wrapped its notes to three words a line.
-  const slack = Math.max(0, box.width - ui.menu.offsetWidth);
-  const offset = box.right - chip.right;
-  ui.menu.style.right = Math.min(Math.max(0, offset), slack) + "px";
+export function pickerOpen() {
+  return !!ui.picker?.open;
 }
 
-function openMenu(owner, items, onPick, anchor) {
-  if (!ui.menu) return;
-  ui.menu.replaceChildren();
-  for (const item of items) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "menu-row";
-    if (onPick) {
-      row.setAttribute("role", "menuitemradio");
-      row.setAttribute("aria-checked", String(!!item.selected));
-      row.addEventListener("click", () => onPick(item));
-    }
-    const title = document.createElement("span");
-    title.className = "menu-title";
-    title.setAttribute("dir", "auto");   // model names are Latin, postures Persian
-    title.textContent = item.title;
-    row.append(title);
-    if (item.note) {
-      const note = document.createElement("span");
-      note.className = "menu-note";
-      note.setAttribute("dir", "auto");
-      note.textContent = item.note;
-      row.append(note);
-    }
-    ui.menu.append(row);
+export function closePicker() {
+  if (ui.picker?.open) ui.picker.close();
+  pickerOwner = "";
+}
+
+/* Returns false when there is nothing to pick -- the caller uses that to decide
+   whether the key was ours at all, the way Alt+P and Shift+Tab both do. */
+function openPicker(owner, title, rows, onPick) {
+  if (!ui.picker || !ui.pickerBody) return false;
+  if (!rows.length) return false;
+  if (pickerOwner === owner && ui.picker.open) {   // the same key shuts it again
+    closePicker();
+    return true;
   }
-  ui.menu.dataset.owner = owner;
-  ui.menu.hidden = false;
-  positionMenu(anchor ?? document.getElementById(owner + "-chip"));
+  const list = optionList(rows, {
+    onPick: (key) => { closePicker(); onPick?.(rows.find((r) => r.key === key)); },
+    onCancel: closePicker,
+  });
+  if (ui.pickerTitle) ui.pickerTitle.textContent = title;
+  ui.pickerBody.replaceChildren(list.el, dialogHint(FA.pickerHint));
+  pickerOwner = owner;
+  if (!ui.picker.open) ui.picker.show();
+  list.focus();
+  return true;
 }
 
-function closeMenu() {
-  if (ui.menu) ui.menu.hidden = true;
+/* A picker with nothing to say still has to say it -- a key that silently does
+   nothing reads as a broken window. This is the same list with one dead row,
+   which is what the popup did too. */
+function reportPicker(owner, title, text) {
+  openPicker(owner + "-failed", title, [{ key: "", title: text }], null);
 }
 
-function toggleMenu(owner, items, onPick, anchor) {
-  if (!ui.menu.hidden && ui.menu.dataset.owner === owner) {
-    closeMenu();
-    return;
-  }
-  openMenu(owner, items, onPick, anchor);
+export function openModelPicker() {
+  const current = modelEntry();
+  return openPicker("model", FA.modelTitle, models.map((m) => ({
+    key: m.value,
+    title: m.displayName || m.value,
+    note: m.description || "",
+    selected: m === current,
+  })), pickModel);
+}
+
+export function openEffortPicker() {
+  return openPicker("effort", FA.effortTitle, effortLevels().map((level) => ({
+    key: level, title: effortLabel(level), selected: level === effort,
+  })), pickEffort);
+}
+
+export function openStylePicker() {
+  return openPicker("style", FA.styleTitle, styles.map((name) => ({
+    key: name, title: FA.styleNames?.[name] ?? name, selected: name === style,
+  })), pickStyle);
+}
+
+/* The posture list. Shift+Tab still CYCLES -- that is the TUI's key and it does
+   not open anything -- but `/permissions` needs a place to choose from, and
+   until v2.5 gives the plan's open-the-real-file route a home this is the only
+   surface that names the four levels and what each one allows. */
+export function openPosturePicker() {
+  return openPicker("posture", FA.postureTitle, POSTURES.map((p) => ({
+    key: p.key, title: p.title, note: p.note, selected: p.key === posture,
+  })), pickPosture);
+}
+
+/* The count alone is a number with nothing behind it. Opening it is the audit
+   trail that makes the auto posture -- and a remembered tool -- defensible. No
+   endpoint: the events that produced the count carry the tool name. */
+export function openAuditList() {
+  const rows = autoActions.length
+    ? autoActions.map((a) => ({
+        key: "", title: a.tool,
+        note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
+      }))
+    : [{ key: "", title: FA.autoActionsEmpty }];
+  return openPicker("auto", FA.autoActionsTitle, rows, null);
 }
 
 /* --- init ------------------------------------------------------------------ */
 
 export function initControls() {
-  if (!ui.menu) return;   // spec-test.html carries no composer chrome
+  if (!ui.picker) return;   // spec-test.html carries no composer chrome
 
-  ui.modelChip.addEventListener("click", (e) => {
+  ui.autoChip?.addEventListener("click", (e) => {
     e.stopPropagation();
-    const current = modelEntry();
-    toggleMenu("model", models.map((m) => ({
-      key: m.value,
-      title: m.displayName || m.value,
-      note: m.description || "",
-      selected: m === current,
-    })), pickModel);
+    openAuditList();
   });
 
-  ui.effortChip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMenu("effort", effortLevels().map((level) => ({
-      key: level,
-      title: effortLabel(level),
-      selected: level === effort,
-    })), pickEffort);
-  });
-
-  ui.styleChip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMenu("style", styles.map((name) => ({
-      key: name,
-      title: FA.styleNames?.[name] ?? name,
-      selected: name === style,
-    })), pickStyle);
-  });
-
-  ui.postureChip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMenu("posture", POSTURES.map((p) => ({
-      key: p.key, title: p.title, note: p.note, selected: p.key === posture,
-    })), pickPosture);
-  });
-
-  /* The count alone is a number with nothing behind it. Opening it is the
-     audit trail that makes «خودکار» — and a remembered tool — defensible.
-     No endpoint: the events that produced the count carry the tool name. */
-  ui.autoChip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const rows = autoActions.length
-      ? autoActions.map((a) => ({
-          title: a.tool,
-          note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
-        }))
-      : [{ title: FA.autoActionsEmpty }];
-    toggleMenu("auto", rows);
-  });
-
-  // Click-anywhere and Escape close it — the popup is a menu, not a dialog.
-  document.addEventListener("click", (e) => {
-    if (!ui.menu.hidden && !ui.menu.contains(e.target)) closeMenu();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeMenu();
+  /* Escape inside the dialog closes it. Bound here rather than on the document
+     so it cannot reach the composer's interrupt handler, which checks
+     defaultPrevented -- the picker is dismissible and owns Esc first. The list
+     itself already claims Esc; this is the belt for focus sitting on the
+     dialog rather than in it. */
+  ui.picker.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    e.preventDefault();
+    closePicker();
   });
 }

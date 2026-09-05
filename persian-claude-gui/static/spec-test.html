@@ -48,9 +48,12 @@
 
 <!-- Window chrome the concurrent-conversation cases assert against: a
      background tab's event must leave every one of these alone. js/chrome.js
-     and js/controls.js grab the ids at module-evaluation time; the model chip
-     ships `hidden`, exactly as in index.html. The rest of the composer row is
-     deliberately absent — initControls() binds nothing without #menu-popup. -->
+     and js/controls.js grab the ids at module-evaluation time. The model chip
+     LEFT index.html in v2.4 (V2-PLAN §2, the pickers are commands now) and is
+     kept here on purpose: it is the label the three "a background tab does not
+     leak into the visible one" cases below read, and js/controls.js still
+     paints it wherever it exists. The rest of the composer row is deliberately
+     absent — initControls() binds nothing without #picker. -->
 <div id="harness-chrome">
   <bdi id="topbar-name"></bdi>
   <button type="button" id="model-chip" hidden>
@@ -69,7 +72,7 @@
      ids at module-evaluation time; without them showPermission() throws and the
      verdict comes back empty. -->
 <dialog id="perm">
-  <form method="dialog" id="perm-form">
+  <form id="perm-form">
     <h2 id="perm-title"></h2>
     <p id="perm-body" dir="auto"></p>
     <p id="perm-source" class="meta" dir="auto" hidden></p>
@@ -80,9 +83,13 @@
       <input type="checkbox" id="perm-remember">
       <span id="perm-remember-label"></span>
     </label>
+    <p id="perm-proceed" dir="auto"></p>
+    <div id="perm-opts"></div>
+    <textarea id="perm-feedback" rows="1" dir="auto"></textarea>
+    <p id="perm-hint" class="meta" dir="auto"></p>
     <menu>
-      <button value="deny" class="ghost" id="perm-deny"></button>
-      <button value="allow" id="perm-allow"></button>
+      <button type="button" value="deny" class="ghost" id="perm-deny"></button>
+      <button type="button" value="allow" id="perm-allow"></button>
     </menu>
   </form>
 </dialog>

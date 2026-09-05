@@ -149,6 +149,54 @@
        "new chat" button that already owns that job. -->
   <div id="context-notice" hidden></div>
 
+  <!-- v2.4: the dialogs are INLINE, in the flow, immediately above the prompt —
+       which is where the Ink TUI draws its confirmation too (V2-PLAN §3.3).
+       They are still <dialog> elements, opened with show() rather than
+       showModal(): no backdrop, no focus trap, no modal semantics, but the
+       `open` property and the CSS the whole file already keys on stay exactly
+       what they were. Escape is ours now (a non-modal dialog fires no `cancel`)
+       and resolves as DENY — dismissing is never consent. -->
+
+  <!-- /model, /effort, /output-style, /permissions and the audit list, each as
+       the same numbered list (js/controls.js → js/choice.js). -->
+  <dialog id="picker">
+    <h2 id="picker-title"></h2>
+    <div id="picker-body"></div>
+  </dialog>
+
+  <dialog id="perm">
+    <form id="perm-form">
+      <h2 id="perm-title"></h2>
+      <p id="perm-body" dir="auto"></p>
+      <!-- Which conversation is asking, when it is not the one on screen: one
+           dialog serves every open tab (js/chrome.js). -->
+      <p id="perm-source" class="meta" dir="auto" hidden></p>
+      <div id="perm-tool"></div>
+      <pre id="perm-params"></pre>
+      <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes
+           the model's question over the same can_use_tool pipe, so it arrives as
+           a "permission" but is nothing of the sort (js/chrome.js). -->
+      <div id="perm-ask"></div>
+      <label id="perm-remember-row">
+        <input type="checkbox" id="perm-remember">
+        <span id="perm-remember-label"></span>
+      </label>
+      <!-- «اجازه می‌دهید ادامه دهد؟» — the TUI's own question, above the
+           numbered options it answers (wiki/tui-strings.md permission.proceed). -->
+      <p id="perm-proceed" dir="auto"></p>
+      <div id="perm-opts"></div>
+      <!-- Option 3 is «no, and tell Claude what to do differently»: this is
+           where the "differently" goes. It rides back as the refusal's own
+           message (server.py PermissionBroker.respond). -->
+      <textarea id="perm-feedback" rows="1" dir="auto"></textarea>
+      <p id="perm-hint" class="meta" dir="auto"></p>
+      <menu>
+        <button type="button" value="deny" class="ghost" id="perm-deny"></button>
+        <button type="button" value="allow" id="perm-allow"></button>
+      </menu>
+    </form>
+  </dialog>
+
   <form id="composer">
     <div class="comp-box">
       <!-- Slash-command autocomplete. Populated from system/init's
@@ -160,11 +208,6 @@
            different rules, and one element holding both states was how the
            slash popup used to lose its selection (js/composer.js). -->
       <ul id="file-popup" hidden role="listbox" aria-label="فایل‌ها"></ul>
-
-      <!-- One popup serves both the model picker and the approval pill: they
-           are never open at the same time, and it keeps a single
-           click-outside/Escape handler (js/controls.js). -->
-      <div id="menu-popup" hidden role="menu"></div>
 
       <!-- Long pastes, parked as chips the way the TUI parks them: the box
            keeps a «[متن چسبانده‌شده #N +M سطر]» placeholder and the real text
@@ -205,45 +248,17 @@
           <bdi id="proj-chip-name" class="path"></bdi>
         </button>
 
-        <!-- Model picker and approval pill are rendered entirely from what
-             `initialize` returned (js/controls.js). Hidden until it arrives —
-             a hardcoded model list would be wrong on any other plan. -->
-        <button type="button" id="model-chip" class="chip-btn" hidden>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3l2.2 5.1 5.3.6-4 3.6 1.2 5.2L12 14.9 7.3 17.5l1.2-5.2-4-3.6 5.3-.6z"/>
-          </svg>
-          <span id="model-chip-name" dir="auto"></span>
-        </button>
+        <!-- The model / effort / output-style / posture CHIPS ARE GONE
+             (V2-PLAN §2 «Delete», built in v2.4). Every one of them is now a
+             numbered inline list behind the command that names it — `/model`,
+             `/effort`, `/output-style`, `/permissions` — plus Alt+P and
+             Shift+Tab, exactly the way the terminal reaches them. What they
+             used to SAY moves to the status line in v2.5 (§3.4); the state
+             itself never left js/controls.js.
 
-        <!-- Reasoning effort. Hidden unless the CURRENT model advertises
-             supportsEffort — Haiku does not (js/controls.js). -->
-        <button type="button" id="effort-chip" class="chip-btn" hidden>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M13 2L4.5 13H11l-1 9 8.5-11H12z"/>
-          </svg>
-          <span id="effort-chip-name" dir="auto"></span>
-        </button>
-
-        <!-- Output style. The set comes from `initialize.available_output_styles`
-             and is per-machine (a user can drop in their own), so nothing here
-             is hardcoded; hidden unless the CLI offers more than one. -->
-        <button type="button" id="style-chip" class="chip-btn" hidden>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span id="style-chip-name" dir="auto"></span>
-        </button>
-
-        <button type="button" id="posture-chip" class="chip-btn" hidden>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/>
-          </svg>
-          <span id="posture-chip-name" dir="auto"></span>
-        </button>
+             The audit counter below is deliberately NOT one of them: it is not
+             a picker, and «خودکار» approving things silently is the defect the
+             count exists to prevent. -->
 
         <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
              on the user's behalf. Never hidden behind a menu. A button, not a
@@ -272,33 +287,6 @@
 
   <footer id="statusline" aria-label="نوار وضعیت"></footer>
 </div>
-
-<!-- Native <dialog>: modal semantics, focus trap, Escape and a backdrop for
-     free. Escape resolves as DENY (see js/chrome.js) — dismissing must never be
-     mistaken for approval. -->
-<dialog id="perm">
-  <form method="dialog" id="perm-form">
-    <h2 id="perm-title"></h2>
-    <p id="perm-body" dir="auto"></p>
-    <!-- Which conversation is asking, when it is not the one on screen: one
-         dialog serves every open tab (js/chrome.js). -->
-    <p id="perm-source" class="meta" dir="auto" hidden></p>
-    <div id="perm-tool"></div>
-    <pre id="perm-params"></pre>
-    <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes
-         the model's question over the same can_use_tool pipe, so it arrives as
-         a "permission" but is nothing of the sort (js/chrome.js). -->
-    <div id="perm-ask"></div>
-    <label id="perm-remember-row">
-      <input type="checkbox" id="perm-remember">
-      <span id="perm-remember-label"></span>
-    </label>
-    <menu>
-      <button value="deny" class="ghost" id="perm-deny"></button>
-      <button value="allow" id="perm-allow"></button>
-    </menu>
-  </form>
-</dialog>
 
 <!-- The TUI's `?` table, translated: every chord the window binds, built from
      the one list js/composer.js dispatches from, so the sheet cannot describe a

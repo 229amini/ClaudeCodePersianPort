@@ -42,14 +42,20 @@ EDGE_CANDIDATES = (
 
 # Boxes that are supposed to hold more than fits, so scrollWidth > clientWidth
 # is their job rather than a defect.
-SCROLLERS = ("log", "side-scroll", "table-wrap", "menu-popup", "slash-popup",
+SCROLLERS = ("log", "side-scroll", "table-wrap", "picker", "perm", "slash-popup",
              "tool-output", "diff", "attachments", "ag-log")
 
-# The measuring script. It fills the capability-mirror chips with a plausible
-# `initialize` (nothing about the CLI is hardcoded in the app, so no chip
-# renders until something says what the CLI offers), then opens the posture
-# menu - the widest picker, hanging off the last chip of the row, which is what
-# made it the one that came back 201px wide in the user's report.
+# The measuring script. It feeds the capability mirror a plausible `initialize`
+# (nothing about the CLI is hardcoded in the app, so no picker has rows until
+# something says what the CLI offers), then opens the model picker - the widest
+# one, since its rows carry the CLI's own descriptions.
+#
+# v2.4 moved every picker out of a popup hanging off a chip and into a numbered
+# list in the flow (V2-PLAN 3.3). The measurement is the same measurement: full
+# width, on screen, rows at their natural height. What it can no longer be is
+# the 201px column of the original report, because nothing positions it by hand
+# any more - which is the point of keeping the gate pointed at the new shape
+# rather than deleting it with the old one.
 PROBE_JS = """
 <pre id="probe-out" hidden></pre>
 <script type="module">
@@ -122,20 +128,22 @@ const SCROLLERS = new Set(%SCROLLERS%);
      content: "npm ERR! could not resolve dependency @scope/some-very-long-package-name@1.2.3"}]}});
   await sleep(250);
 
-  // The chip row (pcg-tda): with a session's full chrome up — folder, model,
-  // effort, style, posture, audit counter — every visible chip must sit inside
-  // the composer box at one line of height. Before the fix the row could not
-  // wrap and the last chips were pushed out of the box.
+  // The composer row (pcg-tda): whatever is left on it must sit inside the
+  // composer box at one line of height. Before the fix the row could not wrap
+  // and the last controls were pushed out of the box. v2.4 took four chips off
+  // it (V2-PLAN §2), so the count is smaller and the rule is unchanged.
   const compNow = box(document.querySelector(".comp-box"));
   const chips = [...document.querySelector(".comp-row").children]
     .filter((c) => !c.hidden && getComputedStyle(c).display !== "none" &&
                    c.getBoundingClientRect().width > 0)
     .map((c) => ({id: c.id || c.className, ...box(c)}));
 
-  document.getElementById("posture-chip").click();
+  // Alt+P, which is how the terminal opens this list too - no chip to click.
+  document.getElementById("input").dispatchEvent(new KeyboardEvent("keydown",
+    {key: "p", altKey: true, bubbles: true, cancelable: true}));
   await sleep(150);
-  const menu = document.getElementById("menu-popup");
-  const rows = [...menu.querySelectorAll(".menu-row")];
+  const menu = document.getElementById("picker");
+  const rows = [...menu.querySelectorAll(".opt")];
   let overlap = 0;
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
@@ -261,11 +269,13 @@ def main() -> int:
                     failures.append(f"{where}: {name} is above the window (y={rect['y']})")
             if m["clipped"]:
                 failures.append(f"{where}: content wider than its box - {m['clipped'][:4]}")
-            # The chip row (pcg-tda). 7 = attach + folder + model + effort +
-            # style + posture + audit counter; fewer means a chip never rendered
-            # and the check would pass vacuously.
+            # The composer row (pcg-tda). 3 = attach + folder + send; the four
+            # capability chips left in v2.4 (V2-PLAN §2) and the audit counter
+            # only appears once a session has audited something. Asserted at
+            # all so a row that rendered nothing cannot pass every geometry
+            # check below by having no geometry.
             comp = m["comp"]
-            if len(m["chips"]) < 7:
+            if len(m["chips"]) < 3:
                 failures.append(f"{where}: only {len(m['chips'])} composer chips rendered")
             for chip in m["chips"]:
                 if chip["h"] > 40:
@@ -276,8 +286,11 @@ def main() -> int:
                         or chip["y"] + chip["h"] > comp["y"] + comp["h"] + 1):
                     failures.append(f"{where}: chip {chip['id']} sits outside the composer box "
                                     f"({chip} vs {comp})")
-            if m["rows"] != 4:
-                failures.append(f"{where}: the posture menu drew {m['rows']} rows, not 4")
+            # Two, because the initialize above advertises two models. The
+            # count is asserted at all so a picker that renders nothing cannot
+            # pass every geometry check below by having no geometry.
+            if m["rows"] != 2:
+                failures.append(f"{where}: the model picker drew {m['rows']} rows, not 2")
             if m["squashed"]:
                 failures.append(f"{where}: {m['squashed']} menu rows were shrunk below "
                                 "their own content (flex-shrink - they overlap)")
@@ -285,10 +298,15 @@ def main() -> int:
                 failures.append(f"{where}: menu rows overlap by {m['overlap']}px")
             # A picker squeezed into a column is unreadable long before it is
             # clipped: the reported one came back 201px wide in a 760px window.
+            # Since v2.4 it is a row in the flow rather than a box positioned
+            # by hand, so what it must not do is come back narrower than the
+            # column it was given - measured against the window, because the
+            # stage is what is left of the window after the sidebar and the
+            # sidebar is not what the report was about.
             if m["menu"]["w"] < min(240, view - 40):
-                failures.append(f"{where}: the picker menu is only {m['menu']['w']}px wide")
+                failures.append(f"{where}: the picker is only {m['menu']['w']}px wide")
             print(f"  {where}: viewport {view}px, menu {m['menu']['w']}x{m['menu']['h']} "
-                  f"at ({m['menu']['x']},{m['menu']['y']})")
+                  f"at ({m['menu']['x']},{m['menu']['y']}), prompt {m['comp']['w']}px")
     finally:
         proc.terminate()
         PROBE.unlink(missing_ok=True)
