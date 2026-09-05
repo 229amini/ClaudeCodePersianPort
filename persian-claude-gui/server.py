@@ -1251,6 +1251,293 @@ def build_message_blocks(text: str, attachments: list[str]) -> list[dict]:
     return blocks
 
 
+# --- the prompt box's four routes (V2-PLAN §2, built in v2.3) ---------------
+#
+# History, file completion, `!` bash mode and the external editor. Each one is
+# something the TUI does locally and the stream-json pipe does not carry, and
+# each one was measured before it was written (wiki/cli-stream-json-findings.md
+# §5.1, §5.2, §5.8, §5.11).
+
+# The TUI's own prompt history, shared in both directions: the terminal appends
+# to this file and so do we, so pressing Up in either one walks the same list.
+HISTORY_FILE = Path.home() / ".claude" / "history.jsonl"
+# The CLI runs a retention prune that REWRITES this file under a
+# directory-shaped lock (proper-lockfile: `<path>.lock` is a directory, and its
+# mtime is the heartbeat). A blind append during that rewrite is a lost line,
+# so every write here takes the same lock -- measured §5.8, non-negotiable.
+HISTORY_LOCK_STALE = 15.0    # a lock older than this belonged to a dead process
+HISTORY_LOCK_WAIT = 2.0      # how long a prune may hold us up before we give up
+HISTORY_MAX = 300            # prompts handed to one window; the file has ~9k
+
+
+def _take_history_lock(lock: Path) -> bool:
+    """mkdir IS the lock: it is atomic on every filesystem Windows offers, and
+    it is the shape proper-lockfile already uses, so the CLI and this server
+    contend for the same object rather than for two unrelated ones."""
+    deadline = time.monotonic() + HISTORY_LOCK_WAIT
+    while True:
+        try:
+            lock.mkdir()
+            return True
+        except FileExistsError:
+            try:
+                stale = time.time() - lock.stat().st_mtime > HISTORY_LOCK_STALE
+            except OSError:
+                stale = False
+            if stale:
+                # The holder died mid-prune. Steal it: the alternative is a
+                # window that can never write history again until a reboot.
+                try:
+                    lock.rmdir()
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        except OSError:
+            return False
+
+
+def read_history(cwd: Path, limit: int = HISTORY_MAX) -> list[str]:
+    """This project's prompts, oldest first -- Up walks backwards from the end.
+
+    Consecutive repeats are folded, because a prompt re-sent twice is one entry
+    to walk past, not two. A malformed line is skipped rather than fatal: this
+    file is written by another program and is being pruned underneath us.
+    """
+    if not HISTORY_FILE.is_file():
+        return []
+    want = str(cwd).rstrip("\\/").lower()
+    out: list[str] = []
+    try:
+        with HISTORY_FILE.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("project") or "").rstrip("\\/").lower() != want:
+                    continue
+                text = entry.get("display")
+                if not isinstance(text, str) or not text.strip():
+                    continue
+                if out and out[-1] == text:
+                    continue
+                out.append(text)
+    except OSError:
+        return []
+    return out[-limit:]
+
+
+def append_history(cwd: Path, text: str, session_id: str | None) -> bool:
+    """One line in the TUI's exact shape, so the terminal can read it back.
+
+    Best effort by design: a prompt is SENT whether or not its history line
+    lands, and losing the send because a prune held the lock would be the worse
+    failure by far.
+    """
+    if not text.strip():
+        return False
+    folder = HISTORY_FILE.parent
+    if not folder.is_dir():
+        return False
+    lock = HISTORY_FILE.with_name(HISTORY_FILE.name + ".lock")
+    if not _take_history_lock(lock):
+        return False
+    try:
+        entry = {
+            "display": text,
+            "pastedContents": {},
+            "timestamp": int(time.time() * 1000),
+            "project": str(cwd),
+            "sessionId": session_id or "",
+        }
+        with HISTORY_FILE.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            lock.rmdir()
+        except OSError:
+            pass
+
+
+# `@` completion. The CLI's own fuzzy index is a control subtype (§5.11), so
+# the menu inherits the ranking the terminal shows instead of inventing a
+# second opinion about what a file is called. os.walk is the fallback for the
+# window where that index is still cold -- measured: the first query after a
+# spawn always answers zero.
+FILE_SUGGEST_MAX = 20
+FILE_SUGGEST_TIMEOUT = 5.0
+WALK_SKIP = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv",
+                       ".mypy_cache", ".pytest_cache", "dist", "build",
+                       ".next", ".idea", ".vscode"})
+WALK_MAX_ENTRIES = 20000
+
+
+def walk_files(cwd: Path, query: str, limit: int = FILE_SUGGEST_MAX) -> list[str]:
+    """Filename-substring match over the project, cwd-relative, cheapest first.
+
+    Deliberately the same matching rule the CLI's index uses (§5.11: it matches
+    filename substrings, not paths), so a cold index and a warm one do not
+    disagree about what the query means.
+    """
+    needle = query.lower()
+    seen = 0
+    hits: list[str] = []
+    for root, dirs, names in os.walk(cwd):
+        dirs[:] = [d for d in dirs if d not in WALK_SKIP and not d.startswith(".")]
+        for name in names:
+            seen += 1
+            if seen > WALK_MAX_ENTRIES:
+                return hits
+            if needle in name.lower():
+                try:
+                    hits.append(str(Path(root, name).relative_to(cwd)))
+                except ValueError:
+                    continue
+                if len(hits) >= limit:
+                    return hits
+    return hits
+
+
+def suggest_files(session: "ClaudeSession", query: str) -> tuple[list[str], str]:
+    """(paths, source). Absolute paths are dropped, and that is a decision:
+    the index also returns `~/.claude/skills` and `~/.claude/agents` entries
+    (§5.11), which are not files in this project and cannot be `@`-mentioned as
+    a relative path."""
+    paths: list[str] = []
+    try:
+        answer = session.control("file_suggestions", timeout=FILE_SUGGEST_TIMEOUT,
+                                 query=query)
+    except (RuntimeError, TypeError):
+        answer = {}
+    for item in ((answer.get("response") or {}).get("suggestions") or []):
+        path = item.get("path") if isinstance(item, dict) else item
+        if not isinstance(path, str) or not path.strip():
+            continue
+        if os.path.isabs(path):
+            continue
+        paths.append(path)
+        if len(paths) >= FILE_SUGGEST_MAX:
+            break
+    if paths:
+        return paths, "cli"
+    return walk_files(session.cwd, query), "walk"
+
+
+# `!` bash mode. Measured (§5.1): the CLI will NOT run a `!` line -- the model
+# just reads it as text -- and the TUI's own bash output DOES enter the
+# conversation, tagged. So the wrapper runs the command and hands the tagged
+# text to the next message, which is where the TUI puts it too.
+SHELL_TIMEOUT = 60.0
+SHELL_MAX_OUTPUT = 20000
+
+
+def _clip(text: str) -> str:
+    text = text.replace("\r\n", "\n").rstrip()
+    if len(text) <= SHELL_MAX_OUTPUT:
+        return text
+    return text[:SHELL_MAX_OUTPUT] + f"\n… [{len(text) - SHELL_MAX_OUTPUT} more characters]"
+
+
+def run_shell(command: str, cwd: Path) -> dict:
+    """The user's own shell, in the session's folder. `/s /c "<command>"` is the
+    same form run_statusline() uses, and for the same reason: cmd eats the outer
+    quote pair of anything else."""
+    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    try:
+        done = subprocess.run(
+            f'{comspec} /s /c "{command}"', cwd=str(cwd),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=SHELL_TIMEOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return {"code": None, "stdout": "",
+                "stderr": f"timed out after {int(SHELL_TIMEOUT)}s"}
+    except OSError as exc:
+        return {"code": None, "stdout": "", "stderr": str(exc)}
+    return {"code": done.returncode, "stdout": _clip(done.stdout or ""),
+            "stderr": _clip(done.stderr or "")}
+
+
+def bash_message(command: str, result: dict) -> str:
+    """The TUI's own tagging, in the TUI's own order -- the transcript reader
+    matches `<bash-input>` at the START of the message (§5.1)."""
+    parts = [f"<bash-input>{command}</bash-input>"]
+    if result.get("stdout"):
+        parts.append(f"<bash-stdout>{result['stdout']}</bash-stdout>")
+    if result.get("stderr"):
+        parts.append(f"<bash-stderr>{result['stderr']}</bash-stderr>")
+    return "\n".join(parts)
+
+
+# Ctrl+G, the external editor. The TUI hands the draft to $EDITOR; a window
+# hands it to whatever Windows opens a .md with, which is the same promise
+# made with the tool the user already chose.
+EDITOR_DIR = Path(tempfile.gettempdir()) / "persian-claude-gui-draft"
+EDITOR_WAIT = 300.0
+EDITOR_SETTLE = 1.0
+
+
+def edit_externally(text: str) -> tuple[str, bool]:
+    """Spill the draft, open it, and wait for the file to stop changing.
+
+    Returns (text, changed). There is no way to learn that an editor was CLOSED
+    -- `startfile` hands the path to the shell and returns -- so the signal is
+    the file itself: the first save wins, and a settle window catches an editor
+    that writes in two passes.
+    """
+    EDITOR_DIR.mkdir(parents=True, exist_ok=True)
+    draft = EDITOR_DIR / f"draft-{uuid.uuid4().hex[:8]}.md"
+    draft.write_text(text, encoding="utf-8")
+    before = draft.stat().st_mtime_ns
+    try:
+        os.startfile(str(draft))   # noqa: S606 — Windows-only by design
+    except OSError:
+        draft.unlink(missing_ok=True)
+        return text, False
+    deadline = time.monotonic() + EDITOR_WAIT
+    changed = False
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        try:
+            now = draft.stat().st_mtime_ns
+        except OSError:
+            break
+        if now != before:
+            changed = True
+            before = now
+            # Let a two-pass save finish before reading it.
+            time.sleep(EDITOR_SETTLE)
+            try:
+                if draft.stat().st_mtime_ns != before:
+                    before = draft.stat().st_mtime_ns
+                    continue
+            except OSError:
+                break
+            break
+    if not changed:
+        draft.unlink(missing_ok=True)
+        return text, False
+    try:
+        edited = draft.read_text(encoding="utf-8")
+    except OSError:
+        edited = text
+        changed = False
+    draft.unlink(missing_ok=True)
+    return edited, changed
+
+
 def pick_files(interpreter: Path) -> list[str]:
     """Native file dialog, in a child process (same reasoning as pick_folder)."""
     code = (
@@ -1708,6 +1995,14 @@ class ClaudeSession:
         # never told about.
         self._recap_wanted = False
         self._recap_uuid: str | None = None
+        # `!` bash output waiting to ride along with the next message. The TUI
+        # runs the command locally and puts its tagged output in the
+        # conversation WITHOUT asking the model anything (§5.1) -- there is no
+        # "add to context" frame on this pipe, so the output waits here and is
+        # prepended to the next real send. Sending it on its own would spend a
+        # paid turn per `!ls`, which the terminal never does.
+        self._context_blocks: list[str] = []
+        self._context_lock = threading.Lock()
 
     # ponytail: the ledger is stick-proofed at both ends -- discarding an
     # unknown uuid is free, every path that ends a PROCESS empties it outright
@@ -2146,6 +2441,18 @@ class ClaudeSession:
 
     def send_text(self, text: str, recap: bool = False) -> str:
         return self.send_blocks([{"type": "text", "text": text}], recap=recap)
+
+    def park_context(self, text: str) -> None:
+        """Hold text until the next message carries it (see _context_blocks)."""
+        if not text:
+            return
+        with self._context_lock:
+            self._context_blocks.append(text)
+
+    def take_context(self) -> list[str]:
+        with self._context_lock:
+            parked, self._context_blocks = self._context_blocks, []
+            return parked
 
     def request_recap(self) -> bool:
         """Ask the CLI for its own one-line session recap.
@@ -2981,6 +3288,27 @@ class Handler(BaseHTTPRequestHandler):
                     "model": entry.get("model"),
                 },
             })
+        elif parsed.path == "/api/history":
+            # Up/Down and Ctrl+R walk this. Shared with the real TUI: same file,
+            # same shape, filtered to this project the way the terminal filters
+            # it (wiki/cli-stream-json-findings.md §5.8).
+            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
+            if cwd is None:
+                return
+            self._send_json(HTTPStatus.OK, {"prompts": read_history(cwd)})
+        elif parsed.path == "/api/files":
+            # `@` completion, through the CLI's own index (§5.11). The empty
+            # query is not a request for everything -- the menu opens on `@`
+            # and asks again per keystroke.
+            session = self._target(tab)
+            if session is None:
+                return
+            query = params.get("q", [""])[0].strip()
+            if not query:
+                self._send_json(HTTPStatus.OK, {"files": [], "source": "none"})
+                return
+            files, source = suggest_files(session, query)
+            self._send_json(HTTPStatus.OK, {"files": files, "source": source})
         elif parsed.path == "/favicon.ico":
             # Edge asks for this on its own; the auth cookie is already set by
             # the time it does. Same icon the desktop shortcut uses.
@@ -3025,6 +3353,16 @@ class Handler(BaseHTTPRequestHandler):
             if not blocks:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "nothing to send"})
                 return
+            # What the window echoes is what the PERSON wrote: read before the
+            # parked blocks go in front of it, or a `!` command's output would
+            # be rendered as the user's message.
+            echo_text = next((b["text"] for b in blocks if b["type"] == "text"), "")
+            # `!` output the user ran since the last message rides in FRONT of
+            # it, in its own text block: that is the order the TUI's transcript
+            # has, and the CLI reads the blocks in order.
+            parked = session.take_context()
+            if parked:
+                blocks = [{"type": "text", "text": t} for t in parked] + blocks
             try:
                 command_uuid = session.send_blocks(blocks)
             except RuntimeError as exc:
@@ -3039,9 +3377,15 @@ class Handler(BaseHTTPRequestHandler):
             session.hub.publish({
                 "type": "wrapper", "subtype": "user_echo",
                 "uuid": command_uuid,
-                "text": next((b["text"] for b in blocks if b["type"] == "text"), ""),
+                "text": echo_text,
                 "images": sum(1 for b in blocks if b["type"] == "image"),
             })
+            # The TUI writes every prompt it sends to ~/.claude/history.jsonl,
+            # so Up in the terminal and Up in the window walk one list. Written
+            # HERE rather than by the page: this is the one place a prompt is
+            # actually sent, so nothing can send without recording and nothing
+            # can record without sending.
+            append_history(session.cwd, text, session.session_id)
             self._send_json(HTTPStatus.OK, {"ok": True})
         elif parsed.path == "/api/tab/activate":
             # Class state under _SESSIONS_LOCK: `self.active = …` would shadow
@@ -3208,6 +3552,37 @@ class Handler(BaseHTTPRequestHandler):
                 session.broker.set_posture(posture, auto)
             self._send_json(HTTPStatus.OK, {"ok": True, "posture": posture,
                                             "mode": mode})
+        elif parsed.path == "/api/shell":
+            # `!` bash mode. The CLI cannot run this line for us (§5.1), so the
+            # wrapper runs it in the session's own folder and parks the tagged
+            # output for the next message -- which is what the TUI does with
+            # it, and the reason this is not display-only.
+            session = self._target(tab)
+            if session is None:
+                return
+            command = (body.get("command") or "").strip()
+            if not command:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "empty command"})
+                return
+            result = run_shell(command, session.cwd)
+            session.park_context(bash_message(command, result))
+            # The row is published rather than returned so it lands in the tab
+            # that ran it, in transcript order, like every other row.
+            session.hub.publish({
+                "type": "wrapper", "subtype": "shell", "command": command,
+                "stdout": result["stdout"], "stderr": result["stderr"],
+                "code": result["code"],
+            })
+            self._send_json(HTTPStatus.OK, {"ok": True, **result})
+        elif parsed.path == "/api/editor":
+            # Ctrl+G. Blocks until the file is saved or the wait runs out --
+            # the window shows its own «در ویرایشگر بیرونی» state meanwhile.
+            text = body.get("text")
+            if not isinstance(text, str):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "no text"})
+                return
+            edited, changed = edit_externally(text)
+            self._send_json(HTTPStatus.OK, {"text": edited, "changed": changed})
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
         elif parsed.path == "/api/attach/paste":
