@@ -69,6 +69,54 @@ window.FA = {
   pastePlaceholderShort: "[متن چسبانده‌شده #{n}]",
   pasteDrop: "حذف متن چسبانده‌شده",
 
+  /* `!` bash mode (V2-PLAN §3.2). The command runs in the project folder and
+     its output goes into the conversation with the next message — the same
+     thing the TUI does with it, so the row says what ran and what came back
+     and nothing else. */
+  shellExit: "کد خروج {n}",
+  shellNoOutput: "بدون خروجی",
+  shellFailed: "اجرای دستور ناموفق بود",
+
+  /* Ctrl+R, the history search. The box holds what is being searched for; this
+     row shows the match that would land in it. */
+  searchLabel: "جست‌وجو در تاریخچه",
+  searchNone: "چیزی پیدا نشد",
+  searchHint: "Ctrl+R بعدی · Tab گذاشتن در جعبه · Enter فرستادن",
+
+  /* Ctrl+G. The draft goes to a file, Windows opens it with whatever the user
+     has chosen for .md, and the window waits for the save. */
+  editorWaiting: "در ویرایشگر بیرونی باز است؛ ذخیره کنید تا برگردد",
+  editorFailed: "باز کردن ویرایشگر ناموفق بود",
+
+  /* No file matched the `@` query. The CLI's index warms up on demand, so the
+     first ask right after a session opens can legitimately answer nothing. */
+  fileNone: "فایلی پیدا نشد",
+
+  /* The `?` sheet: every key the window binds, in the TUI's own order of
+     importance. One list, two readers — js/composer.js dispatches from it. */
+  hintKeys: "کلیدها: ?",
+  keysTitle: "کلیدها",
+  keysClose: "بستن",
+  keySend: "فرستادن پیام",
+  keyNewline: "سطر تازه",
+  keyStop: "توقف نوبت در حال اجرا",
+  keyHistory: "پیام‌های پیشین همین پروژه",
+  keySearch: "جست‌وجو در تاریخچه",
+  keySlash: "فهرست دستورها",
+  keyFiles: "نام بردن از یک فایل",
+  keyBash: "اجرای دستور در پوشهٔ پروژه",
+  keyEditor: "ویرایش پیش‌نویس در ویرایشگر بیرونی",
+  keyClear: "خالی کردن جعبهٔ نوشتن",
+  keyExpand: "باز کردن نتیجه‌های ابزار",
+  keyTodos: "باز و بستهٔ فهرست کارها",
+  keyThinking: "نمایش «در حال فکر کردن»",
+  keyModel: "انتخاب مدل",
+  keyPosture: "چرخش سطح اجازه",
+  keyZwnj: "نیم‌فاصله",
+  keyPaste: "چسباندن تصویر",
+  keyQueue: "فرستادن به صف",
+  keySheet: "همین فهرست",
+
   /* What each CLI tool is called in the transcript. The audience is
      non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that
      is not listed falls back to its own name rather than to a wrong guess —

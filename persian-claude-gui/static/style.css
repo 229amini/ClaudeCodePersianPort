@@ -71,6 +71,9 @@
   --accent-strong: #c4633f;
   --accent-soft: rgb(217 119 87 / .13);
   --danger: #e5695a;
+  /* `!` bash mode. The TUI recolours its prompt bar for it; this is that
+     colour, kept off the accent so it cannot be mistaken for a running turn. */
+  --bash: #b072b5;
   --danger-bg: #3a2622;
   --ok: #82c091;
 
@@ -1519,6 +1522,102 @@ button.round {
   color: var(--fg-muted);
   font-size: .95em;
 }
+
+/* The `@` file menu is the same object as the slash list — same anchor, same
+   rows, same keys — so it is the same rules, not a second copy of them. */
+#file-popup {
+  position: absolute;
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .4);
+  z-index: 40;
+}
+#file-popup[hidden] { display: none; }
+#file-popup li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .88em;
+}
+#file-popup li[aria-selected="true"],
+#file-popup li:hover { background: var(--surface-2); }
+#file-popup li.is-empty { cursor: default; color: var(--fg-muted); }
+#file-popup li.is-empty:hover { background: none; }
+
+/* --- `!` bash mode, Ctrl+R search --------------------------------------------
+
+   The TUI recolours its prompt bar while the line starts with `!`. Same signal
+   here, on the box's own border, so the state is visible without a second
+   widget saying what mode you are in. */
+.comp-box.bash { border-color: var(--bash); }
+.comp-box.bash #input::placeholder { color: var(--bash); }
+
+#history-search {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 4px 6px;
+  font-size: .86em;
+  border-bottom: 1px solid var(--border);
+}
+#history-search[hidden] { display: none; }
+#hs-label { color: var(--fg-muted); white-space: nowrap; }
+#hs-match {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#hs-match.empty { color: var(--fg-muted); }
+#hs-hint { white-space: nowrap; }
+
+/* --- the `?` key sheet -------------------------------------------------------- */
+#keys-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  align-items: baseline;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.key-row { display: contents; }
+#keys-body kbd {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  font-size: .82em;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.key-what { color: var(--fg-muted); }
+
+/* --- a `!` row in the column ---------------------------------------------------
+   A shell transcript: mono and LTR as a block, each line still free to resolve
+   its own direction (spec rule 8) — an `ls` of a Persian folder is Persian. */
+.card.shell > summary .shell-cmd {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  unicode-bidi: isolate;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card.shell > summary .shell-mark { opacity: .7; }
 
 /* --- model picker / approval pill menu --------------------------------------- */
 /* Same anchoring as the slash popup: absolutely positioned inside .comp-box.
