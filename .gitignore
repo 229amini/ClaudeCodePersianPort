@@ -30,3 +30,8 @@ desktop.ini
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# probe_v21.py's machine-readable dump. Regenerated on every run and specific to
+# the machine and CLI build it ran on; the reviewed answers live in
+# wiki/cli-stream-json-findings.md, which IS committed.
+persian-claude-gui/probe_v21_findings.json
