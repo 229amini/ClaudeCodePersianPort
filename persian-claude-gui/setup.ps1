@@ -196,7 +196,8 @@ if ($claude) {
 Step "کپی برنامه"
 
 New-Item -ItemType Directory -Force -Path $DeployRoot | Out-Null
-foreach ($item in @('server.py', 'smoke_test.py', 'test_no_console.py', 'static', 'assets')) {
+foreach ($item in @('server.py', 'smoke_test.py', 'test_no_console.py', 'static',
+                    'static-terminal', 'assets')) {
     $src = Join-Path $Here $item
     if (-not (Test-Path $src)) { Die "فایل $item پیدا نشد — بسته نصب ناقص است" }
     Copy-Item -Path $src -Destination $DeployRoot -Recurse -Force
@@ -231,36 +232,48 @@ $legacyVbs = Join-Path $DeployRoot 'run.vbs'
 if (Test-Path $legacyVbs) { Remove-Item $legacyVbs -Force; Log '  removed legacy run.vbs' }
 
 New-Item -ItemType Directory -Force -Path $ShortcutDir | Out-Null
-$shortcut = Join-Path $ShortcutDir 'کلاد فارسی.lnk'
-# WshShell.Save() marshals the target path through the system's ANSI codepage
-# (a legacy COM Automation quirk) — on a non-Persian codepage this mangles a
-# Persian filename to "????.lnk" and Save() throws FileNotFoundException. So
-# build under an ASCII name first (Save() is fine with that), then rename to
-# the Persian name via Rename-Item, a plain NTFS op with no ANSI round-trip.
-$shortcutTmp = Join-Path $ShortcutDir 'claude-launcher.lnk'
-$wsh = New-Object -ComObject WScript.Shell
-$lnk = $wsh.CreateShortcut($shortcutTmp)
-$lnk.TargetPath = $pythonw
-$lnk.Arguments = """$serverPy"" --cwd ""$ProjectDir"""
-$lnk.WorkingDirectory = $DeployRoot
-$lnk.IconLocation = (Join-Path $DeployRoot 'assets\icon.ico')
-# ASCII on purpose: the .lnk Description round-trips through an ANSI codepage
-# and silently rewrites Persian ی (U+06CC) as Arabic ي. The shortcut's *name*
-# is the label the colleague reads, and NTFS stores that as real UTF-16.
-$lnk.Description = 'Persian front-end for Claude Code (independent project)'
-$lnk.Save()
-# -Force does NOT make Rename-Item overwrite an existing destination (it only
-# unblocks read-only/hidden sources) — a second setup run threw "Cannot create a
-# file when that file already exists" and left the ASCII temp .lnk behind, two
-# icons for one app. Drop the old shortcut first; setup.ps1 must re-run clean.
-if (Test-Path $shortcut) { Remove-Item $shortcut -Force }
-Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf)
+
+# Two shortcuts, one engine: the web shell and the terminal-shaped shell are the
+# same server.py behind --ui. Every quirk below cost a debugging session, so the
+# two shortcuts are built by one function rather than two copies of it.
+function New-AppShortcut {
+    param([string]$LinkName, [string]$Arguments)
+    $shortcut = Join-Path $ShortcutDir $LinkName
+    # WshShell.Save() marshals the target path through the system's ANSI codepage
+    # (a legacy COM Automation quirk) — on a non-Persian codepage this mangles a
+    # Persian filename to "????.lnk" and Save() throws FileNotFoundException. So
+    # build under an ASCII name first (Save() is fine with that), then rename to
+    # the Persian name via Rename-Item, a plain NTFS op with no ANSI round-trip.
+    $shortcutTmp = Join-Path $ShortcutDir 'claude-launcher.lnk'
+    $wsh = New-Object -ComObject WScript.Shell
+    $lnk = $wsh.CreateShortcut($shortcutTmp)
+    $lnk.TargetPath = $pythonw
+    $lnk.Arguments = $Arguments
+    $lnk.WorkingDirectory = $DeployRoot
+    $lnk.IconLocation = (Join-Path $DeployRoot 'assets\icon.ico')
+    # ASCII on purpose: the .lnk Description round-trips through an ANSI codepage
+    # and silently rewrites Persian ی (U+06CC) as Arabic ي. The shortcut's *name*
+    # is the label the colleague reads, and NTFS stores that as real UTF-16.
+    $lnk.Description = 'Persian front-end for Claude Code (independent project)'
+    $lnk.Save()
+    # -Force does NOT make Rename-Item overwrite an existing destination (it only
+    # unblocks read-only/hidden sources) — a second setup run threw "Cannot create a
+    # file when that file already exists" and left the ASCII temp .lnk behind, two
+    # icons for one app. Drop the old shortcut first; setup.ps1 must re-run clean.
+    if (Test-Path $shortcut) { Remove-Item $shortcut -Force }
+    Rename-Item -Path $shortcutTmp -NewName (Split-Path $shortcut -Leaf)
+    return $shortcut
+}
+
+$shortcut = New-AppShortcut 'کلاد فارسی.lnk' """$serverPy"" --cwd ""$ProjectDir"""
+$shortcutTui = New-AppShortcut 'کلاد فارسی — ترمینال.lnk' """$serverPy"" --cwd ""$ProjectDir"" --ui terminal"
 # An install from before the rebrand left «کلود.lnk» on the desktop. setup.ps1
 # has to stay idempotent, and two icons for one app is worse than none.
 $legacy = Join-Path $ShortcutDir 'کلود.lnk'
 if (Test-Path $legacy) { Remove-Item $legacy -Force; Log '  removed pre-rebrand shortcut' }
-Ok "میان‌بر «کلاد فارسی» روی دسکتاپ ساخته شد"
+Ok "میان‌برهای «کلاد فارسی» روی دسکتاپ ساخته شد"
 Log "  shortcut => $shortcut"
+Log "  shortcut => $shortcutTui"
 
 # ------------------------------------------------------- 5.5 launcher check
 # The shortcut runs pythonw.exe, and nothing else here ever does. Both launcher
@@ -273,10 +286,23 @@ Step "آزمایش اجرای برنامه"
 $env:PYTHONIOENCODING = 'utf-8'
 $eap = $ErrorActionPreference           # native stderr is terminating under Stop
 $ErrorActionPreference = 'Continue'
+# test_no_console.py asserts a 403 on an unauthenticated GET and never reads a
+# static file (its own docstring says so) - the same edition-agnostic check
+# either way, so running it once per --ui edition tested nothing twice. One
+# run proves pythonw.exe answers HTTP at all; the real per-edition risk (a
+# static folder that failed to deploy) is checked directly below instead.
+$launcherOk = $true
 & $python (Join-Path $DeployRoot 'test_no_console.py') 2>&1 |
     ForEach-Object { Log "  launcher: $_" }
-$launcherOk = $LASTEXITCODE -eq 0
+if ($LASTEXITCODE -ne 0) { $launcherOk = $false }
 $ErrorActionPreference = $eap
+
+foreach ($edition in @('static', 'static-terminal')) {
+    $indexFile = Join-Path $DeployRoot "$edition\index.html"
+    if (-not (Test-Path $indexFile)) {
+        Die "فایل $indexFile پیدا نشد — بسته نصب ناقص است"
+    }
+}
 
 if ($launcherOk) {
     Ok "برنامه بدون پنجره خط فرمان اجرا شد"

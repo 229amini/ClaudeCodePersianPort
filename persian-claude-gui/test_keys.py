@@ -39,7 +39,12 @@ sys.path.insert(0, str(HERE))
 # drift away from the one that is maintained.
 from test_layout import find_edge, hold_sse, measure  # noqa: E402
 
-STATIC = HERE / "static"
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "terminal")
+STATIC = HERE / EDITIONS[EDITION][0]
 PROBE = STATIC / "_keys_probe.html"
 KEYS_DOC = HERE.parent / "wiki" / "tui-keys.md"
 
@@ -581,7 +586,8 @@ def main() -> int:
     table = wiki_chords()
     write_probe()
     proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window"],
+        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
+         "--ui", EDITION],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"})

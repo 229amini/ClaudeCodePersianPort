@@ -71,6 +71,9 @@
   --accent-strong: #c4633f;
   --accent-soft: rgb(217 119 87 / .13);
   --danger: #e5695a;
+  /* `!` bash mode. The TUI recolours its prompt bar for it; this is that
+     colour, kept off the accent so it cannot be mistaken for a running turn. */
+  --bash: #b072b5;
   --danger-bg: #3a2622;
   --ok: #82c091;
 
@@ -145,12 +148,19 @@ body {
   grid-template-rows: auto 1fr auto auto auto;   /* spec-test.html layout */
 }
 
-/* The app shell: sidebar + stage. RTL puts the first column on the RIGHT.
+/* The app shell: stage + sidebar. The page is dir="rtl", so grid column 1 is
+   the RIGHT edge — the sidebar goes in column 2 and lands on the LEFT (VS Code
+   placement, E2). The track order is swapped and both panes are pinned by
+   `grid-column` rather than flipping `direction` anywhere, which would re-order
+   every inline child of the shell (wiki/rtl-rendering-notes.md). The sidebar's
+   own inner direction is untouched.
    spec-test.html has no .app class and keeps the stacked layout above. */
 body.app {
-  grid-template-columns: 288px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 288px;
   grid-template-rows: 100%;
 }
+body.app > #sidebar { grid-column: 2; }
+body.app > #stage   { grid-column: 1; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: rgb(217 119 87 / .35); }
@@ -175,7 +185,9 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex-direction: column;
   min-height: 0;
   background: var(--bg-side);
-  border-inline-end: 1px solid var(--border);
+  /* The pane sits on the LEFT: under RTL its inner edge — the one facing the
+     stage — is inline-START. */
+  border-inline-start: 1px solid var(--border);
 }
 
 .side-head {
@@ -552,9 +564,9 @@ body.home #replay-banner { display: none; }
 
 body.home #stage {
   display: grid;
-  /* Greeting + cards bottom-aligned above the composer. The first row never
-     drops below its content (the cards would be clipped from the top on a short
-     window); the trailing empty row is what gives way instead. */
+  /* The welcome box sits just above the prompt, the way the terminal's does.
+     The first row never drops below its content; the trailing empty row is
+     what gives way on a short window. */
   grid-template-rows: minmax(min-content, 1fr) auto minmax(0, 1.2fr);
 }
 body.home #home {
@@ -566,58 +578,73 @@ body.home #home {
 }
 body.home #statusline { align-self: end; }
 
-.greeting {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 0;
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.5;
-}
-.greeting .mark { color: var(--accent); flex: none; }
+/* --- the TUI's welcome box (V2-PLAN §2) --------------------------------------
+   A drawn box, because that is what the terminal prints — but with a CSS
+   border rather than `─ │ ╭ ╮` characters, for the reason the whole plan
+   exists: a box drawn out of glyphs has to be padded to a cell count, and
+   Persian has no cell count (wiki/tui-strings.md §1, last row of the table).
 
-/* --- home action cards ------------------------------------------------------ */
-/* Same reading column as the composer below them, so the home state reads as
-   one block rather than two centred things of different widths. */
-#home-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+   Same reading column as the composer below it, so the empty state reads as
+   one block and not two centred things of different widths. */
+.welcome {
   width: min(50rem, calc(100% - 40px));
-  margin-block-start: 28px;
-}
-
-/* A <button>, so it inherits the coral button:hover unless it says otherwise —
-   the sidebar rows learned this the hard way. (0,2,0) beats button:hover's
-   (0,1,1) regardless of source order. */
-.home-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 62px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--fg);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  line-height: 1.9;
 }
-.home-card:hover { background: var(--surface-2); border-color: #57544e; }
-.home-card svg { flex: none; color: var(--accent); }
+.welcome p { margin: 0; }
 
-.hc-text { display: flex; flex-direction: column; min-width: 0; }
-.hc-title { font-size: .92em; font-weight: 500; }
-.hc-note {
-  color: var(--fg-muted);
+.wel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+}
+.wel-star { color: var(--accent); font-weight: 400; }
+.wel-ver {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: .78em;
-  line-height: 1.7;
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.wel-cwd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-block-start: 6px !important;
+  font-size: .86em;
+  min-width: 0;
+}
+.wel-key { color: var(--fg-muted); flex: none; }
+.wel-cwd .path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: none;
+}
+.wel-cwd .path.is-empty { color: var(--fg-muted); font-family: inherit; }
+
+.wel-tips {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+.wel-tips li { display: flex; align-items: baseline; gap: 6px; }
+/* The key is a technical token in a Persian line: isolate it or the bidi
+   algorithm moves `/` and `@` to the wrong end of their own hint. */
+.wel-tip-key {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  color: var(--fg);
+  unicode-bidi: isolate;
+  direction: ltr;
 }
 
 /* --- session hover preview --------------------------------------------------- */
@@ -721,7 +748,40 @@ body.home #statusline { align-self: end; }
   max-width: none;
   background: transparent;
   padding-block: 1px;
-  padding-inline: 2px;
+  /* PHYSICAL, not logical, and deliberately so — same reason `.code-copy`
+     below is. `.msg` is `unicode-bidi: plaintext` and carries `dir="auto"`, so
+     an English answer computes `direction: ltr` and every logical property on
+     this box flips with it; the gutter it has to line up with belongs to the
+     COLUMN, which is RTL by the shell's own decision and does not move. A
+     logical padding here put the ⏺ of a Persian answer and the ⏺ of an English
+     one on opposite sides of the same transcript. */
+  padding-left: 2px;
+  padding-right: 35px;   /* 12 (summary padding) + 15 (icon) + 8 (gap) */
+  position: relative;
+}
+
+/* «⏺ …» — the TUI's own mark on a line the assistant wrote (V2-PLAN §3.1,
+   glyph table in wiki/tui-strings.md). A pseudo-element rather than a node:
+   it is decoration, it must never reach a screen reader, and it must never
+   land in the `textContent` that closeCycle() compares two loop cycles on.
+
+   It stands in the same 15px gutter the tool icons and the pulse glyph use, so
+   the column reads as ONE rail — the answer, the steps it took and the closing
+   line all hanging off the same edge. The three excluded classes are the
+   assistant bodies that are NOT transcript entries: a plan inside a permission
+   dialog, a helper's report inside its own card, and the one-line notes
+   («متوقف شد») that are chrome about the turn rather than the turn talking. */
+.msg.assistant:not(.meta):not(.plan-body):not(.nested):not(.side)::before {
+  content: "⏺";
+  position: absolute;
+  top: 1px;
+  right: 12px;
+  inline-size: 15px;
+  text-align: center;
+  font-size: .72em;
+  line-height: var(--lh-fa);
+  color: var(--accent);
+  pointer-events: none;
 }
 
 .msg.error {
@@ -730,6 +790,30 @@ body.home #statusline { align-self: end; }
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid var(--danger);
+}
+
+/* `/btw` — a side question and the answer to it (V2-PLAN §3.5, measured §5.4).
+   It is a real request and it costs a turn, but it is not a turn IN this
+   conversation: the CLI answers it out of band and neither row enters the
+   context. So both carry the TUI's `※` and sit against a rule, beside the
+   column rather than in it — and the assistant row gives up its ⏺, which is
+   the mark of a turn this conversation actually took. */
+.msg.side {
+  align-self: stretch;
+  max-width: none;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 8px;
+  background: transparent;
+  border-inline-start: 2px solid var(--border);
+  opacity: .85;
+}
+
+.msg.side .side-mark {
+  flex: none;
+  color: var(--accent);
+  font-size: .85em;
 }
 
 .msg > :first-child { margin-top: 0; }
@@ -937,7 +1021,53 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
   opacity: .8;
 }
 
+/* A TUI glyph standing in the icon gutter (render.js glyph()). The stroke
+   icons above are sized boxes; a character is not, so it gets the same width
+   and is centred in it — that is what keeps the rail straight when a row is
+   drawn with ✻ or ⎿ instead of a path. */
+.tool-icon.glyph {
+  block-size: auto;
+  line-height: 1;
+  text-align: center;
+  opacity: 1;
+}
+
+/* THE ONE OPEN QUESTION IN THE PLAN (V2-PLAN.md §8.9). `⎿`, `⏵` and `▸` are
+   directional shapes carrying no Unicode mirroring property, so nothing flips
+   them: in an RTL column a result branch drawn `⎿` hangs off the LEFT of a row
+   whose text runs from the right, pointing away from the thing it connects.
+   The plan's recommendation is to mirror all three, and it asked v2.2 to build
+   it as a class so the choice can be made by looking at it.
+
+   This is that class. `html[data-mirror-glyphs]` (index.html) is the switch —
+   set it to "off" and every one of them draws exactly as the terminal does.
+   Nothing else depends on which way it is set: the glyphs are decoration,
+   aria-hidden where they are not the only signal, and the layout is unchanged
+   either way. */
+html[data-mirror-glyphs="on"] .glyph.mirror {
+  display: inline-block;
+  transform: scaleX(-1);
+}
+
 .tool-verb { color: var(--fg); }
+
+/* The `⎿` branch: how much output the row has, before you open it (render.js
+   markResult). Same end of the row as the elapsed counter and the same
+   `flex: none` — spec-test.html measures this row's height AND its overflow,
+   so the branch may shrink what is beside it and must never grow the row. */
+.tool-branch {
+  margin-inline-start: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+.tool-branch.is-error { color: var(--danger); }
+.tool-branch .glyph { opacity: .7; inline-size: 12px; }
+/* Open, the row's own output is on screen: the count stops being news. */
+details.card[open] > summary .tool-branch { opacity: .45; }
 
 /* Pushed to the row's end: the tool that is still running says how long. */
 .tool-elapsed {
@@ -1154,8 +1284,40 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .recap-body :is(p, ul, ol):first-child { margin-block-start: 0; }
 .recap-body :is(p, ul, ol):last-child { margin-block-end: 0; }
 
+/* --- the compaction divider -------------------------------------------------
+   «گفتگو فشرده شد». Everything above this line has been replaced, for the
+   model, by a summary of itself — the reader is still looking at it, so the
+   line has to be a real break in the column rather than another muted row.
+   The rules are drawn with `border`, not with `─` characters: the glyph table
+   (wiki/tui-strings.md §1) says so, because a repeated box-drawing character
+   at a proportional width is a ragged line, not a rule. */
+.divider {
+  align-self: stretch;
+  max-width: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block: 6px;
+  color: var(--fg-muted);
+  font-size: .85em;
+}
+.divider::before, .divider::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--border);
+}
+.divider-note {
+  color: var(--fg-muted);
+  opacity: .75;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- todos ------------------------------------------------------------------ */
 .todos { align-self: stretch; max-width: none; }
+/* The TUI's own checklist marks (render.js renderTodos). `.tool-icon` gives
+   them the shared 15px gutter; the ▸ is the one that mirrors. */
+.todos .todo-mark { opacity: .85; }
 .todos ul { list-style: none; padding: 0; margin: 0; }
 .todos li { display: flex; gap: 8px; align-items: flex-start; }
 .todos li[data-status="completed"] { color: var(--fg-muted); text-decoration: line-through; }
@@ -1316,6 +1478,18 @@ button.round {
 #attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
 #attachments[hidden] { display: none; }
 
+/* Long pastes, parked (js/composer.js). Same row shape as the attachments
+   above it — they are the same kind of thing: something riding along with the
+   message that is not the sentence being written. */
+#pastes { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 0; }
+#pastes[hidden] { display: none; }
+.paste-chip { max-width: 40ch; }
+.paste-chip bdi {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -1345,36 +1519,6 @@ button.round {
   line-height: 1;
 }
 .chip button:hover { background: none; color: var(--fg); }
-
-/* --- `!` shell mode ----------------------------------------------------------
-   The box says what Enter will do BEFORE it is pressed: the chip appears the
-   moment the line starts with `!`, and the border picks up the same accent the
-   `$` wears. No new component — this is the attachment chip with one colour
-   swapped, which is the whole visual vocabulary this state needs. */
-.chip.is-bash {
-  border-color: var(--accent);
-  color: var(--fg);
-}
-
-.shell-mark {
-  unicode-bidi: isolate;
-  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.comp-box.bash { border-color: var(--accent); }
-
-/* The command itself, on the card's summary row: a shell line is code. */
-.shell-cmd {
-  unicode-bidi: isolate;
-  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
-  font-size: .92em;
-  color: var(--fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* --- slash autocomplete ------------------------------------------------------ */
 #slash-popup {
@@ -1417,36 +1561,6 @@ button.round {
   white-space: nowrap;
 }
 .slash-arg { color: var(--fg-muted); opacity: .8; }
-
-/* Ctrl+R: the row IS the remembered prompt, so it reads as the row's primary
-   text rather than as a description of something else. It decides its own
-   direction (dir="auto" in composer.js) — a Persian prompt and an English one
-   sit in the same list. */
-#slash-popup li .hist-line {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* `@`: the whole row is one path, and .path already carries the LTR isolate.
-   Its code-chip background would draw a slab across every row here. */
-#slash-popup li .path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: none;
-  padding: 0;
-}
-
-/* «چیزی پیدا نشد» / «فایلی پیدا نشد»: an answer, not an option — so it never
-   highlights and never takes the pointer. */
-#slash-popup li.is-empty { cursor: default; }
-#slash-popup li.is-empty:hover { background: none; }
-
 .slash-desc {
   flex: 1;
   min-width: 0;
@@ -1457,62 +1571,219 @@ button.round {
   font-size: .95em;
 }
 
-/* --- model picker / approval pill menu --------------------------------------- */
-/* Same anchoring as the slash popup: absolutely positioned inside .comp-box.
-   One popup, both menus (js/controls.js). */
-#menu-popup {
+/* The `@` file menu is the same object as the slash list — same anchor, same
+   rows, same keys — so it is the same rules, not a second copy of them. */
+#file-popup {
   position: absolute;
   inset-block-end: calc(100% + 8px);
   inset-inline-start: 0;
-  max-width: min(30rem, 100%);
-  max-height: 46vh;
+  inset-inline-end: 0;
+  max-height: 40vh;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 5px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgb(0 0 0 / .4);
   z-index: 40;
 }
-#menu-popup[hidden] { display: none; }
-
-.menu-row {
+#file-popup[hidden] { display: none; }
+#file-popup li {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  /* Never shrink. The popup is a flex column with a max-height, so a row with
-     `min-height: 0` gave up its own content size once the list was taller than
-     the box — the notes then drew ON TOP of the next row's title instead of
-     scrolling. Same defect, same fix, as `#log > * { flex: none }`. */
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .88em;
+}
+#file-popup li[aria-selected="true"],
+#file-popup li:hover { background: var(--surface-2); }
+#file-popup li.is-empty { cursor: default; color: var(--fg-muted); }
+#file-popup li.is-empty:hover { background: none; }
+
+/* --- `!` bash mode, Ctrl+R search --------------------------------------------
+
+   The TUI recolours its prompt bar while the line starts with `!`. Same signal
+   here, on the box's own border, so the state is visible without a second
+   widget saying what mode you are in. */
+.comp-box.bash { border-color: var(--bash); }
+.comp-box.bash #input::placeholder { color: var(--bash); }
+
+#history-search {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 4px 6px;
+  font-size: .86em;
+  border-bottom: 1px solid var(--border);
+}
+#history-search[hidden] { display: none; }
+#hs-label { color: var(--fg-muted); white-space: nowrap; }
+#hs-match {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#hs-match.empty { color: var(--fg-muted); }
+#hs-hint { white-space: nowrap; }
+
+/* --- the `?` key sheet -------------------------------------------------------- */
+#keys-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  align-items: baseline;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.key-row { display: contents; }
+#keys-body kbd {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  font-size: .82em;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.key-what { color: var(--fg-muted); }
+/* The sheet's footer: the way out on the right, the key that also does it on
+   the left. `<menu>` is a list by UA default, which is why padding and markers
+   are cleared rather than inherited. */
+#keys menu {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- a `!` row in the column ---------------------------------------------------
+   A shell transcript: mono and LTR as a block, each line still free to resolve
+   its own direction (spec rule 8) — an `ls` of a Persian folder is Persian. */
+.card.shell > summary .shell-cmd {
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  unicode-bidi: isolate;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card.shell > summary .shell-mark { opacity: .7; }
+
+/* --- the inline dialogs (v2.4) ------------------------------------------------
+
+   V2-PLAN §3.3 puts the confirmation and every picker IN THE FLOW above the
+   prompt, which is where the Ink TUI draws them. They are still <dialog>
+   elements — the ids, the classes and `open` all stay what they were — but
+   they are opened with show() rather than showModal(), so the UA's modal
+   positioning has to be undone here: a dialog defaults to `position: absolute`
+   and auto margins, which would float it over the transcript instead of
+   pushing the prompt down.
+
+   The popup menu these replaced is gone, and with it positionMenu(): a box
+   that hangs off a chip has to be measured against a shrink-to-fit width and
+   the room above it (the 2026-08-23 "the picker menu was sizing itself"
+   report). A row in the flow is laid out by the browser. */
+#perm,
+#picker {
+  position: static;
+  display: none;
+  /* #stage is a flex column: without this the dialog is squeezed instead of
+     pushing the prompt down — the `#log > * { flex: none }` family. */
   flex: none;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
+  inline-size: auto;
+  max-inline-size: none;
+  /* The same centred column the prompt uses (#composer's padding), so the
+     list sits exactly over the box it is answering for instead of drifting
+     wider on a big window and narrower on a small one. */
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
-  text-align: start;
+  line-height: var(--lh-fa);
+  max-block-size: 52vh;
+  overflow-y: auto;
+}
+#perm[open],
+#picker[open] { display: block; }
+
+#picker h2 { margin: 0 0 .5em; font-size: .95rem; font-weight: 700; }
+
+/* --- the numbered option list (js/choice.js) ---------------------------------
+   One list, three owners: the permission dialog, the pickers and the audit
+   trail. It is ONE tab stop with a moving highlight, the way the TUI's is —
+   the arrows move the highlight, the digits answer outright. */
+.opts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.opts:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.opt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* Never shrink: the list has a max-height, and a row that gives up its own
+     content size draws its note on top of the next row's title instead of
+     scrolling. Third appearance of the same family. */
+  flex: none;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   cursor: pointer;
 }
-.menu-row:hover { background: var(--surface-2); }
-.menu-row[aria-checked="true"] { background: var(--accent-soft); }
-.menu-row[aria-checked="true"] .menu-title { color: var(--accent); font-weight: 600; }
-.menu-title { font-size: .92em; }
-.menu-note { color: var(--fg-muted); font-size: .78em; line-height: 1.7; }
+.opt:hover { background: var(--surface-2); }
+.opt[aria-selected="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.opt[aria-selected="true"] .opt-title { color: var(--accent); font-weight: 600; }
+
+/* The digit is chrome the renderer places, never text inside the label
+   (V2-PLAN §8.2). It is a Latin-ordered token in an RTL row, so it is
+   isolated and given a fixed column of its own — otherwise «۱.» and «۲.»
+   sit at different distances from their labels. */
+.opt-num,
+.ask-opt .opt-num {
+  flex: none;
+  min-inline-size: 1.9ch;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+.opt-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.opt-title { font-size: .92em; }
+.opt-esc { color: var(--fg-muted); font-weight: 700; unicode-bidi: isolate; }
+.opt-note { color: var(--fg-muted); font-size: .78em; line-height: 1.7; }
+
+.dlg-hint {
+  display: block;
+  margin-block-start: 10px;
+  color: var(--fg-muted);
+  font-size: .78em;
+}
 
 /* The audit counter is a label, not a control: no hover, no pointer. */
 .chip-btn.is-info {
   cursor: default;
   border-style: dashed;
   color: var(--fg-muted);
-}
-.chip-btn[data-posture="autoApprove"] {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* --- row overflow menu (⋯) ---------------------------------------------------- */
@@ -1584,20 +1855,50 @@ button.round {
 .proj-sessions li:has(.kebab-menu:popover-open) .sess-act { display: inline-flex; }
 
 /* --- statusline -------------------------------------------------------------- */
+/* Three lines, in the TUI's own order (V2-PLAN §3.4): the machine's own
+   statusLine script first, then the `⏵⏵` posture row that replaced the pill,
+   then everything the four chips used to say. A column of rows rather than one
+   wrapping row, because the posture line is a sentence and must not be broken
+   up by whatever fits beside it. */
 #statusline {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
   padding: 5px 16px 8px;
   color: var(--fg-muted);
   font-size: .74em;
   line-height: 1.6;
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
+#statusline .sl-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
 #statusline .sl-item { display: flex; gap: 6px; align-items: center; }
 #statusline .sl-label { opacity: .7; }
+
+/* `⏵⏵ پذیرش خودکار ویرایش‌ها روشن · shift+tab برای تغییر`. The pill is gone,
+   so this line carries the affordance too — a mode nobody can see how to
+   change is a mode that stays where it was left. */
+#statusline .sl-posture { gap: 4px 8px; color: var(--fg); }
+#statusline .sl-arrow {
+  color: var(--accent);
+  inline-size: auto;
+  margin-inline-end: -3px;   /* `⏵⏵` is one shape, not two words */
+}
+#statusline .sl-posture.is-danger .sl-arrow,
+#statusline .sl-posture.is-danger .sl-posture-text { color: var(--danger); }
+#statusline .sl-hint { opacity: .6; }
+
+/* The five-hour window is nearly spent. Warning colour, full opacity: the rest
+   of this bar is reference data the eye skips, and this one line is the reason
+   the next answer will be shorter than the last. */
+#statusline .sl-warn { color: var(--danger); }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
@@ -1643,19 +1944,6 @@ button.round {
 #statusline .sl-custom span:not(:empty) { padding-block: 1px; }
 
 /* --- permission dialog -------------------------------------------------------- */
-#perm {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--fg);
-  padding: 20px;
-  max-width: min(560px, 92vw);
-  font: inherit;
-  line-height: var(--lh-fa);
-  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
-}
-#perm::backdrop { background: rgb(0 0 0 / .55); }
-
 #perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: 700; }
 #perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
 
@@ -1713,14 +2001,6 @@ button.round {
 }
 #perm-remember-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 
-#perm menu {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-start;   /* RTL start = right edge */
-  margin: 0;
-  padding: 0;
-}
-
 /* --- diffs -------------------------------------------------------------------
    .diff already carries direction:ltr + isolate + monospace + its own scroll box
    from the spec's base CSS; this is only the rows inside it. Colour is never the
@@ -1765,46 +2045,63 @@ button.round {
    Sits above the composer, in the flow — not a floating toast. This is a
    decision the user has to make before the conversation can continue, and a
    toast that times out would hide it. */
+/* v2.5 (V2-PLAN §3.4, last row of the context pair): this used to be a card
+   with a heading and three stacked buttons — a dialog in everything but name,
+   in a window whose whole premise is that the terminal does not have those.
+   The TUI writes a WARNING ROW: one dim line where the prompt is, saying what
+   is wrong and which command fixes it. So the markup is unchanged (the ids and
+   classes the 174 spec assertions read are all still here, and the actions
+   still press exactly what they pressed) and only its shape moved: one line,
+   the buttons inline, the per-button explanations dropped to their titles. */
 #context-notice {
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--surface);
+  margin: 0 max(20px, calc((100% - 50rem) / 2)) 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-inline-start: 2px solid var(--accent);
+  border-radius: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: .82em;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
+  align-items: baseline;
+  gap: 2px 12px;
 }
 #context-notice[hidden] { display: none; }   /* beats the flex above */
 #context-notice.urgent { border-inline-start-color: var(--danger); }
+#context-notice.urgent .ctx-title { color: var(--danger); }
 
-.ctx-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 16rem; min-width: 0; }
-.ctx-title { font-weight: 700; }
-.ctx-body { color: var(--fg-muted); font-size: .9em; }
+/* One line: the title and the sentence after it, the way a terminal warning
+   reads. `flex: 1 1 auto` rather than a fixed basis — it must give way to the
+   actions on a narrow window instead of pushing them onto a third row. */
+.ctx-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+            flex: 1 1 auto; min-width: 0; }
+.ctx-title { font-weight: 700; color: var(--fg); }
+.ctx-body { color: var(--fg-muted); }
 
-.ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ctx-actions { display: flex; gap: 4px 12px; flex-wrap: wrap; }
+/* A command you can press, not a card. Underlined on hover, like the CLI's own
+   hint text — nothing here is a primary action, because the decision is the
+   user's and both answers are ordinary. */
 .ctx-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-side);
-  color: inherit;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg-muted);
   font: inherit;
   cursor: pointer;
 }
-.ctx-btn:hover { border-color: var(--accent); }
-.ctx-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ctx-btn.primary:hover { background: var(--accent-strong); }
-.ctx-btn.ghost { background: none; border-color: transparent; color: var(--fg-muted); }
-.ctx-btn.ghost:hover { color: var(--fg); border-color: var(--border); }
-.ctx-btn-text { font-weight: 600; font-size: .92em; }
-.ctx-btn-note { font-size: .78em; opacity: .8; }
+.ctx-btn:hover { color: var(--fg); text-decoration: underline; }
+.ctx-btn.primary { color: var(--accent); }
+.ctx-btn.primary:hover { color: var(--accent-strong); }
+.ctx-btn-text { font-weight: 600; }
+/* The note stays in the DOM — it is the button's own explanation and rides in
+   its `title` — but a warning row has no room to print it. */
+.ctx-btn-note { display: none; }
 
 /* --- the queued-message strip ------------------------------------------------
    A message sent while the CLI is still answering is not delivered: it waits in
@@ -1996,7 +2293,14 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 #agent-drawer {
   position: fixed;
   inset-block: 8vh;
-  inset-inline-end: 28px;   /* opens away from the sidebar, on the RTL end side */
+  inset-inline-start: 28px;   /* opens into the stage, away from the sidebar (grid column 2 =
+                                  physical left under dir=rtl) */
+  inset-inline-end: auto;     /* cancel the [popover] UA sheet's `inset: 0` on the other inline
+                                  side - two non-auto inline insets plus an explicit inline-size
+                                  over-constrain the box, and Chromium's tie-break keeps whichever
+                                  one maps to the browser's physical right, so the old
+                                  `inset-inline-end: 28px` alone (no `auto`) never even moved the
+                                  drawer off the UA's left:0 default - measured, not assumed. */
   inline-size: min(44rem, 64vw);
   /* The UA popover sheet sets `height: fit-content`, and an absolutely
      positioned box with a non-auto height ignores its own `inset-block-end`.
@@ -2078,6 +2382,49 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 #perm.asking #perm-params,
 #perm.asking #perm-remember-row { display: none; }
 
+/* The two modes answer with different chrome. A permission answers with the
+   numbered list and its note box; a question answers with its own inputs and
+   the two buttons, because "send the answers" and "skip" are not options in a
+   list — they are what happens to whatever the inputs hold.
+
+   #perm-remember-row is the harness's copy of this markup (spec-test.html) and
+   is what its «a question offers no remember» assertion reads; in the window
+   the remember scope is «۲.» in the list and this row never shows. */
+#perm menu { display: none; }
+#perm.asking menu {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;   /* RTL start = right edge */
+  margin: 12px 0 0;
+  padding: 0;
+}
+#perm #perm-remember-row { display: none; }
+#perm.asking #perm-proceed,
+#perm.asking #perm-opts,
+#perm.asking #perm-feedback { display: none; }
+
+#perm #perm-proceed {
+  margin: 2px 0 8px;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: .95em;
+}
+#perm-feedback {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-side);
+  color: inherit;
+  font: inherit;
+  line-height: var(--lh-fa);
+  resize: vertical;
+}
+#perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#perm #perm-hint { margin: 8px 0 0; font-size: .78em; }
+
 .ask-q {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2156,29 +2503,26 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    Measured before this block existed (headless, real markup): a 760px window
    left the stage 438px and wrapped the composer row onto three lines; a 500px
    window left it 194px for 244px of content, which is not a squeeze but an
-   overflow — the composer, the greeting and the cards were drawn off the start
+   overflow — the composer and the empty state's box were drawn off the start
    edge of the window entirely.
 
    The order things give way in: the sidebar first (it is chrome, and its rows
-   already ellipsis), then the reading column's 20px gutters, then the home
-   grid's second column. The composer row itself needs nothing — it has wrapped
+   already ellipsis), then the reading column's 20px gutters, then the welcome
+   box's own gutter. The composer row itself needs nothing — it has wrapped
    since the effort chip vanished off it. */
 @media (max-width: 1000px) {
-  body.app { grid-template-columns: 244px minmax(0, 1fr); }
+  body.app { grid-template-columns: minmax(0, 1fr) 244px; }
 }
 
 @media (max-width: 820px) {
-  body.app { grid-template-columns: 200px minmax(0, 1fr); }
+  body.app { grid-template-columns: minmax(0, 1fr) 200px; }
   #log { padding-inline: 12px; }
   #composer { padding-inline: 12px; }
   #topbar { padding-inline: 12px; }
   #context-notice { margin-inline: 12px; }
   #queue-strip { margin-inline: 12px; }
   #replay-banner { width: calc(100% - 24px); }
-  /* Two columns of 97px fit neither a title nor its note: the cards grew to
-     215px tall and clipped their own text. One column, full width. */
-  #home-cards { grid-template-columns: minmax(0, 1fr); width: calc(100% - 24px); }
-  .greeting { font-size: 1.5rem; gap: 10px; }
+  .welcome { width: calc(100% - 24px); }
 }
 }
 

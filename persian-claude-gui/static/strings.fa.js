@@ -10,9 +10,12 @@ window.FA = {
      never «کلود», and never Anthropic's mark: this is an independent front-end
      (REWORK-PLAN.md "Two judgment calls", option b). */
   appName: "کلاد فارسی",
+  appTagline: "رابط فارسی برای Claude Code",
+  independence: "این پروژه مستقل است و وابسته به Anthropic نیست.",
 
   stopped: "متوقف شد",
   removeAttachment: "حذف",
+  slashHint: "برای دیدن دستورها / را بزنید",
   hintZwnj: "نیم‌فاصله: Shift+Space",
   hintPosture: "سطح اجازه: Shift+Tab",
 
@@ -36,93 +39,12 @@ window.FA = {
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
   elapsedMinSec: "{m} دقیقه و {s} ثانیه",
-  /* The tail of the running line, and the TUI's own («esc to interrupt»,
-     wiki/tui-strings.md §4). The stop button says the same thing in its
-     tooltip, but a tooltip is not on screen — the line that says the turn is
-     still going is where the way out belongs. */
-  spinnerInterrupt: "Esc برای توقف",
 
   tool: "ابزار",
+  toolResult: "نتیجه",
   todos: "کارها",
   rawEvent: "رویداد ناشناخته",
   diffTruncated: "{n} خط دیگر نشان داده نشد",
-
-  /* The `⎿` branch under a tool row. The TUI writes «+N lines (ctrl+o to
-     expand)» there because it shows the first few lines and hides the rest;
-     v2 shows none of them until ctrl+o, so the count is the whole output and
-     the «+» would be a lie about what is already on screen
-     (wiki/tui-strings.md §3, V2-PLAN §3.1). */
-  toolResultLines: "{n} سطر",
-  expandHint: "(ctrl+o برای باز کردن)",
-  hintExpand: "باز کردن نتیجه‌ها: Ctrl+O",
-
-  /* The CLI compacted the conversation to make room. Its own banner string is
-     «Conversation compacted»; the numbers come from compact_metadata
-     (wiki/cli-stream-json-findings.md §5.9). */
-  compacted: "گفتگو فشرده شد",
-  compactedTokens: "{before} ← {after} توکن",
-
-  /* A long paste is parked as one chip instead of filling the box, exactly as
-     the TUI does it. `{n}` is the paste's number, `{lines}` the newline count
-     the CLI's own `cue()` writes (measured: 800 characters or more than two
-     newlines is what triggers it). */
-  pastePlaceholder: "[متن چسبانده‌شده #{n} +{lines} سطر]",
-  pastePlaceholderShort: "[متن چسبانده‌شده #{n}]",
-  pasteDrop: "حذف متن چسبانده‌شده",
-
-  /* `!` bash mode (V2-PLAN §3.2). The command runs in the project folder and
-     its output goes into the conversation with the next message — the same
-     thing the TUI does with it, so the row says what ran and what came back
-     and nothing else. */
-  shellExit: "کد خروج {n}",
-  shellNoOutput: "بدون خروجی",
-  shellFailed: "اجرای دستور ناموفق بود",
-
-  /* Ctrl+R, the history search. The box holds what is being searched for; this
-     row shows the match that would land in it. */
-  searchLabel: "جست‌وجو در تاریخچه",
-  searchNone: "چیزی پیدا نشد",
-  searchHint: "Ctrl+R بعدی · Tab گذاشتن در جعبه · Enter فرستادن",
-
-  /* Ctrl+G. The draft goes to a file, Windows opens it with whatever the user
-     has chosen for .md, and the window waits for the save. */
-  editorWaiting: "در ویرایشگر بیرونی باز است؛ ذخیره کنید تا برگردد",
-  editorFailed: "باز کردن ویرایشگر ناموفق بود",
-
-  /* No file matched the `@` query. The CLI's index warms up on demand, so the
-     first ask right after a session opens can legitimately answer nothing. */
-  fileNone: "فایلی پیدا نشد",
-
-  /* The `?` sheet: every key the window binds, in the TUI's own order of
-     importance. One list, two readers — js/composer.js dispatches from it. */
-  hintKeys: "کلیدها: ?",
-  keysTitle: "کلیدها",
-  keysClose: "بستن",
-  /* The TUI's own footer under the same table is «esc to close · esc again
-     quits». Only the first half survives here: a window is closed from its
-     close button, so «خروج دوباره» would name a key that does nothing
-     (V2-PLAN §8.5). */
-  keysEscHint: "Esc برای بستن",
-  keySend: "فرستادن پیام",
-  keyNewline: "سطر تازه",
-  keyStop: "توقف نوبت در حال اجرا",
-  keyHistory: "پیام‌های پیشین همین پروژه",
-  keySearch: "جست‌وجو در تاریخچه",
-  keySlash: "فهرست دستورها",
-  keyFiles: "نام بردن از یک فایل",
-  keyBash: "اجرای دستور در پوشهٔ پروژه",
-  keyEditor: "ویرایش پیش‌نویس در ویرایشگر بیرونی",
-  keyClear: "خالی کردن جعبهٔ نوشتن",
-  keyExpand: "باز کردن نتیجه‌های ابزار",
-  keyTodos: "باز و بستهٔ فهرست کارها",
-  keyThinking: "نمایش «در حال فکر کردن»",
-  keyModel: "انتخاب مدل",
-  keyPosture: "چرخش سطح اجازه",
-  keyZwnj: "نیم‌فاصله",
-  keyPaste: "چسباندن تصویر",
-  keyQueue: "فرستادن به صف",
-  keySheet: "همین فهرست",
-  keyDialogPick: "انتخاب گزینه در گفت‌وگوی اجازه",
 
   /* What each CLI tool is called in the transcript. The audience is
      non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that
@@ -197,6 +119,7 @@ window.FA = {
   queuedTag: "در صف",
   queuedCancel: "حذف از صف",
 
+  connecting: "در حال اتصال…",
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
   pasteFailed: "چسباندن تصویر ناموفق بود",
@@ -206,6 +129,7 @@ window.FA = {
   elapsedSeconds: "{n} ثانیه",
   elapsedMinutes: "{n} دقیقه",
   cliExited: "پردازش کلاد بسته شد",
+  waiting: "در انتظار…",
 
   help: "راهنما",
   sessionsEmpty: "هنوز گفتگویی در این پوشه نیست",
@@ -213,6 +137,7 @@ window.FA = {
   viewSession: "نمایش",
   deleteSession: "حذف",
   confirmDelete: "مطمئنید؟",
+  deleteFailed: "حذف ناموفق بود",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
   resumed: "گفتگو از سر گرفته شد",
 
@@ -248,16 +173,22 @@ window.FA = {
   openInExplorer: "باز کردن پوشه پروژه",
   archiveSection: "بایگانی",
   chooseProject: "انتخاب پروژه",
-  /* The empty state is the TUI's welcome box now (V2-PLAN §2): the greeting,
-     its four action cards and their strings are gone. What the terminal
-     prints is its own name, its version, the folder, and the three hints it
-     keeps under an empty prompt (wiki/tui-strings.md §5). */
-  welcomeTitle: "خوش آمدید به کلاد فارسی",
-  welcomeCwd: "پوشه:",
-  welcomeNoProject: "هنوز پروژه‌ای باز نیست",
-  welTipCommands: "برای فرمان‌ها",
-  welTipMention: "برای اشاره به یک فایل",
-  welTipKeys: "برای دیدن کلیدها",
+  greetMorning: "صبح بخیر! امروز چه کنیم؟",
+  greetDay: "سلام! چه کاری انجام دهیم؟",
+  greetEvening: "عصر بخیر! چه کاری انجام دهیم؟",
+  greetNight: "شب‌زنده‌داری؟",
+
+  /* Home action cards. `homeExplain` is both the card's label and the text it
+     puts in the composer, so the user sees exactly what they are about to
+     send — no hidden prompt. */
+  homeResume: "ادامه آخرین گفتگو",
+  homeResumeNote: "همان‌جا که رهایش کردید",
+  homeOpen: "باز کردن پوشه",
+  homeOpenNote: "روی پروژه دیگری کار کنید",
+  homeExplain: "این پوشه را برایم توضیح بده",
+  homeExplainNote: "شروع سریع در همین پروژه",
+  homeHelp: "راهنما",
+  homeHelpNote: "چطور با این برنامه کار کنم؟",
 
   previewEmpty: "متنی برای پیش‌نمایش نیست",
 
@@ -268,37 +199,6 @@ window.FA = {
   permRemember: "تا پایان این نشست برای این ابزار دوباره نپرس",
   permAllowed: "اجازه داده شد",
   permDenied: "رد شد",
-
-  /* v2.4: the three numbered options, translated from the TUI's own labels
-     (wiki/tui-strings.md §2). NONE of them carries its number — the digit is
-     drawn by js/choice.js, because in RTL a digit glued to the front of a
-     Persian run is reordered by the bidi algorithm, and because «۲» only
-     exists when a remember scope applies (V2-PLAN §8.2). The `(esc)` on the
-     third one is drawn the same way, for the same reason.
-
-     «{tool}» and no directory: the remember scope here is THIS PROJECT, THIS
-     SESSION, and naming a path would describe a scope the window does not
-     implement (§8.1). */
-  permProceed: "اجازه می‌دهید ادامه دهد؟",
-  permYes: "بله",
-  permYesRemember: "بله، و دیگر برای {tool} نپرس",
-  permNoFeedback: "نه، و بگو طور دیگری انجام دهد",
-  permFeedbackPlaceholder: "بنویسید به‌جای این چه کند…",
-  permHint: "۱ تا ۳ یا ↑↓ و Enter · Tab برای نوشتن توضیح · shift+tab: تأیید همراه با همین توضیح",
-  /* shift+tab approved the tool; the note had nowhere to ride along on that
-     reply, so it is waiting in the message box. Said out loud, because text
-     that moves without a word is text the person thinks they lost. */
-  permFeedbackMoved: "توضیح شما در جعبهٔ پیام گذاشته شد؛ با Enter بفرستید",
-
-  /* Plan approval. Same pipe, same numbered options, different act: what is on
-     screen is a plan to read, not a tool call to allow. */
-  planTitle: "طرح کار",
-  planBody: "کلاد این طرح را نوشته است:",
-  /* What the tool card says once the plan is accepted. «اجازه داده شد» is the
-     answer to a request to run something; a plan that was accepted is not run,
-     it is kept — which is why the TUI writes «Plan saved!» here and not its
-     own approval word (wiki/tui-strings.md §2). */
-  planSaved: "طرح ذخیره شد",
 
   /* AskUserQuestion. Not an approval — the model is asking something and waits
      for the answer, so the wording never says «اجازه». «رد کردن» skips the
@@ -313,7 +213,6 @@ window.FA = {
   askAnswered: "پاسخ داده شد",
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
-  askHint: "با شماره یا ↑↓ انتخاب کنید · Space برای چندگزینه · Enter برای فرستادن",
 
   /* The conversation is filling up. Two actions, because the CLI's own advice
      is «/compact or /clear» and they mean different things: compact keeps the
@@ -337,107 +236,7 @@ window.FA = {
   slSession: "نشست",
   slContext: "متن",
   slQuota: "سهمیه ۵ ساعته",
-  /* The TUI prints this under the prompt when the five-hour window is nearly
-     spent, and it is the one status number the person cannot do anything about
-     — so it says what happens next instead of asking for an action. The
-     threshold is the binary's own default (0.95); gated in test_tui_vocab.py
-     so a change upstream shows up as a failure rather than as a window that
-     warns at the wrong moment. */
-  slQuotaWarn: "نزدیک سقف ۵‌ساعته — کلاد کار را جمع می‌کند",
-  slEffort: "تفکر",
-  slStyle: "لحن",
-
-  /* The `⏵⏵` posture row (V2-PLAN §3.4), which replaces the pill the composer
-     row used to carry. These are the TUI's OWN status-line sentences
-     (wiki/tui-strings.md §4 `posture.*`), not the picker's short titles: the
-     picker names a choice you are making, this line reports a mode you are
-     already in. «محتاط» has no TUI counterpart — the terminal prints nothing
-     at all in its default mode — so its sentence is written to the same shape
-     as the four that were lifted. */
-  slPostureAsk: "حالت محتاط روشن",
-  slPosturePlan: "حالت طرح روشن",
-  slPostureAcceptEdits: "پذیرش خودکار ویرایش‌ها روشن",
-  slPostureAuto: "حالت خودکار روشن",
-  slPostureBypass: "دور زدن اجازه‌ها",
-  slPostureHint: "shift+tab برای تغییر",
-
-  /* The turn ended while the window was not being looked at. The body is the
-     folder, so a person with several conversations open knows which one
-     finished before they switch to it. */
-  notifyDone: "پاسخ آماده است",
-
-  /* The window-local commands of V2-PLAN §3.5 (js/commands.js). Each one
-     answers in the column as a `meta` row: what happened, in one line. None of
-     them reached the model, so none of them may look like an answer. */
-  cmdCopied: "آخرین پاسخ کپی شد",
-  cmdCopyEmpty: "هنوز پاسخی برای کپی نیست",
-  cmdCopyFailed: "کپی کردن ممکن نشد",
-  // The two speakers, in the exported text file. Not in the window: this is
-  // the only place the conversation is read without its own layout.
-  exportYou: "شما:",
-  exportClaude: "کلاد:",
-  cmdExported: "گفتگو در این فایل ذخیره شد:",
-  cmdExportEmpty: "هنوز گفتگویی برای ذخیره نیست",
-  cmdExportFailed: "ذخیرهٔ گفتگو ممکن نشد",
-  statusTitle: "وضعیت این گفتگو",
-  statusVersion: "نسخه",
-  cmdResumeHint: "با ↑↓ نشست را انتخاب کنید · Enter برای باز کردن · Esc برای بازگشت",
-  cmdBranchDone: "شاخه‌ای تازه از این گفتگو باز شد؛ گفتگوی اصلی سر جای خودش است",
-  cmdBranchFailed: "شاخه‌زدن از این گفتگو ممکن نشد",
-  /* `/btw` is a real request to the model (measured — V2-PLAN §5.4), so the
-     window says so before it sends. A side answer that looked free would be
-     the one place this window lied about what costs money. */
-  cmdBtwCost: "پرسش جانبی مانند یک نوبت معمولی هزینه دارد",
-  cmdBtwFailed: "پاسخ به پرسش جانبی گرفته نشد",
-  cmdOpened: "این فایل باز شد:",
-  cmdOpenFailed: "باز کردن فایل ممکن نشد",
-  memoryTitle: "کدام حافظه؟",
-  memoryUser: "حافظهٔ شخصی",
-  memoryUserNote: "برای همهٔ پروژه‌ها",
-  memoryProject: "حافظهٔ این پروژه",
-  memoryProjectNote: "فقط برای پوشهٔ همین گفتگو",
-  cmdTasksEmpty: "کار پس‌زمینه‌ای در جریان نیست",
-
-  /* `/help` (V2-PLAN §3.3 «the TUI's help text, translated», §8.11A). The
-     terminal's own help screen is a page ABOUT a terminal program — how to
-     start it, which flags it takes, where its docs live — and none of that is
-     true of a window that is already open. What translates is its job: what
-     can I ask this window to do, and with which key.
-
-     So the list is generated from the command table in js/commands.js rather
-     than written out here, and `cmdHelp` holds one line per verb. A verb with
-     no line is a gate failure, and a line with no verb behind it is the same
-     failure from the other side (test_strings.py) — the same binary → wiki →
-     page discipline the key sheet already lives by. */
-  helpTitle: "دستورهای این پنجره",
-  cmdHelp: {
-    help: "همین فهرست",
-    resume: "رفتن به فهرست گفتگوهای این پوشه",
-    status: "مدل، پوشه، نشست و سطح اجازهٔ همین گفتگو",
-    copy: "کپی آخرین پاسخ",
-    export: "ذخیرهٔ متن این گفتگو در یک فایل",
-    cd: "باز کردن پوشه‌ای دیگر",
-    "add-dir": "همان دستور بالا — هر گفتگو یک پوشه دارد و بس",
-    branch: "باز کردن شاخه‌ای تازه از همین گفتگو، بدون دست زدن به اصلش",
-    btw: "پرسش کوتاه بیرون از رشتهٔ گفتگو — به اندازهٔ یک نوبت هزینه دارد",
-    config: "باز کردن فایل تنظیم‌ها",
-    hooks: "همان فایل تنظیم‌ها؛ قلاب‌ها آنجا نوشته می‌شوند",
-    keybindings: "باز کردن فایل کلیدها",
-    memory: "باز کردن فایل حافظه — شخصی یا این پروژه",
-    tasks: "نشان دادن کارهای پس‌زمینه",
-    bash: "اجرای یک دستور در پوشهٔ پروژه؛ با «!» هم می‌شود",
-    model: "انتخاب مدل",
-    effort: "میزان تفکر",
-    "output-style": "لحن پاسخ",
-    permissions: "سطح اجازه",
-    clear: "شروع یک گفتگوی تازه",
-  },
-  /* Three rows that are not commands: the two keys that open the other two
-     lists, and the guide written for someone who has never used this window. */
-  helpSlash: "فهرست دستورهای خود کلاد روی این کامپیوتر",
-  helpKeys: "برگهٔ همهٔ کلیدها",
-  helpGuide: "راهنمای کامل",
-  helpGuideNote: "در یک برگهٔ تازه باز می‌شود",
+  slNone: "—",
 
   /* model picker + approval posture — every label the CLI itself supplies
      (model names, descriptions) is rendered as it arrives, never translated:
@@ -478,15 +277,53 @@ window.FA = {
   postureAcceptEditsNote: "فایل‌های پروژه را بدون پرسش ویرایش می‌کند؛ برای اجرای دستور باز هم می‌پرسد",
   postureAutoApprove: "خودکار",
   postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
-  /* One line under every picker, because a list nobody told you how to answer
-     is a list you answer with the mouse. */
-  pickerHint: "با شماره یا ↑↓ و Enter انتخاب کنید · Esc برای بستن",
   postureFailed: "تغییر سطح اجازه ممکن نشد",
   autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
   autoWhyPosture: "سطح اجازه: خودکار",
+
+  /* --- the CLI features the terminal edition already had (E3) ---------------
+     Every string below belongs to something the real `claude` does in a
+     terminal and this window did not: walking the prompt history, `@` file
+     mentions, `!` shell lines, the external editor, /export and /branch. The
+     wording is the window's own — the CLI says none of this in Persian. */
+
+  /* Ctrl+R, the reverse search over ~/.claude/history.jsonl. */
+  searchNone: "چیزی پیدا نشد",
+  searchHint: "جست‌وجو در پیام‌های پیشین — Enter برای برداشتن، Esc برای بستن",
+
+  /* `@` completion, from the CLI's own file index. */
+  fileNone: "فایلی پیدا نشد",
+
+  /* `!` shell mode. The chip says WHAT the box will do, because a line that
+     starts with «!» is the one case where Enter does not send a message. */
+  bashChip: "دستور سیستمی",
+  shellExit: "کد خروج {n}",
+  shellNoOutput: "بدون خروجی",
+  shellFailed: "اجرای دستور ناموفق بود",
+
+  /* Ctrl+G, the external editor. The box is shut while the editor is open, so
+     the placeholder is the only thing telling the user why. */
+  editorWaiting: "در ویرایشگر بیرونی باز است؛ ذخیره کنید تا برگردد",
+  editorFailed: "باز کردن ویرایشگر ناموفق بود",
+  hintEditor: "ویرایشگر بیرونی: Ctrl+G",
+
+  /* /export — the window writes what it drew, so these two labels are what a
+     reader of the saved file sees instead of the bubbles. */
+  exportYou: "شما:",
+  exportClaude: "کلاد:",
+  cmdExportDesc: "ذخیرهٔ این گفتگو در یک فایل متنی",
+  cmdExported: "گفتگو در این فایل ذخیره شد:",
+  cmdExportEmpty: "هنوز گفتگویی برای ذخیره نیست",
+  cmdExportFailed: "ذخیرهٔ گفتگو ممکن نشد",
+
+  /* /branch — a copy of this conversation in a new tab; the original is left
+     exactly as it was, which is the whole point of saying so out loud. */
+  cmdBranchDesc: "ادامهٔ یک کپی از این گفتگو در گفتگوی تازه",
+  cmdBranchDone: "شاخهٔ جدید: کپی این گفتگو باز شد؛ گفتگوی اصلی سر جای خودش است",
+  cmdBranchFailed: "شاخه‌زدن از این گفتگو ممکن نشد",
 };
 
 window.STRINGS = window.FA;

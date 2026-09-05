@@ -65,8 +65,20 @@ function lastAnswer() {
   return rows[rows.length - 1] ?? null;
 }
 
+/* innerText is deliberately what is read — it is the text as the reader saw it,
+   line breaks and all — but it omits the body of a CLOSED <details>, and every
+   tool, diff and shell card is closed by default. So an export of a real
+   session was the sentences with all the work missing. Opened and put straight
+   back: no frame is painted between the two, because nothing here awaits. */
 function textOf(el) {
-  return (el.innerText || el.textContent || "").trim();
+  const shut = [...el.querySelectorAll("details:not([open])")];
+  if (el.tagName === "DETAILS" && !el.open) shut.push(el);
+  for (const card of shut) card.open = true;
+  try {
+    return (el.innerText || el.textContent || "").trim();
+  } finally {
+    for (const card of shut) card.open = false;
+  }
 }
 
 function copyLast() {

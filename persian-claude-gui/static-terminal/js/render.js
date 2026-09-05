@@ -24,7 +24,7 @@ import {
 import { api, token } from "./api.js";
 import {
   applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
-  setEffortState, setOutputStyle, resetControls,
+  setEffortState, setOutputStyle, resetControls, effortLabel, styleLabel,
 } from "./controls.js";
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
    background agent's transcript back through this renderer. Same invariant —
@@ -112,9 +112,30 @@ export function bulkAppend(fn) {
   try { fn(); } finally { bulk--; }
 }
 
+/* A synchronous subagent's own steps belong UNDER the Task row that dispatched
+   them, not beside it (V2-PLAN §3.1, "render child tool rows indented under
+   it"). Every such event names its parent (`parent_tool_use_id`), so the seam
+   is the same one withRenderTarget() uses one level up: point the destination
+   somewhere else for the length of a synchronous render and give it back.
+
+   Non-null only inside withParent(), which is only ever called with a body
+   this renderer built — an unknown parent falls through to the column, which
+   is where those rows landed before this existed. */
+let nest = null;
+
+function withParent(body, fn) {
+  if (!body) return fn();
+  const saved = nest;
+  nest = body;
+  try { fn(); } finally { nest = saved; }
+}
+
 function append(el, { stick = true } = {}) {
   const wasAtBottom = stick && !bulk && atBottom();
-  toolHome(el).append(el);
+  // Nested rows never ask toolHome(): they are not part of the column's run of
+  // consecutive calls, and asking would end that run every time a helper
+  // reported a step of its own.
+  (nest ?? toolHome(el)).append(el);
   if (wasAtBottom) log.scrollTop = log.scrollHeight;
   return el;
 }
@@ -374,6 +395,28 @@ function closeCycle(details, summary, id) {
    group — rendered visually before output that actually came first. Transcript
    order inverted, and only on the truncated transcripts this fallback exists
    for, which is the last place anyone would look. */
+/* The `⎿` branch. In the TUI it is a line under the tool row carrying the first
+   few lines of the output and «… +N lines (ctrl+o to expand)»; here the card is
+   shut by default (V2-PLAN §3.1) so there are no lines on screen to be "+N
+   more" than — the count is the whole output, and the key that opens it is in
+   the tooltip and in the composer hint.
+
+   It goes on the SUMMARY, not in the body, for the one reason the body cannot
+   serve: a shut <details> renders nothing but its summary, and the whole point
+   of the branch is to say how much is behind the row before you open it. It is
+   also why it must stay one flex item on a one-line row — spec-test.html
+   measures that row's height and its overflow, twice. */
+function markResult(body, text, isError) {
+  const summary = body?.parentElement?.querySelector(":scope > summary");
+  if (!summary || summary.querySelector(".tool-branch")) return;
+  const chip = label("", "tool-branch" + (isError ? " is-error" : ""));
+  chip.append(glyph("⎿", { mirror: true }),
+              label(FA.toolResultLines.replace(
+                "{n}", faNum(text ? text.split("\n").length : 0)), "branch-count"));
+  chip.title = FA.expandHint;
+  summary.append(chip);
+}
+
 function intoCard(body, el) {
   if (body) body.append(el);
   else append(el);
@@ -527,8 +570,29 @@ export function resetTurn(keepPulse = false) {
 
    The verb is drawn once per turn, not re-drawn on a timer. The CLI rotates it;
    here the glyph carries the motion and a sentence that rewrites itself every
-   few seconds is the opposite of what this window is for. */
-const PULSE_GLYPHS = ["✻", "✽", "✢", "·", "✢", "✽"];
+   few seconds is the opposite of what this window is for.
+
+   THE FRAMES ARE THE BINARY'S (V2-PLAN §3.6, "lift the defaults from the
+   binary, not from memory"). Read out of 2.1.261 at the construction site:
+
+     it = ["·","✢","✳","✶","✻","✻"]      // TERM=xterm-ghostty
+     st = ["·","✢","*","✶","✻","✽"]      // every other terminal
+     Ar = [...it, ...it.toReversed()]
+
+   `st` differs from `it` in exactly one cell — an ASCII `*` where `it` has
+   `✳` — because a terminal that cannot be trusted with the glyph gets the
+   asterisk. The DOM has no such limit, so this takes `it`, mirrored the way
+   the bundle mirrors it: the sequence breathes out and back rather than
+   snapping from ✻ to ·. wiki/tui-strings.md's glyph table names four
+   asterisk codepoints by occurrence count and guesses at their role; this is
+   the array itself. */
+const PULSE_GLYPHS = ["·", "✢", "✳", "✶", "✻", "✻",
+                      "✻", "✻", "✶", "✳", "✢", "·"];
+
+/* The frame the closing line keeps. A settled turn is a record, not a
+   heartbeat, and the dot the sequence opens on says "barely started" — the
+   full star is what the TUI leaves behind on a finished row. */
+const PULSE_SETTLED = "✻";
 
 const STILL = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -559,6 +623,11 @@ function paintPulse(p) {
   const parts = [fmtDuration(Date.now() - p.started)];
   const tokens = p.base + p.live;
   if (tokens) parts.push(fmtTokens(tokens));
+  // Last, and only while the turn is still running: the TUI ends this line
+  // with «esc to interrupt» (V2-PLAN §3.1, wiki/tui-strings.md §4). The
+  // settled line is a record of a turn that finished — there is nothing left
+  // to interrupt — and settlePulse() rewrites `meta` without calling here.
+  parts.push(FA.spinnerInterrupt);
   p.meta.textContent = parts.join(" · ");
 }
 
@@ -624,7 +693,7 @@ function settlePulse() {
   // where it sits, so a read taken afterwards answers about a box that no
   // longer exists.
   const wasAtBottom = atBottom();
-  p.glyph.textContent = PULSE_GLYPHS[0];
+  p.glyph.textContent = PULSE_SETTLED;
   // Our wall clock is what the live line counted; `cliMs` is the CLI's own
   // duration_ms, summed over the turn's results. Live, the wall clock is always
   // the larger (it starts at the echo, before the CLI has the message), so the
@@ -664,10 +733,48 @@ function settlePulse() {
    same event, so `request_recap`'s busy-guard passes, `/recap` goes down the
    stdin pipe of a CLI that is still working, and `_recap_wanted` then swallows
    the running turn's real reply (wiki/parity-chrome.md "The session recap"). */
-function endBatch(settled = true) {
+/* «The turn is over and you are not looking» (V2-PLAN §3.4, last row).
+   A DESKTOP notification, no sound: this window is a terminal replacement and
+   a terminal does not chime.
+
+   Three guards, and each one is a defect it prevents. `live` is false for the
+   SSE backlog a reloading window replays — every finished turn in the history
+   runs through endBatch() again, and without it a refresh at 3 a.m. would fire
+   a notification per turn ever taken. `document.hidden` is the whole point: a
+   turn that ended while the person was watching needs no announcement. And
+   permission is asked for only at the moment there is something to say, never
+   at load — a prompt on startup is the thing everyone denies for ever. */
+function notifyTurnEnd() {
+  if (typeof Notification === "undefined") return;
+  const say = () => {
+    // Between the ask and the answer the user may have come back.
+    if (Notification.permission !== "granted" || !document.hidden) return;
+    try {
+      const note = new Notification(FA.notifyDone, {
+        body: state.status.cwd || FA.appName, silent: true,
+      });
+      note.addEventListener("click", () => window.focus());
+    } catch (err) {
+      // Notifications are a nicety; a browser that refuses to construct one
+      // (or a page that lost its permission mid-session) must not break the
+      // settle it is hanging off.
+    }
+  };
+  if (Notification.permission === "granted") say();
+  else if (Notification.permission === "default") {
+    Notification.requestPermission().then(say).catch(() => {});
+  }
+}
+
+/* `live` is false when this settle is replaying history rather than watching
+   it happen — an SSE backlog, a reconnect. Nothing that ANNOUNCES anything may
+   run on a replay (see the closing line's own rule above: a transcript entry
+   is a function of the events, not of the clock). */
+function endBatch(settled = true, live = true) {
   settlePulse();
   resetTurn();
   toChrome("busy", false, setBusy);
+  if (live && settled && !state.background && document.hidden) notifyTurnEnd();
   const recap = settled && state.recapWorthy;
   state.recapWorthy = false;
   // The CLI writes its own «※ recap: …» when you come back to a turn you were
@@ -914,9 +1021,9 @@ const ICON_PATHS = {
   find: "M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16ZM21 21l-4.3-4.3",
   web: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18",
   task: "M9 11l3 3L20 6M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
-  // The CLI's own ✻, as a stroke: thinking is a step on the same rail as the
-  // calls around it, so it needs a glyph in the same gutter or the rail breaks.
-  think: "M12 4v16M4.9 8l14.2 8M19.1 8L4.9 16",
+  // `think` used to live here as a stroke approximation of ✻. v2.2 draws that
+  // row with the terminal's own character instead — glyph() above — and the
+  // gutter is shared, so the rail is unbroken either way.
 };
 
 const TOOL_ICONS = {
@@ -927,6 +1034,22 @@ const TOOL_ICONS = {
   Task: "task", Skill: "task", AskUserQuestion: "task", ExitPlanMode: "task",
   Agent: "task",
 };
+
+/* A TUI glyph standing in the same gutter the stroke icons use, so the column
+   keeps ONE rail whether a row is drawn with an icon or with the terminal's own
+   character (wiki/tui-strings.md §1). `mirror` marks the directional ones —
+   `⎿` and `▸` carry no Unicode mirroring property and will not flip on their
+   own in an RTL column, so the flip is a class the shell can switch off
+   (V2-PLAN §8.9, still open). */
+export function glyph(ch, { mirror = false, cls = "", hidden = true } = {}) {
+  const el = label(ch, "tool-icon glyph" + (mirror ? " mirror" : "") +
+                       (cls ? " " + cls : ""));
+  // Decoration on a row that already says what it is (the tool verb, the
+  // thought) is hidden from a screen reader; a checklist mark is the ONLY
+  // thing carrying "done" or "running", so that one stays readable.
+  if (hidden) el.setAttribute("aria-hidden", "true");
+  return el;
+}
 
 function icon(kind) {
   const ns = "http://www.w3.org/2000/svg";
@@ -1351,20 +1474,256 @@ function renderTaskNote(text) {
   // human — through renderMarkdown like every other message (spec rules 1-2).
   const { body } = card("agent-note", nodes);
   const wrap = document.createElement("div");
-  wrap.className = "msg assistant";
+  // `nested`: this assistant body sits INSIDE a card, so it is not a row of
+  // the column and must not wear the column's ⏺ (style.css).
+  wrap.className = "msg assistant nested";
   wrap.append(renderMarkdown(result));
   body.append(wrap);
 }
 
-/* A `!` line the wrapper ran itself. It is not a tool call — the CLI never saw
-   it — but it is a step the user took in this project folder and its output
-   goes into the conversation with the next message (server.py park_context),
-   so it collapses like one. Deliberately NOT `.tool`: joining a run of tool
-   calls would let «۲ فرمان اجرا شد» count a command Claude never made.
+function renderTodos(items) {
+  const { body } = card("todos", [label(FA.todos, "tool-name")], { open: true });
+  const ul = document.createElement("ul");
+  for (const item of items ?? []) {
+    const li = document.createElement("li");
+    li.dataset.status = item.status ?? "pending";
+    li.setAttribute("dir", "auto");
+    // The TUI's own checklist marks, counted in the binary
+    // (wiki/tui-strings.md §1): ☐ pending, ☑ done, ▸ running. V2-PLAN §3.1
+    // writes the done box as ☒; the build has ☑ and §3.6's rule is that the
+    // binary wins. `▸` is directional and mirrors with the rest of them.
+    const done = item.status === "completed";
+    const running = item.status === "in_progress";
+    li.append(glyph(done ? "☑" : running ? "▸" : "☐",
+                    { mirror: running, cls: "todo-mark", hidden: false }),
+              document.createTextNode(item.content ?? ""));
+    ul.append(li);
+  }
+  body.append(ul);
+}
+
+/* «گفتگو فشرده شد» — the CLI made room by summarising everything before this
+   point, and the transcript above the line is no longer what the model can
+   see. The TUI draws a divider and says so; this is that divider, built from
+   the event's own `compact_metadata` rather than from scraped text
+   (wiki/cli-stream-json-findings.md §5.9: only `trigger` and `pre_tokens` are
+   always present, everything after is spread conditionally). */
+function renderCompactBoundary(meta) {
+  const el = document.createElement("div");
+  el.className = "divider compacted";
+  el.append(label(FA.compacted, "divider-text"));
+  const before = meta?.pre_tokens, after = meta?.post_tokens;
+  if (typeof before === "number") {
+    // Latin-free: these abut Persian prose on the same line (spec rule 5's
+    // other half — a number in a sentence is prose, not a technical value).
+    const note = label(FA.compactedTokens
+      .replace("{before}", faNum(before))
+      .replace("{after}", typeof after === "number" ? faNum(after) : "…"),
+      "divider-note");
+    note.setAttribute("dir", "auto");
+    el.append(note);
+  }
+  append(el);
+}
+
+function renderRaw(event) {
+  const { body } = card("raw", [label(FA.rawEvent, "tool-name"),
+                                label(event.type ?? "?", "meta")]);
+  body.append(block("tool-output", JSON.stringify(event, null, 2)));
+}
+
+/* --- statusline ----------------------------------------------------------- */
+
+/* A percentage the user has to act on (context left, quota burned) reads far
+   faster as a bar than as digits. <progress> is the native element for it:
+   it carries the value accessibly and needs no JS to stay in sync. */
+/* Percent of the five-hour window at which the CLI itself starts saying so.
+   `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
+   table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
+const QUOTA_WARN_AT = 95;
+
+function meter(pct) {
+  const wrap = document.createElement("span");
+  wrap.className = "sl-meter";
+  const bar = document.createElement("progress");
+  bar.max = 100;
+  bar.value = Math.max(0, Math.min(100, pct));
+  bar.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
+  wrap.append(bar, label(Math.round(pct) + "%", "mono"));
+  return wrap;
+}
+
+/* Everything in the statusline except the folder belongs to ONE conversation:
+   the session id, what it cost, how full its context is, and the machine's own
+   statusLine output. Carrying them into the next session is a lie that looks
+   like data — a fresh chat showing the previous one's cost. Called from the
+   `reset` event, which is the single place a session is swapped (project
+   switch, new chat and resume all restart the CLI through it). */
+export function resetStatus() {
+  state.status = { cwd: state.status.cwd };
+  setStatus({});
+  // The «context is filling up» notice is the same number in another shape. A
+  // new session starts empty, so it has to go with the meter that raised it.
+  toChrome("context", 0, noteContext);
+}
+
+/* The TUI's own posture row — `⏵⏵ accept edits on (shift+tab to cycle)`,
+   translated (wiki/tui-strings.md §4). v2.5 draws it INSTEAD of the pill the
+   composer row used to carry (V2-PLAN §3.4), which is why it also carries the
+   key: the affordance left with the chip and the sentence has to replace it.
+
+   Driven by the WRAPPER's posture, with the CLI's own `permissionMode` as the
+   fallback. The CLI cannot tell the two apart on its own — «محتاط» and
+   «خودکار» are both `default` down the pipe, and the difference is the
+   wrapper's auto-approve flag (server.py POSTURES) — while a mode nobody here
+   set (`bypassPermissions`, `auto`) only ever arrives as a mode. §8.4: a mode
+   the window can receive but not set still needs a name on screen. */
+const POSTURE_ROW = {
+  plan:              { text: () => FA.slPosturePlan,        arrows: 1 },
+  ask:               { text: () => FA.slPostureAsk,         arrows: 1 },
+  default:           { text: () => FA.slPostureAsk,         arrows: 1 },
+  acceptEdits:       { text: () => FA.slPostureAcceptEdits, arrows: 2 },
+  autoApprove:       { text: () => FA.slPostureAuto,        arrows: 2 },
+  auto:              { text: () => FA.slPostureAuto,        arrows: 2 },
+  bypassPermissions: { text: () => FA.slPostureBypass,      arrows: 2, danger: true },
+};
+
+/* The same sentence without the row, for `/status` (js/commands.js): the
+   status block names the posture in the words the status line uses, so the two
+   surfaces cannot describe the same mode differently. */
+export function postureText(name) {
+  return POSTURE_ROW[name]?.text() ?? "";
+}
+
+function postureRow(name) {
+  const entry = POSTURE_ROW[name];
+  if (!entry) return null;
+  const row = document.createElement("div");
+  row.className = "sl-line sl-posture";
+  row.dataset.posture = name;
+  if (entry.danger) row.classList.add("is-danger");
+  // `⏵` is one of §8.9's three directional glyphs: it points the way the text
+  // runs, so it mirrors with `⎿` and `▸` under the same switch.
+  for (let i = 0; i < entry.arrows; i++) {
+    row.append(glyph("⏵", { mirror: true, cls: "sl-arrow" }));
+  }
+  row.append(label(entry.text(), "sl-posture-text"));
+  row.append(label(FA.slPostureHint, "sl-hint"));
+  return row;
+}
+
+export function setStatus(patch) {
+  Object.assign(state.status, patch);
+  // One number, two readers: the meter below and the notice above the composer.
+  // Driving the notice from here means every source of a context figure (the
+  // CLI's own get_context_usage, and the `result` fallback) feeds it for free.
+  if (typeof patch.context === "number") toChrome("context", patch.context, noteContext);
+  // state.status IS the tab's own statusline data (the scope carries it), so a
+  // background tab has already recorded everything above; only the paint is
+  // shared, and app.js repaints from the scope at switch time.
+  if (state.background) return;
+  statusline.replaceChildren();
+  const s = state.status;
+
+  // FIRST LINE: the machine's own statusLine command output, inherited rather
+  // than reimplemented (plan §B-7, V2-PLAN §3.4 row 1 — «Keep, first line»).
+  // It is terminal text: keep it LTR-isolated, and keep its colours — the
+  // script uses them to mean something (which mode is on, how full the context
+  // is). server.py parsed the SGR codes into runs; building spans from data is
+  // also why none of this can inject markup.
+  if (s.custom?.length) {
+    const line = document.createElement("div");
+    line.className = "sl-line";
+    const bdi = pathEl("");
+    bdi.classList.add("sl-custom");
+    for (const seg of s.custom) {
+      const span = document.createElement("span");
+      span.textContent = seg.text;
+      if (seg.fg) span.style.color = seg.fg;
+      if (seg.bg) span.style.background = seg.bg;
+      if (seg.bold) span.style.fontWeight = "600";
+      if (seg.dim) span.style.opacity = ".65";
+      if (seg.italic) span.style.fontStyle = "italic";
+      bdi.append(span);
+    }
+    line.append(bdi);
+    statusline.append(line);
+  }
+
+  // SECOND LINE: the posture, in the TUI's words, where the pill used to be.
+  const posture = postureRow(s.posture ?? s.mode);
+  if (posture) statusline.append(posture);
+
+  /* THIRD LINE: everything the four chips used to say, plus what the bar
+     already carried. Muted, one line, wrapping (V2-PLAN §3.4 rows 3–4). The
+     `.sl-item` / `.sl-label` shape is unchanged — spec-test.html reads the
+     context meter through it. */
+  const items = [
+    [FA.slModel, s.model && label(s.model, "mono")],
+    [FA.slEffort, s.effort && label(effortLabel(s.effort))],
+    [FA.slStyle, s.style && label(styleLabel(s.style))],
+    [FA.slFolder, s.cwd && pathEl(s.cwd)],
+    [FA.slContext, s.context !== undefined && meter(s.context)],
+    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
+    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
+    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
+  ];
+
+  const facts = document.createElement("div");
+  facts.className = "sl-line sl-facts";
+  for (const [name, valueEl] of items) {
+    if (!valueEl) continue;
+    const wrap = document.createElement("span");
+    wrap.className = "sl-item";
+    wrap.append(label(name + ":", "sl-label"), valueEl);
+    facts.append(wrap);
+  }
+  if (facts.childElementCount) statusline.append(facts);
+
+  /* FOURTH LINE, and only when there is something to warn about: the five-hour
+     window is nearly spent. The threshold is the binary's own default — `0.95`
+     in the bundle, re-derived by test_tui_vocab.py §10 — and not a number
+     chosen here. The two richer plans raise their own bar (0.99, 0.9975), but
+     which plan this account is on never reaches the wrapper, so the window
+     warns at the conservative one. */
+  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) {
+    const warn = document.createElement("div");
+    warn.className = "sl-line sl-warn";
+    warn.append(label(FA.slQuotaWarn));
+    statusline.append(warn);
+  }
+}
+
+/* --- ctrl+o: the TUI's transcript mode --------------------------------------
+
+   `app:toggleTranscript`, Global context, wiki/tui-keys.md. The TUI opens a
+   separate transcript screen where every tool result is shown in full; the
+   window has no second screen — the column IS the transcript — so the key does
+   there what that screen does: open every tool result in the column at once,
+   and shut them again. The TUI's own hint string says «(ctrl+o to expand)»,
+   which is why this key and not `ctrl+e` (wiki/tui-keys.md, deviation 4).
+
+   ponytail: it acts on the cards that are in the column when it is pressed.
+   A card appended afterwards arrives shut like every other one — this is a
+   view action, not a mode, and a mode would have to be per tab, restored on
+   switch, and reconciled with every card the user opened by hand. */
+export function toggleTranscript() {
+  const cards = [...log.querySelectorAll("details.card")];
+  if (!cards.length) return false;
+  const opening = cards.some((card) => !card.open);
+  for (const card of cards) card.open = opening;
+  return true;
+}
+
+/* A `!` line and what it printed (V2-PLAN §3.1, last row). The same card shape
+   a tool row uses, deliberately: it IS one — the wrapper ran a command in the
+   project folder and its output is going into the conversation with the next
+   message (server.py park_context). So it collapses like one, counts its lines
+   like one, and opens with the same ctrl+o.
 
    The command and its output are a shell transcript: mono and LTR as a block,
    with each line free to resolve its own direction (spec rule 8) because a
-   Persian filename in a `dir` listing is still Persian. */
+   Persian filename in an `ls` is still Persian. */
 function renderShell(ev) {
   const command = String(ev.command ?? "");
   const stdout = String(ev.stdout ?? "");
@@ -1372,20 +1731,21 @@ function renderShell(ev) {
   const failed = ev.code !== 0;
   const line = label(command, "shell-cmd");
   line.setAttribute("dir", "ltr");
-  const nodes = [label("$", "shell-mark"), line];
+  const { body } = card("shell", [glyph("$", { cls: "shell-mark" }), line]);
   if (failed) {
     // The exit code only when it is news: `0` on every successful line would
     // be noise on a row that is already saying it worked by saying nothing.
-    nodes.push(label(FA.shellExit.replace("{n}",
-      ev.code === null || ev.code === undefined ? "—" : faNum(ev.code)),
-      "tool-repeat"));
+    body.parentElement.querySelector(":scope > summary")
+      ?.append(label(FA.shellExit.replace(
+        "{n}", ev.code === null || ev.code === undefined ? "—" : faNum(ev.code)),
+        "tool-repeat"));
   }
-  const { body } = card("shell", nodes);
   const text = [stdout, stderr].filter(Boolean).join("\n");
   const out = block("tool-output", "");
   out.append(linesAuto(text || FA.shellNoOutput));
   if (stderr && !stdout) out.style.color = "var(--danger)";
   body.append(out);
+  markResult(body, text, failed);
 }
 
 /* A `!` line is not in the event stream at all: the wrapper parks its tagged
@@ -1413,108 +1773,42 @@ function splitBashBlocks(text) {
   return { shells, rest };
 }
 
-function renderTodos(items) {
-  const { body } = card("todos", [label(FA.todos, "tool-name")], { open: true });
-  const ul = document.createElement("ul");
-  for (const item of items ?? []) {
-    const li = document.createElement("li");
-    li.dataset.status = item.status ?? "pending";
-    li.setAttribute("dir", "auto");
-    const mark = item.status === "completed" ? "✓"
-               : item.status === "in_progress" ? "▸" : "○";
-    li.append(label(mark, "meta"), document.createTextNode(item.content ?? ""));
-    ul.append(li);
-  }
-  body.append(ul);
+/* The same view action, aimed at one KIND of card. `ctrl+t` is the TUI's
+   `app:toggleTodos` and `alt+t` its `chat:thinkingToggle`; both are "show me
+   the thing I collapsed", and neither is a mode — see the note above. */
+function toggleKind(selector) {
+  const cards = [...log.querySelectorAll(selector)];
+  if (!cards.length) return false;
+  const opening = cards.some((card) => !card.open);
+  for (const card of cards) card.open = opening;
+  return true;
 }
 
-function renderRaw(event) {
-  const { body } = card("raw", [label(FA.rawEvent, "tool-name"),
-                                label(event.type ?? "?", "meta")]);
-  body.append(block("tool-output", JSON.stringify(event, null, 2)));
+export function toggleTodos() {
+  return toggleKind("details.card.todos");
 }
 
-/* --- statusline ----------------------------------------------------------- */
-
-/* A percentage the user has to act on (context left, quota burned) reads far
-   faster as a bar than as digits. <progress> is the native element for it:
-   it carries the value accessibly and needs no JS to stay in sync. */
-function meter(pct) {
-  const wrap = document.createElement("span");
-  wrap.className = "sl-meter";
-  const bar = document.createElement("progress");
-  bar.max = 100;
-  bar.value = Math.max(0, Math.min(100, pct));
-  bar.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
-  wrap.append(bar, label(Math.round(pct) + "%", "mono"));
-  return wrap;
+export function toggleThinking() {
+  return toggleKind("details.card.thinking");
 }
 
-/* Everything in the statusline except the folder belongs to ONE conversation:
-   the session id, what it cost, how full its context is, and the machine's own
-   statusLine output. Carrying them into the next session is a lie that looks
-   like data — a fresh chat showing the previous one's cost. Called from the
-   `reset` event, which is the single place a session is swapped (project
-   switch, new chat and resume all restart the CLI through it). */
-export function resetStatus() {
-  state.status = { cwd: state.status.cwd };
-  setStatus({});
-  // The «context is filling up» notice is the same number in another shape. A
-  // new session starts empty, so it has to go with the meter that raised it.
-  toChrome("context", 0, noteContext);
-}
-
-export function setStatus(patch) {
-  Object.assign(state.status, patch);
-  // One number, two readers: the meter below and the notice above the composer.
-  // Driving the notice from here means every source of a context figure (the
-  // CLI's own get_context_usage, and the `result` fallback) feeds it for free.
-  if (typeof patch.context === "number") toChrome("context", patch.context, noteContext);
-  // state.status IS the tab's own statusline data (the scope carries it), so a
-  // background tab has already recorded everything above; only the paint is
-  // shared, and app.js repaints from the scope at switch time.
-  if (state.background) return;
-  statusline.replaceChildren();
-  const s = state.status;
-
-  const items = [
-    [FA.slModel, s.model && label(s.model, "mono")],
-    [FA.slFolder, s.cwd && pathEl(s.cwd)],
-    [FA.slMode, s.mode && label(s.mode, "mono")],
-    [FA.slContext, s.context !== undefined && meter(s.context)],
-    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
-    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
-  ];
-
-  for (const [name, valueEl] of items) {
-    if (!valueEl) continue;
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(label(name + ":", "sl-label"), valueEl);
-    statusline.append(wrap);
-  }
-
-  // The machine's own statusLine command output, inherited rather than
-  // reimplemented (plan §B-7). It is terminal text: keep it LTR-isolated, and
-  // keep its colours — the script uses them to mean something (which mode is
-  // on, how full the context is). server.py parsed the SGR codes into runs;
-  // building spans from data is also why none of this can inject markup.
-  if (s.custom?.length) {
-    const bdi = pathEl("");
-    bdi.classList.add("sl-custom");
-    for (const seg of s.custom) {
-      const span = document.createElement("span");
-      span.textContent = seg.text;
-      if (seg.fg) span.style.color = seg.fg;
-      if (seg.bg) span.style.background = seg.bg;
-      if (seg.bold) span.style.fontWeight = "600";
-      if (seg.dim) span.style.opacity = ".65";
-      if (seg.italic) span.style.fontStyle = "italic";
-      bdi.append(span);
+export function initTranscript() {
+  document.addEventListener("keydown", (e) => {
+    if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    if (e.defaultPrevented) return;
+    // Edge would open its file picker (ctrl+o) or a new tab (ctrl+t) over the
+    // window, and there is no way back to the conversation from either that a
+    // non-technical user will find. Edge --app intercepts ctrl+t before the
+    // page ever sees it, which is why the checklist toggle is only reachable
+    // in a normal tab — the browser's key wins, as wiki/tui-keys.md says.
+    if (e.key === "o") {
+      e.preventDefault();
+      toggleTranscript();
+    } else if (e.key === "t") {
+      e.preventDefault();
+      toggleTodos();
     }
-    statusline.append(bdi);
-  }
+  });
 }
 
 /* --- the renderer --------------------------------------------------------- */
@@ -1566,6 +1860,12 @@ export function renderEvent(ev) {
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
         toChrome("outputStyle", ev.output_style, setOutputStyle);
+        // …and into the status line, which is where the style chip's text went
+        // (V2-PLAN §3.4). setStatus writes the TAB's own status object, so a
+        // background conversation records its style without painting it.
+        if (ev.output_style) setStatus({ style: ev.output_style });
+      } else if (ev.subtype === "compact_boundary") {
+        renderCompactBoundary(ev.compact_metadata);
       } else if (ev.subtype === "status" && ev.permissionMode) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.
@@ -1608,8 +1908,11 @@ export function renderEvent(ev) {
           // The thought is the model's own prose — usually English, sometimes
           // not. Never pathEl(): forcing LTR on prose is the spec's first trap.
           state.thinkingPeek.setAttribute("dir", "auto");
+          // «✻ Thinking…» — the TUI's own glyph, not a stroke icon: this is
+          // the one row whose mark the terminal actually draws with a
+          // character, and the pulse beside it is already made of them.
           state.thinkingBody = card("thinking",
-            [icon("think"), label(FA.thinking, "tool-verb"),
+            [glyph(PULSE_SETTLED), label(FA.thinking, "tool-verb"),
              state.thinkingPeek]).body;
           state.thinkingBody.setAttribute("dir", "auto");
         }
@@ -1631,6 +1934,10 @@ export function renderEvent(ev) {
     }
 
     case "assistant": {
+      // A synchronous subagent's steps arrive on this same stream, tagged with
+      // the Task tool_use they belong to. They render INSIDE that row's card.
+      withParent(ev.parent_tool_use_id
+                 && state.toolCards.get(ev.parent_tool_use_id), () => {
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
@@ -1684,6 +1991,7 @@ export function renderEvent(ev) {
           }
         }
       }
+      });
       state.thinkingBody = null;
       state.thinkingPeek = null;
       state.thinkingText = "";
@@ -1719,7 +2027,14 @@ export function renderEvent(ev) {
       // mid-turn, and the resetTurn below would tear down the running stream.
       // Replay never sees these (read_session drops isSidechain); this is the
       // live half. The real tool_result arrives with parent_tool_use_id null.
-      if (ev.parent_tool_use_id) return;
+      //
+      // v2.2 narrowed this from "drop the event" to "drop everything except a
+      // result we built a card for". The helper's own steps are now rendered
+      // INSIDE the Task row (see withParent above), so their results are not
+      // phantoms — they belong to rows that are on screen. An id this renderer
+      // never registered still renders nothing, which is exactly what the
+      // blanket return guaranteed before.
+      const sidechain = !!ev.parent_tool_use_id;
       // Replay is always block-shaped: a transcript's bare-string prompt is
       // normalised (and envelope-filtered) by read_session before it gets
       // here — but that guarantee is replay-only. Whether a live
@@ -1731,6 +2046,8 @@ export function renderEvent(ev) {
         ? [{ type: "text", text: ev.message.content }]
         : (ev.message?.content ?? []);
       for (const part of content) {
+        if (sidechain && (part.type !== "tool_result"
+                          || !state.toolCards.has(part.tool_use_id))) continue;
         // Replayed history carries the user's own turns here. Live it does not
         // (we do not pass --replay-user-messages), so the composer echoes them
         // via wrapper/user_echo instead — hence both paths exist.
@@ -1799,6 +2116,9 @@ export function renderEvent(ev) {
         const out = block("tool-output", "");
         out.append(linesAuto(text));
         if (part.is_error) out.style.color = "var(--danger)";
+        // The `⎿` branch on the row above it, so a shut card still says how
+        // much came back and which key opens it.
+        markResult(body, text, part.is_error);
         // intoCard(), exactly like the two branches above — see its own note
         // for why the orphan case may not simply `log.append()`. An earlier
         // fallback here was `bubble("assistant").parentElement`, a way of
@@ -1875,7 +2195,7 @@ export function renderEvent(ev) {
         // Nothing outstanding — either every terminal state already arrived
         // (a folded command reports BEFORE the result) or this send carried no
         // uuid at all, which is the pre-2.1.241 contract: one result, one turn.
-        endBatch();
+        endBatch(true, !ev.replayed);
       }
       if (!state.background) {
         refreshProjects();   // the turn changed this session's preview/mtime
@@ -1913,7 +2233,7 @@ export function renderEvent(ev) {
       // channel. Those are not this window's turns. delete() answers both
       // questions at once: false means we never sent it.
       if (!state.outstanding.delete(ev.command_uuid)) return;
-      if (state.outstanding.size === 0) endBatch();
+      if (state.outstanding.size === 0) endBatch(true, !ev.replayed);
       return;
     }
 
@@ -1978,14 +2298,10 @@ export function renderEvent(ev) {
         // whose pulse died still gets a fresh one, queued row or not: the stop
         // button is showing and something has to say what it stops.
         if (!queued) startPulse(ev.text ?? "");
+      } else if (ev.subtype === "shell") {
+        renderShell(ev);
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
-      } else if (ev.subtype === "shell") {
-        // A `!` line. Published rather than returned to the POST, so it lands
-        // in the tab that ran it, in transcript order, and a reload replays it
-        // from the same event — a row built from the fetch answer would exist
-        // exactly once and vanish on the next refresh.
-        renderShell(ev);
       } else if (ev.subtype === "permission_request") {
         // NEVER gated: one modal queue serves every open tab, and a background
         // conversation waiting on an answer is exactly the case the dialog has
@@ -1996,9 +2312,12 @@ export function renderEvent(ev) {
         dismissPermission(ev.request_id);
         const card = state.toolCards.get(ev.tool_use_id);
         // A question was answered, not "allowed" — same event, different act.
+        // So is an accepted plan: nothing was run, a plan was kept, which is
+        // why the TUI writes «Plan saved!» there (wiki/tui-strings.md §2).
         const note = label(
           ev.tool_name === "AskUserQuestion" ? FA.askAnswered
-            : ev.decision === "allow" ? FA.permAllowed : FA.permDenied,
+            : ev.decision !== "allow" ? FA.permDenied
+              : ev.tool_name === "ExitPlanMode" ? FA.planSaved : FA.permAllowed,
           "meta");
         if (card) card.append(note);
         // Approved by the wrapper rather than by the user — either the
@@ -2020,6 +2339,10 @@ export function renderEvent(ev) {
         // Everything the CLI can do, answered at spawn and free
         // (wiki/control-protocol.md §1). Richer than system/init.
         toChrome("initInfo", ev.info, applyInitInfo);
+        // The spawn value for the style, so the status line is not blank until
+        // the user changes something (§3.4: it replaces a chip that was
+        // painted from this same reply).
+        if (ev.info?.output_style) setStatus({ style: ev.info.output_style });
         if (Array.isArray(ev.info?.commands)) {
           toChrome("slash", ev.info.commands, setSlashCommands);
         }
@@ -2031,6 +2354,7 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "output_style") {
         // Published after a change only; the spawn value rode in on init_info.
         toChrome("outputStyle", ev.style, setOutputStyle);
+        if (ev.style) setStatus({ style: ev.style });
       } else if (ev.subtype === "posture") {
         if (state.background) {
           state.chrome.posture = ev.posture;
@@ -2038,9 +2362,13 @@ export function renderEvent(ev) {
         } else {
           setPostureState(ev.posture, ev.auto_count);
         }
+        // The `⏵⏵` row. Recorded for every tab, painted only for the visible
+        // one — the pill it replaces had exactly this rule.
+        if (ev.posture) setStatus({ posture: ev.posture });
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
         toChrome("effort", ev.effort, setEffortState);
+        if (ev.effort) setStatus({ effort: ev.effort });
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — the
         // only source of `context`; the `result` case publishes no estimate.

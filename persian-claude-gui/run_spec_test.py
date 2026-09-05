@@ -34,6 +34,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SERVER = HERE / "server.py"
 
+sys.path.insert(0, str(HERE))
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "web")
+STATIC = HERE / EDITIONS[EDITION][0]
+
 EDGE_CANDIDATES = (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -60,7 +68,8 @@ def hold_sse(base: str, token: str, stop: threading.Event) -> None:
 
 def main() -> int:
     proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--cwd", str(HERE.parent), "--no-window"],
+        [sys.executable, str(SERVER), "--cwd", str(HERE.parent), "--no-window",
+         "--ui", EDITION],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},

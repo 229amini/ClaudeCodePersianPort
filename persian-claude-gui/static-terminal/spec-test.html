@@ -29,32 +29,15 @@
 <main id="log" aria-label="spec tests"></main>
 
 <!-- Test 6 needs the real composer handler, so the harness carries the real
-     composer markup and lets js/composer.js bind to it.
-
-     The E3 cases at the foot of this file drive the popup (slash, `@` files,
-     Ctrl+R history) and the `!` chip, so the box itself is here verbatim from
-     index.html: #slash-popup is the popup's own element and .comp-box is what
-     positions it AND what wears the `.bash` state. The rest of the composer row
-     is still deliberately absent — initControls() binds nothing without
-     #menu-popup. -->
+     composer markup and lets js/composer.js bind to it. -->
 <form id="composer">
-  <div class="comp-box">
-    <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
-    <label class="sr-only" for="input">ZWNJ test</label>
-    <textarea id="input" rows="1" dir="auto"
-              placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
-    <div class="comp-row">
-      <span id="bash-chip" class="chip is-bash" hidden>
-        <span class="shell-mark" dir="ltr">$</span>
-        <span id="bash-chip-label"></span>
-      </span>
-      <span class="comp-spacer"></span>
-      <button type="submit" id="send">ارسال</button>
-      <!-- The Esc case routes through the stop button's own click handler, so
-           the harness needs the button itself; setBusy() also unhides it. -->
-      <button type="button" id="stop" hidden aria-label="توقف (Esc)">توقف</button>
-    </div>
-  </div>
+  <label class="sr-only" for="input">ZWNJ test</label>
+  <textarea id="input" rows="1" dir="auto"
+            placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
+  <button type="submit" id="send">ارسال</button>
+  <!-- The Esc case routes through the stop button's own click handler, so the
+       harness needs the button itself; setBusy() also unhides it. -->
+  <button type="button" id="stop" hidden aria-label="توقف (Esc)">توقف</button>
 </form>
 
 <footer id="statusline"></footer>
@@ -65,9 +48,12 @@
 
 <!-- Window chrome the concurrent-conversation cases assert against: a
      background tab's event must leave every one of these alone. js/chrome.js
-     and js/controls.js grab the ids at module-evaluation time; the model chip
-     ships `hidden`, exactly as in index.html. The rest of the composer row is
-     deliberately absent — initControls() binds nothing without #menu-popup. -->
+     and js/controls.js grab the ids at module-evaluation time. The model chip
+     LEFT index.html in v2.4 (V2-PLAN §2, the pickers are commands now) and is
+     kept here on purpose: it is the label the three "a background tab does not
+     leak into the visible one" cases below read, and js/controls.js still
+     paints it wherever it exists. The rest of the composer row is deliberately
+     absent — initControls() binds nothing without #picker. -->
 <div id="harness-chrome">
   <bdi id="topbar-name"></bdi>
   <button type="button" id="model-chip" hidden>
@@ -86,7 +72,7 @@
      ids at module-evaluation time; without them showPermission() throws and the
      verdict comes back empty. -->
 <dialog id="perm">
-  <form method="dialog" id="perm-form">
+  <form id="perm-form">
     <h2 id="perm-title"></h2>
     <p id="perm-body" dir="auto"></p>
     <p id="perm-source" class="meta" dir="auto" hidden></p>
@@ -97,9 +83,13 @@
       <input type="checkbox" id="perm-remember">
       <span id="perm-remember-label"></span>
     </label>
+    <p id="perm-proceed" dir="auto"></p>
+    <div id="perm-opts"></div>
+    <textarea id="perm-feedback" rows="1" dir="auto"></textarea>
+    <p id="perm-hint" class="meta" dir="auto"></p>
     <menu>
-      <button value="deny" class="ghost" id="perm-deny"></button>
-      <button value="allow" id="perm-allow"></button>
+      <button type="button" value="deny" class="ghost" id="perm-deny"></button>
+      <button type="button" value="allow" id="perm-allow"></button>
     </menu>
   </form>
 </dialog>
@@ -2830,427 +2820,6 @@ check("a turn the CLI closed itself may buy a recap; one idle_sync guessed at ma
   recapReal.recapEligible === true && recapBackstop.recapEligible === false,
   "lifecycle settle → " + recapReal.recapEligible +
   " / idle_sync settle → " + recapBackstop.recapEligible);
-
-/* ===========================================================================
-   E3 — the CLI features the terminal edition already had, in the web look.
-
-   Everything below is driven through the SHIPPING modules: the real composer
-   handlers bound to the real #input, the real popup element, the real
-   renderer. Only the network is stubbed, and the stub records what went out —
-   the wire is half of what these features promise (the CLI expands `@path`
-   itself; a `!` line must never reach /api/message).
-
-   The block is asynchronous from here down; the verdict is written in the
-   continuation, which is why nothing above may depend on it.
-   ========================================================================= */
-const FA_ = window.STRINGS;
-const popup = document.getElementById("slash-popup");
-const compBox = document.querySelector(".comp-box");
-const bashChip = document.getElementById("bash-chip");
-
-const e3Fetch = window.fetch;
-let e3Routes = {};
-let e3Sent = [];
-window.fetch = (url, options) => {
-  const u = String(url);
-  e3Sent.push({ url: u, body: options?.body });
-  const hit = Object.keys(e3Routes).find((key) => u.startsWith(key));
-  return Promise.resolve(new Response(JSON.stringify(hit ? e3Routes[hit] : {}),
-                                      { status: 200 }));
-};
-
-/* setTimeout, not requestAnimationFrame: virtual time advances timers under
-   --virtual-time-budget, and the frame queue is the thing that provably stops
-   (rtl-rendering-notes.md, "about three animation frames"). */
-const tick = (ms = 0) => new Promise((done) => setTimeout(done, ms));
-const press = (key, extra = {}) => {
-  const ev = new KeyboardEvent("keydown",
-    { key, cancelable: true, bubbles: true, ...extra });
-  input.dispatchEvent(ev);
-  return ev;
-};
-/* What typing looks like from the outside: the value plus the `input` event
-   every one of these features listens on. */
-const typeIn = (text) => {
-  input.value = text;
-  input.setSelectionRange(text.length, text.length);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-};
-const popRows = () => [...popup.querySelectorAll("li")];
-const sentTo = (path) => e3Sent.filter((c) => c.url.startsWith(path));
-
-const HIST = ["اولین پیام", "دومین پیام", "سومین پیام"];
-e3Routes = { "/api/history": { prompts: HIST },
-             "/api/agents": { agents: [] } };
-
-/* --- A1: Up/Down walk the history, and the draft is not the price ---------- */
-input.value = "پیش‌نویس نیمه‌کاره";
-const firstUp = press("ArrowUp");
-// 50 ms, not one microtask flush: the first Up is the one that FETCHES, and
-// reading a Response body is task-based in Chromium, not a microtask chain.
-await tick(50);
-check("A1: Up walks this project's own prompt history, newest first",
-  firstUp.defaultPrevented && input.value === HIST[2] &&
-  sentTo("/api/history").length === 1,
-  "box «" + input.value + "» after " + sentTo("/api/history").length + " request(s)");
-
-press("ArrowUp"); await tick(20);
-const walkedBack = input.value;
-press("ArrowDown"); await tick(20);
-press("ArrowDown"); await tick(20);
-check("A1: walking past the newest entry gives the unsent draft back",
-  walkedBack === HIST[1] && input.value === "پیش‌نویس نیمه‌کاره",
-  "second Up «" + walkedBack + "» / back at «" + input.value + "»");
-
-/* --- A1: Ctrl+R, the reverse search, in the popup the slash list already is */
-input.value = "";
-press("r", { ctrlKey: true });
-await tick();
-const searchRows = popRows().map((li) => li.textContent);
-typeIn("دومین");
-const filtered = popRows().map((li) => li.textContent);
-check("A1: Ctrl+R searches the history in the slash popup, newest first",
-  !popup.hidden && searchRows.length === 3 && searchRows[0] === HIST[2] &&
-  filtered.length === 1 && filtered[0] === HIST[1],
-  "opened with [" + searchRows.join(" | ") + "], filtered to [" +
-  filtered.join(" | ") + "]");
-
-const searchEnter = press("Enter");
-check("A1: Enter takes the match into the composer and sends nothing",
-  searchEnter.defaultPrevented && input.value === HIST[1] && popup.hidden &&
-  sentTo("/api/message").length === 0,
-  "box «" + input.value + "» / " + sentTo("/api/message").length + " message(s) sent");
-
-// Esc is the exit that changes nothing: the query the search was typed with is
-// not a message, and the draft it was opened over is what comes back.
-input.value = "چیزی که داشتم می‌نوشتم";
-press("r", { ctrlKey: true });
-await tick();
-typeIn("اولین");
-press("Escape");
-check("A1: Esc closes the search and puts the draft back, never the match",
-  popup.hidden && input.value === "چیزی که داشتم می‌نوشتم",
-  "box «" + input.value + "»");
-
-/* --- A2: `@` completion out of the CLI's own index ------------------------- */
-e3Routes["/api/files"] = { files: ["src/app.js", "متن/یادداشت.md"], source: "cli" };
-input.value = "";
-typeIn("این را ببین @src");
-await tick(220);
-const fileRow = popup.querySelector("li .path");
-check("A2: an @ run asks the CLI's index and draws each answer as a real path",
-  !popup.hidden && popRows().length === 2 && !!fileRow &&
-  getComputedStyle(fileRow).direction === "ltr" &&
-  fileRow.textContent === "src/app.js" &&
-  decodeURIComponent(sentTo("/api/files")[0]?.url ?? "").includes("q=src"),
-  (sentTo("/api/files")[0]?.url ?? "no request") + " -> " +
-  popRows().length + " rows");
-
-press("Tab");
-check("A2: picking one inserts @path as TEXT — the CLI is what expands it",
-  input.value === "این را ببین @src/app.js " && popup.hidden,
-  "box «" + input.value + "»");
-
-/* --- A3: `!` shell mode ---------------------------------------------------- */
-typeIn("!dir C:\\Users");
-check("A3: a line starting with ! says so on the box before Enter is pressed",
-  !bashChip.hidden && compBox.classList.contains("bash"),
-  (bashChip.hidden ? "chip hidden; " : "") +
-  (compBox.classList.contains("bash") ? "" : "box not marked"));
-
-const beforeShell = e3Sent.length;
-press("Enter");
-check("A3: Enter runs it through /api/shell and it never reaches the CLI",
-  sentTo("/api/shell").length === 1 &&
-  JSON.parse(sentTo("/api/shell")[0].body ?? "{}").command === "dir C:\\Users" &&
-  sentTo("/api/message").length === 0 && bashChip.hidden,
-  e3Sent.slice(beforeShell).map((c) => c.url.split("?")[0]).join(" | ") || "nothing sent");
-
-// The row is painted from the server's own wrapper/shell event, so a reload
-// replays it identically — the POST's answer is never what builds it.
-window.renderEvent({
-  type: "wrapper", subtype: "shell", command: "dir C:\\Users",
-  stdout: "این خط فارسی است\nSecond line in English", stderr: "", code: 0,
-});
-window.renderEvent({
-  type: "wrapper", subtype: "shell", command: "type nope.txt",
-  stdout: "", stderr: "The system cannot find the file.", code: 1,
-});
-const shellCards = [...specLog.querySelectorAll("details.card.shell")];
-const shellOut = shellCards[0]?.querySelector(".tool-output");
-const shellLines = shellOut ? [...shellOut.querySelectorAll(".ln")] : [];
-check("A3: the shell row is a card of its own and never joins a run of tool calls",
-  shellCards.length === 2 && !shellCards[0].classList.contains("tool") &&
-  !specLog.querySelector("details.card.shell.group"),
-  shellCards.length + " shell card(s)");
-
-check("A3: rule 8 in the shell output — LTR box, each line its own direction",
-  getComputedStyle(shellOut ?? document.body).direction === "ltr" &&
-  shellLines[0]?.getAttribute("dir") === "auto" &&
-  getComputedStyle(shellLines[0] ?? document.body).direction === "rtl" &&
-  getComputedStyle(shellLines[1] ?? document.body).direction === "ltr",
-  (shellOut ? getComputedStyle(shellOut).direction : "no box") + " box / lines " +
-  shellLines.map((l) => getComputedStyle(l).direction).join(","));
-
-check("A3: a non-zero exit is on the row; a successful one says nothing",
-  !!shellCards[1]?.querySelector(".tool-repeat") &&
-  !shellCards[0]?.querySelector(".tool-repeat"),
-  (shellCards[1]?.querySelector(".tool-repeat")?.textContent ?? "no exit code") +
-  " on the failure");
-
-/* --- A4: Ctrl+G, the external editor --------------------------------------- */
-e3Routes["/api/editor"] = { text: "متنی که در ویرایشگر عوض شد", changed: true };
-input.value = "متن اولیه";
-input.dispatchEvent(new Event("input", { bubbles: true }));
-press("g", { ctrlKey: true });
-const shutWhileEditing = input.disabled && input.placeholder === FA_.editorWaiting;
-await tick();
-check("A4: Ctrl+G shuts the box while the editor is open, then takes what came back",
-  shutWhileEditing && !input.disabled &&
-  input.value === "متنی که در ویرایشگر عوض شد" &&
-  JSON.parse(sentTo("/api/editor")[0]?.body ?? "{}").text === "متن اولیه",
-  (shutWhileEditing ? "" : "box stayed open with no explanation; ") +
-  "box «" + input.value + "»");
-
-/* --- B1: /export and /branch are verbs the WINDOW answers -------------------- */
-typeIn("/exp");
-const localRow = popRows().map((li) => li.querySelector(".slash-name")?.textContent);
-typeIn("/bra");
-const forkRow = popRows().map((li) => li.querySelector(".slash-name")?.textContent);
-check("B1: the popup lists the two verbs the window answers itself",
-  localRow.includes("/export") && forkRow.includes("/branch"),
-  "[" + localRow.join(",") + "] / [" + forkRow.join(",") + "]");
-
-// Something to export: the transcript builder reads the DOM the window drew.
-window.renderEvent({ type: "wrapper", subtype: "user_echo",
-                     text: "این را ذخیره کن" });
-window.renderEvent({ type: "assistant",
-                     message: { content: [{ type: "text", text: "باشد." }] } });
-e3Routes["/api/export"] = { ok: true, path: "C:\\Users\\Lion\\Desktop\\گفتگو.txt" };
-typeIn("/export");
-press("Enter");
-await tick();
-const exported = JSON.parse(sentTo("/api/export")[0]?.body ?? "{}").text ?? "";
-const savedPath = [...specLog.querySelectorAll(".msg.meta bdi.path")].at(-1);
-check("B1: /export posts what the window drew and never reaches the CLI",
-  sentTo("/api/export").length === 1 && sentTo("/api/message").length === 0 &&
-  exported.includes(FA_.exportYou) && exported.includes(FA_.exportClaude) &&
-  exported.includes("این را ذخیره کن"),
-  exported.slice(0, 60).replace(/\n/g, " / ") || "nothing posted");
-
-check("B1: the saved file is named as a path — LTR, isolated, backslashes intact",
-  !!savedPath && savedPath.textContent === "C:\\Users\\Lion\\Desktop\\گفتگو.txt" &&
-  getComputedStyle(savedPath).direction === "ltr" &&
-  getComputedStyle(savedPath).unicodeBidi === "isolate",
-  savedPath ? savedPath.textContent + " -> " +
-    getComputedStyle(savedPath).direction : "no path element");
-
-/* --- B2: a background agent's report is news, not a user bubble ------------- */
-const taskLog = document.createElement("div");
-const taskScope = newRenderScope();
-const beforeAgents = sentTo("/api/agents").length;
-withRenderTarget(taskLog, taskScope, () => {
-  window.renderEvent({ type: "user", message: { content: [{ type: "text", text:
-    "<task-notification><task-id>t1</task-id><status>completed</status>" +
-    "<summary>Refactored the parser</summary>" +
-    "<result>کار تمام شد و **دو فایل** عوض شد</result></task-notification>" }] } });
-});
-const taskCard = taskLog.querySelector("details.card.agent-note");
-check("B2: a <task-notification> is a compact report card, not forty lines of XML",
-  !!taskCard && !taskLog.querySelector(".msg.user") &&
-  !taskLog.textContent.includes("<task-id>") &&
-  !!taskCard.querySelector("bdi.tool-target") &&
-  !!taskCard.querySelector(".card-body strong"),
-  taskCard ? taskCard.querySelector("summary")?.textContent
-           : "no card — " + taskLog.textContent.slice(0, 50));
-
-await tick(400);
-check("B2: the agents drawer is refreshed off the notification, from /api/agents",
-  sentTo("/api/agents").length > beforeAgents,
-  (sentTo("/api/agents").length - beforeAgents) + " request(s)");
-
-/* --- B1: /branch -------------------------------------------------------------
-   The load-bearing half is that the new tab is shown through the SAME bridge
-   the sidebar switches with (app.js owns the registry and the server's active
-   tab follows it), not through a second path of its own — so the assertion is
-   what reached the bridge, which this harness stands in for. */
-e3Routes["/api/session/fork"] = { ok: true, tab: "t-fork", forked_from: "s-1" };
-input.value = "";
-const forkBridgeBefore = bridgeCalls.length;
-typeIn("/branch");
-press("Enter");
-await tick(50);
-check("B1: /branch asks the server for a copy and shows it through the one tab path",
-  sentTo("/api/session/fork").length === 1 && sentTo("/api/message").length === 0 &&
-  bridgeCalls.slice(forkBridgeBefore).includes("switch:t-fork") &&
-  specLog.textContent.includes(FA_.cmdBranchDone),
-  sentTo("/api/session/fork").length + " fork(s) / bridge [" +
-  bridgeCalls.slice(forkBridgeBefore).join(",") + "] / " +
-  (specLog.textContent.includes(FA_.cmdBranchDone) ? "noted" : "NOT noted"));
-
-/* ============================================================================
-   E4 — the review fixes. Every one of these is a path that already existed and
-   already had an assertion for its HAPPY exit; what was missing was the second
-   way out. They stay in the E3 block because they need its network stub and
-   its real composer handlers.
-   ========================================================================= */
-
-/* --- F3: one predicate for the chip and for the send ----------------------- */
-typeIn("  !dir C:\\Temp");
-check("E4/F3: a shell line with leading spaces still says so on the box",
-  !bashChip.hidden && compBox.classList.contains("bash"),
-  (bashChip.hidden ? "chip hidden" : "chip shown") + " / " +
-  (compBox.classList.contains("bash") ? "box marked" : "box NOT marked"));
-
-const bareShellBefore = sentTo("/api/shell").length;
-const bareMsgBefore = sentTo("/api/message").length;
-typeIn("!");
-const bareChip = !bashChip.hidden;
-press("Enter");
-await tick(20);
-check("E4/F3: a bare ! is the mode, not a command — nothing runs and nothing is sent",
-  bareChip && sentTo("/api/shell").length === bareShellBefore &&
-  sentTo("/api/message").length === bareMsgBefore && input.value === "",
-  (bareChip ? "" : "no chip; ") +
-  (sentTo("/api/shell").length - bareShellBefore) + " shell / " +
-  (sentTo("/api/message").length - bareMsgBefore) + " message");
-
-/* --- F1: the two exits from Ctrl+R that used to skip endSearch() ------------
-   Enter always did the right thing, so the search looked finished. The send
-   BUTTON and a tab switch are the two other ways out of that state, and both
-   left `popMode` on "search": the click POSTed the query as a message, and the
-   switch carried one project's history into another conversation's Enter. */
-input.value = "نویسِ دست‌نخورده";
-press("r", { ctrlKey: true });
-await tick(50);
-typeIn("دومین");
-const clickSendBefore = sentTo("/api/message").length;
-document.getElementById("send").click();
-await tick(20);
-check("E4/F1: clicking ارسال during the search takes the match and sends nothing",
-  input.value === HIST[1] && popup.hidden &&
-  sentTo("/api/message").length === clickSendBefore,
-  "box «" + input.value + "» / " +
-  (sentTo("/api/message").length - clickSendBefore) + " message(s) sent");
-
-/* Two real conversations, so the switch is the one applySwitch() the window
-   uses. #log belongs to the harness, so it is saved and handed back below. */
-const e4Keep = [...specLog.childNodes];
-const gTabA = "spec-tab-e4-a";
-const gTabB = "spec-tab-e4-b";
-routeEvent({ tab: gTabA, type: "assistant",
-             message: { content: [{ type: "text", text: "گفتگوی الف" }] } });
-routeEvent({ tab: gTabB, type: "assistant",
-             message: { content: [{ type: "text", text: "گفتگوی ب" }] } });
-
-applySwitch(gTabA);
-input.value = "پیش‌نویس الف";
-press("r", { ctrlKey: true });
-await tick(50);
-typeIn("اولین");
-applySwitch(gTabB);
-const switchedHidden = popup.hidden;
-const switchedBox = input.value;
-const switchSendBefore = sentTo("/api/message").length;
-press("Enter");
-await tick(20);
-check("E4/F1: switching conversations ends the search instead of carrying it over",
-  switchedHidden && switchedBox === "پیش‌نویس الف" &&
-  sentTo("/api/message").length === switchSendBefore + 1,
-  (switchedHidden ? "" : "popup still open; ") + "box «" + switchedBox +
-  "» / Enter sent " + (sentTo("/api/message").length - switchSendBefore));
-
-/* --- F2: Ctrl+G resolves into the conversation that ASKED ------------------
-   /api/editor blocks for as long as the person leaves the editor open, and a
-   switch re-enables the box on the way past — so the answer used to land in
-   whatever tab happened to be on screen, on top of its draft. */
-e3Routes["/api/editor"] = { text: "متنِ ویرایش‌شده", changed: true };
-applySwitch(gTabA);
-input.value = "متن الف";
-press("g", { ctrlKey: true });
-const shutInA = input.disabled;
-applySwitch(gTabB);
-input.value = "متن ب";
-await tick(50);
-const parkedForA = tabs.get(gTabA)?.scope.returned ?? [];
-check("E4/F2: an editor answer never lands in the conversation that did not ask",
-  shutInA && !input.disabled && input.value === "متن ب" &&
-  parkedForA.includes("متنِ ویرایش‌شده"),
-  (shutInA ? "" : "box was never shut; ") + "visible box «" + input.value +
-  "» / parked for A [" + parkedForA.join(" | ") + "]");
-
-applySwitch(gTabA);
-check("E4/F2: it is handed over when that conversation comes back on screen",
-  input.value.includes("متنِ ویرایش‌شده") &&
-  (tabs.get(gTabA)?.scope.returned ?? []).length === 0,
-  "box «" + input.value + "» / " +
-  (tabs.get(gTabA)?.scope.returned ?? []).length + " still parked");
-
-/* --- F7: the search list is capped the way the slash list is ---------------
-   history.jsonl runs to thousands of lines and an empty Ctrl+R query matches
-   every one of them, so each keystroke built and laid out the whole file. */
-e3Routes["/api/history"] = {
-  prompts: Array.from({ length: 120 }, (_, i) => "پیام شماره " + i) };
-applySwitch(gTabB);          // a fresh conversation, so the history is refetched
-press("r", { ctrlKey: true });
-await tick(50);
-const cappedRows = popRows().length;
-press("Escape");
-check("E4/F7: Ctrl+R draws at most 50 rows, however long the history is",
-  cappedRows === 50, cappedRows + " rows for 120 prompts");
-
-specLog.replaceChildren(...e4Keep);   // the harness takes its own DOM back
-
-/* --- F4: /export must carry the work, not just the sentences ---------------
-   innerText omits the body of a closed <details>, and every tool, diff and
-   shell card is closed by default — so an export of a real session was the
-   conversation with all of its work silently missing. */
-window.renderEvent({ type: "wrapper", subtype: "shell", command: "echo hidden",
-                     stdout: "خروجیِ-پنهان-در-کارت", stderr: "", code: 0 });
-const shutCard = [...specLog.querySelectorAll("details.card.shell")].at(-1);
-const wasShut = !!shutCard && !shutCard.open;
-const exportBefore = sentTo("/api/export").length;
-typeIn("/export");
-press("Enter");
-await tick(50);
-const exportedBody = JSON.parse(sentTo("/api/export").at(-1)?.body ?? "{}").text ?? "";
-check("E4/F4: /export carries the body of a card that is closed on screen",
-  wasShut && sentTo("/api/export").length === exportBefore + 1 &&
-  exportedBody.includes("خروجیِ-پنهان-در-کارت") && !shutCard.open,
-  (wasShut ? "" : "the card was not closed to begin with; ") +
-  (shutCard?.open ? "card LEFT OPEN afterwards; " : "") +
-  (exportedBody.includes("خروجیِ-پنهان-در-کارت") ? "carried" : "MISSING") +
-  " in " + exportedBody.length + " chars");
-
-/* --- F6: `!` output survives a restart -------------------------------------
-   The wrapper parks the tagged output and it rides in front of the next
-   message as its own text block (server.py bash_message), which is the TUI's
-   own tagging. Measured in ~/.claude/projects, 2026-09-05. Replayed as prose
-   the user's bubble opened with the raw markup; it is the same shell card the
-   live wrapper/shell event draws, so the two views converge. */
-const bashLog = document.createElement("div");
-withRenderTarget(bashLog, newRenderScope(), () => {
-  window.renderEvent({ type: "user", message: { content: [
-    { type: "text", text:
-      "<bash-input>dir C:\\Users</bash-input>\n" +
-      "<bash-stdout>یک خط فارسی\nSecond line in English</bash-stdout>" },
-    { type: "text", text: "این را ببین" },
-  ] } });
-});
-const replayedShell = bashLog.querySelector("details.card.shell");
-const replayedBubble = bashLog.querySelector(".msg.user");
-check("E4/F6: replayed `!` output is a shell card, never tags in the user's bubble",
-  !!replayedShell &&
-  replayedShell.querySelector(".shell-cmd")?.textContent === "dir C:\\Users" &&
-  replayedShell.textContent.includes("Second line in English") &&
-  !bashLog.textContent.includes("<bash-") &&
-  !!replayedBubble && replayedBubble.textContent.trim() === "این را ببین",
-  (replayedShell ? "card «" + replayedShell.querySelector(".shell-cmd")?.textContent + "»"
-                 : "NO shell card") + " / bubble «" +
-  (replayedBubble?.textContent.trim() ?? "none") + "»");
-
-window.fetch = e3Fetch;
-input.value = "";
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);

@@ -9,6 +9,7 @@
      render.js    renderEvent: stream events -> DOM
      chrome.js    sidebar, home state, replay, permission dialog
      composer.js  input, ZWNJ, send/stop, attachments, slash
+     commands.js  the window-local commands of V2-PLAN §3.5
      agents.js    background-agents strip + per-agent drawer
      app.js       this file
 
@@ -22,6 +23,9 @@
    module either (it is the entry: its body runs last), which is why chrome.js
    is handed setTabBridge() rather than importing the switch itself.
 
+   commands.js (v2.5) is imported BY composer.js and imports nothing that
+   imports it back, so the cycle above is still the only one.
+
    strings.fa.js and vendor/marked.min.js stay CLASSIC scripts: they set window
    globals and classic scripts finish before any module runs.
    ========================================================================= */
@@ -30,7 +34,7 @@
 import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, setAgents, state, resetTurn, clearPulse,
-  newRenderScope, withRenderTarget,
+  newRenderScope, withRenderTarget, initTranscript,
 } from "./render.js";
 import {
   initChrome, setTabBridge, setOpenTabs, setCurrentSession, setChrome,
@@ -389,6 +393,9 @@ if (events) events.onerror = () => setStatus({});
 initComposer();
 initControls();
 initAgents();
+// Ctrl+O, the TUI's transcript mode: one key that opens every tool result in
+// the column at once (render.js toggleTranscript, wiki/tui-keys.md Global).
+initTranscript();
 // Which conversations are open, and which one this window is looking at. The
 // stream is already filling their buffers by now; this is what puts one of them
 // on screen — unqueued, because until it answers the window shows nothing.

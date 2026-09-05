@@ -29,13 +29,21 @@ Free: reads two files and a binary, spawns nothing, costs no turn. Login-indepen
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
 import extract_tui_vocab as vocab
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "terminal")
+STATIC = HERE / EDITIONS[EDITION][0]
 
 REPO = Path(__file__).resolve().parent.parent
 KEYS_DOC = REPO / "wiki" / "tui-keys.md"
@@ -274,9 +282,9 @@ def main() -> int:
     # both placeholder shapes were lifted from this bundle, so they are drift-prone in
     # exactly the way §3.6 warns about: nothing in the window would look wrong if the CLI
     # moved to 1200 characters, it would just disagree with the terminal beside it.
-    composer = (Path(__file__).resolve().parent / "static" / "js" / "composer.js").read_text(
+    composer = (STATIC / "js" / "composer.js").read_text(
         encoding="utf-8")
-    strings_js = (Path(__file__).resolve().parent / "static" / "strings.fa.js").read_text(
+    strings_js = (STATIC / "strings.fa.js").read_text(
         encoding="utf-8")
 
     # `let T=BY(S);if(w&&(S.length>o9||T>2))` — the whole decision, in one expression.
@@ -322,8 +330,7 @@ def main() -> int:
           "the bundle reshaped; re-read it before trusting the constant")
     if warn:
         binary_pct = round(float(warn.group("pct")) * 100)
-        render = (Path(__file__).resolve().parent / "static" / "js"
-                  / "render.js").read_text(encoding="utf-8")
+        render = (STATIC / "js" / "render.js").read_text(encoding="utf-8")
         ours = re.search(r"const QUOTA_WARN_AT = (\d+);", render)
         check(ours is not None and int(ours.group(1)) == binary_pct,
               f"QUOTA_WARN_AT is the binary's default ({binary_pct}%)",
