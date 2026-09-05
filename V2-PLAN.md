@@ -70,7 +70,7 @@ rows in the column, which is what the TUI does), the context notice card.
 
 | Route | For | Notes |
 |---|---|---|
-| `GET/POST /api/history` | Up/Down, Ctrl+R | Read the tail of `history.jsonl` filtered by `project`; append one line per sent prompt in the TUI's exact shape so the real TUI sees it too. **Take `history.jsonl.lock` first** — the CLI runs a retention prune that rewrites the whole file (§5.8). |
+| `GET /api/history` | Up/Down, Ctrl+R | Read the tail of `history.jsonl` filtered by `project`; one line per sent prompt is appended in the TUI's exact shape, so the real TUI sees it too — from inside `/api/message`, not from a POST route (v2.3 decision 1). **Take `history.jsonl.lock` first** — the CLI runs a retention prune that rewrites the whole file (§5.8). |
 | `GET /api/files?q=` | `@` completion | **Proxy the CLI's own `file_suggestions` control request** (§5.11) and inherit its ranking; `os.walk` only as the fallback while the index is cold. The first query after a spawn returns nothing, so the menu re-asks. |
 | `POST /api/shell` | `!` bash mode | `subprocess` in the session cwd, output streamed on the hub. **Measured (§5.1): the CLI will not run it, and the TUI's own bash output DOES enter context** — send it back as a user message tagged `<bash-input>`/`<bash-stdout>`/`<bash-stderr>`, which is what the transcript reader expects. |
 | `POST /api/editor` | Ctrl+G | Write the draft to a temp file, `os.startfile`, poll mtime, hand the text back. The TUI does the same with `$EDITOR`. |
@@ -247,7 +247,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | **v2.0** Vocabulary ✅ | `wiki/tui-keys.md`, `wiki/tui-strings.md`: every keystroke, glyph and prompt string pulled from the 2.1.260 binary by `extract_tui_vocab.py` | **Done 2026-09-04**, except the user's one review of the Persian column (`wiki/tui-strings.md` §7 lists the six rows that need it). Gated by `test_tui_vocab.py` — 72/72 |
 | **v2.1** Probes ✅ | §5 answered in the wiki | **Done 2026-09-05.** Eleven entries (ten asked, one found), each with the command or the bundle site that produced it, in `wiki/cli-stream-json-findings.md`. `probe_v21.py` re-runs the live half free — 25/25. Only §5.8's "press Up in the real TUI" is left, and it needs a human |
 | **v2.2** Column ✅ | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | **Done 2026-09-05.** spec **174/174** unchanged, `test_layout.py` 3/3 widths, `test_units.py`, `test_transcript_path.py`, `test_no_console.py` green, `test_tui_vocab.py` **79/79**. New gate `test_column.py` — **22/22**, headless, no `claude` process. Decisions below |
-| **v2.3** Prompt | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | `test_keys.py` (new, §7); shared history proven against the real TUI |
+| **v2.3** Prompt ✅ | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+26 over the four new routes), `test_layout.py`, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**. New gate `test_keys.py` — **40/40**, headless, no `claude` process, its chords read out of `wiki/tui-keys.md`. The one half left is §5b's: pressing Up in the REAL terminal, which needs a human at one. Decisions below |
 | **v2.4** Dialogs | §3.3 as numbered inline lists; chips removed; pickers behind commands | `M8-acceptance.md` §6 permission and plan cases pass by keyboard alone |
 | **v2.5** Shell | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | `smoke_test.py` **16/16**; `/api/tabs`, `/api/projects`, `/api/sessions` unchanged |
 | **v2.6** Words | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | Every string in the binary table has a translation; `stop-slop` pass on `help.html` |
@@ -309,6 +309,70 @@ Each of these was decidable without the owner. The one thing that was not is §8
     `style.css` and `strings.fa.js`, and `test_column.py` covers both; splitting them would have
     produced an intermediate commit whose own gate was red, which is worse than a wide one.
 
+### v2.3 Prompt — decisions taken while building it, 2026-09-05
+
+Every one of these was decidable without the owner. What is left for them is at the end.
+
+1. **`/api/history` is GET-only; the append happens inside `/api/message`.** §2's table said
+   «GET/POST», and a POST route would have been a second place a prompt can be recorded —
+   reachable without sending, and skippable when sending. Written at the one point where a
+   message actually goes out, nothing can send without recording and nothing can record without
+   sending. §2's «GET/POST» is corrected to that.
+2. **The lock is a `mkdir`.** proper-lockfile builds `history.jsonl.lock` as a *directory*, so
+   `mkdir` contends for the same object the CLI's prune takes, atomically, with no dependency.
+   A lock whose mtime is older than 15 s is stolen: a prune that died holding it would otherwise
+   lock the user out of their own history until a reboot.
+3. **A lock we cannot take skips the history line, never the send.** The message is the thing the
+   person typed; the history entry is a convenience. Failing the send to protect the list would
+   be the worse trade in every direction.
+4. **`!` output is PARKED, not sent.** §5.1 measured that the TUI's bash output enters the
+   conversation — but the TUI does not ask the model anything when it runs one, and the pipe has
+   no "add to context" frame. So the tagged text waits and rides in FRONT of the next real
+   message as its own text block. Sending it on its own would spend a paid turn per `!ls`, which
+   is a thing the terminal this window imitates never does.
+5. **`!` runs through `COMSPEC` as `/s /c "<command>"`**, the form `run_statusline()` already
+   uses and for the same reason (cmd eats the outer quote pair of anything else). Output is
+   clipped at 20k characters, because the parked text goes into the model's context and
+   `!type big.log` would otherwise buy a very expensive turn.
+6. **Absolute `@` suggestions are dropped on the SERVER, not in the menu.** §5a said the menu
+   filters them; the server is the only side that sees both sources, and the CLI index and the
+   `os.walk` fallback have to hand the composer one shape. What is dropped is what cannot be
+   `@`-mentioned relatively — `~/.claude/skills`, `~/.claude/agents`.
+7. **Enter never accepts a completion, in the `@` menu either.** Tab accepts, Enter sends. This
+   is the 2026-08-06 rule the slash popup already lives by: Enter doing different things
+   depending on invisible state is the trap that handler was fixed for once already.
+8. **The `ctrl+x` prefix arms only on an empty selection**, and expires after three seconds.
+   With a selection, ctrl+x is cut and has to stay cut; with none it does nothing, which is
+   exactly the room a two-stroke prefix needs. `test_keys.py` asserts both halves.
+9. **`ctrl+x Enter` is an ordinary submit.** The CLI's own queue already folds a mid-turn send
+   (`wiki/cli-stream-json-findings.md` «The message queue»), so a separate queue path would be a
+   second implementation of something the engine does better than the window could.
+10. **`ctrl+x ctrl+k` is not bound.** `chat:killAgents` needs `stop_task` and the rest of the
+    background-task family (§5.10), which has no phase yet. The wiki row is blanked with that
+    reason rather than left describing a key that does nothing — and because `test_keys.py`
+    reads that column, a promise with nothing behind it is now a failing gate.
+11. **History is dropped on a tab switch, not snapshotted.** It is per project and one GET away;
+    a snapshot that survived the switch would offer another project's prompts under Up, which is
+    the same class of defect as the statusline and the model picker that shipped it twice.
+12. **The `?` sheet and the dispatcher read one list.** The sheet is built from `KEY_SHEET` in
+    `composer.js`, so it cannot advertise a key the page does not bind; `test_keys.py` then
+    compares the page against `wiki/tui-keys.md`, which `test_tui_vocab.py` compares against the
+    binary. Binary → wiki → page, with a gate on each arrow.
+13. **`ctrl+t` is bound even though Edge `--app` eats it.** §3.6's standing rule is that keys the
+    browser owns stay with the browser — that is about not fighting it, not about refusing to
+    bind. In a normal tab the checklist toggle works; under `--app` the browser wins, silently
+    and correctly.
+14. **Ctrl+G blocks until the file stops changing.** `os.startfile` hands the path to the shell
+    and returns, so there is no "the editor closed" event to wait for; the first save wins, with
+    a one-second settle for editors that write in two passes. The box says it is waiting, and the
+    draft is in the file the whole time.
+15. **Esc accepts the history search.** That is what the binary binds (`historySearch:accept`,
+    on `escape` and `tab` alike), so the search has no destructive exit at all — which is also
+    why Esc there does not fall through to the interrupt.
+
+**Left for the owner** (product taste, not engineering): §8.9's glyph mirroring is still the
+open one. Two more arrived with this phase and are listed there.
+
 ## 7. Gates
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
@@ -318,13 +382,16 @@ process, re-measured against whatever build is installed today.
 **New in v2.2: `test_column.py` (22), free** — the §3.1 rows, Ctrl+O, the glyph mirror
 switch and the paste chip, driven headless out of the real `index.html`.
 **New in v2.0: `test_tui_vocab.py` (79), free** — the two wiki tables against the
-installed binary; see CLAUDE.md's gate table. New in v2.3: `test_keys.py`, headless like the spec
-gate, dispatches each binding from `wiki/tui-keys.md` at the composer and asserts the action it
-maps to fired. New in v2.6: a strings check that fails when a key in the binary table has no entry
-in `strings.fa.js`.
+installed binary; see CLAUDE.md's gate table.
+**New in v2.3: `test_keys.py` (40), free** — every chord the «کلید v2» column binds in the five
+contexts the prompt owns, dispatched at the real composer in the real `index.html` with the four
+new routes stubbed in the page, plus the `!`, `@`, `\`+Enter and `?` cases that are characters
+rather than chords. It fails in both directions: a key the table binds with nothing behind it,
+and a case here for a key the table never bound. New in v2.6: a strings check that fails when a
+key in the binary table has no entry in `strings.fa.js`.
 
-`test_keys.py` (v2.3) should read its cases from `wiki/tui-keys.md`'s «کلید v2» column rather
-than repeat them, so the binding table has exactly one copy and the two gates cannot disagree.
+`test_keys.py` (v2.3) reads its cases from `wiki/tui-keys.md`'s «کلید v2» column rather than
+repeating them, so the binding table has exactly one copy and the two gates cannot disagree.
 
 ## 8. The decisions v2.0 flagged, settled 2026-09-05
 
@@ -415,3 +482,21 @@ the class is `.glyph.mirror`. It ships on **A** — the recommendation above —
 running `▸` flip; `"off"` is the whole of option B, and dropping `mirror: true` from the todo
 mark in `render.js` is the whole of option C. `test_column.py` asserts both positions of the
 switch, so answering this is a one-word edit, not a rebuild. **The owner still has to look at it.**
+
+### 8.10 Open — the two v2.3 raised, both taste
+
+**A. Which shell does `!` run?** It runs `COMSPEC` — `cmd.exe` — because that is what Windows
+means by "the shell" and what `run_statusline()` already uses. But the colleague who has watched
+the real CLI work will type `!ls`, and cmd answers «'ls' is not recognized». Git for Windows
+ships the `bash.exe` the CLI's own Bash tool runs on, and preferring it when present is a
+ten-line change. It is not an engineering question: it decides whether `!` means *this machine's
+shell* or *the shell Claude Code speaks*, and both are defensible. **My recommendation: prefer
+`bash.exe` when it exists, fall back to cmd** — every command anyone will copy into that box,
+from the model or from a README, is POSIX. Not done, because it changes what a `!` line means
+and the owner owns that.
+
+**B. Twenty-five strings this phase authored.** The history search row, the editor wait, the `?`
+sheet's descriptions and the shell row have no counterpart in `wiki/tui-strings.md`: the TUI
+says these things in English in places v2 does not copy, so there was nothing to translate and
+the text is written rather than lifted. They belong in the same one review pass §7 of that file
+already asks for, at v2.6.

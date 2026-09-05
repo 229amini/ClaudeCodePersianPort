@@ -14,7 +14,7 @@ ES modules under `static/js/`. (The gate is 20/20 since rule 8 and the two 2026-
 | `controls.js` | model picker + approval pill + auto-approval counter. **Imports `api.js` only** — deliberately outside the cycle below; `render.js` drives it one-way (Phase 4) |
 | `render.js` | `renderEvent`, renderer `state`, bubble/card/label/block builders, todos, raw cards, statusline |
 | `chrome.js` | sidebar (projects → sessions), home state, replay banner, permission dialog |
-| `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete, lifecycle verbs |
+| `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete, lifecycle verbs, and since v2.3 the whole key dispatcher: history, Ctrl+R search, `@`, `!`, Ctrl+G, the `?` sheet |
 | `app.js` | entry: `window.renderEvent`/`window.renderMarkdown`, init order, SSE transport |
 
 `controls.js` reports failures **inside its own menu**, not through `bubble()`, purely so it never
@@ -262,3 +262,26 @@ queue strip" for the rules themselves.
 delivered on its **next visible paint** (`paintQueued()` drains it, and it no-ops while
 `state.background`), and it dies with the tab if that tab is closed without ever being looked at —
 deliberately the same semantics as closing a tab that has an unsent draft in it.
+
+## The composer's key dispatcher (v2.3) — three rules, one of them cost a bug
+
+`promptKeys()` is registered FIRST and in the CAPTURE phase on the textarea, so it decides what
+Enter, Tab and the arrows mean before any other listener sees them. Three things follow, and the
+second one is the one that bit:
+
+1. **Order of registration is the priority list.** Capture handlers on the same element fire in
+   the order they were added, so `initComposer()` adds `promptKeys` before the ZWNJ/Enter handler
+   and before the slash popup's own capture listener. Adding a new one in the middle changes
+   which key wins.
+2. **Every later keydown listener must check `e.defaultPrevented`.** The ZWNJ/Enter handler did
+   not, so `\`+Enter broke the line and then submitted it — the dispatcher's `preventDefault()`
+   stops the browser, never a sibling listener on the same node. One guard at the top of that
+   handler is the whole fix; write the same guard into anything added later.
+3. **A key the window does not claim must fall through untouched.** `ctrl+z` is the textarea's
+   undo and `ctrl+x` with a selection is cut — both are asserted as NOT prevented in
+   `test_keys.py`, because "we bound nothing here" is a promise a future refactor can break
+   silently. The two-stroke `ctrl+x` prefix only arms when the selection is empty.
+
+`test_keys.py` reads the chords out of `wiki/tui-keys.md`, so the binding table has one copy:
+binary → wiki (`test_tui_vocab.py`) → page (`test_keys.py`). A key added to the page but not to
+the doc fails the gate as loudly as the reverse.
