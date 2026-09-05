@@ -11,19 +11,28 @@ ES modules under `static/js/`. (The gate is 20/20 since rule 8 and the two 2026-
 |---|---|
 | `api.js` | `token` + the `api()` fetch helper. **Leaf — imports nothing.** |
 | `bidi.js` | The whole BiDi contract: `TECHNICAL`, `isolateTechnicalTokens`, `applyDirection`, `renderMarkdown`, `pathEl`. **Leaf — imports nothing.** |
-| `controls.js` | model picker + approval pill + auto-approval counter. **Imports `api.js` only** — deliberately outside the cycle below; `render.js` drives it one-way (Phase 4) |
+| `choice.js` | the numbered option list every v2.4 dialog is made of: `optionList()`, `digitIndex()`, `dialogHint()`. **Leaf — imports nothing.** |
+| `controls.js` | the pickers (model, effort, output style, posture) + the audit list + the auto-approval counter. **Imports `api.js` and `choice.js`** — still outside the cycle below; `render.js` drives it one-way (Phase 4), and since v2.4 `composer.js` calls its openers |
 | `render.js` | `renderEvent`, renderer `state`, bubble/card/label/block builders, todos, raw cards, statusline |
-| `chrome.js` | sidebar (projects → sessions), home state, replay banner, permission dialog |
+| `chrome.js` | sidebar (projects → sessions), home state, replay banner, the permission / plan / question dialog |
 | `composer.js` | input, ZWNJ, send/stop, attachments, slash autocomplete, lifecycle verbs, and since v2.3 the whole key dispatcher: history, Ctrl+R search, `@`, `!`, Ctrl+G, the `?` sheet |
 | `app.js` | entry: `window.renderEvent`/`window.renderMarkdown`, init order, SSE transport |
 
-`controls.js` reports failures **inside its own menu**, not through `bubble()`, purely so it never
+`controls.js` reports failures **inside its own picker**, not through `bubble()`, purely so it never
 has to import `render.js` — that import would close a second cycle for a message the user reads
 better next to the control they just used anyway.
 
-The composer's lifecycle verbs (`/model`, `/permissions`, `/clear`) `.click()` the button that
-already does the job rather than importing the module that owns it. One implementation, no cycle,
-and a verb whose button is hidden falls through to the CLI as ordinary text.
+**The lifecycle verbs changed owners in v2.4.** They used to `.click()` the chip that already did
+the job; the chips are gone (V2-PLAN §2), so `composer.js` now imports the openers from
+`controls.js` directly. That is a new edge, not a new cycle — `controls.js` imports nothing from
+the cycle, so the arrow only ever points into it. Each opener answers `false` when there is
+nothing to offer (no model list yet, a model with no effort levels) and the verb falls through to
+the CLI as ordinary text, exactly as a hidden chip used to.
+
+**`chrome.js` → `composer.js` is a v2.4 edge inside the cycle** (`restoreDraft`, for the note that
+rides back to the message box when shift+Tab approves a tool). It is safe by the same invariant
+below, and only because `restoreDraft` is a hoisted function declaration: a `const` would be in
+the temporal dead zone at chrome.js evaluation time.
 
 ## The load-order rule — the one way to break this
 
@@ -74,12 +83,57 @@ to a classic script, convert the harness back in the same commit.**
 
 The harness also carries a copy of the `<dialog id="perm">` markup from `index.html` (spec case 10
 drives the real dialog). `chrome.js` grabs those ids in a module-level `const`, so deleting them
-does not fail one case — it throws during evaluation and empties the whole verdict.
+does not fail one case — it throws during evaluation and empties the whole verdict. **Keep the
+copy in step with `index.html`**: v2.4 added `#perm-proceed`, `#perm-opts`, `#perm-feedback` and
+`#perm-hint` to both. The harness also still carries `#model-chip`, which `index.html` no longer
+has — it is what the three "a background tab's model does not leak into the visible one" cases
+read, and `controls.js` paints the chip wherever it happens to exist. `initControls()` binds
+nothing at all when `#picker` is absent, which is why the rest of the composer row can stay out.
 
 `<body data-render-only>` was added to the harness: it carries a token (its subresources need the
 auth cookie) but must not open the SSE stream. Live events would land in the middle of the test
 log, and the never-ending request stops a headless run from ever settling. `js/app.js` reads the
 attribute.
+
+## The dialogs are rows in the column (2026-09-05, v2.4)
+
+V2-PLAN §3.3: the confirmation, the plan approval and every picker are numbered lists **in the
+flow**, above the prompt, the way the Ink TUI prints them. They are still `<dialog>` elements —
+same ids, same `open` attribute, same spec assertions — but four things had to change together and
+none of them works alone:
+
+- **`show()`, never `showModal()`.** A modal dialog is in the top layer: it floats over the
+  transcript, paints a `::backdrop`, and traps focus. `show()` leaves it in the flow.
+- **The UA's modal geometry has to be undone in CSS.** `dialog` defaults to `position: absolute`
+  with auto margins; `#perm, #picker` set `position: static` and `flex: none`, or the stage's flex
+  column squeezes them instead of pushing the prompt down. Their side margin repeats the
+  composer's centred-column formula so the list sits over the box it is answering for.
+- **The digit is an element, never text in the label** (§8.2, `.opt-num`, `unicode-bidi: isolate`).
+  Glued to the front of a Persian run the bidi algorithm moves it, and «۲» must be omissible: a
+  plan approval has no next call to stop asking about, so it is drawn with two options, not three.
+  The `(Esc)` on the refusal is an element for the same reason.
+- **No submit button anywhere in `#perm-form`.** The 2026-08-31 report ("Enter in the note field
+  silently refuses the tool") was an implicit submit finding the first button, which was the
+  refusal. Every button is `type="button"` and the form has no `method="dialog"`; the keys are
+  bound explicitly. `test_dialogs.py` asserts the structure, because the behaviour it prevents is
+  invisible until someone re-adds a `<button>`.
+
+One list serves three owners (`choice.js`): the confirmation, the pickers, the audit trail. It is
+**one tab stop with a moving highlight**, not a radio group — arrows move the highlight, digits
+answer outright, Enter takes the highlighted row, Esc refuses. Dismissing is never consent.
+
+**A note attached to an approval cannot ride with it.** `can_use_tool`'s allow reply carries
+`updatedInput` and nothing else; only the deny reply has a `message` field (`wiki/cli-stream-json-findings.md`).
+So shift+Tab approves the tool and hands the typed note to the composer through `restoreDraft()`,
+and says so out loud (`FA.permFeedbackMoved`) — text that moves without a word is text the person
+thinks they lost.
+
+**A question (`AskUserQuestion`) is not a permission.** It keeps its own inputs and the two
+buttons, because «send the answers» and «skip» are not rows in a list — they are what happens to
+whatever the inputs hold. The options are still numbered, digits still pick, and Space toggles when
+`multiSelect` is on. Synthetic `KeyboardEvent`s do not run default actions, so the checkbox toggle
+is implemented explicitly rather than left to the browser — otherwise `test_keys.py` could not
+gate it.
 
 ## CSS: one file, four layers
 

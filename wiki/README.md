@@ -30,7 +30,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched). Since v2.3 it also
   carries **the composer's key dispatcher rules** — capture order is the priority list, and every
-  keydown listener after it must check `defaultPrevented`.
+  keydown listener after it must check `defaultPrevented` — and, since v2.4, **why the dialogs are
+  rows in the column** rather than modals, and the four things that had to change together for
+  that to hold.
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
   collision) that a screenshot cannot catch. Also **what breaks when the window is made small**,

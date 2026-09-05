@@ -248,7 +248,7 @@ Each phase ends with every gate in §7 green and a shippable window. Beads: `pcg
 | **v2.1** Probes ✅ | §5 answered in the wiki | **Done 2026-09-05.** Eleven entries (ten asked, one found), each with the command or the bundle site that produced it, in `wiki/cli-stream-json-findings.md`. `probe_v21.py` re-runs the live half free — 25/25. Only §5.8's "press Up in the real TUI" is left, and it needs a human |
 | **v2.2** Column ✅ | `render.js` + `style.css`: §3.1 rows, Ctrl+O, paste collapse, mono/prose typography | **Done 2026-09-05.** spec **174/174** unchanged, `test_layout.py` 3/3 widths, `test_units.py`, `test_transcript_path.py`, `test_no_console.py` green, `test_tui_vocab.py` **79/79**. New gate `test_column.py` — **22/22**, headless, no `claude` process. Decisions below |
 | **v2.3** Prompt ✅ | `composer.js`: §3.2 keys, history routes, `@`, `!`, Ctrl+G | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+26 over the four new routes), `test_layout.py`, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**. New gate `test_keys.py` — **40/40**, headless, no `claude` process, its chords read out of `wiki/tui-keys.md`. The one half left is §5b's: pressing Up in the REAL terminal, which needs a human at one. Decisions below |
-| **v2.4** Dialogs | §3.3 as numbered inline lists; chips removed; pickers behind commands | `M8-acceptance.md` §6 permission and plan cases pass by keyboard alone |
+| **v2.4** Dialogs ✅ | §3.3 as numbered inline lists; chips removed; pickers behind commands | **Done 2026-09-05.** spec **174/174** unchanged, `test_units.py` (+4 over the refusal note), `test_layout.py` 3/3 widths — now measuring the picker in the flow, `test_transcript_path.py`, `test_no_console.py`, `test_tui_vocab.py` **79/79**, `test_column.py` **22/22**, `test_keys.py` **60/60** (+20, the whole `Confirmation` context). New gate `test_dialogs.py` — **31/31**, free, no browser: the shape the keys are dispatched at. §3.3's `/resume`, `/help` and `/status` rows are not built — see 8.11. Decisions below |
 | **v2.5** Shell | status line §3.4, window-local commands §3.5, home state replaced by the TUI's welcome box; sidebar and tabs untouched | `smoke_test.py` **16/16**; `/api/tabs`, `/api/projects`, `/api/sessions` unchanged |
 | **v2.6** Words | `strings.fa.js` regenerated from v2.0's table; `help.html` rewritten with the «تفاوت با ترمینال» list | Every string in the binary table has a translation; `stop-slop` pass on `help.html` |
 | **v2.7** Acceptance | `M8-acceptance.md` updated for the TUI-shaped shell; bare-machine run | The colleague completes one task by keyboard without a hint |
@@ -373,6 +373,72 @@ Every one of these was decidable without the owner. What is left for them is at 
 **Left for the owner** (product taste, not engineering): §8.9's glyph mirroring is still the
 open one. Two more arrived with this phase and are listed there.
 
+### v2.4 Dialogs — decisions taken while building it, 2026-09-05
+
+Every one of these was decidable without the owner. What is left for them is at the end and in 8.11.
+
+1. **The dialogs stay `<dialog>` elements, opened with `show()`.** The phase is about where they
+   sit, not what they are made of: `show()` leaves the element in the flow, and `position: static`
+   plus `flex: none` undoes the UA's modal geometry. Rebuilding them as `<div>`s would have
+   rewritten every `#perm-*` id the 174 spec assertions read, for a result the browser already
+   offers.
+2. **One numbered list, three owners — `static/js/choice.js`, a leaf.** The confirmation, the
+   pickers and the audit trail draw the same rows; a leaf module can be shared by `chrome.js`
+   (inside the render cycle) and `controls.js` (outside it) without adding an edge to either.
+3. **The list is one tab stop with a moving highlight, not a radio group.** That is what the TUI
+   is, and it is also the only shape where a digit can answer outright: a radio group would make
+   «۲» mean *move the focus*, then need a second key to commit.
+4. **`#perm-form` has no submit button at all.** The 2026-08-31 defect («Enter in the note field
+   silently refuses the tool») was an implicit submit finding the first button, which was the
+   refusal. Every button is `type="button"`, the form has no `method="dialog"`, and every key is
+   bound explicitly. `test_dialogs.py` gates the structure, because the behaviour is invisible
+   until someone adds a `<button>` back.
+5. **Esc refuses a permission and skips a question.** Dismissing is never consent — but a question
+   is not a request for consent, so Esc there sends an allow with no answers, which is what the
+   TUI's skip does. Both halves are in `test_keys.py`.
+6. **A refusal carries what to do instead; an approval cannot.** `can_use_tool`'s deny reply has a
+   `message` field and the allow reply has only `updatedInput`
+   (`wiki/cli-stream-json-findings.md`). So option 3 sends the typed note as the model's reason
+   instead of «user decision» (`server.py`, `test_units.py`), and shift+Tab — approve *and* say
+   this — approves the tool and hands the note to the composer through `restoreDraft()`, saying
+   so out loud. Text that moves without a word is text the person thinks they lost.
+7. **A plan approval draws two options, not three.** There is no next call to stop asking about,
+   so «۲» is simply not drawn and the refusal is «۳» → «۲». This is §8.2's rule paying off: the
+   digit is chrome the renderer places, so a missing option renumbers the list instead of lying.
+8. **The remember checkbox stays in the markup, hidden.** The scope is option 2 now, but
+   `#perm-remember-row` is what the spec harness's «a question offers no remember» case reads,
+   and `chrome.js` still honours it if something ticks it. Deleting it would have cost three
+   assertions to say nothing new.
+9. **The pickers are the commands, by import.** `composer.js` calls `openModelPicker()` and the
+   other three directly instead of `.click()`-ing a chip that no longer exists. `controls.js`
+   imports nothing from the render cycle, so the new edge points one way. An opener with nothing
+   to offer returns `false` and the verb falls through to the CLI as ordinary text — exactly what
+   a hidden chip used to do.
+10. **The audit counter stays on the composer row; the four capability chips go.** It is a label
+    for something that already happened, not a control (`.chip-btn.is-info`, no hover, no
+    pointer), and clicking it opens the list of what was auto-approved. §2 deletes controls, not
+    reporting.
+11. **A question keeps its own inputs and its two buttons.** «Send the answers» and «skip» are not
+    rows in a list — they are what happens to whatever the inputs hold. The options are still
+    numbered and digits still pick, but the toggling is implemented explicitly rather than left to
+    the browser: synthetic `KeyboardEvent`s run no default action, so a native checkbox toggle
+    cannot be gated headlessly and would have been the one keyboard path nothing checks.
+12. **A digit typed into the free-text answer is a digit.** The handler skips any event whose
+    target is `.ask-free`. Otherwise the one field on screen for writing an answer could not hold
+    «۱ فنجان».
+13. **`test_layout.py` now measures the picker instead of the popup, and by width alone.** The
+    gate existed because a hand-positioned menu came back 201px wide; a row in the flow cannot
+    reproduce that, so what is left to assert is that it never comes back narrow anyway. Its
+    margins repeat the composer's centred-column formula, so the list sits over the box it
+    answers for.
+14. **`spec-test.html` keeps `#model-chip` after `index.html` dropped it.** Three assertions about
+    a background tab's model not leaking into the visible one read that label, `controls.js`
+    paints it wherever it exists, and `initControls()` binds nothing without `#picker`. The
+    harness is a fixture, not a copy of the page.
+
+**Left for the owner** (product taste, not engineering): 8.9's glyph mirroring and 8.10's two are
+still open; 8.11 adds what this phase deliberately did not build.
+
 ## 7. Gates
 
 Existing, unchanged: `run_spec_test.py` (174), `test_units.py`, `test_layout.py`,
@@ -389,6 +455,12 @@ new routes stubbed in the page, plus the `!`, `@`, `\`+Enter and `?` cases that 
 rather than chords. It fails in both directions: a key the table binds with nothing behind it,
 and a case here for a key the table never bound. New in v2.6: a strings check that fails when a
 key in the binary table has no entry in `strings.fa.js`.
+**New in v2.4: `test_dialogs.py` (31), free** — the *shape* `test_keys.py` dispatches keys at:
+the chips and the popup gone from `index.html`, both dialogs inside `#stage` above the prompt, no
+submit button in the permission form, `show()` and never `showModal()`, the four verbs mapped to
+openers, `choice.js` still a leaf, §8.1's scope wording and §8.2's «the digit is not in the
+string», and every `FA.*` key the window reads present in `strings.fa.js`. It reads files and
+spawns nothing, so it is the one gate that runs in under a second.
 
 `test_keys.py` (v2.3) reads its cases from `wiki/tui-keys.md`'s «کلید v2» column rather than
 repeating them, so the binding table has exactly one copy and the two gates cannot disagree.
@@ -452,7 +524,8 @@ composer, `precedingAssistantUuid` to truncate the column). It is no longer in �
 build" list. It is **not** scheduled into v2.2–v2.7 either: it is one more dialog plus a
 truncation path in the column, and it arrived after the phases were costed. Recommendation:
 **build it in v2.4** alongside the other dialogs, where the numbered-list machinery already
-exists. Flagged rather than assumed because it moves a phase's size.
+exists. Flagged rather than assumed because it moves a phase's size. **It was not built in v2.4 —
+the reason and the new recommendation are in 8.11.**
 
 ### 8.9 Open — the one that is taste, not engineering
 
@@ -500,3 +573,30 @@ sheet's descriptions and the shell row have no counterpart in `wiki/tui-strings.
 says these things in English in places v2 does not copy, so there was nothing to translate and
 the text is written rather than lifted. They belong in the same one review pass §7 of that file
 already asks for, at v2.6.
+
+### 8.11 Open — the three §3.3 rows v2.4 did not build, and rewind
+
+Not taste in the usual sense: each is a scope call about where a piece of §3.3 belongs, and the
+phase table's exit criterion («permission and plan cases pass by keyboard alone») is met without
+them. Recorded here rather than decided quietly, because each moves a phase's size.
+
+**A. `/help` and `/status` are content, not dialog machinery.** The numbered-list module and the
+picker they would render into are built and exported; what is missing is the text. §3.3 asks for
+«the TUI's help text, translated» and a status block — and translating the TUI's strings is what
+**v2.6 Words** is, phase by phase. Building the text now would mean writing it twice or having
+v2.6 skip the one screen that is mostly text. **Recommendation: both in v2.6**, as `openPicker()`
+calls over strings that phase authors anyway.
+
+**B. `/resume` needs the sidebar to take focus, and v2.5's row says the sidebar is untouched.**
+§3.3 asks for «moves focus into the sidebar's session list; Up/Down, Enter, Esc back to the
+prompt». The sidebar's session rows are buttons in a `<nav>` with no roving focus and no Esc
+route home; giving them one is sidebar work, not dialog work, and it is the one item in §3.3 that
+does not render into the column at all. **Recommendation: v2.5**, with the status line, where the
+shell is the subject.
+
+**C. Rewind (8.8) is still not scheduled.** 8.8 recommended building it in v2.4 «where the
+numbered-list machinery already exists». The machinery now exists and is exported, which is the
+part that was expensive; what rewind still needs is its own dialog *and* a truncation path in the
+column — a renderer change, not a dialog one, in a phase whose renderer was v2.2's. It was left
+out to keep this phase's diff to §3.3. **Recommendation: v2.5 or a phase of its own; the owner
+owns whether it ships in v2 at all.**
