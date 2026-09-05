@@ -1867,7 +1867,11 @@ class PermissionBroker:
 
         self._publish_resolved(request_id, tool_use_id, decision,
                                tool_name=tool_name)
-        return {"decision": decision, "reason": "user decision",
+        # A deny with a note reaches the model as that note: _handle_can_use_tool
+        # puts `reason` in the refusal's `message`, so the sentence the user
+        # typed is what the model is told, instead of "denied by the user".
+        return {"decision": decision,
+                "reason": (entry or {}).get("feedback") or "user decision",
                 "answers": (entry or {}).get("answers")}
 
     def _publish_resolved(self, request_id: str, tool_use_id: str | None,
@@ -1890,12 +1894,21 @@ class PermissionBroker:
         })
 
     def respond(self, request_id: str, decision: str, remember: bool,
-                tool_name: str | None, answers: dict | None = None) -> bool:
+                tool_name: str | None, answers: dict | None = None,
+                feedback: str | None = None) -> bool:
         with self._lock:
             entry = self._pending.get(request_id)
             if entry is None:
                 return False
             entry["decision"] = decision
+            # V2-PLAN §3.3 option 3: «no, and tell Claude what to do
+            # differently». The deny reply is the ONE place a sentence from the
+            # user can ride back to the model on this pipe -- can_use_tool's
+            # allow reply carries `updatedInput` and nothing else
+            # (wiki/permission-transport.md), which is also why «approve WITH
+            # this feedback» cannot be a wire feature.
+            if isinstance(feedback, str) and feedback.strip():
+                entry["feedback"] = feedback.strip()
             # AskUserQuestion's payload. Keyed by question text; the value is an
             # option label, a list of labels, or free text. Validated by the CLI,
             # not here -- a value it does not recognise is still a real answer
@@ -2958,7 +2971,7 @@ def tab_running(sessions: dict[str, ClaudeSession], session_id: str) -> str | No
 
 def respond_permission(sessions: dict[str, ClaudeSession], request_id: str,
                        decision: str, remember: bool, tool_name: str | None,
-                       answers: dict | None) -> bool:
+                       answers: dict | None, feedback: str | None = None) -> bool:
     """Hand an answer to whichever tab's broker is holding `request_id`.
 
     Scanned rather than routed: request ids are uuid4, so the window does not
@@ -2968,7 +2981,7 @@ def respond_permission(sessions: dict[str, ClaudeSession], request_id: str,
     for session in list(sessions.values()):
         broker = session.broker
         if broker is not None and broker.respond(request_id, decision, remember,
-                                                 tool_name, answers):
+                                                 tool_name, answers, feedback):
             return True
     return False
 
@@ -3602,6 +3615,7 @@ class Handler(BaseHTTPRequestHandler):
                 bool(body.get("remember")),
                 body.get("tool_name"),
                 body.get("answers") if isinstance(body.get("answers"), dict) else None,
+                body.get("feedback") if isinstance(body.get("feedback"), str) else None,
             )
             self._send_json(HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND,
                             {"ok": ok})

@@ -1717,5 +1717,39 @@ check("parked blocks come back in the order they were run",
 check("and only once — the next message must not re-send them",
       parking.take_context() == [])
 
+print("permission feedback: option 3 says what to do instead, and the model reads it")
+# V2-PLAN §3.3's third option is «no, and tell Claude what to do differently».
+# The deny reply's `message` is the only field on this pipe that carries a
+# sentence back to the model (wiki/permission-transport.md), so the note has to
+# arrive as the broker's `reason` or it is a text box that goes nowhere.
+fb_hub = _Hub()
+fb_broker = server.PermissionBroker(fb_hub)
+fb_answer: dict = {}
+threading.Thread(
+    target=lambda: fb_answer.update(
+        fb_broker.request("Bash", {"command": "rm -rf ."}, "tu-fb")),
+    daemon=True).start()
+check("the request reaches the window before anything is decided",
+      _eventually(fb_broker.has_pending))
+fb_id = fb_hub.events[0]["request_id"]
+check("a deny carrying a note is accepted by the broker",
+      fb_broker.respond(fb_id, "deny", False, "Bash", None,
+                        "فقط فهرست را بگیر"))
+check("and the note is what the model is told, not \"denied by the user\"",
+      _eventually(lambda: fb_answer.get("reason")
+                  == "فقط فهرست را بگیر"))
+
+blank_hub = _Hub()
+blank_broker = server.PermissionBroker(blank_hub)
+blank_answer: dict = {}
+threading.Thread(
+    target=lambda: blank_answer.update(
+        blank_broker.request("Bash", {"command": "ls"}, "tu-fb2")),
+    daemon=True).start()
+_eventually(blank_broker.has_pending)
+blank_broker.respond(blank_hub.events[0]["request_id"], "deny", False, "Bash", None, "   ")
+check("whitespace is not a note: the plain refusal survives",
+      _eventually(lambda: blank_answer.get("reason") == "user decision"))
+
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
 sys.exit(1 if fails else 0)
