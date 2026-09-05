@@ -300,6 +300,131 @@ function setAttachments(list) {
   });
 }
 
+/* --- long pastes, parked as chips (V2-PLAN §3.1) ----------------------------
+
+   Forty lines of log pasted into the box buries the sentence around them and
+   pushes the composer over half the window. The TUI's answer is to keep the
+   text and put a placeholder in the input — «[Pasted text #1 +39 lines]» — and
+   to expand it again on send. This is that, with the numbers lifted from the
+   binary rather than chosen (V2-PLAN §3.6). Read out of 2.1.261 at the
+   construction site, chunk `.../input`:
+
+     var o9 = 800;                                   // the character threshold
+     function BY(e){ return (e.match(/\r\n|\r|\n/g) || []).length }
+     function cue(e,t){ if (t===0) return `[Pasted text #${e}]`;
+                        return `[Pasted text #${e} +${t} lines]` }
+     ... if (w && (S.length > o9 || T > 2)) { ...mintTextPaste... }
+
+   So: more than 800 characters OR more than two newlines, and the count in the
+   placeholder is the NEWLINE count, not the line count — which is why a paste
+   with none of them gets the short form instead of «+0 سطر».
+
+   The map is keyed by the placeholder's number and holds the real text. It is
+   global for the same reason `attachments` above is: there is one box, and a
+   half-composed message belongs to the person, not to the session. */
+const PASTE_MAX_CHARS = 800;
+const PASTE_MAX_NEWLINES = 2;
+/* What the hover tooltip is allowed to carry. A `title` is the native
+   expand-on-hover and costs no code; the cap is because a browser tooltip
+   silently truncates somewhere around here anyway, and a megabyte of text in
+   an attribute is a megabyte re-serialised on every repaint.
+   ponytail: upgrade to a real hover panel if anyone asks to SEE the paste
+   rather than to check which one it is. */
+const PASTE_PEEK = 2000;
+
+const pasteRow = document.getElementById("pastes");
+let pastes = new Map();   // number -> { text, placeholder }
+let pasteSeq = 0;
+
+function pasteChipEl(id, entry) {
+  const chip = document.createElement("span");
+  chip.className = "chip paste-chip";
+  // The placeholder is the TUI's, in Persian, and it is bracketed Latin-digit
+  // chrome inside an RTL row: isolate it or the «#1» and the «+39» reorder
+  // against the Persian around them (spec rule 2).
+  const text = document.createElement("bdi");
+  text.textContent = entry.placeholder;
+  chip.append(text);
+  chip.title = entry.text.slice(0, PASTE_PEEK);
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.setAttribute("aria-label", FA.pasteDrop);
+  remove.textContent = "×";
+  remove.addEventListener("click", () => {
+    // The chip and the placeholder are one thing: dropping either without the
+    // other leaves the box saying there is a paste that is not there, or
+    // sending forty lines the user thought they had removed.
+    input.value = input.value.split(entry.placeholder).join("");
+    pastes.delete(id);
+    paintPastes();
+    autoGrow();
+    input.focus();
+  });
+  chip.append(remove);
+  return chip;
+}
+
+function paintPastes() {
+  if (!pasteRow) return;   // spec-test.html carries no composer chrome
+  pasteRow.replaceChildren();
+  for (const [id, entry] of pastes) pasteRow.append(pasteChipEl(id, entry));
+  pasteRow.hidden = !pastes.size;
+}
+
+/* Whatever the user did to the box, the chips describe what is actually in it.
+   The TUI has the same rule and a changelog entry for the release where it did
+   not: ctrl+w through half a placeholder used to leave a broken one behind. */
+function prunePastes() {
+  let changed = false;
+  for (const [id, entry] of pastes) {
+    if (!input.value.includes(entry.placeholder)) {
+      pastes.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) paintPastes();
+}
+
+/* Send what was pasted, not the placeholder standing in for it. Substitution
+   is on the exact bracketed string, which the user cannot type by accident in
+   any way that matters: a hand-typed «[متن چسبانده‌شده #1 +39 سطر]» with no
+   paste behind it has no entry here and is sent as itself. */
+function expandPastes(text) {
+  let out = text;
+  for (const entry of pastes.values()) {
+    if (out.includes(entry.placeholder)) out = out.split(entry.placeholder).join(entry.text);
+  }
+  return out;
+}
+
+/* The box is empty, so nothing is standing in for anything. Numbering is NOT
+   reset: two pastes in one session should never share a number, or a stale
+   chip and a fresh one describe the same placeholder. */
+function dropPastes() {
+  if (!pastes.size) return;
+  pastes.clear();
+  paintPastes();
+}
+
+/* Returns false when the paste is short enough to belong in the box as it is,
+   which is the common case and must stay untouched — the caller has not
+   called preventDefault() yet when it asks. */
+function parkPaste(text) {
+  const newlines = (text.match(/\r\n|\r|\n/g) || []).length;
+  if (text.length <= PASTE_MAX_CHARS && newlines <= PASTE_MAX_NEWLINES) return false;
+  const id = ++pasteSeq;
+  const placeholder = (newlines === 0 ? FA.pastePlaceholderShort : FA.pastePlaceholder)
+    .replace("{n}", String(id)).replace("{lines}", String(newlines));
+  pastes.set(id, { text, placeholder });
+  // setRangeText, not `value +=`: it honours the caret and the selection the
+  // paste was replacing, and it keeps native undo — the same reason the ZWNJ
+  // handler uses it (spec rule 6).
+  input.setRangeText(placeholder, input.selectionStart, input.selectionEnd, "end");
+  paintPastes();
+  autoGrow();
+  return true;
+}
+
 /* --- slash-command autocomplete (plan §B-6) -------------------------------- */
 
 let slashCommands = [];   // [{name, description, argumentHint}] — from the CLI
@@ -466,6 +591,8 @@ export function initComposer() {
   });
 
   input.addEventListener("input", autoGrow);
+  // A placeholder the user deleted takes its parked text with it.
+  input.addEventListener("input", prunePastes);
 
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -478,11 +605,16 @@ export function initComposer() {
     if (interceptLifecycle(text)) {
       input.value = "";
       input.style.height = "auto";
+      dropPastes();
       return;
     }
-    const payload = { text, attachments: attachments.slice() };
+    // The placeholders go back to being what was pasted. This is the last
+    // moment they exist: the CLI, the transcript and history.jsonl all get the
+    // real text, exactly as the TUI sends it.
+    const payload = { text: expandPastes(text), attachments: attachments.slice() };
     input.value = "";
     input.style.height = "auto";
+    dropPastes();
     setAttachments([]);
     setBusy(true);
     try {
@@ -578,7 +710,14 @@ export function initComposer() {
   input.addEventListener("paste", async (e) => {
     const images = [...(e.clipboardData?.files ?? [])]
       .filter((f) => f.type.startsWith("image/"));
-    if (!images.length) return;
+    if (!images.length) {
+      // A long text paste is parked as a chip instead of filling the box.
+      // Read BEFORE preventDefault, and only prevented when it is actually
+      // parked — a short paste has to reach the box the browser's own way,
+      // with the browser's own undo entry.
+      if (parkPaste(e.clipboardData?.getData("text/plain") ?? "")) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     for (const file of images) {
       try {
@@ -633,7 +772,8 @@ export function initComposer() {
   setBusy(false);
   const hint = document.getElementById("composer-hint");
   if (hint) {
-    hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.slashHint].join(" · ");
+    hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.hintExpand,
+                        FA.slashHint].join(" · ");
   }
   input.focus();
 }

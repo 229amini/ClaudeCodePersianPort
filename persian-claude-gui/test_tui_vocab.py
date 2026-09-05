@@ -20,6 +20,9 @@ What it asserts:
      bead's own exit criterion (`pcg-qmy.1`), checked instead of asserted in prose.
   5. The per-context binding counts printed in tui-keys.md match the extractor, so the
      "contexts v2 does not build" table cannot rot into a wrong number.
+  6. The paste thresholds v2.2 hardcodes in composer.js are the ones the binary gates on.
+     A drifted limit is invisible: the window would still work, it would just disagree
+     with the terminal running beside it.
 
 Free: reads two files and a binary, spawns nothing, costs no turn. Login-independent.
 """
@@ -265,6 +268,50 @@ def main() -> int:
                 wrong.append(f"{name}: doc says {row[1]}, binary has {actual}")
     check(seen > 5, f"the 'contexts v2 does not build' table was found ({seen} rows)")
     check(not wrong, "every claimed binding count matches the binary", "; ".join(wrong))
+
+    print("\n9. the paste thresholds composer.js hardcodes are still the binary's")
+    # v2.2 parks a long paste behind a `[Pasted text #N +M lines]` chip. Both numbers and
+    # both placeholder shapes were lifted from this bundle, so they are drift-prone in
+    # exactly the way §3.6 warns about: nothing in the window would look wrong if the CLI
+    # moved to 1200 characters, it would just disagree with the terminal beside it.
+    composer = (Path(__file__).resolve().parent / "static" / "js" / "composer.js").read_text(
+        encoding="utf-8")
+    strings_js = (Path(__file__).resolve().parent / "static" / "strings.fa.js").read_text(
+        encoding="utf-8")
+
+    # `let T=BY(S);if(w&&(S.length>o9||T>2))` — the whole decision, in one expression.
+    gate = re.search(rb"\(([A-Za-z_$][\w$]*)\.length>([A-Za-z_$][\w$]*)"
+                     rb"\|\|[A-Za-z_$][\w$]*>(\d+)\)", data)
+    check(gate is not None, "the paste gate is still one length-or-newlines expression",
+          "the bundle reshaped; re-read the paste path before trusting the constants")
+    if gate:
+        var = gate.group(2).decode()
+        decl = re.search(rb"var " + re.escape(gate.group(2)) + rb"=(\d+)", data)
+        chars = int(decl.group(1)) if decl else None
+        newlines = int(gate.group(3))
+        ours = re.search(r"PASTE_MAX_CHARS = (\d+)", composer)
+        ours_nl = re.search(r"PASTE_MAX_NEWLINES = (\d+)", composer)
+        check(chars is not None and ours is not None and int(ours.group(1)) == chars,
+              f"PASTE_MAX_CHARS is the binary's {var} ({chars})",
+              f"composer.js says {ours and ours.group(1)}")
+        check(ours_nl is not None and int(ours_nl.group(1)) == newlines,
+              f"PASTE_MAX_NEWLINES is the binary's newline gate ({newlines})",
+              f"composer.js says {ours_nl and ours_nl.group(1)}")
+
+    # `function BY(e){return(e.match(/\r\n|\r|\n/g)||[]).length}` — CR, LF and CRLF each
+    # count as one line, which is why the window cannot just split on "\n".
+    check(rb"/\r\n|\r|\n/g" in data and r"/\r\n|\r|\n/g" in composer,
+          "the newline count uses the binary's own CR/LF/CRLF regex")
+
+    # `cue(e,t)`: two shapes, and the zero-newline one drops the ` +N lines` tail.
+    check(b"return`[Pasted text #${e}]`" in data
+          and b"return`[Pasted text #${e} +${t} lines]`" in data,
+          "cue() still mints two placeholder shapes")
+    short = re.search(r"pastePlaceholderShort: \"([^\"]+)\"", strings_js)
+    long = re.search(r"pastePlaceholder: \"([^\"]+)\"", strings_js)
+    check(short is not None and "{n}" in short.group(1) and "{lines}" not in short.group(1)
+          and long is not None and "{n}" in long.group(1) and "{lines}" in long.group(1),
+          "strings.fa.js mirrors both shapes: #N alone, and #N with a line count")
 
     return report()
 

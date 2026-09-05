@@ -30,7 +30,7 @@
 import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, setAgents, state, resetTurn, clearPulse,
-  newRenderScope, withRenderTarget,
+  newRenderScope, withRenderTarget, initTranscript,
 } from "./render.js";
 import {
   initChrome, setTabBridge, setOpenTabs, setCurrentSession, setChrome,
@@ -389,6 +389,9 @@ if (events) events.onerror = () => setStatus({});
 initComposer();
 initControls();
 initAgents();
+// Ctrl+O, the TUI's transcript mode: one key that opens every tool result in
+// the column at once (render.js toggleTranscript, wiki/tui-keys.md Global).
+initTranscript();
 // Which conversations are open, and which one this window is looking at. The
 // stream is already filling their buffers by now; this is what puts one of them
 // on screen — unqueued, because until it answers the window shows nothing.

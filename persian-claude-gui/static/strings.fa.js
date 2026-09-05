@@ -46,6 +46,29 @@ window.FA = {
   rawEvent: "رویداد ناشناخته",
   diffTruncated: "{n} خط دیگر نشان داده نشد",
 
+  /* The `⎿` branch under a tool row. The TUI writes «+N lines (ctrl+o to
+     expand)» there because it shows the first few lines and hides the rest;
+     v2 shows none of them until ctrl+o, so the count is the whole output and
+     the «+» would be a lie about what is already on screen
+     (wiki/tui-strings.md §3, V2-PLAN §3.1). */
+  toolResultLines: "{n} سطر",
+  expandHint: "(ctrl+o برای باز کردن)",
+  hintExpand: "باز کردن نتیجه‌ها: Ctrl+O",
+
+  /* The CLI compacted the conversation to make room. Its own banner string is
+     «Conversation compacted»; the numbers come from compact_metadata
+     (wiki/cli-stream-json-findings.md §5.9). */
+  compacted: "گفتگو فشرده شد",
+  compactedTokens: "{before} ← {after} توکن",
+
+  /* A long paste is parked as one chip instead of filling the box, exactly as
+     the TUI does it. `{n}` is the paste's number, `{lines}` the newline count
+     the CLI's own `cue()` writes (measured: 800 characters or more than two
+     newlines is what triggers it). */
+  pastePlaceholder: "[متن چسبانده‌شده #{n} +{lines} سطر]",
+  pastePlaceholderShort: "[متن چسبانده‌شده #{n}]",
+  pasteDrop: "حذف متن چسبانده‌شده",
+
   /* What each CLI tool is called in the transcript. The audience is
      non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that
      is not listed falls back to its own name rather than to a wrong guess —
