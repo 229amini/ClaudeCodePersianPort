@@ -116,6 +116,7 @@ window.FA = {
   keyPaste: "چسباندن تصویر",
   keyQueue: "فرستادن به صف",
   keySheet: "همین فهرست",
+  keyDialogPick: "انتخاب گزینه در گفت‌وگوی اجازه",
 
   /* What each CLI tool is called in the transcript. The audience is
      non-technical: «Edit» means nothing to them, «ویرایش شد» does. A tool that
@@ -271,6 +272,32 @@ window.FA = {
   permAllowed: "اجازه داده شد",
   permDenied: "رد شد",
 
+  /* v2.4: the three numbered options, translated from the TUI's own labels
+     (wiki/tui-strings.md §2). NONE of them carries its number — the digit is
+     drawn by js/choice.js, because in RTL a digit glued to the front of a
+     Persian run is reordered by the bidi algorithm, and because «۲» only
+     exists when a remember scope applies (V2-PLAN §8.2). The `(esc)` on the
+     third one is drawn the same way, for the same reason.
+
+     «{tool}» and no directory: the remember scope here is THIS PROJECT, THIS
+     SESSION, and naming a path would describe a scope the window does not
+     implement (§8.1). */
+  permProceed: "اجازه می‌دهید ادامه دهد؟",
+  permYes: "بله",
+  permYesRemember: "بله، و دیگر برای {tool} نپرس",
+  permNoFeedback: "نه، و بگو طور دیگری انجام دهد",
+  permFeedbackPlaceholder: "بنویسید به‌جای این چه کند…",
+  permHint: "۱ تا ۳ یا ↑↓ و Enter · Tab برای نوشتن توضیح · shift+tab: تأیید همراه با همین توضیح",
+  /* shift+tab approved the tool; the note had nowhere to ride along on that
+     reply, so it is waiting in the message box. Said out loud, because text
+     that moves without a word is text the person thinks they lost. */
+  permFeedbackMoved: "توضیح شما در جعبهٔ پیام گذاشته شد؛ با Enter بفرستید",
+
+  /* Plan approval. Same pipe, same numbered options, different act: what is on
+     screen is a plan to read, not a tool call to allow. */
+  planTitle: "طرح کار",
+  planBody: "کلاد این طرح را نوشته است:",
+
   /* AskUserQuestion. Not an approval — the model is asking something and waits
      for the answer, so the wording never says «اجازه». «رد کردن» skips the
      question, which is what the CLI's own Skip button does. */
@@ -284,6 +311,7 @@ window.FA = {
   askAnswered: "پاسخ داده شد",
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
+  askHint: "با شماره یا ↑↓ انتخاب کنید · Space برای چندگزینه · Enter برای فرستادن",
 
   /* The conversation is filling up. Two actions, because the CLI's own advice
      is «/compact or /clear» and they mean different things: compact keeps the
@@ -348,6 +376,9 @@ window.FA = {
   postureAcceptEditsNote: "فایل‌های پروژه را بدون پرسش ویرایش می‌کند؛ برای اجرای دستور باز هم می‌پرسد",
   postureAutoApprove: "خودکار",
   postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
+  /* One line under every picker, because a list nobody told you how to answer
+     is a list you answer with the mouse. */
+  pickerHint: "با شماره یا ↑↓ و Enter انتخاب کنید · Esc برای بستن",
   postureFailed: "تغییر سطح اجازه ممکن نشد",
   autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",

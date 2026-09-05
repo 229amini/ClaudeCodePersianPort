@@ -7,7 +7,10 @@ import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking } from "./render.js";
 /* One-way, and no new cycle: controls.js imports api.js and nothing else. */
-import { cyclePosture } from "./controls.js";
+import {
+  cyclePosture, openModelPicker, openEffortPicker, openStylePicker,
+  openPosturePicker,
+} from "./controls.js";
 
 const FA = window.STRINGS;
 
@@ -911,6 +914,10 @@ const KEY_SHEET = [
   ["Shift+Space", "keyZwnj"],
   ["Ctrl+V", "keyPaste"],
   ["Ctrl+X Enter", "keyQueue"],
+  // The confirmation's own keys. They belong on this sheet because the dialog
+  // is where a non-technical user meets a keyboard-only decision for the first
+  // time (V2-PLAN §3.3, wiki/tui-keys.md «Confirmation»).
+  ["۱ ۲ ۳", "keyDialogPick"],
   ["?", "keySheet"],
 ];
 
@@ -942,18 +949,31 @@ export function showKeySheet() {
 /* --- lifecycle verbs ------------------------------------------------------- */
 
 /* Commands that change the WRAPPER's state, not the conversation's. Sent to the
-   CLI as text they would move the CLI and leave this window's model chip, pill
-   and log describing something that is no longer true. Each one presses the
-   button the user could have pressed themselves — no second implementation of
-   what the chip already does, and nothing to keep in sync.
+   CLI as text they would move the CLI and leave this window's own picture of
+   the model, the posture and the log describing something that is no longer
+   true.
+
+   v2.4 is where these stopped being "click the chip that already does it": the
+   chips are gone (V2-PLAN §2) and the pickers ARE the commands now (§3.3,
+   "pickers behind commands"). Each entry answers with false when there is
+   nothing to offer — no model list yet, a model with no effort levels — and a
+   verb that answers false falls through to the CLI as ordinary text, exactly
+   as a hidden chip used to.
 
    `/compact` is deliberately NOT here: it is not a control subtype on this
    build (measured — wiki/control-protocol.md), so it passes through to the CLI
    as text like every other slash command. */
-const LIFECYCLE_BUTTONS = {
-  model: "#model-chip",
-  permissions: "#posture-chip",
-  clear: "#btn-new",
+const LIFECYCLE_VERBS = {
+  model: openModelPicker,
+  effort: openEffortPicker,
+  "output-style": openStylePicker,
+  permissions: openPosturePicker,
+  clear: () => {
+    const button = document.getElementById("btn-new");
+    if (!button || button.hidden) return false;
+    button.click();
+    return true;
+  },
 };
 
 /* --- the dispatcher ---------------------------------------------------------
@@ -1059,15 +1079,13 @@ function promptKeys(e) {
       e.preventDefault();
       toggleThinking();
       return;
-    case "alt+p": {
-      const chip = document.getElementById("model-chip");
-      // Nothing to pick from yet: the key is not ours, the way shift+Tab is
-      // not ours before a posture is confirmed.
-      if (!chip || chip.hidden) return;
+    case "alt+p":
+      // Nothing to pick from yet — `initialize` has not answered — so the key
+      // is not ours, the way shift+Tab is not ours before a posture is
+      // confirmed. openModelPicker() says so with a boolean.
+      if (!openModelPicker()) return;
       e.preventDefault();
-      chip.click();
       return;
-    }
     default:
       break;
   }
@@ -1120,11 +1138,8 @@ function promptKeys(e) {
 /* Returns true when the text was a lifecycle verb and must not be sent. */
 function interceptLifecycle(text) {
   const verb = /^\/([a-z-]+)\s*$/.exec(text)?.[1];
-  const selector = verb && LIFECYCLE_BUTTONS[verb];
-  const button = selector && document.querySelector(selector);
-  if (!button || button.hidden) return false;   // unavailable: let it through
-  button.click();
-  return true;
+  const open = verb && LIFECYCLE_VERBS[verb];
+  return open ? open() !== false : false;
 }
 
 /* --- init ------------------------------------------------------------------ */
@@ -1304,7 +1319,7 @@ export function initComposer() {
     if (e.key !== "Escape" || e.defaultPrevented || !busy) return;
     if (document.querySelector("dialog[open], :popover-open, " +
                                "#slash-popup:not([hidden]), " +
-                               "#menu-popup:not([hidden])")) return;
+                               "#file-popup:not([hidden])")) return;
     e.preventDefault();
     stopBtn?.click();
   });

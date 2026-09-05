@@ -43,10 +43,12 @@ STATIC = HERE / "static"
 PROBE = STATIC / "_keys_probe.html"
 KEYS_DOC = HERE.parent / "wiki" / "tui-keys.md"
 
-# The contexts the PROMPT owns. `Confirmation` is v2.4's, `Task` has no v2 key,
-# and the rest of the file is reference material about screens v2 does not
-# build (the doc's own "Contexts v2 does not build" table).
-CONTEXTS = ("Global", "Chat", "Autocomplete", "Transcript", "HistorySearch")
+# The contexts the PROMPT and its DIALOGS own. `Confirmation` joined in v2.4,
+# when the permission and plan dialogs became numbered inline lists. `Task` has
+# no v2 key, and the rest of the file is reference material about screens v2
+# does not build (the doc's own "Contexts v2 does not build" table).
+CONTEXTS = ("Global", "Chat", "Autocomplete", "Transcript", "HistorySearch",
+            "Confirmation")
 
 # (context, chord as the wiki writes it) -> the probe result that proves it.
 # The chord strings are NOT authored here: the parser below reads them out of
@@ -81,6 +83,21 @@ SCENARIOS = {
     ("HistorySearch", "Esc"): ("searchEsc", "Esc puts the match in the box"),
     ("HistorySearch", "Tab"): ("searchTab", "so does Tab"),
     ("HistorySearch", "Enter"): ("searchEnter", "Enter puts it there and sends"),
+    # v2.4, the confirmation. Every one of these is answered with the keyboard
+    # alone, which is the phase's exit criterion (M8-acceptance.md §6).
+    ("Confirmation", "1"): ("permOne", "1 approves this call and nothing more"),
+    ("Confirmation", "3"): ("permThree", "3 refuses it"),
+    ("Confirmation", "Enter"): ("permEnter", "Enter answers the highlighted row"),
+    ("Confirmation", "Esc"): ("permEsc", "Esc refuses — dismissing is never consent"),
+    ("Confirmation", "↓"): ("permDown", "Down moves the highlight on"),
+    ("Confirmation", "↑"): ("permUp", "Up moves it back"),
+    ("Confirmation", "Tab"): ("permTab", "Tab goes to the note field, the second"
+                                         " of the dialog's two fields"),
+    ("Confirmation", "Space"): ("askSpace",
+                                "Space toggles the highlighted row of a"
+                                " multi-choice question"),
+    ("Confirmation", "shift+tab"): ("permShiftTab",
+                                    "shift+tab approves and keeps the note"),
 }
 
 PROBE_JS = r"""
@@ -111,6 +128,11 @@ const lastCall = (path) => [...calls].reverse().find((c) => c.url.startsWith(pat
 /* true when the page HANDLED the key (preventDefault). false means it fell
    through to the browser, which for two of the rows below is the whole point. */
 const key = (k, init = {}) => !input.dispatchEvent(new KeyboardEvent("keydown",
+  { key: k, bubbles: true, cancelable: true, ...init }));
+/* The dialogs answer where the FOCUS is, which is the list and not the prompt
+   box -- so the confirmation cases below dispatch at the element that owns the
+   key rather than pretending the textarea does. */
+const keyAt = (el, k, init = {}) => !el.dispatchEvent(new KeyboardEvent("keydown",
   { key: k, bubbles: true, cancelable: true, ...init }));
 const type = (text) => {
   input.value = text;
@@ -209,12 +231,135 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   const postureHandled = key("Tab", { shiftKey: true });
   await sleep(40);
   out.postureCycled = postureHandled && called("/api/posture");
-  const menu = document.getElementById("menu-popup");
+  const picker = document.getElementById("picker");
   const modelHandled = key("p", { altKey: true });
   await sleep(20);
-  out.modelPicked = modelHandled && !!menu && !menu.hidden;
-  document.body.click();
+  // v2.4: the chips are gone and the pickers are numbered inline lists, so the
+  // key opens a dialog in the flow rather than a popup hanging off a chip.
+  out.modelPicked = modelHandled && !!picker && picker.open
+    && picker.querySelectorAll(".opt").length === 2
+    && picker.querySelector(".opt .opt-num")?.textContent === "\u06f1.";
+  keyAt(picker.querySelector(".opts"), "Escape");
   await sleep(20);
+  out.pickerEsc = !picker.open;
+
+
+  /* --- the confirmation, v2.4 (V2-PLAN §3.3) ------------------------------ */
+  const perm = document.getElementById("perm");
+  const feedback = document.getElementById("perm-feedback");
+  const askPerm = (id, tool, toolInput) => window.renderEvent({
+    type: "wrapper", subtype: "permission_request", request_id: id,
+    tool_name: tool ?? "Bash", tool_use_id: id + "-t",
+    tool_input: toolInput ?? { command: "echo " + id } });
+  const opts = () => [...perm.querySelectorAll("#perm-opts .opt")];
+  const optList = () => perm.querySelector("#perm-opts .opts");
+  const optAt = () => opts().findIndex((o) => o.getAttribute("aria-selected") === "true");
+  const answered = () => lastCall("/api/permission/respond")?.body ?? {};
+
+  askPerm("k-one");
+  await sleep(20);
+  // Three numbered rows, the digit drawn as its own element (V2-PLAN §8.2) and
+  // the `(esc)` on the refusal drawn as its own too (wiki/tui-strings.md §2).
+  out.permNumbered = perm.open && opts().length === 3
+    && opts()[0].querySelector(".opt-num")?.textContent === "\u06f1."
+    && opts()[2].querySelector(".opt-num")?.textContent === "\u06f3."
+    && !!opts()[2].querySelector(".opt-esc")
+    && opts().every((o) => !o.querySelector(".opt-title").textContent.trim().startsWith("\u06f1"));
+  // In the flow above the prompt, not floating over the transcript.
+  out.permInline = perm.parentElement?.id === "stage"
+    && getComputedStyle(perm).position === "static";
+  const oneHandled = keyAt(optList(), "1");
+  await sleep(40);
+  out.permOne = oneHandled && answered().decision === "allow"
+    && answered().remember !== true && !perm.open;
+
+  askPerm("k-two");
+  await sleep(20);
+  keyAt(optList(), "\u06f2");            // the Persian digit answers too
+  await sleep(40);
+  out.permTwoFaDigit = answered().decision === "allow" && answered().remember === true;
+
+  askPerm("k-three");
+  await sleep(20);
+  feedback.value = "\u0641\u0642\u0637 \u0641\u0647\u0631\u0633\u062a \u0631\u0627 \u0628\u06af\u06cc\u0631";
+  const threeHandled = keyAt(optList(), "3");
+  await sleep(40);
+  out.permThree = threeHandled && answered().decision === "deny"
+    && answered().feedback === "\u0641\u0642\u0637 \u0641\u0647\u0631\u0633\u062a \u0631\u0627 \u0628\u06af\u06cc\u0631";
+
+  askPerm("k-enter");
+  await sleep(20);
+  const enterOk = keyAt(optList(), "Enter");
+  await sleep(40);
+  out.permEnter = enterOk && answered().decision === "allow"
+    && answered().remember !== true;
+
+  askPerm("k-arrows");
+  await sleep(20);
+  const downOk = keyAt(optList(), "ArrowDown");
+  const afterDown = optAt();
+  const upOk = keyAt(optList(), "ArrowUp");
+  out.permDown = downOk && afterDown === 1;
+  out.permUp = upOk && optAt() === 0;
+  keyAt(optList(), "ArrowDown");
+  keyAt(optList(), "Enter");
+  await sleep(40);
+  // Down then Enter is the same act as pressing 2 -- one list, one highlight.
+  out.permArrowEnter = answered().decision === "allow" && answered().remember === true;
+
+  askPerm("k-tab");
+  await sleep(20);
+  const tabOk = keyAt(optList(), "Tab");
+  out.permTab = tabOk && document.activeElement === feedback;
+  // And back, so the note field is not a one-way trip.
+  const backOk = keyAt(feedback, "Tab");
+  out.permTabBack = backOk && document.activeElement === optList();
+  const escOk = keyAt(optList(), "Escape");
+  await sleep(40);
+  out.permEsc = escOk && answered().decision === "deny" && !perm.open;
+
+  askPerm("k-shift-tab");
+  await sleep(20);
+  feedback.value = "\u0628\u0647 \u062c\u0627\u06cc\u0634 \u0628\u0646\u0648\u06cc\u0633";
+  const shiftTabOk = keyAt(optList(), "Tab", { shiftKey: true });
+  await sleep(40);
+  // `can_use_tool`'s allow reply carries no message, so the note cannot ride
+  // with the approval -- it lands in the box the person can send it from.
+  out.permShiftTab = shiftTabOk && answered().decision === "allow"
+    && !perm.open && input.value.includes("\u0628\u0647 \u062c\u0627\u06cc\u0634 \u0628\u0646\u0648\u06cc\u0633");
+  type("");
+
+  // A plan is approved once: there is no next call to stop asking about, so
+  // «۲» is simply not drawn and «۳» is still the refusal.
+  askPerm("k-plan", "ExitPlanMode", { plan: "# \u0637\u0631\u062d\n\n- \u06cc\u06a9" });
+  await sleep(20);
+  out.planNoRemember = perm.open && opts().length === 2
+    && !!opts()[1].querySelector(".opt-esc")
+    && opts()[1].querySelector(".opt-num")?.textContent === "\u06f2.";
+  keyAt(optList(), "Escape");
+  await sleep(40);
+
+  /* A question is not an approval: it keeps its own inputs, numbered, and
+     Space is what toggles one of several. */
+  askPerm("k-ask", "AskUserQuestion", { questions: [{
+    question: "\u06a9\u062f\u0627\u0645\u200c\u0647\u0627\u061f", multiSelect: true,
+    options: [{ label: "Tea" }, { label: "\u0642\u0647\u0648\u0647" }] }] });
+  await sleep(20);
+  const boxes = [...perm.querySelectorAll("#perm-ask .ask-opt input")];
+  out.askNumbered = perm.classList.contains("asking") && boxes.length === 2
+    && perm.querySelector("#perm-ask .ask-opt .opt-num")?.textContent === "\u06f1."
+    && !perm.querySelector("#perm-opts .opt");
+  const digitOk = keyAt(boxes[0], "2");
+  out.askDigit = digitOk && boxes[1].checked && !boxes[0].checked;
+  const spaceOk = keyAt(boxes[1], " ");
+  out.askSpace = spaceOk && !boxes[1].checked
+    && keyAt(boxes[1], " ") && boxes[1].checked;
+  // A digit typed into the free-text answer is a digit, not a choice.
+  const free = perm.querySelector("#perm-ask .ask-free");
+  out.askFreeDigits = !keyAt(free, "1");
+  keyAt(boxes[1], "Escape");
+  await sleep(40);
+  out.askEscSkips = !perm.open && answered().decision === "allow";
 
   /* --- the external editor ------------------------------------------------ */
   type("pish-nevis");
@@ -410,6 +555,21 @@ def checks(m: dict, table: list[tuple[str, str, str]]) -> list[tuple[str, bool, 
         ("sheetOpened", "`?` on an empty prompt opens the shortcuts sheet"),
         ("sheetRows", "every row of it names a key and says what the key does"),
         ("sheetNotInSentence", "and `?` inside a sentence is punctuation"),
+        # v2.4 — the parts of the dialog that are structure rather than chords.
+        ("permNumbered", "the permission dialog is a numbered list, digit and"
+                         " `(esc)` drawn as their own elements"),
+        ("permInline", "and it sits in the flow above the prompt, not over the column"),
+        ("permTwoFaDigit", "«۲» approves and remembers, in either digit family"),
+        ("permArrowEnter", "↓ then Enter is the same answer as pressing «۲»"),
+        ("permTabBack", "Tab out of the note field goes back to the options"),
+        ("planNoRemember", "a plan approval offers no «don't ask again» — there is"
+                           " no next call to skip"),
+        ("askNumbered", "a question keeps its own inputs, numbered, and no option list"),
+        ("askDigit", "a digit picks one of a question's options"),
+        ("askFreeDigits", "but a digit typed into the free-text answer is a digit"),
+        ("askEscSkips", "Esc on a question skips it — an allow with no answers,"
+                        " never a refusal"),
+        ("pickerEsc", "Esc closes a picker"),
     ]:
         check(what, m.get(probe_key) is True, "" if m.get(probe_key) else "did not fire")
 
