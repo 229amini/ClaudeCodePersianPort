@@ -318,6 +318,31 @@ def main() -> int:
     notfa = [v for v in described if not PERSIAN.search(nested.get(v, ""))]
     check(not notfa, "and none of them is described in English", "; ".join(notfa))
 
+    print("\n9. help.html lists what the window does not do")
+    # V2-PLAN §4 keeps the list of features the terminal has and this window
+    # will not build, and says «help.html lists these under تفاوت با ترمینال».
+    # The plan is the one copy; this reads it rather than repeating it, so a
+    # name that leaves §4 (as `/tasks`, `/background` and esc-esc rewind did on
+    # 2026-09-05) stops being demanded here on the same day.
+    help_html = read(STATIC / "help.html")
+    plan = read(HERE.parent / "V2-PLAN.md")
+    section = plan.split("## 4. Known differences, will not build", 1)
+    check(len(section) == 2, "V2-PLAN §4 is where the list lives")
+    check("تفاوت با ترمینال" in help_html,
+          "help.html has the «تفاوت با ترمینال» section the plan asks for")
+    if len(section) == 2:
+        head = section[1].split("**Two names left this list", 1)[0]
+        names = set(re.findall(r"`(/[a-z-]+)`", head))
+        check(len(names) > 10, f"§4 names {len(names)} commands")
+        unlisted = sorted(n for n in names if n not in help_html)
+        check(not unlisted, "and help.html names every one of them",
+              "; ".join(unlisted))
+    # `!` used to be on that page as a thing the window lacked. v2.3 built it,
+    # and a guide that still says otherwise is worse than no guide.
+    check("تفاوت با ترمینال" in help_html
+          and "اجرای مستقیم دستور سیستمی" not in help_html,
+          "and no longer claims the `!` shell line is missing — v2.3 built it")
+
     print()
     if failures:
         print(f"FAIL — {checks - len(failures)}/{checks}")
