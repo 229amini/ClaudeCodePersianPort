@@ -40,11 +40,19 @@ Free: reads files, spawns nothing, costs no turn. Needs no browser and no
 
 from __future__ import annotations
 
+import os
 import re
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STATIC = HERE / "static"
+sys.path.insert(0, str(HERE))
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "terminal")
+STATIC = HERE / EDITIONS[EDITION][0]
 JS = STATIC / "js"
 WIKI = HERE.parent / "wiki"
 STRINGS_DOC = WIKI / "tui-strings.md"

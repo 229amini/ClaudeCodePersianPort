@@ -20,7 +20,10 @@ built from the real file — and asks the questions v2.2 is answerable for:
   - a compact_boundary draws the divider, from the event's own metadata;
   - a subagent's steps render INSIDE the Task row, not beside it;
   - a long paste is parked as a chip, a short one is not, and what is SENT is
-    the pasted text rather than the placeholder.
+    the pasted text rather than the placeholder;
+  - `!` output replayed out of a transcript is the same shell card the live
+    wrapper/shell event draws, not `<bash-input>` markup in the user's bubble
+    (E4/F6).
 
 Free: no CLI turn, no login. The probe page is deleted again on the way out.
 
@@ -43,7 +46,12 @@ sys.path.insert(0, str(HERE))
 # test_layout.py already does; a second copy would drift from it.
 from test_layout import find_edge, hold_sse, measure  # noqa: E402
 
-STATIC = HERE / "static"
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "terminal")
+STATIC = HERE / EDITIONS[EDITION][0]
 PROBE = STATIC / "_column_probe.html"
 
 PROBE_JS = r"""
@@ -208,6 +216,26 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   out.mirroredOn = [...log.querySelectorAll(".glyph.mirror")].every(flipped);
   out.mirrorCount = log.querySelectorAll(".glyph.mirror").length;
 
+  /* --- `!` output replayed out of a transcript ----------------------------
+     A `!` line is not in the event stream: the wrapper parks its tagged output
+     and it rides in front of the next message as its own text block, which is
+     the TUI's own tagging (measured in ~/.claude/projects). Left alone the
+     user's bubble opens with the raw markup. Last, because it appends to the
+     column every measurement above reads. */
+  window.renderEvent({ type: "user", message: { content: [
+    { type: "text", text: "<bash-input>dir C:\\Users</bash-input>\n"
+      + "<bash-stdout>\u06cc\u06a9 \u062e\u0637 \u0641\u0627\u0631\u0633\u06cc"
+      + "\nSecond line in English</bash-stdout>" },
+    { type: "text", text: "\u0627\u06cc\u0646 \u0631\u0627 \u0628\u0628\u06cc\u0646" },
+  ] } });
+  await sleep(40);
+  const shellCard = [...log.querySelectorAll("details.card.shell")].at(-1);
+  const userRow = [...log.querySelectorAll(".msg.user")].at(-1);
+  out.replayShellCmd = shellCard?.querySelector(".shell-cmd")?.textContent ?? "";
+  out.replayShellOut = (shellCard?.textContent ?? "").includes("Second line in English");
+  out.replayBubble = (userRow?.textContent ?? "").trim();
+  out.replayRawTags = log.textContent.includes("<bash-");
+
   document.getElementById("probe-out").textContent =
     "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
@@ -331,6 +359,17 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('mirrorCount')} glyphs, off={m.get('mirroredOff')}, "
           f"on={m.get('mirroredOn')}")
 
+    check("replayed `!` output is a shell card, not tags in the user's bubble",
+          m.get("replayShellCmd") == "dir C:\\Users"
+          and m.get("replayShellOut") is True
+          and m.get("replayRawTags") is False
+          and "\u0627\u06cc\u0646 \u0631\u0627 \u0628\u0628\u06cc\u0646"
+              in m.get("replayBubble", "")
+          and "bash-" not in m.get("replayBubble", ""),
+          f"card \u00ab{m.get('replayShellCmd')}\u00bb / "
+          f"bubble \u00ab{m.get('replayBubble')}\u00bb"
+          + (" / RAW TAGS IN THE COLUMN" if m.get("replayRawTags") else ""))
+
     return out
 
 
@@ -338,7 +377,8 @@ def main() -> int:
     edge = find_edge()
     write_probe()
     proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window"],
+        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
+         "--ui", EDITION],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"})

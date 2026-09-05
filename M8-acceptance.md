@@ -15,6 +15,17 @@ untouched. Every step below was cross-checked against `static/js/*.js`, `static/
 test or module implements — where v2 deliberately does not build something (rewind, `/theme`
 switching, a diff panel), it is named as **not built** rather than left off silently.
 
+**Two editions since 2026-09-05 (`EDITIONS-PLAN.md`, `wiki/editions.md`).** `setup.bat` now
+writes **two** shortcuts: «کلاد فارسی» (the web edition, `static/` — the mouse-driven chat
+window described in the paragraph above as "none of that ships any more"; it does, unchanged,
+plus the CLI features E3 added) and «کلاد فارسی — ترمینال» (the terminal edition,
+`static-terminal/`, which is what §4–§6 below describe). Run §0–§3 once; run §4–§7 **once per
+shortcut**. For the web edition, read §4–§6 with the wording of the `main`-branch checklist
+(`git show main:M8-acceptance.md`) — chips, pill and cards instead of numbered dialogs — and
+add: history with `↑`/`Ctrl+R`, `@` file completion, a `!` command, `Ctrl+G`, `/export`,
+`/branch`, each once. The title bar names the edition and its version; if both windows show the
+same title, the wrong tree was deployed.
+
 Everything before this point was verified on the author's PC only. Four install branches have
 **never executed anywhere** (see `wiki/packaging.md`), and they all execute here for the first
 time. Expect to find something in the installer; the shell itself has 174/174 spec, six free gate

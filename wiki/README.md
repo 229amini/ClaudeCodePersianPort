@@ -4,6 +4,9 @@ Project memory for the Persian RTL Claude Code front-end. One topic per file, ke
 Write here when a session learns something a future session would otherwise re-derive —
 especially the §B-9 verification answers, which are pinned to a specific `claude` version.
 
+- [editions.md](editions.md) — **two editions, one engine (2026-09-05).** Web «کلاد فارسی» in
+  `static/`, terminal «کلاد فارسی — ترمینال» in `static-terminal/`, picked by `--ui` /
+  `PCG_UI`; which tests gate which edition; why the shortcut once said v1.1.0 on the wrong tree.
 - [cli-stream-json-findings.md](cli-stream-json-findings.md) — **read first.** Measured CLI
   contract on 2.1.221: required flags, every event type seen on the wire, and the permission
   mechanism that actually works (it is not the one in the plan).

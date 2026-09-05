@@ -413,6 +413,19 @@ function closeDrawer() {
    `reset` — the one choke point every session swap goes through (project
    switch, new chat and resume all restart the CLI through it). State surviving
    a swap is this project's known defect family. */
+/* `/tasks` (V2-PLAN §3.5). The strip hides finished rows behind the «تاریخچه»
+   toggle; the command is the TUI's «show me the background work», so it unfolds
+   them and puts the keyboard on the first row. False when there is no strip at
+   all — the caller says so in its own words rather than opening an empty box. */
+export function unfoldAgents() {
+  if (!registry.length) return false;
+  showHistory = true;
+  paint();
+  const el = stripEl();
+  el.querySelector("[data-agent-id]")?.focus();
+  return true;
+}
+
 export function resetAgents() {
   clearTimeout(listTimer);
   clearTimeout(refreshTimer);

@@ -27,7 +27,13 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STATIC = HERE / "static"
+sys.path.insert(0, str(HERE))
+from server import EDITIONS  # noqa: E402
+
+# The edition decides which UI folder this gate reads. PCG_UI picks it;
+# the table itself lives in server.py and is never duplicated.
+EDITION = os.environ.get("PCG_UI", "web")
+STATIC = HERE / EDITIONS[EDITION][0]
 PROBE = STATIC / "_layout_probe.html"
 
 # 500px is about as narrow as a real window gets: Chromium refuses to make a
@@ -40,10 +46,50 @@ EDGE_CANDIDATES = (
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 )
 
+# The same measurement, two shells. The web edition's home state is a greeting
+# with a chip row and a posture popup hanging off it; the terminal edition's is
+# a welcome box whose pickers are numbered lists opened from the keyboard. Only
+# the selectors and the counts differ - every assertion below is shared.
+#
 # Boxes that are supposed to hold more than fits, so scrollWidth > clientWidth
 # is their job rather than a defect.
-SCROLLERS = ("log", "side-scroll", "table-wrap", "picker", "perm", "slash-popup",
-             "tool-output", "diff", "attachments", "ag-log")
+SHELL = {
+    "web": dict(
+        scrollers=("log", "side-scroll", "table-wrap", "menu-popup", "slash-popup",
+                   "tool-output", "diff", "attachments", "ag-log"),
+        home_sel=".greeting", home_name="greeting",
+        # The posture menu: the widest picker, hanging off the last chip of the
+        # row, which is what made it the one that came back 201px wide.
+        open_menu='document.getElementById("posture-chip").click();',
+        menu_id="menu-popup", row_sel=".menu-row", menu_name="posture menu",
+        # 7 = attach + folder + model + effort + style + posture + audit counter.
+        chips=7, rows=4, drawer_test=""),
+    "terminal": dict(
+        scrollers=("log", "side-scroll", "table-wrap", "picker", "perm", "slash-popup",
+                   "tool-output", "diff", "attachments", "ag-log"),
+        home_sel=".welcome", home_name="welcome",
+        # Alt+P, which is how the terminal opens this list too - no chip to click.
+        open_menu=('document.getElementById("input").dispatchEvent('
+                   'new KeyboardEvent("keydown", '
+                   '{key: "p", altKey: true, bubbles: true, cancelable: true}));'),
+        menu_id="picker", row_sel=".opt", menu_name="model picker",
+        # 3 = attach + folder + send; v2.4 took the four capability chips off
+        # the row (V2-PLAN 2) and the audit counter only appears once a session
+        # has audited something. Two rows, because the initialize below
+        # advertises two models.
+        chips=3, rows=2,
+        # F5: agents.js only builds #agent-drawer on demand (when a
+        # background agent row is clicked), so the probe stands one up
+        # itself - a [popover], showPopover() is enough to measure it.
+        drawer_test=(
+            'const dPanel = document.createElement("div");'
+            'dPanel.id = "agent-drawer"; dPanel.popover = "auto";'
+            'document.body.append(dPanel); dPanel.showPopover();'
+            'await sleep(50); drawer = box(dPanel);'
+            'dPanel.hidePopover(); dPanel.remove();')),
+}
+SH = SHELL[EDITION]
+SCROLLERS = SH["scrollers"]
 
 # The measuring script. It feeds the capability mirror a plausible `initialize`
 # (nothing about the CLI is hardcoded in the app, so no picker has rows until
@@ -111,7 +157,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
 
   // The home state, which is what the window opens on.
   const home = {compBox: box(document.querySelector(".comp-box")),
-                welcome: box(document.querySelector(".welcome")),
+                home: box(document.querySelector("%HOMESEL%")),
                 clipped: clipped()};
 
   // ...and then the state it spends the rest of its life in. A transcript is
@@ -138,12 +184,15 @@ const SCROLLERS = new Set(%SCROLLERS%);
                    c.getBoundingClientRect().width > 0)
     .map((c) => ({id: c.id || c.className, ...box(c)}));
 
-  // Alt+P, which is how the terminal opens this list too - no chip to click.
-  document.getElementById("input").dispatchEvent(new KeyboardEvent("keydown",
-    {key: "p", altKey: true, bubbles: true, cancelable: true}));
+  %OPENMENU%
   await sleep(150);
-  const menu = document.getElementById("picker");
-  const rows = [...menu.querySelectorAll(".opt")];
+  const menu = document.getElementById("%MENUID%");
+  const rows = [...menu.querySelectorAll("%ROWSEL%")];
+
+  // F5: the terminal edition's agent drawer, measured against the sidebar.
+  let drawer = null;
+  %DRAWERTEST%
+
   let overlap = 0;
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
@@ -155,11 +204,17 @@ const SCROLLERS = new Set(%SCROLLERS%);
 
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify({
     view: [innerWidth, innerHeight],
+    // The layout viewport: innerWidth still counts a classic scrollbar, and
+    // the shell is laid out inside what is left of it.
+    clientW: document.documentElement.clientWidth,
+    sidebar: box(document.getElementById("sidebar")),
+    stage: box(document.getElementById("stage")),
     compBox: home.compBox,
-    welcome: home.welcome,
+    home: home.home,
     comp: compNow, chips,
     menu: box(menu),
     rows: rows.length,
+    drawer,
     overlap, squashed,
     clipped: home.clipped.concat(clipped()),
   }) + "ENDPROBE";
@@ -201,7 +256,12 @@ def write_probe() -> None:
     if marker not in page:
         sys.exit("index.html no longer opens with " + marker)
     page = page.replace(marker, '<body class="app" data-render-only>', 1)
-    script = PROBE_JS.replace("%SCROLLERS%", json.dumps(SCROLLERS))
+    script = (PROBE_JS.replace("%SCROLLERS%", json.dumps(SCROLLERS))
+              .replace("%HOMESEL%", SH["home_sel"])
+              .replace("%OPENMENU%", SH["open_menu"])
+              .replace("%MENUID%", SH["menu_id"])
+              .replace("%ROWSEL%", SH["row_sel"])
+              .replace("%DRAWERTEST%", SH["drawer_test"]))
     PROBE.write_text(page.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
 
 
@@ -232,7 +292,8 @@ def main() -> int:
     edge = find_edge()
     write_probe()
     proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window"],
+        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
+         "--ui", EDITION],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"})
@@ -260,7 +321,7 @@ def main() -> int:
                 failures.append(f"{where}: {err}")
                 continue
             view = m["view"][0]
-            for name, rect in (("composer", m["compBox"]), ("welcome", m["welcome"]),
+            for name, rect in (("composer", m["compBox"]), (SH["home_name"], m["home"]),
                                ("picker menu", m["menu"])):
                 if rect["x"] < 0 or rect["x"] + rect["w"] > view + 1:
                     failures.append(f"{where}: {name} is off the window "
@@ -269,13 +330,14 @@ def main() -> int:
                     failures.append(f"{where}: {name} is above the window (y={rect['y']})")
             if m["clipped"]:
                 failures.append(f"{where}: content wider than its box - {m['clipped'][:4]}")
-            # The composer row (pcg-tda). 3 = attach + folder + send; the four
-            # capability chips left in v2.4 (V2-PLAN §2) and the audit counter
-            # only appears once a session has audited something. Asserted at
-            # all so a row that rendered nothing cannot pass every geometry
-            # check below by having no geometry.
+            # The composer row (pcg-tda): every visible chip must sit inside
+            # the composer box at one line of height. Before the fix the row
+            # could not wrap and the last chips were pushed out of the box. The
+            # count is per-edition (SHELL above) and asserted at all so a row
+            # that rendered nothing cannot pass every geometry check below by
+            # having no geometry.
             comp = m["comp"]
-            if len(m["chips"]) < 3:
+            if len(m["chips"]) < SH["chips"]:
                 failures.append(f"{where}: only {len(m['chips'])} composer chips rendered")
             for chip in m["chips"]:
                 if chip["h"] > 40:
@@ -286,11 +348,11 @@ def main() -> int:
                         or chip["y"] + chip["h"] > comp["y"] + comp["h"] + 1):
                     failures.append(f"{where}: chip {chip['id']} sits outside the composer box "
                                     f"({chip} vs {comp})")
-            # Two, because the initialize above advertises two models. The
-            # count is asserted at all so a picker that renders nothing cannot
-            # pass every geometry check below by having no geometry.
-            if m["rows"] != 2:
-                failures.append(f"{where}: the model picker drew {m['rows']} rows, not 2")
+            # Asserted at all so a picker that renders nothing cannot pass
+            # every geometry check below by having no geometry.
+            if m["rows"] != SH["rows"]:
+                failures.append(f"{where}: the {SH['menu_name']} drew {m['rows']} rows, "
+                                f"not {SH['rows']}")
             if m["squashed"]:
                 failures.append(f"{where}: {m['squashed']} menu rows were shrunk below "
                                 "their own content (flex-shrink - they overlap)")
@@ -305,6 +367,28 @@ def main() -> int:
             # sidebar is not what the report was about.
             if m["menu"]["w"] < min(240, view - 40):
                 failures.append(f"{where}: the picker is only {m['menu']['w']}px wide")
+            # E2: the terminal edition puts the sidebar on the LEFT (VS Code
+            # placement) while the page stays dir="rtl", so the pane is pinned
+            # to grid column 2. Checked at the widest size only - the two
+            # narrow breakpoints only change the track's width, and every
+            # off-window assertion above already covers what they can break.
+            if EDITION == "terminal" and (width, height) == SIZES[0]:
+                side, stage = m["sidebar"], m["stage"]
+                if abs(side["x"]) > 1:
+                    failures.append(f"{where}: the sidebar is not on the left edge "
+                                    f"(x={side['x']})")
+                if abs(stage["x"] + stage["w"] - m["clientW"]) > 1:
+                    failures.append(f"{where}: the stage does not reach the right edge "
+                                    f"(x={stage['x']} w={stage['w']} of {m['clientW']})")
+                # F5: the drawer used to open with inset-inline-end, which is
+                # physical LEFT under dir=rtl - the same edge as the sidebar.
+                drawer = m.get("drawer")
+                if not drawer:
+                    failures.append(f"{where}: the agent drawer probe did not run")
+                elif not (drawer["x"] + drawer["w"] <= side["x"]
+                          or side["x"] + side["w"] <= drawer["x"]):
+                    failures.append(f"{where}: the agent drawer overlaps the sidebar "
+                                    f"(drawer={drawer} sidebar={side})")
             print(f"  {where}: viewport {view}px, menu {m['menu']['w']}x{m['menu']['h']} "
                   f"at ({m['menu']['x']},{m['menu']['y']}), prompt {m['comp']['w']}px")
     finally:

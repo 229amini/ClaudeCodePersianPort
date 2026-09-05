@@ -5,19 +5,12 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble, label, paintQueued, state } from "./render.js";
+import { bubble, label, paintQueued } from "./render.js";
 /* One-way, and no new cycle: controls.js imports api.js and nothing else. */
 import { cyclePosture } from "./controls.js";
-/* An edge INTO the render↔chrome cycle, not a new cycle of its own: chrome.js
-   imports render.js and api.js, neither of which imports this module back at
-   evaluation time. `/branch` needs the one tab-switch path the sidebar already
-   uses — a second one would send into a conversation the server thinks is
-   parked (app.js switchTab). */
-import { switchToTab } from "./chrome.js";
 
 const FA = window.STRINGS;
 
-const log = document.getElementById("log");
 const input = document.getElementById("input");
 const composer = document.getElementById("composer");
 const sendBtn = document.getElementById("send");
@@ -245,27 +238,12 @@ function paintNotice(title, body, urgent = false, compact = true) {
    per-session is everything the box says ABOUT the conversation — whether it is
    working, which slash commands that CLI has, and how full its context is. */
 export function snapshotComposer() {
-  return { busy, slashCommands, dismissedAt, lastContext, lastActivity,
-           notice: noticeState,
-           // The prompt history is the PROJECT's, read once per conversation:
-           // carrying one tab's list into another would offer a folder's
-           // prompts inside a different folder.
-           historyList };
+  return { busy, slashCommands, dismissedAt, lastContext, lastActivity, notice: noticeState };
 }
 
 export function restoreComposer(saved) {
-  // A Ctrl+R search belongs to the box, and the box is one box: left open
-  // across a switch, the new conversation's Enter inserted the OLD project's
-  // history entry, and `searchDraft` still held the previous tab's text. Exit
-  // first, without accepting — the query is not a message — and close the
-  // popup, whose items are this project's prompts either way.
-  endSearch(false);
-  closePopup();
   const s = saved ?? {};
   slashCommands = s.slashCommands ?? [];
-  historyList = s.historyList ?? null;
-  historyIndex = null;
-  historyDraft = "";
   dismissedAt = s.dismissedAt ?? null;
   lastContext = s.lastContext ?? 0;
   noticeState = s.notice ?? null;
@@ -322,89 +300,11 @@ function setAttachments(list) {
   });
 }
 
-/* --- what the box is holding ------------------------------------------------
-
-   Three of the features below write into the composer without a keystroke (a
-   history entry, an editor's answer, a search match), so they all go through
-   one setter: the box has to grow for it, and the `!` chip and the history
-   walk both have to be told the text is not the person's own any more. */
-function putInBox(text) {
-  input.value = text;
-  input.setSelectionRange(text.length, text.length);
-  autoGrow();
-  refreshBashMode();
-}
-
-/* --- history: the same file the terminal walks ------------------------------
-
-   ~/.claude/history.jsonl, filtered to this project, oldest first. Loaded once
-   per conversation (the list is part of the composer snapshot, so a tab keeps
-   its own) and appended to locally on send, so Up after a send walks what was
-   just typed without a round-trip. The unsent draft is kept and comes back
-   when the walk runs off the newest end — that is the difference between a
-   history walk and losing a message. */
-let historyList = null;     // null = never loaded for this conversation
-let historyIndex = null;    // null = not walking
-let historyDraft = "";
-
-async function loadHistory() {
-  if (historyList) return historyList;
-  try {
-    // The cwd is passed explicitly when this conversation knows its own: every
-    // tab-less endpoint routes by the SERVER's active tab, and a walk started
-    // in the moment between two switches would otherwise read another
-    // project's prompts.
-    const cwd = state.status?.cwd;
-    const data = await api("/api/history"
-      + (cwd ? "?cwd=" + encodeURIComponent(cwd) : ""));
-    historyList = Array.isArray(data.prompts) ? data.prompts : [];
-  } catch (err) {
-    historyList = [];
-  }
-  return historyList;
-}
-
-/* Which line the caret is on decides whether the arrows belong to history or
-   to the box: the TUI's rule, and the only one that keeps a multi-line message
-   editable. */
-function onFirstLine() {
-  const caret = input.selectionStart ?? 0;
-  return !input.value.slice(0, caret).includes("\n");
-}
-
-function onLastLine() {
-  const caret = input.selectionEnd ?? 0;
-  return !input.value.slice(caret).includes("\n");
-}
-
-async function walkHistory(step) {
-  const list = await loadHistory();
-  if (!list.length) return;
-  if (historyIndex === null) {
-    if (step > 0) return;             // Down with no walk in progress: nothing
-    historyDraft = input.value;
-    historyIndex = list.length;
-  }
-  const next = historyIndex + step;
-  if (next >= list.length) {
-    // Past the newest entry: back to whatever was being written.
-    historyIndex = null;
-    putInBox(historyDraft);
-    return;
-  }
-  historyIndex = Math.max(0, next);
-  putInBox(list[historyIndex]);
-}
-
-/* Typing ends the walk: from here the box is the person's again, and a stray
-   Down should not overwrite it with a five-day-old prompt. */
-function endHistoryWalk() {
-  historyIndex = null;
-}
-
 /* --- slash-command autocomplete (plan §B-6) -------------------------------- */
 
 let slashCommands = [];   // [{name, description, argumentHint}] — from the CLI
+let slashMatches = [];
+let slashIndex = 0;
 
 /* The CLI is authoritative about what commands exist on this machine (custom
    skills, plugins). TWO sources feed this, and they are not equal: the
@@ -422,131 +322,8 @@ export function setSlashCommands(list) {
   slashCommands = next;
 }
 
-/* The verbs THIS window answers rather than the CLI (see LOCAL_VERBS below).
-   They are merged into the popup here instead of into `slashCommands`, so a
-   later `initialize` list can never drop them and the downgrade guard above
-   stays a statement about the CLI's own answer. A verb the CLI also has keeps
-   ours: the window's implementation is the one that will run. */
-const LOCAL_COMMANDS = [
-  { name: "export", description: FA.cmdExportDesc },
-  { name: "branch", description: FA.cmdBranchDesc },
-];
-
-function allCommands() {
-  const local = new Set(LOCAL_COMMANDS.map((cmd) => cmd.name));
-  return [...LOCAL_COMMANDS, ...slashCommands.filter((cmd) => !local.has(cmd.name))];
-}
-
-/* --- one popup, three lists ------------------------------------------------
-
-   `#slash-popup` is the component; what fills it is decided here. The slash
-   list, the `@` file list and the Ctrl+R history search are the same widget
-   with the same arrows, the same Tab/Enter, the same Esc and the same mouse —
-   so there is one renderer, one accept and one close, and `popMode` is the
-   only thing that differs between them. */
-let popMode = "slash";    // "slash" | "file" | "search"
-let popItems = [];        // shape depends on popMode; popRow() knows each one
-let popIndex = 0;
-
-function popOpen() {
+function slashOpen() {
   return !!slashPopup && !slashPopup.hidden;
-}
-
-/* Same trap as the picker menu (js/controls.js positionMenu): this opens
-   upward out of the composer, so its 40vh is only real when the composer is
-   at the bottom of the window. In the home state it sits mid-screen and the
-   top rows were clipped off the window instead of scrolling. */
-function showPopup() {
-  const box = slashPopup.offsetParent?.getBoundingClientRect();
-  if (box) slashPopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
-  slashPopup.hidden = false;
-}
-
-function popRow(item) {
-  if (popMode === "file") {
-    // A path is a technical token wherever it appears (spec rule 2 / plan
-    // §B-10 item 2): pathEl gives it `.path`, dir=ltr and the isolate.
-    return [pathEl(item)];
-  }
-  if (popMode === "search") {
-    // A remembered prompt is the person's own prose, either script — so it is
-    // the row's primary text and decides its own direction.
-    const line = label(item, "hist-line");
-    line.setAttribute("dir", "auto");
-    return [line];
-  }
-  const nodes = [];
-  // The command itself is an ASCII token: LTR and monospace, isolated from
-  // the Persian description beside it (spec rule 2).
-  const name = document.createElement("span");
-  name.className = "slash-name";
-  name.setAttribute("dir", "ltr");
-  name.textContent = "/" + item.name;
-  nodes.push(name);
-  if (item.argumentHint) {
-    const hint = document.createElement("span");
-    hint.className = "slash-arg";
-    hint.setAttribute("dir", "ltr");
-    hint.textContent = item.argumentHint;
-    nodes.push(hint);
-  }
-  if (item.description) {
-    const desc = document.createElement("span");
-    desc.className = "slash-desc";
-    desc.setAttribute("dir", "auto");   // English from the CLI, Persian from skills
-    desc.textContent = item.description;
-    nodes.push(desc);
-  }
-  return nodes;
-}
-
-function renderPopup() {
-  slashPopup.replaceChildren();
-  popItems.forEach((item, index) => {
-    const li = document.createElement("li");
-    li.setAttribute("role", "option");
-    li.setAttribute("aria-selected", String(index === popIndex));
-    li.append(...popRow(item));
-    li.addEventListener("mousedown", (e) => {
-      e.preventDefault();       // keep focus in the textarea
-      popIndex = index;
-      acceptPopup();
-    });
-    slashPopup.append(li);
-  });
-  slashPopup.children[popIndex]?.scrollIntoView({ block: "nearest" });
-}
-
-function stepPopup(step) {
-  if (!popItems.length) return;
-  popIndex = (popIndex + step + popItems.length) % popItems.length;
-  renderPopup();
-}
-
-/* Closing is never an accept — the search puts the draft back rather than the
-   match, exactly as Esc on a menu leaves the state alone. */
-function closePopup() {
-  clearTimeout(fileTimer);
-  fileQuery = null;
-  if (popMode === "search") endSearch(false);
-  popMode = "slash";
-  if (slashPopup) slashPopup.hidden = true;
-}
-
-function acceptPopup() {
-  if (popMode === "file") return acceptFile();
-  if (popMode === "search") return endSearch(true);
-  return acceptSlash();
-}
-
-/* The one entry point every keystroke reaches: which of the three lists (if
-   any) the caret is currently asking for. */
-function refreshPopup() {
-  if (!slashPopup) return;
-  if (popMode === "search") { refreshSearch(); return; }
-  if (currentSlashQuery() !== null) { refreshSlash(); return; }
-  if (currentFileQuery() !== null) { refreshFiles(); return; }
-  closePopup();
 }
 
 /* The composer is multi-line, so "the text before the cursor on the current
@@ -565,337 +342,78 @@ function currentSlashQuery() {
 }
 
 function refreshSlash() {
+  if (!slashPopup) return;
   const query = currentSlashQuery();
-  if (query === null) {
-    closePopup();
-    return;
-  }
-  popMode = "slash";
-  popItems = allCommands()
-    .filter((cmd) => cmd.name.toLowerCase().startsWith(query.toLowerCase()))
-    .slice(0, 50);
-  if (!popItems.length) {
+  if (query === null || !slashCommands.length) {
     slashPopup.hidden = true;
     return;
   }
-  popIndex = 0;
-  renderPopup();
-  showPopup();
+  slashMatches = slashCommands
+    .filter((cmd) => cmd.name.toLowerCase().startsWith(query.toLowerCase()))
+    .slice(0, 50);
+  if (!slashMatches.length) {
+    slashPopup.hidden = true;
+    return;
+  }
+  slashIndex = 0;
+  renderSlash();
+  // Same trap as the picker menu (js/controls.js positionMenu): this opens
+  // upward out of the composer, so its 40vh is only real when the composer is
+  // at the bottom of the window. In the home state it sits mid-screen and the
+  // top rows were clipped off the window instead of scrolling.
+  const box = slashPopup.offsetParent?.getBoundingClientRect();
+  if (box) slashPopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
+  slashPopup.hidden = false;
+}
+
+function renderSlash() {
+  slashPopup.replaceChildren();
+  slashMatches.forEach((cmd, index) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", String(index === slashIndex));
+
+    // The command itself is an ASCII token: LTR and monospace, isolated from
+    // the Persian description beside it (spec rule 2).
+    const name = document.createElement("span");
+    name.className = "slash-name";
+    name.setAttribute("dir", "ltr");
+    name.textContent = "/" + cmd.name;
+    li.append(name);
+    if (cmd.argumentHint) {
+      const hint = document.createElement("span");
+      hint.className = "slash-arg";
+      hint.setAttribute("dir", "ltr");
+      hint.textContent = cmd.argumentHint;
+      li.append(hint);
+    }
+    if (cmd.description) {
+      const desc = document.createElement("span");
+      desc.className = "slash-desc";
+      desc.setAttribute("dir", "auto");   // English from the CLI, Persian from skills
+      desc.textContent = cmd.description;
+      li.append(desc);
+    }
+
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault();       // keep focus in the textarea
+      slashIndex = index;
+      acceptSlash();
+    });
+    slashPopup.append(li);
+  });
+  slashPopup.children[slashIndex]?.scrollIntoView({ block: "nearest" });
 }
 
 /* Completes the active line only, through setRangeText so native undo still
    works — the old version replaced the whole composer. */
 function acceptSlash() {
-  const cmd = popItems[popIndex];
+  const cmd = slashMatches[slashIndex];
   if (!cmd) return;
   const { start, caret } = activeSegment();
   input.setRangeText("/" + cmd.name + " ", start, caret, "end");
   slashPopup.hidden = true;
   input.focus();
-}
-
-/* --- Ctrl+R, the reverse search over the history ----------------------------
-
-   The BOX holds the query while it is open and the popup shows the matches,
-   which is how the TUI does it with one line of input. Enter (or Tab, or a
-   click) puts the match in the box and does NOT send it; Esc puts back
-   whatever was being written. */
-let searchDraft = "";
-
-function refreshSearch() {
-  const query = input.value.trim().toLowerCase();
-  const list = historyList ?? [];
-  // Newest first: the answer to "what did I type last week" is almost always
-  // the most recent one, and Ctrl+R walks back from there.
-  // Capped like refreshSlash(): history.jsonl runs to thousands of lines and an
-  // empty query matches all of them, so every keystroke of Ctrl+R was building
-  // and laying out the whole file. Newest first, so the 50 are the useful ones.
-  popItems = (query
-    ? list.filter((line) => line.toLowerCase().includes(query)).reverse()
-    : [...list].reverse()).slice(0, 50);
-  popIndex = 0;
-  if (!popItems.length) {
-    // Say so rather than vanishing: a list that disappears on the second
-    // keystroke reads as a broken window, not as an empty answer.
-    slashPopup.replaceChildren();
-    const empty = document.createElement("li");
-    empty.className = "is-empty";
-    empty.append(label(FA.searchNone, "slash-desc"));
-    slashPopup.append(empty);
-  } else {
-    renderPopup();
-  }
-  showPopup();
-}
-
-async function openSearch() {
-  if (!slashPopup || popMode === "search") return;
-  await loadHistory();
-  popMode = "search";
-  searchDraft = input.value;
-  endHistoryWalk();
-  input.value = "";
-  autoGrow();
-  refreshSearch();
-  input.focus();
-}
-
-/* `accept` false is the way out that changes nothing. The two exits are
-   different acts and collapsing them would make Esc destructive: the query
-   the search was typed with is not a message. */
-function endSearch(accept) {
-  if (popMode !== "search") return;
-  const chosen = accept && popItems.length ? popItems[popIndex] : searchDraft;
-  popMode = "slash";
-  slashPopup.hidden = true;
-  putInBox(chosen);
-  input.focus();
-}
-
-/* --- `@` file completion ----------------------------------------------------
-
-   The list is the CLI's own index (server: /api/files → `file_suggestions`),
-   so the window offers the files the terminal offers. Two measured quirks live
-   here: the first query after a spawn comes back empty because the index warms
-   on demand, so the menu asks again; and what is inserted is `@path` as TEXT —
-   the CLI expands it itself. */
-let fileTimer = 0;
-let fileQuery = null;
-let fileRetried = false;
-const FILE_DEBOUNCE = 120;
-const FILE_RETRY = 400;
-
-/* The `@…` run the caret is sitting in, or null. Mirrors currentSlashQuery():
-   the active LINE, not the whole box, and the mention must start a word — an
-   e-mail address in the middle of a sentence is not a file mention. */
-function currentFileQuery() {
-  const match = /(?:^|\s)@([^\s@]*)$/.exec(activeSegment().text);
-  return match ? match[1] : null;
-}
-
-async function askFiles(query, retry) {
-  let files = [];
-  try {
-    const data = await api("/api/files?q=" + encodeURIComponent(query));
-    files = Array.isArray(data.files) ? data.files : [];
-  } catch (err) {
-    files = [];
-  }
-  // The query moved on while the answer was out.
-  if (fileQuery !== query || !slashPopup) return;
-  if (!files.length) {
-    // Measured: the CLI's index answers the FIRST query after a spawn with
-    // nothing at all, so one empty answer is not evidence of no files.
-    if (!retry && !fileRetried) {
-      fileRetried = true;
-      fileTimer = setTimeout(() => askFiles(query, true), FILE_RETRY);
-      return;
-    }
-    popMode = "file";
-    popItems = [];
-    slashPopup.replaceChildren();
-    const empty = document.createElement("li");
-    empty.className = "is-empty";
-    empty.append(label(FA.fileNone, "slash-desc"));
-    slashPopup.append(empty);
-    showPopup();
-    return;
-  }
-  fileRetried = false;
-  popMode = "file";
-  popItems = files;
-  popIndex = 0;
-  renderPopup();
-  showPopup();
-}
-
-function refreshFiles() {
-  const query = currentFileQuery();
-  if (query === null) {
-    closePopup();
-    return;
-  }
-  fileQuery = query;
-  clearTimeout(fileTimer);
-  // An empty `@` is a legitimate query for the index; it is also the moment
-  // the user has typed one character, so the debounce covers both.
-  fileTimer = setTimeout(() => askFiles(query, false), FILE_DEBOUNCE);
-}
-
-function acceptFile() {
-  const path = popItems[popIndex];
-  if (!path) return;
-  const { start, caret, text } = activeSegment();
-  const at = text.lastIndexOf("@");
-  if (at < 0) return;
-  input.setRangeText("@" + path + " ", start + at, caret, "end");
-  closePopup();
-  autoGrow();
-  input.focus();
-}
-
-/* --- `!` shell mode ---------------------------------------------------------
-
-   The TUI turns the prompt bar a different colour while the line starts with
-   `!` and runs the line itself. So does this: the CLI cannot run it and would
-   read it as a sentence, so the wrapper runs it in the session's folder and
-   parks the tagged output for the next message — which is where the terminal
-   puts it too. The row in the transcript is painted from the server's own
-   `wrapper/shell` event (render.js renderShell), never from this answer, so a
-   reload replays it identically. */
-const bashChip = document.getElementById("bash-chip");
-
-/* ONE predicate for the chip and for the send, because two of them disagreed:
-   the chip tested the raw value and the send tested the trimmed one, so
-   `" !dir"` ran a shell command with nothing on the box to say so, and a bare
-   `"!"` wore the chip and was sent to the CLI as a message. null means "not a
-   shell line"; "" means `!` with nothing after it, which is a mode the person
-   is halfway into typing and is swallowed rather than sent. */
-function bashCommand(text) {
-  const line = text.trim();
-  return line.startsWith("!") ? line.slice(1).trim() : null;
-}
-
-function refreshBashMode() {
-  const box = input?.closest(".comp-box");
-  const on = !!input && bashCommand(input.value) !== null;
-  if (box) box.classList.toggle("bash", on);
-  if (bashChip) bashChip.hidden = !on;
-}
-
-async function runBash(command) {
-  try {
-    await api("/api/shell", { command });
-  } catch (err) {
-    bubble("error", FA.shellFailed);
-  }
-}
-
-/* --- Ctrl+G, the external editor -------------------------------------------
-
-   The box is disabled while the editor is open, because the answer replaces
-   what is in it — and a placeholder is the only thing that can say why the
-   window stopped taking keystrokes. Focus comes back either way. */
-let editing = false;
-
-async function editExternally() {
-  if (editing || !input || input.disabled) return;
-  editing = true;
-  const wasPlaceholder = input.placeholder;
-  input.disabled = true;
-  input.placeholder = FA.editorWaiting;
-  // WHICH conversation asked. The editor blocks for as long as the person
-  // leaves it open, and applySwitch() re-enables the box on the way past — so
-  // by the time this resolves the visible tab may be a different one, and
-  // writing the answer into it would overwrite an unrelated draft. The
-  // conversation is identified by its give-back list rather than by a tab id:
-  // that array IS the render scope's (app.js swaps the scope in and out by
-  // reference), so this needs nothing from the tab registry.
-  const origin = state.returned;
-  try {
-    const data = await api("/api/editor", { text: input.value });
-    if (data.changed && typeof data.text === "string") {
-      // Still the same conversation: the answer replaces what it was made from.
-      if (state.returned === origin) putInBox(data.text);
-      // Otherwise it waits for that tab's next paint, the way a returned queued
-      // message does — appended to whatever is in the box then, never assigned.
-      else origin.push(data.text);
-    }
-  } catch (err) {
-    bubble("error", FA.editorFailed);
-  } finally {
-    editing = false;
-    // Only the conversation that shut the box may open it again. Somewhere
-    // else, the box already belongs to that tab — applySwitch() re-enabled it
-    // and setComposerBlank() may have shut it for its own reason.
-    if (state.returned === origin) {
-      input.disabled = false;
-      input.placeholder = wasPlaceholder;
-      input.focus();
-    }
-  }
-}
-
-/* --- /export and /branch, the two window-local verbs -------------------------
-
-   Both read or fork what THIS window is showing, so neither can be a message
-   to the CLI. They hang off interceptLifecycle() below — the seam that already
-   exists for verbs the window answers itself — rather than a second dispatcher
-   beside it. */
-
-/* A local answer is a muted row, the same shape «متوقف شد» uses. It is not an
-   assistant message and must never look like one: nothing here reached the
-   model. */
-function note(text) {
-  const el = bubble("assistant", text);
-  el.classList.add("meta");
-  return el;
-}
-
-/* Plain text, in the order it was said. Tool cards go in whole — a card is
-   what the window showed, and an export that silently dropped the work is not
-   a record of the session. */
-/* innerText is deliberately what is read — it is the text as the reader saw it,
-   line breaks and all — but it omits the body of a CLOSED <details>, and every
-   tool, diff and shell card is closed by default. So an export of a real
-   session was the sentences with all the work missing. Opened and put straight
-   back: no frame is painted between the two, because nothing here awaits. */
-function textOf(node) {
-  const shut = [...node.querySelectorAll("details:not([open])")];
-  if (node.tagName === "DETAILS" && !node.open) shut.push(node);
-  for (const card of shut) card.open = true;
-  try {
-    return (node.innerText || node.textContent || "").trim();
-  } finally {
-    for (const card of shut) card.open = false;
-  }
-}
-
-function transcriptText() {
-  const out = [];
-  for (const node of log?.children ?? []) {
-    if (node.hidden) continue;
-    const text = textOf(node);
-    if (!text) continue;
-    if (node.classList.contains("msg") && node.classList.contains("user")) {
-      out.push(FA.exportYou + "\n" + text);
-    } else if (node.classList.contains("msg")
-               && node.classList.contains("assistant")
-               && !node.classList.contains("meta")) {
-      out.push(FA.exportClaude + "\n" + text);
-    } else {
-      out.push(text);
-    }
-  }
-  return out.join("\n\n");
-}
-
-function exportTranscript() {
-  const text = transcriptText();
-  if (!text) { note(FA.cmdExportEmpty); return true; }
-  // Started, never awaited: a command that waited for its own answer would
-  // hold the composer shut.
-  api("/api/export", { text })
-    .then((data) => {
-      const el = bubble("assistant", "");
-      el.classList.add("meta");
-      el.append(label(FA.cmdExported + " "), pathEl(String(data.path ?? "")));
-    })
-    .catch(() => bubble("error", FA.cmdExportFailed));
-  return true;
-}
-
-function forkSession() {
-  api("/api/session/fork", {})
-    .then(async (data) => {
-      // The note goes in AFTER the switch, so it lands in the branch's own
-      // transcript: switching tabs swaps the render target, and a line written
-      // before it would be left behind in the conversation that was forked.
-      await switchToTab(data.tab);
-      note(FA.cmdBranchDone);
-    })
-    .catch(() => bubble("error", FA.cmdBranchFailed));
-  return true;
 }
 
 /* --- lifecycle verbs ------------------------------------------------------- */
@@ -915,17 +433,9 @@ const LIFECYCLE_BUTTONS = {
   clear: "#btn-new",
 };
 
-/* The other half of the same seam: verbs the window ANSWERS rather than
-   presses a button for. Same contract — true means "handled, do not send". */
-const LOCAL_VERBS = {
-  export: exportTranscript,
-  branch: forkSession,
-};
-
 /* Returns true when the text was a lifecycle verb and must not be sent. */
 function interceptLifecycle(text) {
   const verb = /^\/([a-z-]+)\s*$/.exec(text)?.[1];
-  if (verb && LOCAL_VERBS[verb]) return LOCAL_VERBS[verb]() !== false;
   const selector = verb && LIFECYCLE_BUTTONS[verb];
   const button = selector && document.querySelector(selector);
   if (!button || button.hidden) return false;   // unavailable: let it through
@@ -951,60 +461,26 @@ export function initComposer() {
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // In the Ctrl+R search the box holds the QUERY, not a message: Enter
-      // takes the match and leaves it there to be read, edited or sent.
-      if (popMode === "search") {
-        endSearch(true);
-        return;
-      }
       composer.requestSubmit();
     }
   });
 
   input.addEventListener("input", autoGrow);
-  input.addEventListener("input", endHistoryWalk);
-  input.addEventListener("input", refreshBashMode);
 
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
-    // While the reverse search is open the box holds the QUERY, not a message:
-    // submitting accepts the highlighted match into the box and sends nothing.
-    // The Enter key already did this; #send did not, so clicking it POSTed the
-    // search query as a chat message and threw the stashed draft away.
-    if (popMode === "search") { endSearch(true); return; }
     // Enter ALWAYS sends. The popup used to swallow it to accept a completion,
     // which meant Enter did different things depending on invisible state —
     // Tab, click and the arrow keys accept instead.
     slashPopup && (slashPopup.hidden = true);
     const text = input.value.trim();
     if (!text && !attachments.length) return;
-    // A line starting with `!` is a shell command, not a message — the one
-    // case where Enter does not reach the CLI at all. The chip on the box is
-    // what says so before the key is pressed.
-    const command = bashCommand(text);
-    if (command !== null) {
-      input.value = "";
-      input.style.height = "auto";
-      refreshBashMode();
-      endHistoryWalk();
-      // A bare `!` is the mode, not a command: nothing to run, and nothing the
-      // CLI should ever see. Same rule as the terminal edition.
-      if (command) runBash(command);
-      return;
-    }
     if (interceptLifecycle(text)) {
       input.value = "";
       input.style.height = "auto";
       return;
     }
     const payload = { text, attachments: attachments.slice() };
-    // Up walks what was just typed without a round-trip: the CLI appends the
-    // same line to history.jsonl, so the local copy stays the file's copy.
-    if (historyList && text && historyList[historyList.length - 1] !== text) {
-      historyList.push(text);
-    }
-    endHistoryWalk();
-    historyDraft = "";
     input.value = "";
     input.style.height = "auto";
     setAttachments([]);
@@ -1126,49 +602,23 @@ export function initComposer() {
     }
   });
 
-  input.addEventListener("input", refreshPopup);
+  input.addEventListener("input", refreshSlash);
 
   input.addEventListener("keydown", (e) => {
-    // The two chords, first: both are browser keys (reload, "find again"), so
-    // they have to be claimed before anything else looks at them. Bound on the
-    // textarea rather than the document — Ctrl+R anywhere else in the window
-    // is still the reload the user meant.
-    if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-      if (e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        openSearch();
-        return;
-      }
-      if (e.key === "g" || e.key === "G") {
-        e.preventDefault();
-        editExternally();
-        return;
-      }
-    }
-    if (!popOpen()) {
-      // Up at the top of the box walks the history, the way the TUI does it;
-      // anywhere else the arrow is the caret's. Down only ever ends a walk
-      // that is already running, so a stray press cannot overwrite the box.
-      if (e.key === "ArrowUp" && onFirstLine()) {
-        e.preventDefault();
-        walkHistory(-1);
-      } else if (e.key === "ArrowDown" && historyIndex !== null && onLastLine()) {
-        e.preventDefault();
-        walkHistory(1);
-      }
-      return;
-    }
+    if (!slashOpen()) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      stepPopup(e.key === "ArrowDown" ? 1 : -1);
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      slashIndex = (slashIndex + step + slashMatches.length) % slashMatches.length;
+      renderSlash();
     } else if (e.key === "Tab" && !e.shiftKey) {
       // Bare Tab accepts the completion; Shift+Tab is the posture cycle above
       // and must not also pick a command out of an open popup.
       e.preventDefault();
-      acceptPopup();
+      acceptSlash();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      closePopup();
+      slashPopup.hidden = true;
     }
   }, true);   // capture: must beat the Enter-submits handler above
 
@@ -1181,13 +631,9 @@ export function initComposer() {
 
   setAttachments([]);
   setBusy(false);
-  refreshBashMode();
-  const bashLabel = document.getElementById("bash-chip-label");
-  if (bashLabel) bashLabel.textContent = FA.bashChip;
   const hint = document.getElementById("composer-hint");
   if (hint) {
-    hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.hintEditor,
-                        FA.slashHint].join(" · ");
+    hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.slashHint].join(" · ");
   }
   input.focus();
 }

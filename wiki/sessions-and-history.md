@@ -300,3 +300,24 @@ which covers both sources through the single renderer (plan §B-4) — do not ad
 `server.py`'s live path. `<task-notification>`, the one injected `user` message that MUST render,
 sets none of the three (checked across every transcript on this machine); it carries
 `origin: {kind: "task-notification"}` instead. Guarded in the spec harness.
+
+## Shell rows in replay (measured 2026-09-05, code-review F6)
+
+A `!` command produces **two** kinds of `user` record, and only one of them replays.
+
+- The CLI's own two records (`<bash-input>…</bash-input>` and the stdout/stderr pair) have
+  **bare-string** content and `user_prompt_text()` drops both through `CLI_ENVELOPE_RE` —
+  correct for a chat bubble, wrong for a shell row. A session started in the real TUI
+  therefore replays with no shell rows at all. Open bead `pcg-5g2`; the fix is server-side.
+- The wrapper's parked block (`bash_message` + `park_context`) is **block-shaped**, so it
+  passes the filter and arrives as user text:
+  `{"type":"user","message":{"content":"<bash-stdout>ok</bash-stdout><bash-stderr></bash-stderr>"}}`
+  Before the fix both editions rendered that literally, tags and all, in the next bubble.
+  `splitBashBlocks()` in each `render.js` `user` branch now peels those blocks off and draws
+  them through the same `renderShell()` the live `wrapper/shell` event uses; the transcript
+  carries no exit code, so a replayed row reads `code: 0`. Guarded in the web spec and
+  `test_column.py`.
+
+Live view and replay converge for wrapper-run commands only. Do not "fix" the TUI case by
+loosening `CLI_ENVELOPE_RE` — that is what keeps the CLI talking to itself out of the sidebar
+(§"user content arrives in two shapes").

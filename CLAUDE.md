@@ -363,6 +363,37 @@ date): the TUI-rendition shell that replaces this web shell, phases v2.0–v2.7,
 (Vocabulary) is built, on the `v2` branch. The tag `v2.0.0` is reserved until phase v2.7 closes.
 The web shell keeps releasing as `1.x` in the meantime.
 
+**2026-09-05 — two editions, one engine. Read `wiki/editions.md` and `EDITIONS-PLAN.md`.**
+The user's decision after seeing the terminal-shaped tree served under the 1.1.0 title: the
+rewrite does **not** replace the web shell. Both ship. **«کلاد فارسی»** is the web edition,
+`static/` (restored byte-for-byte from `main`, nothing removed) and **«کلاد فارسی — ترمینال»**
+is the terminal edition, `static-terminal/` (the v2.0–v2.7 tree, sidebar moved to the **left**,
+its own version line from **0.0.1**). One `server.py`, `--ui web|terminal` (default web, env
+`PCG_UI` for tests), one `EDITIONS` table holding folder + title + version; `{{TITLE}}` joins
+`{{VERSION}}` in every served `.html`. `setup.ps1` writes two shortcuts and deploys both folders.
+Every static-reading test takes the edition from `PCG_UI` and imports `EDITIONS` — defaults:
+web for `run_spec_test.py`/`test_layout.py`/`test_no_console.py`, terminal for the six v2
+gates; `test_layout.py` runs on both. The web edition then gained the CLI features v2 measured
+reachable, in its own look and with no chrome removed: history with ↑ and Ctrl+R, `@` file
+completion, `!` shell mode (rendered from `wrapper/shell` so a reload replays it), Ctrl+G editor,
+`/export`, `/branch` (the CLI's own verb — both editions use it; the route stays
+`/api/session/fork`), and background-task notices — each negative-tested. Web `APP_VERSION`
+bumped to **1.2.0** for this. **"v2" is now only the
+phase label of the terminal rewrite; `v2.0.0` will never be tagged** — the terminal edition tags
+as `terminal-v0.x`, the web edition keeps `1.x`. A medium `/code-review` of the whole diff
+returned **8 verified findings, all fixed the same day** (`.claude/specs/E4-review-fixes.md`):
+two Ctrl+R exits that skipped `endSearch()`, a Ctrl+G resolve landing in the wrong tab, two
+disagreeing bash predicates, `/export` reading `innerText` of closed cards (both editions),
+the terminal agent drawer opening over the moved sidebar (a `[popover]` needs the opposite
+inset set to `auto` — `wiki/editions.md`), a `!` result that did not survive a restart
+(measured: what replays is the **wrapper's** parked `<bash-stdout>` block, not the CLI's own
+records — `wiki/sessions-and-history.md` §"Shell rows in replay"), an uncapped Ctrl+R render,
+and a duplicate launcher check in `setup.ps1`. Gates: web spec **202/202**, layout on both,
+terminal spec 174 / column **23** / keys 60 / dialogs 31 / shell 29 / strings 24 / vocab 82,
+units, transcript guard, `test_no_console` on both. `smoke_test.py` not re-run — no transport
+change. Open follow-up: a session started in the real TUI still replays without shell rows
+(server-side, bead filed).
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -543,7 +574,7 @@ Two checks exist:
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). **Also asserts the uuid ledger (2026-08-24)**: the `command_uuid` the turn's send returns comes back on `command_lifecycle` events and reaches a terminal state by the time the result settles — zero extra turns, read off the one send this file already pays for. 16 checks, still one subscription turn. |
 | Queue/lifecycle contract | `python persian-claude-gui\probe_queue.py` | free re-probe for the next CLI upgrade: boots the real CLI, checks `initialize`/`system/init` advertise `msg_lifecycle_v1`/`interrupt_receipt_v1`/`interrupt_cancel_queued_v1`, that a top-level `uuid` on the user frame produces `command_lifecycle` events reaching a terminal state, that the same frame with no `uuid` produces none, and that `cancel_async_message` on a never-enqueued uuid answers `cancelled: false`. 8 checks. Free because its payload is `/recap` on an empty session, which refuses locally — `total_cost_usd` must print `0`. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown to 174 assertions by later passes, so `PASS — 174/174` is the gate. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown by later passes; the gate is `PASS — 202/202` for the web edition (`PCG_UI` unset) and `PASS — 174/174` for the terminal edition (`PCG_UI=terminal`) — run both when a change touches shared code. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Narrow windows | `python persian-claude-gui\test_layout.py` | the shipping `index.html` (not a copy — the probe page is generated from it and deleted again) measured headlessly at 1280×800, 760×640 and 500×560: nothing drawn off the window, nothing wider than its own box, and the posture menu open — full width, on screen, rows at their natural height. Free. This is the class the spec gate is structurally blind to: it runs at one size and asserts message content |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |

@@ -31,14 +31,24 @@ have to open a terminal.
 - **نصب بدون ترمینال و بدون اینترنت** (حالت `-Payload`): یک بار دوبار-کلیک.
 - تاریخچهٔ گفتگوها، ادامهٔ نشست پس از بسته‌شدن، و انتخاب پوشهٔ پروژه — همه از داخل پنجره.
 
+## دو نسخه، یک موتور
+
+- **«کلاد فارسی»** — پنجرهٔ گفتگو با دکمه و منو. مدل، سطح تلاش و سطح اجازه را با کلیک عوض
+  می‌کنید. برای کسی که نمی‌خواهد چیزی حفظ کند.
+- **«کلاد فارسی — ترمینال»** — همان ترمینال `claude`، فقط فارسی و خوانا: یک ستون، همان
+  علامت‌ها و کلیدها، دستورهای `/` به جای دکمه، و فهرست پروژه‌ها در سمت چپ. برای کسی که به
+  ترمینال عادت دارد.
+
+هر دو روی یک `server.py` و یک CLI اجرا می‌شوند؛ نصب هر دو میان‌بر را می‌سازد.
+
 ## نصب
 
 ۱. پوشهٔ پروژه را روی همان رایانه بگذارید.
 ۲. روی `persian-claude-gui\setup.bat` دوبار کلیک کنید.
 ۳. اگر تا به حال وارد حساب Claude نشده‌اید، نصب‌کننده همان‌جا به فارسی می‌گوید چه کنید.
 
-میان‌بر «کلاد فارسی» روی دسکتاپ ساخته می‌شود. راهنمای کامل فارسی داخل خود برنامه، دکمهٔ «راهنما»
-است (`persian-claude-gui/static/help.html`).
+دو میان‌بر روی دسکتاپ ساخته می‌شود: «کلاد فارسی» و «کلاد فارسی — ترمینال». راهنمای کامل فارسی
+هر کدام داخل خود برنامه است، دکمهٔ «راهنما» (`static/help.html` و `static-terminal/help.html`).
 
 </div>
 
@@ -77,6 +87,9 @@ C:\Python314\python.exe persian-claude-gui\server.py --cwd <project> --no-window
 # dev, with the Edge window
 C:\Python314\python.exe persian-claude-gui\server.py --cwd <project>
 
+# the terminal edition (static-terminal/); default is --ui web
+C:\Python314\python.exe persian-claude-gui\server.py --cwd <project> --ui terminal
+
 # full bootstrap into a throwaway location (does not touch a real install)
 .\persian-claude-gui\setup.ps1 -DeployRoot C:\tmp\pcg -ProjectDir C:\tmp\proj `
                               -ShortcutDir C:\tmp\lnk -SkipSmokeTest
@@ -95,7 +108,10 @@ mojibakes in the console.
 
 `smoke_test.py` drives the actual CLI, so **it spends a real turn of your Claude
 subscription** on every run. Run it at phase exits, not per commit. `run_spec_test.py`
-is the gate for anything touching `static/` — `PASS — 20/20`, exit 0.
+is the gate for anything touching `static/` — `PASS — N/N`, exit 0. Tests pick the
+edition from `PCG_UI` (`web` default; `terminal` for `test_column.py`, `test_keys.py`,
+`test_dialogs.py`, `test_shell.py`, `test_strings.py`, `test_tui_vocab.py`); the full
+table is in the project `CLAUDE.md` and `wiki/editions.md`.
 
 ### Security model
 

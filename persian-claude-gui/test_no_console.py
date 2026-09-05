@@ -15,6 +15,7 @@ the response path completed without a console.
 """
 import re
 import shutil
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PYTHONW = Path(sys.executable).with_name("pythonw.exe")
+
+# Which edition the launcher serves. This gate never reads a static file,
+# but the shortcut it stands in for does, so run it once per edition.
+EDITION = os.environ.get("PCG_UI", "web")
 
 
 def listening_port(pid: int) -> int | None:
@@ -43,7 +48,8 @@ if not PYTHONW.exists():
 
 WORKDIR = tempfile.mkdtemp(prefix="pcg-noconsole-")
 proc = subprocess.Popen([str(PYTHONW), str(HERE / "server.py"),
-                         "--cwd", WORKDIR, "--no-window"])
+                         "--cwd", WORKDIR, "--no-window",
+                         "--ui", EDITION])
 
 
 def _cleanup() -> None:

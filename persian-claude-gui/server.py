@@ -49,10 +49,18 @@ COOKIE_NAME = "pcg_token"
 # 2.x is RESERVED for the terminal-shaped rewrite in V2-PLAN.md (phases v2.0
 # through v2.7). The web shell releases as 1.x until that ships — do not bump
 # this to 2.0.0 to mean "a big release".
-APP_VERSION = "1.1.0"
+# 2026-09-05: two editions, one engine. The folder, the window title and the
+# version number are per-edition; everything below this line is not. PCG_UI
+# exists so a test that boots the server can pick an edition without a flag.
+EDITIONS = {
+    "web":      ("static",          "کلاد فارسی",            "1.2.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.0.1"),
+}
 
 HERE = Path(__file__).resolve().parent
-STATIC_DIR = HERE / "static"
+
+UI_EDITION = os.environ.get("PCG_UI", "web")
+STATIC_DIR, APP_TITLE, APP_VERSION = (HERE / EDITIONS[UI_EDITION][0],) + EDITIONS[UI_EDITION][1:]
 
 # Tools approved without a dialog. Deliberately tiny and read-only: a
 # non-technical user cannot judge a prompt they get for every file read, and
@@ -3943,6 +3951,7 @@ class Handler(BaseHTTPRequestHandler):
         ctype = MIME_TYPES.get(path.suffix.lower(), "application/octet-stream")
         if path.suffix.lower() == ".html":
             body = body.replace(b"{{VERSION}}", APP_VERSION.encode("utf-8"))
+            body = body.replace(b"{{TITLE}}", APP_TITLE.encode("utf-8"))
         extra: tuple[tuple[str, str], ...] = ()
         if set_cookie:
             # Host-only, session-scoped, not readable from JS. The server is
@@ -4058,13 +4067,24 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
 
 
 def main() -> None:
+    # The edition decides the static folder, the window title and the version
+    # number, and nothing else. Rebinding the module globals every reader
+    # already looks at beats threading a parameter through serve().
+    global UI_EDITION, STATIC_DIR, APP_TITLE, APP_VERSION
+
     parser = argparse.ArgumentParser(description="Persian RTL front-end for Claude Code")
     parser.add_argument("--cwd", default=os.getcwd(),
                         help="project directory the CLI runs in")
     parser.add_argument("--no-window", action="store_true",
                         help="do not launch Edge (dev mode)")
     parser.add_argument("--quiet", action="store_true", help="suppress console logging")
+    parser.add_argument("--ui", choices=sorted(EDITIONS), default=UI_EDITION,
+                        help="which UI edition to serve (default: $PCG_UI, else web)")
     args = parser.parse_args()
+
+    UI_EDITION = args.ui
+    folder, APP_TITLE, APP_VERSION = EDITIONS[UI_EDITION]
+    STATIC_DIR = HERE / folder
 
     # The desktop shortcut runs pythonw.exe, a GUI-subsystem binary with no
     # console: sys.stderr is None there. print() is a silent no-op in that

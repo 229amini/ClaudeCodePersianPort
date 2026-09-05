@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- data-mirror-glyphs: the plan's one open question (V2-PLAN.md §8.9). `⎿`,
+     `⏵` and `▸` are directional shapes with no Unicode mirroring property, so
+     in an RTL column they point away from what they connect unless something
+     flips them. "on" is the plan's recommendation and can be judged by looking
+     at it: set it to "off" here and every glyph draws exactly as the terminal
+     does. Nothing but style.css reads it. -->
+<html dir="rtl" lang="fa" data-mirror-glyphs="on">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} — v{{VERSION}}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+
+<!-- The shell is dir="rtl" (Persian UI decision, plan §B-2). The spec's
+     "never global dir=rtl" rule therefore survives only by discipline: every
+     content-bearing element below carries its own direction, set in js/bidi.js.
+     Being RTL, the first grid column lands on the RIGHT — style.css puts the
+     stage there and pins the sidebar to the LEFT edge (E2). -->
+
+<aside id="sidebar">
+  <div class="side-head">
+    <!-- The mark: a terminal prompt mirrored — the caret points the way Persian
+         reads, with the cursor to its left. Original by decision, not
+         Anthropic's Claude mark (REWORK-PLAN.md, branding option b). The .ico
+         is the same geometry: assets/make_icon.py. -->
+    <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+         stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M17.1 7.4L11.9 12l5.2 4.6"/>
+      <path d="M6.9 16.6h4"/>
+    </svg>
+    <span class="brand" id="brand"></span>
+  </div>
+
+  <button type="button" id="btn-new" class="new-chat">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+    <span id="btn-new-label"></span>
+  </button>
+
+  <div class="side-scroll">
+    <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
+         /api/tabs by js/chrome.js; hidden until there is one. -->
+    <h2 id="tabs-title" class="side-title" hidden></h2>
+    <nav id="open-tabs" aria-label="نشست‌های باز" hidden></nav>
+
+    <h2 id="projects-title" class="side-title"></h2>
+    <nav id="projects" aria-label="پروژه‌ها"></nav>
+  </div>
+
+  <div class="side-foot">
+    <a id="btn-help" class="side-item" href="/static/help.html" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.2"/>
+        <path d="M9.4 9.2a2.6 2.6 0 115.1.9c-.5 1.5-2 1.7-2 3.2"/>
+        <circle cx="12.4" cy="16.8" r=".4" fill="currentColor"/>
+      </svg>
+      <span id="btn-help-label"></span>
+    </a>
+    <!-- Which build is running. server.py substitutes {{VERSION}} into every
+         .html it serves, so this and the window title cannot disagree with the
+         code that is actually answering. LTR by markup (spec rule 2). -->
+    <div class="side-ver"><bdi dir="ltr">v{{VERSION}}</bdi></div>
+  </div>
+</aside>
+
+<div id="stage">
+  <header id="topbar">
+    <bdi id="topbar-name"></bdi>
+    <span id="topbar-cwd" class="path"></span>
+  </header>
+
+  <main id="log" aria-live="polite" aria-label="گفتگو"></main>
+
+  <!-- Home / empty state: THE TUI'S WELCOME BOX (V2-PLAN §2 «Delete», §6).
+       The greeting and its four action cards are gone. What the terminal
+       prints when it opens is a bordered box — `✻ Welcome to Claude Code`
+       and its version, read out of the 2.1.261 bundle — followed by the
+       folder it is working in and the composer's own footer hints
+       (wiki/tui-strings.md §5). Every card this replaced pressed something
+       that is still one click away in the sidebar.
+
+       Visibility is driven by whether #log has children (js/chrome.js). -->
+  <section id="home" hidden>
+    <div class="welcome">
+      <p class="wel-head">
+        <!-- The TUI's own star, not the product mark: this box is the
+             terminal's, and the mark already sits in the sidebar head. -->
+        <span class="glyph wel-star" aria-hidden="true">✻</span>
+        <span id="wel-title"></span>
+        <bdi class="wel-ver" dir="ltr">v{{VERSION}}</bdi>
+      </p>
+      <p class="wel-cwd">
+        <span id="wel-cwd-label" class="wel-key"></span>
+        <span id="wel-cwd" class="path"></span>
+      </p>
+      <!-- The three hints the TUI keeps under an empty prompt. Built in JS
+           from one list, so the box cannot advertise a key the page does not
+           bind (js/chrome.js). -->
+      <ul class="wel-tips" id="wel-tips"></ul>
+    </div>
+  </section>
+
+  <div id="replay-banner" hidden></div>
+
+  <!-- Context is filling up. Built by js/composer.js, because both of its
+       actions are composer actions: /compact goes to the CLI as ordinary text
+       (it is NOT a control subtype on this build) and /clear presses the
+       "new chat" button that already owns that job. -->
+  <div id="context-notice" hidden></div>
+
+  <!-- v2.4: the dialogs are INLINE, in the flow, immediately above the prompt —
+       which is where the Ink TUI draws its confirmation too (V2-PLAN §3.3).
+       They are still <dialog> elements, opened with show() rather than
+       showModal(): no backdrop, no focus trap, no modal semantics, but the
+       `open` property and the CSS the whole file already keys on stay exactly
+       what they were. Escape is ours now (a non-modal dialog fires no `cancel`)
+       and resolves as DENY — dismissing is never consent. -->
+
+  <!-- /model, /effort, /output-style, /permissions and the audit list, each as
+       the same numbered list (js/controls.js → js/choice.js). -->
+  <dialog id="picker">
+    <h2 id="picker-title"></h2>
+    <div id="picker-body"></div>
+  </dialog>
+
+  <dialog id="perm">
+    <form id="perm-form">
+      <h2 id="perm-title"></h2>
+      <p id="perm-body" dir="auto"></p>
+      <!-- Which conversation is asking, when it is not the one on screen: one
+           dialog serves every open tab (js/chrome.js). -->
+      <p id="perm-source" class="meta" dir="auto" hidden></p>
+      <div id="perm-tool"></div>
+      <pre id="perm-params"></pre>
+      <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes
+           the model's question over the same can_use_tool pipe, so it arrives as
+           a "permission" but is nothing of the sort (js/chrome.js). -->
+      <div id="perm-ask"></div>
+      <label id="perm-remember-row">
+        <input type="checkbox" id="perm-remember">
+        <span id="perm-remember-label"></span>
+      </label>
+      <!-- «اجازه می‌دهید ادامه دهد؟» — the TUI's own question, above the
+           numbered options it answers (wiki/tui-strings.md permission.proceed). -->
+      <p id="perm-proceed" dir="auto"></p>
+      <div id="perm-opts"></div>
+      <!-- Option 3 is «no, and tell Claude what to do differently»: this is
+           where the "differently" goes. It rides back as the refusal's own
+           message (server.py PermissionBroker.respond). -->
+      <textarea id="perm-feedback" rows="1" dir="auto"></textarea>
+      <p id="perm-hint" class="meta" dir="auto"></p>
+      <menu>
+        <button type="button" value="deny" class="ghost" id="perm-deny"></button>
+        <button type="button" value="allow" id="perm-allow"></button>
+      </menu>
+    </form>
+  </dialog>
+
+  <form id="composer">
+    <div class="comp-box">
+      <!-- Slash-command autocomplete. Populated from system/init's
+           slash_commands list, authoritative for this machine. -->
+      <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
+
+      <!-- `@` file completion. A second list rather than a second mode on the
+           one above: the two open on different characters and close on
+           different rules, and one element holding both states was how the
+           slash popup used to lose its selection (js/composer.js). -->
+      <ul id="file-popup" hidden role="listbox" aria-label="فایل‌ها"></ul>
+
+      <!-- Long pastes, parked as chips the way the TUI parks them: the box
+           keeps a «[متن چسبانده‌شده #N +M سطر]» placeholder and the real text
+           rides along until send (js/composer.js). -->
+      <div id="pastes" hidden></div>
+
+      <div id="attachments" hidden></div>
+
+      <!-- Ctrl+R, the TUI's reverse history search. The box holds the query
+           while this row shows the match, so there is one text field and not
+           two (js/composer.js). -->
+      <div id="history-search" hidden>
+        <span id="hs-label"></span>
+        <bdi id="hs-match" dir="auto"></bdi>
+        <span id="hs-hint" class="meta"></span>
+      </div>
+
+      <label class="sr-only" for="input">پیام</label>
+      <textarea id="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
+                autocomplete="off" spellcheck="false"></textarea>
+
+      <div class="comp-row">
+        <button type="button" id="btn-attach" class="ghost icon" aria-label="پیوست فایل">
+          <!-- SVG, not an emoji: emoji render differently per platform and
+               cannot be themed. -->
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l8.49-8.49a3.67 3.67 0 015.19 5.19l-8.5 8.49a1.83 1.83 0 01-2.59-2.59l7.84-7.83"/>
+          </svg>
+        </button>
+
+        <button type="button" id="proj-chip" class="chip-btn" title="">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+          </svg>
+          <bdi id="proj-chip-name" class="path"></bdi>
+        </button>
+
+        <!-- The model / effort / output-style / posture CHIPS ARE GONE
+             (V2-PLAN §2 «Delete», built in v2.4). Every one of them is now a
+             numbered inline list behind the command that names it — `/model`,
+             `/effort`, `/output-style`, `/permissions` — plus Alt+P and
+             Shift+Tab, exactly the way the terminal reaches them. What they
+             used to SAY moves to the status line in v2.5 (§3.4); the state
+             itself never left js/controls.js.
+
+             The audit counter below is deliberately NOT one of them: it is not
+             a picker, and «خودکار» approving things silently is the defect the
+             count exists to prevent. -->
+
+        <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
+             on the user's behalf. Never hidden behind a menu. A button, not a
+             span: it opens the list of those approvals, so it has to be
+             clickable AND reachable from the keyboard. -->
+        <button type="button" id="auto-chip" class="chip-btn is-info" hidden></button>
+
+        <span class="comp-spacer"></span>
+
+        <button type="submit" id="send" class="round" aria-label="ارسال">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/>
+          </svg>
+        </button>
+        <button type="button" id="stop" class="round danger" hidden
+                aria-label="توقف (Esc)" title="توقف (Esc)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="composer-hint" class="meta"></div>
+  </form>
+
+  <footer id="statusline" aria-label="نوار وضعیت"></footer>
+</div>
+
+<!-- The TUI's `?` table, translated: every chord the window binds, built from
+     the one list js/composer.js dispatches from, so the sheet cannot describe a
+     key the page does not have (V2-PLAN §3.2). -->
+<dialog id="keys">
+  <h2 id="keys-title"></h2>
+  <div id="keys-body"></div>
+  <menu>
+    <!-- The TUI's own footer here is «esc to close · esc again quits»; only
+         the first half means anything in a window (V2-PLAN §8.5). -->
+    <span id="keys-esc" class="meta"></span>
+    <button type="button" id="keys-close" class="ghost"></button>
+  </menu>
+</dialog>
+
+<!-- Classic scripts on purpose: they set window globals (STRINGS, marked) and
+     every classic script finishes before the first module runs. Swapping the
+     strings file for another language is the whole i18n seam. -->
+<script src="/static/strings.fa.js"></script>
+<script src="/static/vendor/marked.min.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
