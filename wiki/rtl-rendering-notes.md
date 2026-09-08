@@ -543,3 +543,58 @@ One non-obvious enabler: `#stage`'s min-content was 244px because a `<textarea>`
 intrinsic width from `cols` (~180px) whatever CSS says around it. `.comp-box #input` now has
 `inline-size: 100%`, which contributes nothing to intrinsic sizing, and the number drops to the
 widest chip.
+
+## `<a>` isolates nothing, and SKIP_TAGS said it did (2026-09-09, bead pcg-agb)
+
+Reported: `https://www.bridgemind.ai/` typed inside a Persian sentence drew as
+`/https://www.bridgemind.ai` — the trailing slash on the far end of its own URL.
+
+The rule-2 machinery looked like it already covered this: `TECHNICAL` in `bidi.js` matches
+`https?://…` and wraps it in `<bdi class="path">`. It never runs on a URL in prose. **marked's gfm
+autolink (on by default) has already turned every bare URL into an `<a>` before
+`isolateTechnicalTokens()` walks the tree**, and `A` is in `SKIP_TAGS` with the comment
+"already isolated" — which is true of `<bdi>` and **false of `<a>`**. An anchor is an ordinary
+inline box, `unicode-bidi: normal`, so the URL's trailing `/` is a neutral between its own Latin
+letters and the Persian after it and UAX#9 N2 hands it the *paragraph* direction. Measured on the
+unfixed page: the anchor computed `rtl/normal` and the slash painted at x=529 inside its own
+526–722 box.
+
+The fix is one attribute, in the shared builder both editions and both prose paths
+(`renderMarkdown`, `fillInline`) route through: an anchor whose own text **is** the token gets
+`dir="ltr"`. **The HTML UA sheet gives every element carrying a `dir` attribute
+`unicode-bidi: isolate`**, so that one attribute is the whole `.path` treatment (LTR + isolate)
+with no stylesheet rule and no wrapper element — and `autoDir()` then skips the subtree exactly as
+it already skips a `<bdi class="path">`. Scoped to token-only anchors on purpose: a
+`[متن فارسی](href)` link must keep deciding for itself, and spec rule 1's amendment is not widened.
+
+Guard: three checks in both `spec-test.html` files. Two are geometric — a `Range` on the anchor's
+**last** character against the anchor's own midpoint, because `textContent` reads the URL in
+logical order whichever end the slash is painted at (the "+2 −1" lesson, one element out). The
+third is the English-prose side: a bare URL in an English line still resolves LTR, which is what
+stops the next person "fixing" this with a forced `direction`. Negative-tested: without the fix
+`FAIL — 208/210`, with it `PASS — 210/210` (web) / `177/177` (terminal), slash 529 → 719.
+
+## A `[hidden]` element has no `offsetParent`, so measuring it writes nothing
+
+Found 2026-09-09 while fixing `pcg-6nf.10`. Every one of the three popup sites capped its own
+height with some variant of
+
+```js
+const box = el.offsetParent?.getBoundingClientRect();
+if (box) el.style.maxHeight = ...;
+```
+
+and **not one of them ever ran.** The popups are `[hidden]` until they open, `[hidden]` is
+`display: none` in the UA sheet, and an element in no box tree has `offsetParent === null` — so the
+optional chain produced `undefined`, `if (box)` swallowed the write, and the only cap in force was
+the `40cqh` in CSS. The bead's "its only cap is 40cqh" was literally true rather than an
+approximation.
+
+This is a silent failure of the worst shape: the code reads correctly, the guard looks defensive,
+and the feature it implements has simply never existed. Unhide first, then measure, then position,
+then paint — in that order, in one frame.
+
+The same trap is waiting for anything that measures a `[popover]`, a `<dialog>` before `show()`, or
+a `display:none` ancestor's descendant. `getBoundingClientRect()` on such an element answers all
+zeroes rather than `undefined`, which is worse: the arithmetic proceeds and produces a plausible
+wrong number instead of skipping.

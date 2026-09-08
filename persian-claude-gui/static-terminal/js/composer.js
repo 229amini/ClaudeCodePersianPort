@@ -594,6 +594,49 @@ export function makeComposer(root, cell) {
     return { start: upto.lastIndexOf("\n") + 1, caret, text: upto.slice(upto.lastIndexOf("\n") + 1) };
   }
 
+  /* The popup geometry, the same three numbers `js/controls.js` positionMenu()
+     reads: the gap a popup hangs above the prompt with, the breathing room it
+     keeps at the column's edge, and the shortest list still worth opening. */
+  const POP_GAP = 8;
+  const POP_EDGE = 8;
+  const POP_MIN = 140;
+
+  /* Both lists that open UPWARD out of the prompt - «/» commands and `@` files -
+     shared this one line: `max-height: max(140, box.top - 16)`. Two defects in
+     it, and this is the one place to fix them both (pcg-6nf.10).
+
+     It measured against the WINDOW, so with four columns a bottom-row list was
+     capped by everything above the window's own top rather than by its own
+     column (MA4-T1's mistake, one module over).
+
+     And the 140px FLOOR is more room than a short column HAS above its prompt: a
+     quarter of a ~1050x710 window leaves ~90px, so the list drew ~50px through
+     the top of its own column onto the one above it. A floor is still right - a
+     40px list is not a list - so what gives is the ANCHOR: whatever the cap
+     cannot buy above the prompt, the popup takes back by sliding down OVER the
+     prompt, which is positionMenu()'s own answer, on the one property the CSS
+     anchors these two with. */
+  function capPopup(el) {
+    /* UNHIDDEN FIRST, and it is a third defect in the line this replaces:
+       `[hidden]` is `display: none`, and a box that is not drawn has NO
+       offsetParent - so `offsetParent?.getBoundingClientRect()` was `undefined`,
+       the `if (box)` guard skipped the write every single time, and the only cap
+       either list has ever had is the 40cqh in style.css. Measure at the CSS
+       anchor too: whatever the last open left behind is part of what is read
+       below. */
+    el.style.insetBlockEnd = "";
+    el.hidden = false;
+    const box = el.offsetParent?.getBoundingClientRect();
+    if (!box) return;
+    const bounds = (root instanceof Element ? root : document.body)
+      .getBoundingClientRect();
+    const roomAbove = box.top - bounds.top - POP_GAP - POP_EDGE;
+    el.style.maxHeight = Math.max(0, Math.min(
+      bounds.height - 2 * POP_EDGE, Math.max(POP_MIN, roomAbove))) + "px";
+    const over = Math.round(el.offsetHeight - roomAbove);
+    if (over > 0) el.style.insetBlockEnd = `calc(100% + ${POP_GAP - over}px)`;
+  }
+
   function currentSlashQuery() {
     const match = /^\/(\S*)$/.exec(activeSegment().text);
     return match ? match[1] : null;
@@ -615,13 +658,7 @@ export function makeComposer(root, cell) {
     }
     slashIndex = 0;
     renderSlash();
-    // Same trap as the picker menu (js/controls.js positionMenu): this opens
-    // upward out of the composer, so its 40vh is only real when the composer is
-    // at the bottom of the window. In the home state it sits mid-screen and the
-    // top rows were clipped off the window instead of scrolling.
-    const box = slashPopup.offsetParent?.getBoundingClientRect();
-    if (box) slashPopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
-    slashPopup.hidden = false;
+    capPopup(slashPopup);
   }
 
   function renderSlash() {
@@ -928,16 +965,14 @@ export function makeComposer(root, cell) {
       empty.className = "is-empty";
       empty.append(label(FA.fileNone, "slash-desc"));
       filePopup.append(empty);
-      filePopup.hidden = false;
+      capPopup(filePopup);
       return;
     }
     fileRetried = false;
     fileMatches = files;
     fileIndex = 0;
     renderFiles();
-    const box = filePopup.offsetParent?.getBoundingClientRect();
-    if (box) filePopup.style.maxHeight = Math.max(140, box.top - 16) + "px";
-    filePopup.hidden = false;
+    capPopup(filePopup);
   }
 
   function refreshFiles() {

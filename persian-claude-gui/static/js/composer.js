@@ -476,17 +476,52 @@ export function makeComposer(root, cell) {
     return !!slashPopup && !slashPopup.hidden;
   }
 
-  /* Same trap as the picker menu (js/controls.js positionMenu): this opens
-     upward out of the composer, so its 40vh is only real when the composer is
-     at the bottom of its column. In the home state it sits mid-column and the
-     top rows were clipped instead of scrolling. Measured against the CELL, not
-     the window (MA4-T1): with one cell the two are the same rectangle. */
+  /* The popup's own geometry, the same three numbers `js/controls.js`
+     positionMenu() reads: the gap it hangs above the prompt with, the breathing
+     room it keeps at the column's edge, and the shortest list still worth
+     opening. Local rather than imported - composer.js has no edge on
+     controls.js in this edition (wiki/frontend-modules.md) and one popup is not
+     worth making one. */
+  const POP_GAP = 8;
+  const POP_EDGE = 8;
+  const POP_MIN = 140;
+
+  /* Same trap as the picker menu, and now the same TWO answers to it (pcg-6nf.10).
+     This opens upward out of the composer, so its 40cqh is only real when the
+     composer is at the bottom of its column: in the home state it sits mid-column
+     and the top rows were clipped instead of scrolling. Measured against the
+     CELL, not the window (MA4-T1) - with one cell the two are the same rectangle.
+
+     The 140px FLOOR under that cap is that defect one size down, and a 4-way
+     split is where it shows: a quarter of a ~1050x710 window leaves ~90px above
+     the prompt, the floor asks for 140, and the list drew 64px through the top of
+     its own column onto the one above it (measured). A floor is still right - a
+     40px list is not a list - so what gives instead is the ANCHOR: whatever the
+     cap cannot buy above the prompt, the popup takes back by sliding down OVER
+     the prompt, which keeps every row of it inside the column it belongs to.
+     That is positionMenu()'s own fix; this is the same arithmetic on the one
+     property the CSS anchors this popup with. */
   function showPopup() {
-    const box = slashPopup.offsetParent?.getBoundingClientRect();
-    const top = (root instanceof Element ? root : document.body)
-      .getBoundingClientRect().top;
-    if (box) slashPopup.style.maxHeight = Math.max(140, box.top - top - 16) + "px";
+    /* UNHIDDEN FIRST, and this is the whole reason the cap that used to be
+       written here never did anything: `[hidden]` is `display: none`, and a box
+       that is not drawn has NO offsetParent - so `offsetParent?.getBounding...`
+       was `undefined`, the `if (box)` guard skipped the write every single time,
+       and the only cap this popup has ever had is the 40cqh in style.css.
+       Measure at the CSS anchor too: whatever the last open left behind is part
+       of what is read below. */
+    slashPopup.style.insetBlockEnd = "";
     slashPopup.hidden = false;
+    const box = slashPopup.offsetParent?.getBoundingClientRect();
+    if (!box) return;
+    const bounds = (root instanceof Element ? root : document.body)
+      .getBoundingClientRect();
+    const roomAbove = box.top - bounds.top - POP_GAP - POP_EDGE;
+    slashPopup.style.maxHeight = Math.max(0, Math.min(
+      bounds.height - 2 * POP_EDGE, Math.max(POP_MIN, roomAbove))) + "px";
+    const over = Math.round(slashPopup.offsetHeight - roomAbove);
+    if (over > 0) {
+      slashPopup.style.insetBlockEnd = `calc(100% + ${POP_GAP - over}px)`;
+    }
   }
 
   function popRow(item) {

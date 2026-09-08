@@ -27,6 +27,10 @@ const TECHNICAL = new RegExp(
   "g"
 );
 
+/* The same alternation, anchored: "this text is nothing BUT one technical
+   token". Used on an autolinked <a> below — never on prose. */
+const TECHNICAL_ONLY = new RegExp("^(?:" + TECHNICAL.source + ")$");
+
 /* Direction is never decided by these tags — they are forced LTR in CSS, and
    <a>/<bdi> already isolate. Walking into them would double-wrap. */
 const SKIP_TAGS = new Set(["PRE", "CODE", "BDI", "A", "SCRIPT", "STYLE"]);
@@ -80,6 +84,29 @@ export function isolateTechnicalTokens(root) {
     }
     if (last < node.nodeValue.length) frag.append(node.nodeValue.slice(last));
     node.replaceWith(frag);
+  }
+
+  /* A bare URL in prose never reaches the walker above: marked's gfm autolink
+     has already turned it into an <a>, and SKIP_TAGS skips A on the grounds
+     that it is "already isolated" — true of <bdi>, false of <a>. An anchor is
+     an ordinary inline box (`unicode-bidi: normal`), so a URL's trailing `/` is
+     a neutral between its own Latin letters and the Persian after it, and
+     UAX#9 N2 hands that neutral the PARAGRAPH direction: reported (bead
+     pcg-agb) as «https://www.bridgemind.ai/» drawing as
+     «/https://www.bridgemind.ai» — the slash painted at the far end of its own
+     URL. Same defect family as the "+2 −1" diff count, one element out.
+     `dir="ltr"` IS the .path treatment written in the DOM: the HTML UA sheet
+     gives every element with a `dir` attribute `unicode-bidi: isolate`, so one
+     attribute buys LTR + isolate with no stylesheet rule and no extra element
+     around a link that already isolates its href. Spec rule 2, and its first
+     trap stays avoided — the direction is not forced on prose: only an anchor
+     whose own text IS the token is touched, so `[متن فارسی](href)` still
+     decides for itself, and autoDir() then skips this subtree exactly as it
+     already skips a <bdi class="path">. */
+  for (const a of root.querySelectorAll("a")) {
+    if (!a.hasAttribute("dir") && TECHNICAL_ONLY.test(a.textContent.trim())) {
+      a.setAttribute("dir", "ltr");
+    }
   }
 }
 

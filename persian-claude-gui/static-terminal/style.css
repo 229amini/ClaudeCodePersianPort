@@ -962,12 +962,75 @@ pre, code, .path, .diff, .tool-output, .mono {
   overflow-wrap: anywhere;
 }
 
-/* Chat sidedness follows the RTL shell: the user sits on the right (start) in
-   a filled bubble; the assistant reads as plain text on the page, claude.ai-
-   style. Alignment is layout only — never a substitute for `dir` on the text. */
-.msg.user {
+/* V2-PLAN §3.1 row 1: the user's turn is the TUI's `> prompt` ECHO, not a chat
+   bubble. This edition inherited the web one's filled pill verbatim, which is
+   the one shape a terminal cannot draw — so the fill, the radius and the pill
+   padding all go, and the row is dimmed, because what the person typed is
+   already on the screen once and the answer is what the eye is looking for.
+   (The web edition keeps its bubble: standing decision, wiki/editions.md.)
+
+   The gutter geometry is the assistant's, verbatim, so the echo, the answer and
+   every step between them hang off ONE rail. PHYSICAL properties, for the exact
+   reason `.msg.assistant` below spells out: `.msg` carries `dir="auto"`, so an
+   English message resolves `direction: ltr` and every logical property on this
+   box would flip with it, while the gutter belongs to the COLUMN, which is RTL
+   and does not move.
+
+   `:not(.side)` for the reason the assistant's own rule below excludes the
+   same class: a `/btw` question is a `.msg.user` that is NOT a turn in this
+   conversation, it already carries the TUI's `※` and its own rule, and left
+   unexcluded it drew two marks in one row (test_shell.py caught exactly that).
+
+   Alignment is layout only — never a substitute for `dir` on the text. */
+.msg.user:not(.side) {
   align-self: flex-start;
-  background: var(--surface-2);
+  position: relative;
+  color: var(--fg-muted);
+  background: none;
+  border-radius: 0;
+  padding-block: 1px;
+  padding-left: 2px;
+  padding-right: 35px;   /* 12 (gutter offset) + 15 (mark) + 8 (gap) */
+}
+
+/* The mark is the product's OWN mirrored prompt — the same two paths as the
+   composer's `.comp-mark` and the sidebar head (assets/make_icon.py), never
+   Anthropic's Claude mark, and never a glyph invented for this row: the TUI's
+   recorded vocabulary (wiki/tui-strings.md §1) has no prompt marker in it.
+
+   Drawn as a MASK filled with `currentColor`, not as an <img> or a baked fill:
+   the row is dimmed by its own `color`, and an image would keep the mark at
+   full strength over faded text — and would miss any later theme change too.
+   A pseudo-element for the same three reasons the ⏺ below is one: it is
+   decoration, it must never reach a screen reader, and it must never land in
+   the `textContent` two loop cycles are compared on. It is also the cheap
+   shape — this row is re-rendered on every reload (the /api/session backfill),
+   so a per-row inline <svg> would be paid for over and over.
+
+   `block-size` is the first LINE box, not the row: a two-line message keeps the
+   mark on line one, where the prompt is, instead of centring it on the para.
+
+   THE PREFIX IS NOT DEAD CRUFT — do not tidy it away. Unprefixed `mask` needs
+   Chromium 120+, and this app runs in Edge app-mode on a machine whose version
+   is unknown until setup.ps1 probes it. A dropped `mask` does not degrade to
+   nothing: `background: currentColor` then paints the whole 15px box, so every
+   user row wears a solid muted rectangle where its mark should be — the one
+   failure mode worse than no marker, and invisible both on the author PC and to
+   every gate here. `-webkit-mask` has shipped in Chromium since long before
+   120; the unprefixed line comes second so it wins wherever both are read.
+   Every other property in this rule fails safe: dropped, each one draws
+   NOTHING rather than something wrong. */
+.msg.user:not(.side)::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  right: 12px;
+  inline-size: 15px;
+  block-size: calc(1em * var(--lh-fa));
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.1 7.4L11.9 12l5.2 4.6'/%3E%3Cpath d='M6.9 16.6h4'/%3E%3C/svg%3E") no-repeat center / 15px 15px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.1 7.4L11.9 12l5.2 4.6'/%3E%3Cpath d='M6.9 16.6h4'/%3E%3C/svg%3E") no-repeat center / 15px 15px;
+  pointer-events: none;
 }
 
 /* The assistant is plain text on the page, not a bubble — it has no surface to
@@ -2824,16 +2887,37 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    What goes, in the order it earns its place back:
      - the key hint under the prompt. It is a reminder, and `?` still opens the
        whole sheet.
-     - every status row except the posture line, which is the one that carries
-       both the mode and the chord that changes it (V2-PLAN §3.4), and the
-       warning row, which is never noise — a «گفتگو پر شده» hidden to save 20px
-       is the defect this file exists to avoid.
+     - the status stack's HEIGHT, not its rows: it is clamped to two lines and
+       scrolls (pcg-6nf.11). Hiding every row but the posture line was the
+       cheaper diff and the wrong one - see the block itself.
      - the prompt's own growth: a message may still be several lines, it just
        may no longer eat the transcript to be so. */
 @container (max-height: 460px) {
   .composer-hint { display: none; }
-  .statusline .sl-line:not(.sl-posture):not(.sl-warn) { display: none; }
-  .statusline { padding-block: 3px 5px; }
+  /* THE STATUS STACK: clamped, not thinned (pcg-6nf.11, measured 2026-09-08).
+     Every row but the posture line and the warning used to be `display: none`
+     here, which is the one thing the web edition's own density fix refused to
+     do to the chips - and for the same reason: a resumed session's model,
+     folder, context, quota, cost and session id are what the user is reading,
+     and a field that silently disappears at one window size is a field they
+     cannot trust at any. So all four rows stay and the stack is two rows tall
+     and scrolls. `3.2em` is two lines of THIS element's own font (line-height
+     1.6, and 1em here is already the .74em below), plus its own padding
+     because `* { box-sizing: border-box }`. */
+  .statusline {
+    padding-block: 3px 5px;
+    max-height: calc(3.2em + 8px);
+    overflow-y: auto;
+  }
+  /* WHICH two rows those are, though, is a decision - and it is the one the
+     `display: none` above was right about: the posture row carries the mode and
+     the chord that changes it, and the warning row is never noise. Both would
+     have been the two rows SCROLLED TO, since the stack is drawn in the TUI's
+     order (statusLine script, posture, facts, warning) and the warning is last.
+     `order` is visual only: the DOM order stays §3.4's, which is what
+     test_shell.py reads, and the facts are one flick away instead of gone. */
+  .statusline .sl-warn { order: -2; }
+  .statusline .sl-posture { order: -1; }
   .topbar { min-height: 0; padding-block: 6px 2px; }
   .comp-box .input { max-height: 22cqh; }
 }

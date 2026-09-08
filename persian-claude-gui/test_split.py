@@ -62,8 +62,25 @@ PROBE = STATIC / "_split_probe.html"
 # the window - which is exactly what `.cell { min-height: 0 }` buys and what its
 # absence breaks (without it the columns grow to their own content and the
 # bottom row leaves the window).
-SIZES = ((1280, 800, False), (1000, 700, False), (1242, 622, False),
-         (760, 480, True))
+# 1052x711 is the window pcg-6nf.11 was measured in: a quarter of it is 382x337,
+# which is where a RESUMED session's status line wrapped to eight rows and left
+# the transcript 12%.
+SIZES = ((1280, 800, False), (1000, 700, False), (1052, 711, False),
+         (1242, 622, False), (760, 480, True))
+
+# The two window sizes whose columns must still be mostly conversation. Not every
+# size: a quarter of a 1242x622 window is 247px tall, and no CSS fits a topbar, a
+# prompt and a status line into that with 40% left over - that column is the
+# TIGHT case one step short of being marked tight.
+LOG_SHARE_AT = ((1000, 700), (1052, 711))
+
+# How tall the status STACK may be in a short column, and the rows that buys.
+# pcg-6nf.11: a resumed session's fields wrap to six or eight lines in a ~370px
+# column - 97px to 120px of a 291px column, measured 2026-09-08 - so the stack is
+# clamped to two rows and scrolls. Two rows of its own .74em/1.6 font plus its own
+# padding is 46px here; the bar has one row of slack in it so a font-size change
+# is not a gate failure, and it is far below the six rows that raised the bead.
+STATUS_CAP = 64
 
 # How many synthetic deltas the stream measurement pushes. Large enough that the
 # per-event scope copy is measurable at all, small enough to stay free.
@@ -121,7 +138,7 @@ LAYOUT_CHECKS = 6 + (1 if EDITION == "web" else 0)
 # ...and what it asserts only where four columns can hold their own chrome at
 # all: every descendant inside its own column, in three states, plus the empty
 # column's digit badge and the transcript's share of its column.
-FIT_CHECKS = 5
+FIT_CHECKS = 10
 
 PROBE_JS = """
 <pre id="probe-out" hidden></pre>
@@ -383,7 +400,7 @@ async function layoutCase(which) {
   closeMenu(APP.cells[0]);
   await sleep(120);
 
-  // (c) a transcript long enough to be scrolling.
+  // (d) a transcript long enough to be scrolling.
   for (let i = 0; i < %LONG%; i++) {
     APP.routeEvent({type: "wrapper", subtype: "user_echo", tab: "t1",
       text: "\\u062e\\u0637 " + i + " \\u0627\\u0632 \\u06cc\\u06a9 "
@@ -397,6 +414,83 @@ async function layoutCase(which) {
     const log = box(r.querySelector(".log"));
     return cell.h ? Math.round((100 * log.h) / cell.h) : 0;
   });
+
+  /* --- (e) the chrome a RESUMED session carries (pcg-6nf.11) ----------------
+     Every state above has an EMPTY status line, which is why the 53% at 366x286
+     the density fix was signed off on was never the number the user saw. A
+     resumed session names all of it at once - model, folder, mode, context,
+     quota, cost, session id AND the machine's own statusLine passthrough - and
+     in a ~370px column that one wrapping row was six to eight lines, 97px to
+     120px of a 291px column (measured 2026-09-08, before the clamp).
+
+     Its own state, after the share above, because the two are different
+     questions: that one is the same empty-status measurement every earlier pass
+     was signed off on, this one is the window the user actually reported.
+     Terminal edition: the same events also carry its posture row, its effort and
+     its output style - the rows the four chips used to be. */
+  for (const t of ["t1", "t2", "t3", "t4"]) {
+    APP.routeEvent({type: "system", subtype: "init", tab: t,
+      model: "claude-opus-4-5-20260101", cwd: "D:\\\\projects\\\\Claude",
+      permissionMode: "acceptEdits", output_style: "Explanatory",
+      session_id: "0f9c2a71-4b3d-4e51-9a77-2c1e5d80ab3f",
+      slash_commands: ["init", "clear", "compact", "resume", "model", "effort",
+                       "output-style", "permissions", "status", "memory",
+                       "hooks", "help", "cost", "doctor"]});
+    APP.routeEvent({type: "wrapper", subtype: "posture", tab: t,
+                    posture: "acceptEdits", auto_count: 3});
+    APP.routeEvent({type: "wrapper", subtype: "effort", tab: t, effort: "high"});
+    APP.routeEvent({type: "wrapper", subtype: "usage", tab: t,
+                    context: 42, cost: 1.2345, quota: 61});
+    APP.routeEvent({type: "wrapper", subtype: "statusline", tab: t, segments: [
+      {text: "PONYTAIL full \u00b7 main \u00b7 D:\\\\projects\\\\Claude \u00b7 opus 42%"}]});
+  }
+  await sleep(250);
+  /* The stack's box AND what it holds: `scroll > h` is the proof that the two
+     rows on screen are a window onto every field rather than the only fields
+     left. `rows` is that height in lines of its own font, which is the unit the
+     bead was reported in. */
+  out.slBox = CELLS().map((r) => {
+    const sl = r.querySelector(".statusline");
+    return {...box(sl), scroll: sl.scrollHeight,
+            rows: Math.round(sl.scrollHeight / (parseFloat(getComputedStyle(sl).lineHeight) || 1))};
+  });
+
+  out.fits.full = fitAll();
+  out.logShareFull = CELLS().map((r) => {
+    const cell = box(r);
+    const log = box(r.querySelector(".log"));
+    return cell.h ? Math.round((100 * log.h) / cell.h) : 0;
+  });
+
+
+  /* --- (f) the slash popup in a SHORT column (pcg-6nf.10) -------------------
+     The picker menu was fixed by sliding its anchor down (controls.js
+     positionMenu); this list is anchored by composer.js and had only the 140px
+     floor under its cap, which in a quarter of a ~1050x710 window asks for more
+     room than there is above the prompt. Opened the way the user opens it - «/»
+     typed into the real box - in the BOTTOM-LEFT column, which is the one with
+     a whole column above it to draw over. */
+  const popAt = CELLS().length - 1;
+  const popCell = APP.cells[popAt];
+  const popInput = popCell.root.querySelector("textarea.input");
+  popInput.value = "/";
+  popInput.setSelectionRange(1, 1);
+  popInput.dispatchEvent(new Event("input", {bubbles: true}));
+  await sleep(200);
+  const popList = popCell.root.querySelector(".slash-popup");
+  out.slash = {at: popAt, open: !!popList && !popList.hidden,
+               cell: box(popCell.root), pop: popList ? box(popList) : null,
+               // The cap composer.js writes from the column's own rect. Read as
+               // an INLINE style on purpose: `[hidden]` is `display: none`, so
+               // the cap used to be computed off an element with no
+               // offsetParent, the `if (box)` guard swallowed it, and the only
+               // cap this list ever had was the 40cqh in style.css. An empty
+               // string here is that bug.
+               cap: popList ? popList.style.maxHeight : "",
+               spill: fitOne(popCell.root)};
+  popInput.value = "";
+  popInput.dispatchEvent(new Event("input", {bubbles: true}));
+  await sleep(120);
 
   /* --- a permission for a conversation no column is showing ---------------- */
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t9",
@@ -622,13 +716,65 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             say(f"the digit badge of empty cell(s) {blank} has no box - "
                 "nothing says which Alt+N reaches a blank column")
         # And the conversation is still the biggest thing in its own column.
-        if size == (1000, 700):
+        if size in LOG_SHARE_AT:
             thin = [(at, pct) for at, pct in enumerate(m["logShare"], 1)
                     if pct < LOG_SHARE]
             if thin:
                 say(f"the transcript is only {thin[0][1]}% of cell {thin[0][0]} "
                     f"(want >= {LOG_SHARE}%) - the column is chrome with a "
                     "sliver of conversation wedged into it")
+
+        # 5b-ii. pcg-6nf.11: the same column with a RESUMED session's status
+        #        line in it - every field at once, which is the state the user
+        #        reported and the one no gate had ever drawn. The status stack is
+        #        clamped and scrolls: it may not be taller than STATUS_CAP, it
+        #        must still HOLD more than it shows (nothing is hidden to fit),
+        #        and no piece of chrome may leave the column - before the clamp
+        #        the status line hung 26px to 42px past the bottom of its own
+        #        cell, over the column below it.
+        spill = [(at, f["n"], f["worst"]) for at, f in enumerate(m["fits"]["full"], 1)
+                 if f["n"]]
+        if spill:
+            at, n, w = spill[0]
+            say(f"with a resumed session's full status line: "
+                f"{sum(s[1] for s in spill)} boxes are drawn outside their own "
+                f"column (cell {at}: {n}, worst {w['sel']} {w['out']}px past the "
+                f"{w['side']})")
+        for at, sl in enumerate(m["slBox"], 1):
+            if sl["h"] > STATUS_CAP:
+                say(f"the status stack of cell {at} is {sl['h']}px tall "
+                    f"({sl['rows']} rows, cap {STATUS_CAP}) - a resumed session's "
+                    "fields wrap and the transcript pays for every row")
+            elif sl["scroll"] <= sl["h"] + 2:
+                say(f"the status stack of cell {at} holds {sl['scroll']}px in "
+                    f"{sl['h']}px of box - it fits, so a field was dropped to "
+                    "make it fit rather than scrolled to")
+
+        # 5b-iii. pcg-6nf.10: the slash popup is anchored by composer.js, not by
+        #        positionMenu, and its 140px floor is more room than a short
+        #        column has above its prompt.
+        sl = m["slash"]
+        if not sl["open"] or not sl["pop"]:
+            say(f"typing «/» in cell {sl['at'] + 1} opened no command list "
+                f"({sl['open']})")
+        else:
+            cell, pop = sl["cell"], sl["pop"]
+            if (pop["y"] < cell["y"] - 1
+                    or pop["y"] + pop["h"] > cell["y"] + cell["h"] + 1
+                    or pop["x"] < cell["x"] - 1
+                    or pop["x"] + pop["w"] > cell["x"] + cell["w"] + 1):
+                say(f"the command list opened in cell {sl['at'] + 1} is outside "
+                    f"it ({pop} vs {cell}) - it is drawn over the column above")
+            if sl["spill"]["n"]:
+                say(f"with the command list open {sl['spill']['n']} boxes are "
+                    f"drawn outside cell {sl['at'] + 1} (worst "
+                    f"{sl['spill']['worst']['sel']} {sl['spill']['worst']['out']}px "
+                    f"past the {sl['spill']['worst']['side']})")
+            if not sl["cap"].endswith("px"):
+                say(f"the command list in cell {sl['at'] + 1} carries no height "
+                    f"cap of its own ({sl['cap']!r}) - composer.js measures one "
+                    "off a popup that is still display:none, so the write never "
+                    "happens and the CSS cap is the only one there is")
 
     # 5c. MA4-T2, web only: the picker opened in the LEFT-most column, which is
     #     the one positionMenu() has the least slack in - and the whole of the
@@ -808,7 +954,10 @@ def main() -> int:
                   f"4 cells at {m['boxes'][0]['w']}x{m['boxes'][0]['h']}, "
                   f"{len(m['dupIds'])} duplicate ids"
                   + ("" if tight else
-                     f", log {m['logShare'][0]}% of its column, "
+                     f", status {m['slBox'][0]['h']}px of "
+                     f"{m['slBox'][0]['scroll']}px, log {m['logShare'][0]}% of "
+                     f"its column ({m['logShareFull'][0]}% with a resumed "
+                     f"session's status line), "
                      + ", ".join(f"{k} {sum(f['n'] for f in v)} outside"
                                  for k, v in m["fits"].items())))
             print(f"    {DELTAS} deltas -> "
