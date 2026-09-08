@@ -521,6 +521,58 @@ def list_projects() -> list[dict]:
 
 CLI_ENVELOPE_RE = re.compile(r"^\s*<[a-z][a-z-]+>")
 
+# The interactive CLI's `!` lines. Measured 2026-09-05 in ~/.claude/projects
+# (CLI 2.1.259): the command and its output are TWO CONSECUTIVE bare-string
+# `user` records, not one --
+#     {"message":{"content":"<bash-input> git status</bash-input>"}}
+#     {"message":{"content":"<bash-stdout>…</bash-stdout><bash-stderr></bash-stderr>"}}
+# -- whereas the wrapper's own shell rows park all three tags in a SINGLE
+# message (`bash_message()`). Both are envelope-shaped, so CLI_ENVELOPE_RE
+# dropped them and a session started in the real TUI replayed with no shell
+# rows at all (pcg-5g2). They are real things the person did, so like
+# `<task-notification>` they jump the filter rather than pass it, and the pair
+# is rejoined into the one-message shape `splitBashBlocks()` already parses:
+# its regex is anchored on `<bash-input>`, so a lone stdout record left on its
+# own would render as prose with the literal tags showing.
+BASH_INPUT_PREFIX = "<bash-input>"
+BASH_OUTPUT_PREFIXES = ("<bash-stdout>", "<bash-stderr>")
+
+
+def bash_envelope_text(event: dict) -> str | None:
+    """The text of a normalised user event that is one of the CLI's bash
+    envelopes, or None. Reads the already-normalised `{type, message}` shape,
+    so both `read_session()` and `read_agent_events()` can ask the question
+    the same way."""
+    if event.get("type") != "user":
+        return None
+    content = event.get("message", {}).get("content")
+    if not isinstance(content, list) or len(content) != 1:
+        return None
+    part = content[0]
+    if not isinstance(part, dict) or part.get("type") != "text":
+        return None
+    text = part.get("text") or ""
+    stripped = text.lstrip()
+    if stripped.startswith(BASH_INPUT_PREFIX) or stripped.startswith(BASH_OUTPUT_PREFIXES):
+        return text
+    return None
+
+
+def _append_transcript_event(events: list[dict], normalized: dict) -> None:
+    """Append one normalised event, folding a `<bash-stdout>`/`<bash-stderr>`
+    record onto the `<bash-input>` record it belongs to.
+
+    Joined with a newline in the CLI's own tag order, which is exactly what
+    `bash_message()` builds for the wrapper's rows -- one shape reaches the
+    renderer no matter which side ran the command."""
+    text = bash_envelope_text(normalized)
+    if text is not None and text.lstrip().startswith(BASH_OUTPUT_PREFIXES) and events:
+        previous = bash_envelope_text(events[-1])
+        if previous is not None and previous.lstrip().startswith(BASH_INPUT_PREFIX):
+            events[-1]["message"]["content"][0]["text"] = previous + "\n" + text
+            return
+    events.append(normalized)
+
 
 def user_prompt_text(content) -> str | None:
     """What the person actually typed on a `user` turn, or None.
@@ -664,7 +716,14 @@ def _normalize_transcript_event(event: dict) -> dict | None:
     message = event.get("message", {})
     if event["type"] == "user" and isinstance(message.get("content"), str):
         raw = message["content"]
-        if raw.lstrip().startswith("<task-notification>"):
+        if raw.lstrip().startswith((BASH_INPUT_PREFIX,) + BASH_OUTPUT_PREFIXES):
+            # A `!` command the person ran in the interactive CLI, and its
+            # output. Real activity, not the CLI talking to itself, so it
+            # jumps CLI_ENVELOPE_RE the same way task-notification does; the
+            # tags stay in the text because splitBashBlocks() is what reads
+            # them. _append_transcript_event() rejoins the pair.
+            message = {"content": [{"type": "text", "text": raw}]}
+        elif raw.lstrip().startswith("<task-notification>"):
             # A real event, not the CLI talking to itself like the envelopes
             # below — must survive replay so the completion card can render.
             # Passed through BEFORE user_prompt_text(): its CLI_ENVELOPE_RE
@@ -715,7 +774,7 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
                 continue
             normalized = _normalize_transcript_event(event)
             if normalized is not None:
-                events.append(normalized)
+                _append_transcript_event(events, normalized)
     return events
 
 
@@ -1074,7 +1133,7 @@ def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int
                 continue
             normalized = _normalize_transcript_event(event)
             if normalized is not None:
-                events.append(normalized)
+                _append_transcript_event(events, normalized)
     return events, total
 
 

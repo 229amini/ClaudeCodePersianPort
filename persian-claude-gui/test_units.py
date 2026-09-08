@@ -527,6 +527,72 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         server.PROJECTS_DIR = old_projects_dir
 
+print("read_session: the interactive CLI's `!` lines replay as shell rows (pcg-5g2)")
+# A session started in the REAL TUI (not the wrapper) writes a `!` command and
+# its output as TWO CONSECUTIVE bare-string user records -- shape copied
+# verbatim from 328615cf-5f5c-4404-8de1-e7a41b02fc78.jsonl, CLI 2.1.259. Both
+# are envelope-shaped, so CLI_ENVELOPE_RE dropped both and such a session
+# replayed with no shell rows at all. They must survive AND be rejoined into
+# the single-message shape splitBashBlocks() parses: its regex is anchored on
+# <bash-input>, so a lone stdout record would render as prose, tags showing.
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    cwd = root / "proj4"
+    cwd.mkdir()
+    old_projects_dir = server.PROJECTS_DIR
+    server.PROJECTS_DIR = root / "projects"
+    folder = server.PROJECTS_DIR / str(cwd).replace(":", "-").replace("\\", "-").replace("/", "-")
+    folder.mkdir(parents=True)
+
+    command = "git status --short"
+    bash_input = _line({
+        "type": "user", "isSidechain": False, "timestamp": "2026-09-04T01:23:47.900Z",
+        "message": {"role": "user", "content": f"<bash-input> {command}</bash-input>"},
+    })
+    bash_output = _line({
+        "type": "user", "isSidechain": False, "timestamp": "2026-09-04T01:23:48.041Z",
+        "message": {"role": "user",
+                    "content": "<bash-stdout>ok</bash-stdout><bash-stderr></bash-stderr>"},
+    })
+    after = _line({
+        "type": "user", "timestamp": "2026-09-04T01:24:00.000Z",
+        "message": {"role": "user", "content": [{"type": "text", "text": "ادامه بده"}]},
+    })
+    # Still noise, still dropped: the envelopes the filter actually exists for.
+    reminder = _line({
+        "type": "user", "timestamp": "2026-09-04T01:23:49.000Z",
+        "message": {"role": "user", "content": "<system-reminder>ignore me</system-reminder>"},
+    })
+    (folder / "s4.jsonl").write_text(
+        "\n".join([bash_input, bash_output, reminder, after]) + "\n", encoding="utf-8")
+
+    try:
+        events = server.read_session(cwd, "s4")
+        check("the `!` pair folds into ONE event, and the typed turn follows",
+              len(events) == 2)
+        shell_text = events[0]["message"]["content"][0]["text"]
+        check("the folded event carries the command and its output together",
+              f"<bash-input> {command}</bash-input>" in shell_text
+              and "<bash-stdout>ok</bash-stdout>" in shell_text)
+        check("input comes before output, the order splitBashBlocks() requires",
+              shell_text.index("<bash-input>") < shell_text.index("<bash-stdout>"))
+        check("it is block-shaped, like every other replayed user turn",
+              events[0]["type"] == "user"
+              and events[0]["message"]["content"][0]["type"] == "text")
+        check("the ordinary typed turn still replays after it",
+              events[1]["message"]["content"][0]["text"] == "ادامه بده")
+        check("a <system-reminder> is still dropped -- the filter still filters",
+              "ignore me" not in str(events))
+        # Proof this needed a special case, same as task-notification.
+        check("user_prompt_text alone would have dropped the command",
+              server.user_prompt_text(f"<bash-input> {command}</bash-input>") is None)
+        # A `!` command must never become the session's title or preview.
+        first, _title, _spoken = server.session_meta(folder / "s4.jsonl")
+        check("session_meta still skips the `!` line and previews the typed turn",
+              first == "ادامه بده")
+    finally:
+        server.PROJECTS_DIR = old_projects_dir
+
 print("read_agent_events: after/next offset behaviour")
 with tempfile.TemporaryDirectory() as tmp:
     agent_file = Path(tmp) / "agent-f00d.jsonl"
