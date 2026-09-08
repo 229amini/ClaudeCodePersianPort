@@ -217,3 +217,27 @@ must clean up: wait for the process to exit (Windows won't delete a folder that 
 cwd), `rmtree` the temp dir, `rmtree` `server.transcript_dir(tmp)`. `smoke_test.py`,
 `test_no_console.py` and `probe_queue.py` all do this — copy their `_cleanup` for any new probe,
 including one-off probes written inline in a session.
+
+## A live SSE connection makes `--headless --dump-dom` never settle
+
+Measured 2026-09-09 while building `test_reload.py`. Chromium's `--dump-dom` prints the DOM once
+the page is *loaded*, and a page holding an open `EventSource` never reaches that point: the
+request stays in flight for the life of the server, so the run sits until the harness's own
+60 s timeout and returns nothing. This is the opposite failure from the one already recorded
+above — there, the idle watchdog kills the server because nothing is subscribed; here, the probe
+hangs because something is.
+
+So a headless probe page gets one of two treatments, and which one is right depends on what is
+under test:
+
+- **The transport is the subject** → hold a real SSE connection from the *driving Python*, not
+  from the page (`run_spec_test.py` does this), and read the result some other way.
+- **The transport is not the subject** → stub `window.EventSource` in the page with a classic
+  `<script>` injected at `<body>`, before the modules run. `test_reload.py` does this: the bug it
+  gates (`pcg-1ug`) is precisely that the hub replay carries *nothing* that draws a message row,
+  so removing the replay removes nothing the assertion depends on. The server, `/api/tabs` and
+  `/api/session` all stay real.
+
+The stub has to run before the app's modules capture `EventSource`; `test_reload.py` injects it as
+a classic `<script>` at `<body>`, which is what was measured to work. The exact ordering rule
+against a deferred module was not tested — copy the working shape rather than reasoning about it.
