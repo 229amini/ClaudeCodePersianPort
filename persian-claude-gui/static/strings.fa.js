@@ -142,6 +142,14 @@ window.FA = {
   resumed: "گفتگو از سر گرفته شد",
 
   newChat: "گفتگوی جدید",
+  /* A conversation in a git worktree of its own: the same repository, checked
+     out a second time under .claude/worktrees/, so two conversations can edit
+     it at once without overwriting each other. «شاخه» is the word for a git
+     branch, which is what the CLI actually makes; the audience never has to
+     name one, and never sees the path. */
+  newChatWorktree: "گفتگوی جدید در شاخهٔ جدا",
+  worktreeOf: "این گفتگو در شاخهٔ جدای «{name}» کار می‌کند",
+  notGitRepo: "این پوشه مخزن گیت نیست، پس شاخهٔ جدا ندارد",
   projects: "پروژه‌ها",
 
   /* Concurrent conversations. Each open session is a separate running Claude —
@@ -152,6 +160,24 @@ window.FA = {
   tabFresh: "گفتگوی تازه",
   closeSession: "بستن این نشست",
   sessionLive: "این گفتگو باز است",
+  /* Per-conversation status, painted on the dot in the tab strip and on the
+     matching session row. Four words, one per state: the CLI is answering, a
+     dialog is sitting on the person, the last turn failed, or nothing is
+     happening. «آماده» rather than «بی‌کار» — the conversation is waiting for
+     the user, not idle in the sense of neglected. */
+  tabStatus: {
+    running: "در حال کار",
+    waiting: "منتظر تأیید",
+    error: "خطا در آخرین پاسخ",
+    idle: "آماده",
+  },
+  /* The one chip over the open-conversations list. Waiting wins over working:
+     it is the one that needs a person. */
+  tabsRunning: "{n} در حال کار",
+  tabsWaiting: "{n} منتظر تأیید",
+  // The count next to a parked conversation's dot: turns that finished while
+  // you were reading another one.
+  tabUnread: "{n} پاسخ تازه",
   maxTabs: "بیشتر از ۶ گفتگو هم‌زمان باز نمی‌شود؛ اول یکی را ببندید",
   permOtherSession: "این درخواست از گفتگوی دیگری است:",
   // The composer's placeholder while no conversation is open at all: there is
@@ -324,6 +350,21 @@ window.FA = {
   cmdBranchDesc: "ادامهٔ یک کپی از این گفتگو در گفتگوی تازه",
   cmdBranchDone: "شاخهٔ جدید: کپی این گفتگو باز شد؛ گفتگوی اصلی سر جای خودش است",
   cmdBranchFailed: "شاخه‌زدن از این گفتگو ممکن نشد",
+
+  /* The split (MA4): how many conversations are on screen at once. The numbers
+     are the whole vocabulary — «۱ / ۲ / ۴» — so the refusal names them rather
+     than describing them. The window bar's three buttons and `/split` say the
+     same thing; each column carries its own digit, and the badge's tooltip is
+     what says what that digit is for. */
+  splitLabel: "چند گفتگو کنار هم",
+  splitOptionTitle: "نمایش {n} گفتگو در یک پنجره",
+  cmdSplitDesc: "چند گفتگو کنار هم: ۱ یا ۲ یا ۴",
+  cmdSplitUsage: "این دستور فقط ۱ یا ۲ یا ۴ را می‌پذیرد",
+  cmdSplitDone: "چیدمان به {n} ستون تغییر کرد",
+  /* ۴ is NOT four columns — it is a 2×2 grid, and the terminal edition's own
+     notice said «۴ ستون» over a layout with two of them (MA3-T4 defect 4). */
+  cmdSplitDoneGrid: "چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد",
+  cellBadgeTitle: "ستون {n} — با Alt+{n} به اینجا بیایید",
 };
 
 window.STRINGS = window.FA;

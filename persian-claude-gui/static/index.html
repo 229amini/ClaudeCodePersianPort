@@ -62,31 +62,62 @@
   </div>
 </aside>
 
+<!-- THE GRID (MA4-T2). `/split 1|2|4`, the segmented control below and
+     Alt+1..4 stamp 1, 2 or 4 `.cell`s from the template further down; a cell is
+     one whole conversation's worth of window — topbar, transcript, home state,
+     permission dialog, composer and status line — and js/app.js runs one
+     composer / controls / permission dialog per cell.
+
+     Cell order is DOM order and the page is dir="rtl", so cell «۱» is the
+     TOP-RIGHT one; each topbar carries its own Persian digit badge so the
+     Alt+N keys name something visible.
+
+     NOTHING INSIDE A CELL MAY CARRY AN `id`: there are N copies of it, and a
+     duplicate id is invalid markup whose leftover getElementById() silently
+     hits cell 1 — the "wrong conversation" class this whole design exists to
+     avoid (MA4-T0 turned every one of them into a class). -->
 <div id="stage">
-  <header id="topbar">
-    <bdi id="topbar-name"></bdi>
-    <span id="topbar-cwd" class="path"></span>
+  <!-- The one piece of chrome that belongs to the WINDOW rather than to a
+       conversation: how many of them are on screen at once. The terminal
+       edition reaches this with `/split` alone, which is right for a terminal
+       and wrong here — this edition is a window for someone who will never
+       type a command, so the layout has to be something you can see and press.
+       `/split 1|2|4` still works and runs the same code (js/composer.js). -->
+  <div id="window-bar">
+    <div id="split-seg" role="group"></div>
+  </div>
+  <div id="grid" data-split="1"></div>
+</div>
+
+<template id="cell-tpl">
+  <section class="cell">
+  <header class="topbar">
+    <!-- Which Alt+N reaches this column. Drawn by the CELL and not by the
+         conversation in it, so an empty column says so too. -->
+    <span class="cell-badge" aria-hidden="true"></span>
+    <bdi class="topbar-name"></bdi>
+    <span class="topbar-cwd path"></span>
   </header>
 
-  <main id="log" aria-live="polite" aria-label="گفتگو"></main>
+  <main class="log" aria-live="polite" aria-label="گفتگو"></main>
 
   <!-- Home / empty state: big greeting above the composer, claude.ai-style.
-       Visibility is driven by whether #log has children (js/chrome.js). -->
-  <section id="home" hidden>
+       Visibility is driven by whether .log has children (js/chrome.js). -->
+  <section class="home" hidden>
     <h1 class="greeting">
       <svg class="mark" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor"
            stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M17.1 7.4L11.9 12l5.2 4.6"/>
         <path d="M6.9 16.6h4"/>
       </svg>
-      <span id="greeting-text"></span>
+      <span class="greeting-text"></span>
     </h1>
 
     <!-- Four ways in, none of them new capability: each card presses something
          the user could already have reached (js/chrome.js). No server code was
          added for this section. -->
-    <div id="home-cards">
-      <button type="button" class="home-card" id="home-resume" hidden>
+    <div class="home-cards">
+      <button type="button" class="home-card home-resume" hidden>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2"/>
@@ -98,7 +129,7 @@
         </span>
       </button>
 
-      <button type="button" class="home-card" id="home-open">
+      <button type="button" class="home-card home-open">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
@@ -109,7 +140,7 @@
         </span>
       </button>
 
-      <button type="button" class="home-card" id="home-explain">
+      <button type="button" class="home-card home-explain">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20.5 14.5a3 3 0 01-3 3H8.5l-4.5 3.2V6a3 3 0 013-3h10.5a3 3 0 013 3z"/>
@@ -120,7 +151,7 @@
         </span>
       </button>
 
-      <button type="button" class="home-card" id="home-help">
+      <button type="button" class="home-card home-help">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9.2"/>
@@ -135,42 +166,72 @@
     </div>
   </section>
 
-  <div id="replay-banner" hidden></div>
+  <div class="replay-banner" hidden></div>
 
   <!-- Context is filling up. Built by js/composer.js, because both of its
        actions are composer actions: /compact goes to the CLI as ordinary text
        (it is NOT a control subtype on this build) and /clear presses the
        "new chat" button that already owns that job. -->
-  <div id="context-notice" hidden></div>
+  <div class="context-notice" hidden></div>
 
-  <form id="composer">
+  <!-- v2.4-style non-modal dialog (MA4-T0): shown with show(), not showModal(),
+       so it sits IN THE FLOW right above the prompt instead of floating as a
+       centred overlay — the terminal edition's .perm placement
+       (static-terminal/style.css). Escape and "dismiss = deny" are re-created
+       by hand in js/chrome.js, since a non-modal dialog fires no `cancel`. -->
+  <dialog class="perm">
+    <form method="dialog" class="perm-form">
+      <h2 class="perm-title"></h2>
+      <p class="perm-body" dir="auto"></p>
+      <!-- Which conversation is asking, when it is not the one on screen: one
+           dialog serves every open tab (js/chrome.js). -->
+      <p class="perm-source meta" dir="auto" hidden></p>
+      <div class="perm-tool"></div>
+      <pre class="perm-params"></pre>
+      <!-- AskUserQuestion renders here instead of .perm-params: the CLI routes
+           the model's question over the same can_use_tool pipe, so it arrives as
+           a "permission" but is nothing of the sort (js/chrome.js). -->
+      <div class="perm-ask"></div>
+      <label class="perm-remember-row">
+        <input type="checkbox" class="perm-remember">
+        <span class="perm-remember-label"></span>
+      </label>
+      <menu>
+        <button value="deny" class="ghost perm-deny"></button>
+        <button value="allow" class="perm-allow"></button>
+      </menu>
+    </form>
+  </dialog>
+
+  <form class="composer">
     <div class="comp-box">
       <!-- Slash-command autocomplete. Populated from system/init's
            slash_commands list, authoritative for this machine. -->
-      <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
+      <ul class="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
 
       <!-- One popup serves both the model picker and the approval pill: they
            are never open at the same time, and it keeps a single
            click-outside/Escape handler (js/controls.js). -->
-      <div id="menu-popup" hidden role="menu"></div>
+      <div class="menu-popup" hidden role="menu"></div>
 
-      <div id="attachments" hidden></div>
+      <div class="attachments" hidden></div>
 
-      <label class="sr-only" for="input">پیام</label>
-      <textarea id="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
-                autocomplete="off" spellcheck="false"></textarea>
+      <!-- aria-label, not a <label for>: the textarea lost its id (T0), and a
+           label association needs a real id, not a class. -->
+      <textarea class="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
+                autocomplete="off" spellcheck="false" aria-label="پیام"></textarea>
 
       <div class="comp-row">
         <!-- `!` shell mode: the one state where Enter does not send a message
              to Claude. It has to be visible BEFORE the key is pressed, so it
              is a chip on the box rather than a note afterwards (js/composer.js
              refreshBashMode). The `$` is a terminal prompt: LTR by markup. -->
-        <span id="bash-chip" class="chip is-bash" hidden>
+        <span class="chip is-bash bash-chip" hidden>
           <span class="shell-mark" dir="ltr">$</span>
-          <span id="bash-chip-label"></span>
+          <span class="bash-chip-label"></span>
         </span>
 
-        <button type="button" id="btn-attach" class="ghost icon" aria-label="پیوست فایل">
+        <button type="button" class="ghost icon btn-attach" aria-label="پیوست فایل">
           <!-- SVG, not an emoji: emoji render differently per platform and
                cannot be themed. -->
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
@@ -180,69 +241,69 @@
           </svg>
         </button>
 
-        <button type="button" id="proj-chip" class="chip-btn" title="">
+        <button type="button" class="chip-btn proj-chip" title="">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
           </svg>
-          <bdi id="proj-chip-name" class="path"></bdi>
+          <bdi class="proj-chip-name path"></bdi>
         </button>
 
         <!-- Model picker and approval pill are rendered entirely from what
              `initialize` returned (js/controls.js). Hidden until it arrives —
              a hardcoded model list would be wrong on any other plan. -->
-        <button type="button" id="model-chip" class="chip-btn" hidden>
+        <button type="button" class="chip-btn model-chip" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3l2.2 5.1 5.3.6-4 3.6 1.2 5.2L12 14.9 7.3 17.5l1.2-5.2-4-3.6 5.3-.6z"/>
           </svg>
-          <span id="model-chip-name" dir="auto"></span>
+          <span class="model-chip-name" dir="auto"></span>
         </button>
 
         <!-- Reasoning effort. Hidden unless the CURRENT model advertises
              supportsEffort — Haiku does not (js/controls.js). -->
-        <button type="button" id="effort-chip" class="chip-btn" hidden>
+        <button type="button" class="chip-btn effort-chip" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M13 2L4.5 13H11l-1 9 8.5-11H12z"/>
           </svg>
-          <span id="effort-chip-name" dir="auto"></span>
+          <span class="effort-chip-name" dir="auto"></span>
         </button>
 
         <!-- Output style. The set comes from `initialize.available_output_styles`
              and is per-machine (a user can drop in their own), so nothing here
              is hardcoded; hidden unless the CLI offers more than one. -->
-        <button type="button" id="style-chip" class="chip-btn" hidden>
+        <button type="button" class="chip-btn style-chip" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>
           </svg>
-          <span id="style-chip-name" dir="auto"></span>
+          <span class="style-chip-name" dir="auto"></span>
         </button>
 
-        <button type="button" id="posture-chip" class="chip-btn" hidden>
+        <button type="button" class="chip-btn posture-chip" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/>
           </svg>
-          <span id="posture-chip-name" dir="auto"></span>
+          <span class="posture-chip-name" dir="auto"></span>
         </button>
 
         <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
              on the user's behalf. Never hidden behind a menu. A button, not a
              span: it opens the list of those approvals, so it has to be
              clickable AND reachable from the keyboard. -->
-        <button type="button" id="auto-chip" class="chip-btn is-info" hidden></button>
+        <button type="button" class="chip-btn is-info auto-chip" hidden></button>
 
         <span class="comp-spacer"></span>
 
-        <button type="submit" id="send" class="round" aria-label="ارسال">
+        <button type="submit" class="round send" aria-label="ارسال">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/>
           </svg>
         </button>
-        <button type="button" id="stop" class="round danger" hidden
+        <button type="button" class="round danger stop" hidden
                 aria-label="توقف (Esc)" title="توقف (Esc)">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
             <rect x="6" y="6" width="12" height="12" rx="2"/>
@@ -250,38 +311,12 @@
         </button>
       </div>
     </div>
-    <div id="composer-hint" class="meta"></div>
+    <div class="meta composer-hint"></div>
   </form>
 
-  <footer id="statusline" aria-label="نوار وضعیت"></footer>
-</div>
-
-<!-- Native <dialog>: modal semantics, focus trap, Escape and a backdrop for
-     free. Escape resolves as DENY (see js/chrome.js) — dismissing must never be
-     mistaken for approval. -->
-<dialog id="perm">
-  <form method="dialog" id="perm-form">
-    <h2 id="perm-title"></h2>
-    <p id="perm-body" dir="auto"></p>
-    <!-- Which conversation is asking, when it is not the one on screen: one
-         dialog serves every open tab (js/chrome.js). -->
-    <p id="perm-source" class="meta" dir="auto" hidden></p>
-    <div id="perm-tool"></div>
-    <pre id="perm-params"></pre>
-    <!-- AskUserQuestion renders here instead of #perm-params: the CLI routes
-         the model's question over the same can_use_tool pipe, so it arrives as
-         a "permission" but is nothing of the sort (js/chrome.js). -->
-    <div id="perm-ask"></div>
-    <label id="perm-remember-row">
-      <input type="checkbox" id="perm-remember">
-      <span id="perm-remember-label"></span>
-    </label>
-    <menu>
-      <button value="deny" class="ghost" id="perm-deny"></button>
-      <button value="allow" id="perm-allow"></button>
-    </menu>
-  </form>
-</dialog>
+  <footer class="statusline" aria-label="نوار وضعیت"></footer>
+  </section>
+</template>
 
 <!-- Classic scripts on purpose: they set window globals (STRINGS, marked) and
      every classic script finishes before the first module runs. Swapping the

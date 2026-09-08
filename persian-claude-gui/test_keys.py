@@ -51,9 +51,14 @@ KEYS_DOC = HERE.parent / "wiki" / "tui-keys.md"
 # The contexts the PROMPT and its DIALOGS own. `Confirmation` joined in v2.4,
 # when the permission and plan dialogs became numbered inline lists. `Task` has
 # no v2 key, and the rest of the file is reference material about screens v2
-# does not build (the doc's own "Contexts v2 does not build" table).
+# does not build (the doc's own "Contexts v2 does not build" table). `Grid`
+# joined in MA3 (v2.7) for completeness, but its wiki table is 3 columns, not
+# the Chord|Action|کلید v2|وضعیت shape every other context uses — wiki_chords()
+# below parses zero rows out of it on purpose. There is no TUI action behind
+# `/split`/`alt+N` to name and no per-chord scenario to prove here; the real
+# behavioural gate for the grid is test_split.py, driving app.js directly.
 CONTEXTS = ("Global", "Chat", "Autocomplete", "Transcript", "HistorySearch",
-            "Confirmation")
+            "Confirmation", "Grid")
 
 # (context, chord as the wiki writes it) -> the probe result that proves it.
 # The chord strings are NOT authored here: the parser below reads them out of
@@ -109,10 +114,10 @@ PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
 <script type="module">
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = document.getElementById("log");
-const input = document.getElementById("input");
+const log = document.querySelector(".log");
+const input = document.querySelector(".input");
 const box = document.querySelector(".comp-box");
-const filePopup = document.getElementById("file-popup");
+const filePopup = document.querySelector(".file-popup");
 
 /* Every route the composer calls, answered here. The window never talks to a
    CLI in this gate -- what is being tested is which key reaches which call. */
@@ -236,7 +241,7 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   const postureHandled = key("Tab", { shiftKey: true });
   await sleep(40);
   out.postureCycled = postureHandled && called("/api/posture");
-  const picker = document.getElementById("picker");
+  const picker = document.querySelector(".picker");
   const modelHandled = key("p", { altKey: true });
   await sleep(20);
   // v2.4: the chips are gone and the pickers are numbered inline lists, so the
@@ -250,14 +255,14 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
 
 
   /* --- the confirmation, v2.4 (V2-PLAN §3.3) ------------------------------ */
-  const perm = document.getElementById("perm");
-  const feedback = document.getElementById("perm-feedback");
+  const perm = document.querySelector(".perm");
+  const feedback = document.querySelector(".perm-feedback");
   const askPerm = (id, tool, toolInput) => window.renderEvent({
     type: "wrapper", subtype: "permission_request", request_id: id,
     tool_name: tool ?? "Bash", tool_use_id: id + "-t",
     tool_input: toolInput ?? { command: "echo " + id } });
-  const opts = () => [...perm.querySelectorAll("#perm-opts .opt")];
-  const optList = () => perm.querySelector("#perm-opts .opts");
+  const opts = () => [...perm.querySelectorAll(".perm-opts .opt")];
+  const optList = () => perm.querySelector(".perm-opts .opts");
   const optAt = () => opts().findIndex((o) => o.getAttribute("aria-selected") === "true");
   const answered = () => lastCall("/api/permission/respond")?.body ?? {};
 
@@ -270,8 +275,12 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
     && opts()[2].querySelector(".opt-num")?.textContent === "\u06f3."
     && !!opts()[2].querySelector(".opt-esc")
     && opts().every((o) => !o.querySelector(".opt-title").textContent.trim().startsWith("\u06f1"));
-  // In the flow above the prompt, not floating over the transcript.
-  out.permInline = perm.parentElement?.id === "stage"
+  // In the flow above the prompt, not floating over the transcript. MA3-T2 put
+  // the prompt inside a `.cell` (there are up to four of them), so the dialog's
+  // parent is that column rather than #stage itself — what the assertion is
+  // about is that it is a row of the stage's own flow, which `closest` says
+  // exactly and a parent-id equality only said while there was one column.
+  out.permInline = !!perm.closest("#stage") && perm.parentElement?.matches(".cell")
     && getComputedStyle(perm).position === "static";
   const oneHandled = keyAt(optList(), "1");
   await sleep(40);
@@ -350,17 +359,17 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
     question: "\u06a9\u062f\u0627\u0645\u200c\u0647\u0627\u061f", multiSelect: true,
     options: [{ label: "Tea" }, { label: "\u0642\u0647\u0648\u0647" }] }] });
   await sleep(20);
-  const boxes = [...perm.querySelectorAll("#perm-ask .ask-opt input")];
+  const boxes = [...perm.querySelectorAll(".perm-ask .ask-opt input")];
   out.askNumbered = perm.classList.contains("asking") && boxes.length === 2
-    && perm.querySelector("#perm-ask .ask-opt .opt-num")?.textContent === "\u06f1."
-    && !perm.querySelector("#perm-opts .opt");
+    && perm.querySelector(".perm-ask .ask-opt .opt-num")?.textContent === "\u06f1."
+    && !perm.querySelector(".perm-opts .opt");
   const digitOk = keyAt(boxes[0], "2");
   out.askDigit = digitOk && boxes[1].checked && !boxes[0].checked;
   const spaceOk = keyAt(boxes[1], " ");
   out.askSpace = spaceOk && !boxes[1].checked
     && keyAt(boxes[1], " ") && boxes[1].checked;
   // A digit typed into the free-text answer is a digit, not a choice.
-  const free = perm.querySelector("#perm-ask .ask-free");
+  const free = perm.querySelector(".perm-ask .ask-free");
   out.askFreeDigits = !keyAt(free, "1");
   keyAt(boxes[1], "Escape");
   await sleep(40);
@@ -413,15 +422,15 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   type("");
 
   /* --- ctrl+r, the reverse search ----------------------------------------- */
-  const hs = document.getElementById("history-search");
+  const hs = document.querySelector(".history-search");
   const searchHandled = key("r", { ctrlKey: true });
   await sleep(60);
   out.searchOpened = searchHandled && !hs.hidden && input.value === "";
   type("porseshe");
   await sleep(20);
-  const match1 = document.getElementById("hs-match").textContent;
+  const match1 = document.querySelector(".hs-match").textContent;
   out.searchNext = key("r", { ctrlKey: true })
-    && document.getElementById("hs-match").textContent !== match1;
+    && document.querySelector(".hs-match").textContent !== match1;
   // ctrl+r moved the selection on, so what Tab accepts is the SECOND match --
   // the search puts the row you are looking at in the box, not the first hit.
   out.searchTab = key("Tab") && hs.hidden && input.value === "porseshe yek";

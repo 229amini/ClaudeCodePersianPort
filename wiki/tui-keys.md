@@ -146,6 +146,34 @@ v2.3 builds this over `/api/history`.
 |---|---|---|---|
 | `ctrl+x ctrl+b` / `ctrl+b` | `task:background` | — | به کاوش ۱۰ در V2-PLAN §5 گره خورده |
 
+## Grid — window only
+
+MA3 (v2.7): split view, a window-added feature with nothing behind it in the
+binary. Re-run against a fresh `claude` (**2.1.263**, 2026-09-07) still gives
+206 bindings across 25 contexts — the same shape as the 2.1.261 table above —
+and none of them is `alt+1`..`alt+4` or a `Digit1`..`Digit4` code, in Global,
+Chat, or anywhere else. The closest thing the binary has is `Tabs`'s four
+bindings (`tab`/`shift+tab`/`left`/`right` → `tabs:next`/`tabs:previous`,
+unnamed until now in the "does not build" table below) — no collision there
+either.
+
+| Key / command | Action | وضعیت |
+|---|---|---|
+| `/split 1` `/split 2` `/split 4` | `grid:split` | چیدمان تعداد گفتگوهای هم‌زمان روی صفحه؛ عددی جز این سه به‌عنوان متن رد می‌شود و هرگز به مدل فرستاده نمی‌شود (`commands.js splitGrid`) |
+| `alt+1` .. `alt+4` | `grid:focusN` | تمرکز کیبورد را به همان ستون می‌برد؛ با `e.code`ی `DigitN`، نه `e.key` — چیدمان فارسی «۱» را در `e.key` می‌گذارد، همان تله‌ای که `choice.js` برای گفت‌وگوهای شماره‌دار دارد |
+
+Cell order is DOM order, so under `dir=rtl` column «۱» is the top-**right**
+one, not top-left (`wiki/editions.md`) — each cell's own digit badge
+(`cellBadgeTitle`) says so on hover.
+
+This table is 3 columns on purpose, not the Chord|Action|کلید v2|وضعیت shape
+above: there is no TUI action to name and no per-chord `test_keys.py`
+scenario to prove — that gate's `CONTEXTS` lists `Grid` for completeness but
+parses zero rows out of this table by design. The real behavioural proof
+(alt+3 moves `.focused` and DOM focus, `/split 4` draws four columns, a
+tagged event paints into one column only) is `test_split.py`, driving
+`app.js` directly.
+
 ## Contexts v2 does not build
 
 Recorded so the gate can assert the count, and so a future reader does not think they were

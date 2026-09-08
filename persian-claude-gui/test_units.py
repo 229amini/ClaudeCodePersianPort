@@ -1016,6 +1016,46 @@ check("a session nobody is running spawns", server.tab_running(tabs, "sess-C") i
 check("an empty session id never matches the tab that has none yet",
       server.tab_running(tabs, "") is None)
 
+print("GET /api/tabs: a conversation blocked on a dialog says so, read-only")
+# The window paints a per-tab status dot, and «منتظر تأیید» is the one state it
+# cannot derive on its own the moment it connects: the request that is blocking
+# that CLI was published before this window existed and only reaches it when the
+# SSE backlog replays. So the snapshot carries the fact, once, as a boolean.
+
+
+class _TabsStub(_StubSession):
+    """Everything tabs_payload reads that the tab-facing stub above does not
+    carry. The payload grows a field per feature; this gate is about one."""
+
+    busy = False
+
+    def __getattr__(self, name):        # noqa: D105 - anything newer is None
+        return None
+
+
+_perm_broker = server.PermissionBroker(_Hub())
+_idle_tab, _blocked_tab = _TabsStub("sess-idle"), _TabsStub("sess-blocked")
+_blocked_tab.broker = _perm_broker
+threading.Thread(
+    target=lambda: _perm_broker.request("Write", {"file_path": "x"}, "tu-block"),
+    daemon=True).start()
+time.sleep(0.3)
+_saved_tabs = (server.Handler.sessions, server.Handler.active)
+server.Handler.sessions = {"idle": _idle_tab, "blocked": _blocked_tab}
+server.Handler.active = "idle"
+try:
+    _payload = {t["tab"]: t for t in server.Handler.tabs_payload()["tabs"]}
+finally:
+    server.Handler.sessions, server.Handler.active = _saved_tabs
+check("a tab whose broker is holding a request reports pending_permission",
+      _payload["blocked"]["pending_permission"] is True)
+check("a tab with no broker at all reports False, never None",
+      _payload["idle"]["pending_permission"] is False)
+_perm_broker.deny_all()
+time.sleep(0.2)
+check("...and it goes back to False once the request is answered",
+      _perm_broker.has_pending() is False)
+
 print("respond_permission: the id finds its own tab's broker, and only that one")
 first, second = _StubSession("a"), _StubSession("b")
 first.broker = server.PermissionBroker(_Hub())
@@ -1896,6 +1936,119 @@ finally:
     server.os.startfile = _real_startfile
     server.Path.home = _real_home
     shutil.rmtree(_seed_home, ignore_errors=True)
+
+print("spawn_args: --worktree is orthogonal to the resume flags")
+# Lifted out of start() so the argv can be asserted without a process. The one
+# thing that has to hold: a RESUMED worktree session carries both flags, because
+# --resume alone would run the conversation against the repo's own checkout --
+# the wrong files, silently.
+check("a plain conversation asks for no worktree",
+      "--worktree" not in server.spawn_args())
+check("a name is appended as its own flag pair",
+      server.spawn_args(worktree="agent-2")[-2:] == ["--worktree", "agent-2"])
+check("resume keeps its own flags AND the worktree",
+      server.spawn_args(resume_id="sess-1", worktree="agent-2")[-4:]
+      == ["--resume", "sess-1", "--worktree", "agent-2"])
+check("a branch (/branch) forks inside the same worktree",
+      server.spawn_args(fork_id="sess-1", worktree="agent-2")[-5:]
+      == ["--resume", "sess-1", "--fork-session", "--worktree", "agent-2"])
+check("fork still wins over resume, worktree or not",
+      "--fork-session" in server.spawn_args(resume_id="a", fork_id="b")
+      and server.spawn_args(resume_id="a", fork_id="b").count("--resume") == 1)
+check("every spawn still carries the base args",
+      server.spawn_args(worktree="x")[:len(server.CLAUDE_ARGS)] == server.CLAUDE_ARGS)
+
+print("resolve_worktree: the name is a path segment off a request")
+with tempfile.TemporaryDirectory() as tmp:
+    plain = Path(tmp) / "plain"
+    plain.mkdir()
+    repo = Path(tmp) / "repo"
+    (repo / ".git").mkdir(parents=True)
+    check("no name asked for is not an error", server.resolve_worktree(plain, None)
+          == (None, None) and server.resolve_worktree(plain, "  ") == (None, None))
+    # Refused HERE rather than at spawn: the CLI creates the tree before it says
+    # anything at all, so a tab would already exist by the time it failed.
+    check("a folder with no .git refuses the whole request",
+          server.resolve_worktree(plain, "auto") == (None, "not a git repo"))
+    for bad in ("../evil", "..", "a/b", "a\\b", "has space", "agent!", "x" * 41,
+                ".hidden", "agent.1"):
+        name, error = server.resolve_worktree(repo, bad)
+        check(f"refused as a name: {bad!r}", name is None and error == "bad worktree name")
+    check("an ordinary name passes through unchanged",
+          server.resolve_worktree(repo, "agent-2") == ("agent-2", None))
+    check("auto names the first free one", server.resolve_worktree(repo, "auto")
+          == ("agent-1", None))
+    server.worktree_path(repo, "agent-1").mkdir(parents=True)
+    server.worktree_path(repo, "agent-2").mkdir(parents=True)
+    check("and skips the ones that exist", server.resolve_worktree(repo, "auto")
+          == ("agent-3", None))
+    check("worktree_path is the CLI's own layout",
+          server.worktree_path(repo, "agent-1")
+          == repo / ".claude" / "worktrees" / "agent-1")
+
+print("list_projects: a worktree is a session of its repo, not a project")
+# The CLI writes a worktree session's transcript under the WORKTREE's sanitised
+# path, so without folding the sidebar grows a second top-level row per
+# conversation, named `.claude` -- the wrapper leaking its own mechanism at a
+# user who has never heard of a worktree.
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    _saved_paths = (server.PROJECTS_DIR, server.RECENTS_FILE,
+                    server.ARCHIVED_FILE, server.PINNED_FILE, server.NAMES_FILE)
+    try:
+        server.PROJECTS_DIR = root / "projects"
+        server.PROJECTS_DIR.mkdir()
+        for attr in ("RECENTS_FILE", "ARCHIVED_FILE", "PINNED_FILE", "NAMES_FILE"):
+            setattr(server, attr, root / f"{attr.lower()}.json")
+
+        repo = root / "repo"
+        (repo / ".git").mkdir(parents=True)
+        gone = root / "gone"          # a repo with no transcripts of its own
+        (gone / ".git").mkdir(parents=True)
+        tree = server.worktree_path(repo, "agent-1")
+        tree.mkdir(parents=True)
+        orphan = server.worktree_path(gone, "agent-9")
+        orphan.mkdir(parents=True)
+
+        def _seed(folder_name, cwd, session, stamp):
+            folder = server.PROJECTS_DIR / folder_name
+            folder.mkdir(exist_ok=True)
+            (folder / f"{session}.jsonl").write_text(_line({
+                "type": "user", "cwd": str(cwd), "timestamp": stamp,
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": "hello"}]},
+            }) + "\n", encoding="utf-8")
+
+        _seed("repo-folder", repo, "sess-repo", "2026-09-06T09:00:00.000Z")
+        _seed("tree-folder", tree, "sess-tree", "2026-09-06T10:00:00.000Z")
+        _seed("orphan-folder", orphan, "sess-orphan", "2026-09-06T11:00:00.000Z")
+
+        projects = server.list_projects()
+        paths = [p["path"] for p in projects]
+        check("the repo is listed exactly once", paths.count(str(repo)) == 1)
+        check("and no worktree path is a project of its own",
+              not any("worktrees" in p for p in paths))
+        entry = next(p for p in projects if p["path"] == str(repo))
+        ids = [s["session_id"] for s in entry["sessions"]]
+        check("both conversations hang off the repo", sorted(ids) == ["sess-repo", "sess-tree"])
+        check("newest first, the worktree one included", ids[0] == "sess-tree")
+        check("the folded row says which worktree it was in",
+              next(s for s in entry["sessions"] if s["session_id"] == "sess-tree")
+              .get("worktree") == "agent-1")
+        check("a repo session carries no worktree key",
+              "worktree" not in next(s for s in entry["sessions"]
+                                     if s["session_id"] == "sess-repo"))
+        check("the repo's own timestamp moved up to the folded session's",
+              entry["modified"] == entry["sessions"][0]["modified"])
+        # entry_for() would happily CREATE the parent row, which would resurrect
+        # a project the user deleted the transcripts of, as a row made entirely
+        # out of its worktrees.
+        check("a worktree whose repo is not listed is dropped entirely",
+              str(gone) not in paths and "sess-orphan" not in str(projects))
+        check("git is reported so the menu can offer the action", entry["git"] is True)
+    finally:
+        (server.PROJECTS_DIR, server.RECENTS_FILE, server.ARCHIVED_FILE,
+         server.PINNED_FILE, server.NAMES_FILE) = _saved_paths
 
 print("CONTROL_ALLOWED: /btw is reachable, a settings blob still is not")
 check("side_question is whitelisted (V2-PLAN §3.5)",

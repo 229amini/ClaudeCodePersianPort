@@ -60,24 +60,49 @@ SHELL = {
         home_sel=".greeting", home_name="greeting",
         # The posture menu: the widest picker, hanging off the last chip of the
         # row, which is what made it the one that came back 201px wide.
-        open_menu='document.getElementById("posture-chip").click();',
-        menu_id="menu-popup", row_sel=".menu-row", menu_name="posture menu",
+        open_menu='document.querySelector(".posture-chip").click();',
+        menu_id=".menu-popup", row_sel=".menu-row", menu_name="posture menu",
         # 7 = attach + folder + model + effort + style + posture + audit counter.
-        chips=7, rows=4, drawer_test=""),
+        chips=7, chip_row=".comp-row", rows=4, drawer_test="",
+        # MA4-T2: the same window with four columns in it. The picker is opened
+        # again after the split, through the chip the user presses, because
+        # positionMenu() measures against the CELL and a menu positioned at one
+        # column's width is not a measurement of a quarter of it.
+        split4=(
+            'if (innerWidth > 1000 && APP.setSplit(4)) {'
+            '  await sleep(300);'
+            '  const cRoot = APP.cells[0].root;'
+            '  APP.cells[0].controls.closeMenu();'
+            '  cRoot.querySelector(".posture-chip").click();'
+            '  await sleep(200);'
+            '  const m4 = cRoot.querySelector(".menu-popup");'
+            '  const rows4 = [...m4.querySelectorAll(".menu-row")];'
+            '  split4 = {cells: document.querySelectorAll("#grid > .cell").length,'
+            '            cell: box(cRoot), comp: box(cRoot.querySelector(".comp-box")),'
+            '            menu: box(m4), rows: rows4.length,'
+            '            squashed: rows4.filter((r) => r.scrollHeight > r.clientHeight + 1)'
+            '                           .length,'
+            '            clipped: clipped()};'
+            '}')),
     "terminal": dict(
         scrollers=("log", "side-scroll", "table-wrap", "picker", "perm", "slash-popup",
                    "tool-output", "diff", "attachments", "ag-log"),
         home_sel=".welcome", home_name="welcome",
         # Alt+P, which is how the terminal opens this list too - no chip to click.
-        open_menu=('document.getElementById("input").dispatchEvent('
+        open_menu=('document.querySelector(".input").dispatchEvent('
                    'new KeyboardEvent("keydown", '
                    '{key: "p", altKey: true, bubbles: true, cancelable: true}));'),
-        menu_id="picker", row_sel=".opt", menu_name="model picker",
-        # 3 = attach + folder + send; v2.4 took the four capability chips off
-        # the row (V2-PLAN 2) and the audit counter only appears once a session
-        # has audited something. Two rows, because the initialize below
-        # advertises two models.
-        chips=3, rows=2,
+        menu_id=".picker", row_sel=".opt", menu_name="model picker",
+        # TP1 emptied `.comp-row`: the send button, the paperclip and the
+        # folder chip are gone (a terminal prompt has no buttons) and what was
+        # left there - the audit counter and stop - is hidden until a session
+        # earns it. So the row that has to be measured is the PROMPT LINE:
+        # 2 = the mirrored prompt mark + the field. Asserting it is what keeps
+        # this gate honest about the mark, which is decoration and therefore
+        # invisible to every textContent check in the suite; the terminal-only
+        # block near the end also asserts WHICH SIDE it landed on.
+        # Two rows, because the initialize below advertises two models.
+        chips=2, chip_row=".comp-line", rows=2,
         # F5: agents.js only builds #agent-drawer on demand (when a
         # background agent row is clicked), so the probe stands one up
         # itself - a [popover], showPopover() is enough to measure it.
@@ -86,7 +111,23 @@ SHELL = {
             'dPanel.id = "agent-drawer"; dPanel.popover = "auto";'
             'document.body.append(dPanel); dPanel.showPopover();'
             'await sleep(50); drawer = box(dPanel);'
-            'dPanel.hidePopover(); dPanel.remove();')),
+            'dPanel.hidePopover(); dPanel.remove();'),
+        # The widest size only, which is what MA3-T2 asked for: four columns in
+        # a 500px window is not a layout anyone ships, and stamping them there
+        # wedges the headless render past its virtual-time budget.
+        split4=(
+            'if (innerWidth > 1000 && APP.setSplit(4)) {'
+            '  await sleep(300);'
+            '  const cRoot = APP.cells[0].root;'
+            '  const m4 = cRoot.querySelector(".picker");'
+            '  const rows4 = [...m4.querySelectorAll(".opt")];'
+            '  split4 = {cells: document.querySelectorAll("#grid > .cell").length,'
+            '            cell: box(cRoot), comp: box(cRoot.querySelector(".comp-box")),'
+            '            menu: box(m4), rows: rows4.length,'
+            '            squashed: rows4.filter((r) => r.scrollHeight > r.clientHeight + 1)'
+            '                           .length,'
+            '            clipped: clipped()};'
+            '}')),
 }
 SH = SHELL[EDITION]
 SCROLLERS = SH["scrollers"]
@@ -105,8 +146,12 @@ SCROLLERS = SH["scrollers"]
 PROBE_JS = """
 <pre id="probe-out" hidden></pre>
 <script type="module">
-import { applyInitInfo, setPostureState, setEffortState, setOutputStyle }
-  from "/static/js/controls.js";
+/* MA3-T1 made the terminal edition's controls a per-cell factory; the web
+   edition still exports them as module functions. Both are the same four
+   verbs, so the probe asks the cell first and falls back to the module. */
+import * as CTL from "/static/js/controls.js";
+import * as APP from "/static/js/app.js";
+const ctl = APP.cells?.[0]?.controls ?? CTL;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const box = (el) => { const r = el.getBoundingClientRect();
   return {x: Math.round(r.left), y: Math.round(r.top),
@@ -115,7 +160,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
 
 (async () => {
  try {
-  applyInitInfo({
+  ctl.applyInitInfo({
     models: [
       {value: "default", displayName: "\u067e\u06cc\u0634\u200c\u0641\u0631\u0636 (Opus 5)",
        description: "d", resolvedModel: "claude-opus-5", supportsEffort: true,
@@ -127,9 +172,9 @@ const SCROLLERS = new Set(%SCROLLERS%);
     available_output_styles: ["default", "Explanatory", "Concise"],
     output_style: "default",
   });
-  setEffortState("high");
-  setOutputStyle("default");
-  setPostureState("acceptEdits", 3);
+  ctl.setEffortState("high");
+  ctl.setOutputStyle("default");
+  ctl.setPostureState("acceptEdits", 3);
   await sleep(300);
 
   // Overflow only counts where nothing can scroll to it. A code line inside
@@ -179,14 +224,16 @@ const SCROLLERS = new Set(%SCROLLERS%);
   // and the last controls were pushed out of the box. v2.4 took four chips off
   // it (V2-PLAN §2), so the count is smaller and the rule is unchanged.
   const compNow = box(document.querySelector(".comp-box"));
-  const chips = [...document.querySelector(".comp-row").children]
+  const chips = [...document.querySelector("%CHIPROW%").children]
     .filter((c) => !c.hidden && getComputedStyle(c).display !== "none" &&
                    c.getBoundingClientRect().width > 0)
-    .map((c) => ({id: c.id || c.className, ...box(c)}));
+    // `className` is an SVGAnimatedString on an <svg>, which JSON-stringifies
+    // to `{}` - the prompt mark is one, so read the attribute instead.
+    .map((c) => ({id: c.id || c.getAttribute("class") || c.tagName, ...box(c)}));
 
   %OPENMENU%
   await sleep(150);
-  const menu = document.getElementById("%MENUID%");
+  const menu = document.querySelector("%MENUID%");
   const rows = [...menu.querySelectorAll("%ROWSEL%")];
 
   // F5: the terminal edition's agent drawer, measured against the sidebar.
@@ -202,6 +249,20 @@ const SCROLLERS = new Set(%SCROLLERS%);
   // scrollHeight is what it wanted, clientHeight what the flex box left it.
   const squashed = rows.filter((r) => r.scrollHeight > r.clientHeight + 1).length;
 
+  // EVERY box of the one-column pass, read BEFORE the split below: the JSON at
+  // the foot of this file is built last, so a box() left in it measures the
+  // page as the split4 block leaves it. That is how the picker started
+  // reporting itself half its width in a window nothing had resized.
+  const menuBox = box(menu);
+  const clippedAll = home.clipped.concat(clipped());
+
+  // MA3-T2: the same window, split into four columns. Every box measured above
+  // is per-CELL now, so a 1280px window that passes at one column can still
+  // draw the prompt or the picker outside a 484px one. The picker is already
+  // open from the measurement above and nothing here closes it.
+  let split4 = null;
+  %SPLIT4%
+
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify({
     view: [innerWidth, innerHeight],
     // The layout viewport: innerWidth still counts a classic scrollbar, and
@@ -212,11 +273,11 @@ const SCROLLERS = new Set(%SCROLLERS%);
     compBox: home.compBox,
     home: home.home,
     comp: compNow, chips,
-    menu: box(menu),
+    menu: menuBox,
     rows: rows.length,
-    drawer,
+    drawer, split4,
     overlap, squashed,
-    clipped: home.clipped.concat(clipped()),
+    clipped: clippedAll,
   }) + "ENDPROBE";
  } catch (err) {
   // A throw in here is indistinguishable from a page that never loaded, and
@@ -258,10 +319,12 @@ def write_probe() -> None:
     page = page.replace(marker, '<body class="app" data-render-only>', 1)
     script = (PROBE_JS.replace("%SCROLLERS%", json.dumps(SCROLLERS))
               .replace("%HOMESEL%", SH["home_sel"])
+              .replace("%CHIPROW%", SH["chip_row"])
               .replace("%OPENMENU%", SH["open_menu"])
               .replace("%MENUID%", SH["menu_id"])
               .replace("%ROWSEL%", SH["row_sel"])
-              .replace("%DRAWERTEST%", SH["drawer_test"]))
+              .replace("%DRAWERTEST%", SH["drawer_test"])
+              .replace("%SPLIT4%", SH["split4"]))
     PROBE.write_text(page.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
 
 
@@ -333,7 +396,9 @@ def main() -> int:
             # The composer row (pcg-tda): every visible chip must sit inside
             # the composer box at one line of height. Before the fix the row
             # could not wrap and the last chips were pushed out of the box. The
-            # count is per-edition (SHELL above) and asserted at all so a row
+            # count AND the row it is read from are per-edition (SHELL above) -
+            # TP1 emptied the terminal edition's `.comp-row` and this measures
+            # its prompt line instead - and both are asserted at all so a row
             # that rendered nothing cannot pass every geometry check below by
             # having no geometry.
             comp = m["comp"]
@@ -348,6 +413,23 @@ def main() -> int:
                         or chip["y"] + chip["h"] > comp["y"] + comp["h"] + 1):
                     failures.append(f"{where}: chip {chip['id']} sits outside the composer box "
                                     f"({chip} vs {comp})")
+            # TP1: the prompt mark. It is DECORATION - no text, no textContent,
+            # invisible to every assertion in run_spec_test.py - and the only
+            # thing that can go wrong with it is which side of the field it
+            # landed on. The page is dir="rtl", so the line starts at the RIGHT:
+            # the mark must be entirely to the right of the textarea and flush
+            # with the prompt's own start edge. Read positionally (mark is first
+            # in the row, field second) rather than by class, so a mark that
+            # stopped being drawn fails the count check above instead of
+            # silently passing this one.
+            if EDITION == "terminal" and len(m["chips"]) >= 2:
+                mark, field = m["chips"][0], m["chips"][1]
+                if mark["x"] < field["x"] + field["w"] - 1:
+                    failures.append(f"{where}: the prompt mark is not at the RTL start of "
+                                    f"the input line (mark={mark} field={field})")
+                if abs((mark["x"] + mark["w"]) - (comp["x"] + comp["w"])) > 2:
+                    failures.append(f"{where}: the prompt mark is not flush with the prompt's "
+                                    f"start edge (mark={mark} box={comp})")
             # Asserted at all so a picker that renders nothing cannot pass
             # every geometry check below by having no geometry.
             if m["rows"] != SH["rows"]:
@@ -389,6 +471,41 @@ def main() -> int:
                           or side["x"] + side["w"] <= drawer["x"]):
                     failures.append(f"{where}: the agent drawer overlaps the sidebar "
                                     f"(drawer={drawer} sidebar={side})")
+            # MA3-T2 / MA4-T2: and the same window with four columns in it. A
+            # wide window is no longer one wide column, so the whole measurement
+            # above runs again in a quarter of it - that quarter is ~484px,
+            # which is inside the range that drew the composer off the start
+            # edge on 2026-08-23. Both editions have a grid now; test_split.py
+            # owns its own rules, and this is the layout gate refusing to keep
+            # passing at one column while the shipping window can be four.
+            if (width, height) == SIZES[0]:
+                s4 = m.get("split4")
+                if not s4:
+                    failures.append(f"{where}: the data-split=4 pass did not run")
+                else:
+                    if s4["cells"] != 4:
+                        failures.append(f"{where} (split 4): {s4['cells']} cells drawn")
+                    for name, rect in (("composer", s4["comp"]), ("picker", s4["menu"])):
+                        cell = s4["cell"]
+                        if (rect["x"] < cell["x"] - 1
+                                or rect["x"] + rect["w"] > cell["x"] + cell["w"] + 1):
+                            failures.append(f"{where} (split 4): the {name} is outside its "
+                                            f"column ({rect} vs {cell})")
+                        if rect["y"] < 0 or rect["y"] + rect["h"] > m["view"][1] + 1:
+                            failures.append(f"{where} (split 4): the {name} is off the "
+                                            f"window vertically ({rect})")
+                    if s4["rows"] != SH["rows"]:
+                        failures.append(f"{where} (split 4): the picker drew {s4['rows']} "
+                                        f"rows, not {SH['rows']}")
+                    if s4["squashed"]:
+                        failures.append(f"{where} (split 4): {s4['squashed']} picker rows "
+                                        "were shrunk below their own content")
+                    if s4["clipped"]:
+                        failures.append(f"{where} (split 4): content wider than its box - "
+                                        f"{s4['clipped'][:4]}")
+                    print(f"  {where} (split 4): cell {s4['cell']['w']}x{s4['cell']['h']}, "
+                          f"picker {s4['menu']['w']}x{s4['menu']['h']}, "
+                          f"prompt {s4['comp']['w']}px")
             print(f"  {where}: viewport {view}px, menu {m['menu']['w']}x{m['menu']['h']} "
                   f"at ({m['menu']['x']},{m['menu']['y']}), prompt {m['comp']['w']}px")
     finally:

@@ -156,3 +156,26 @@ Two of these were lifted after all and moved into §2–§5 during v2.6: `spinne
 
 The window also carries the v1 shell's Persian — the sidebar, the session list, the context
 notice, the pickers — which has been in daily use since 2026-08 and is not part of this pass.
+
+## 9. The grid — MA3 additions (v2.7)
+
+Three more window-authored strings, same discipline as §8 but broken out here because the
+gate that checks §1-5 (`wiki_rows()` in `test_strings.py`) finds any table with a
+`strings.fa.js` column by name, so putting the actual quoted Persian here — not just the key —
+gets it compared word for word against the file, same as every row above. No TUI counterpart
+exists for any of them (`رشتهٔ TUI` is `—` throughout), which is also why they are not folded
+into §2-5.
+
+| id | رشتهٔ TUI | فارسی v2 | strings.fa.js | یادداشت |
+|---|---|---|---|---|
+| `grid.split.usage` | — | «این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد» | `cmdSplitUsage` | `/split` با هر عدد دیگری |
+| `grid.split.done` | — | «چیدمان به {n} ستون تغییر کرد» | `cmdSplitDone` | پس از `/split 1` یا `/split 2` — هر دو واقعاً ستون‌اند |
+| `grid.split.done.grid` | — | «چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد» | `cmdSplitDoneGrid` | پس از `/split 4`. جملهٔ جدا دارد چون ۴ اصلاً چهار ستون نیست: دو ستون و دو ردیف است و پیام قبلی دروغ می‌گفت (MA3-T4) |
+| `grid.cell.badge` | — | «ستون {n} — با Alt+{n} به اینجا بیایید» | `cellBadgeTitle` | تولتیپ نشان رقمی هر ستون؛ رقم‌ها ترتیب DOM‌اند، پس زیر `dir=rtl` «۱» بالا-راست است، نه بالا-چپ |
+
+**Reused, not new:** `permOtherSession` («این درخواست از گفتگوی دیگری است:») already shipped
+before MA3, for a background tab's permission request. The grid reuses the exact same string
+unchanged for its own cross-cell case — a `permission_request` for a tab placed in no cell,
+opening in the focused cell (`perm.js`, MA3-design.md §2). Not listed as its own row above
+because nothing about the string changed; it is here so the reuse is on record rather than
+looking, to a future reader, like an oversight.

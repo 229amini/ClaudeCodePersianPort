@@ -4,6 +4,8 @@ Project memory for the Persian RTL Claude Code front-end. One topic per file, ke
 Write here when a session learns something a future session would otherwise re-derive —
 especially the §B-9 verification answers, which are pinned to a specific `claude` version.
 
+- [bridgemind-one.md](bridgemind-one.md) — a commercial Tauri wrapper measured 2026-09-06: same
+  `stream-json` + `can_use_tool` transport as ours, broader (3 CLIs, panes, conpty) but no RTL.
 - [editions.md](editions.md) — **two editions, one engine (2026-09-05).** Web «کلاد فارسی» in
   `static/`, terminal «کلاد فارسی — ترمینال» in `static-terminal/`, picked by `--ui` /
   `PCG_UI`; which tests gate which edition; why the shortcut once said v1.1.0 on the wrong tree.
@@ -60,6 +62,13 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   the key it ships as in `static/strings.fa.js`, and the ones deliberately dropped with the reason.
   §8 is the list of strings v2 **authored**, grouped by phase, waiting on one review by a native
   speaker. Gated by `test_tui_vocab.py` (against the binary) and `test_strings.py` (against the file).
+- [grid.md](grid.md) — the split view on both editions (MA3 terminal, MA4 web): cell = stamped
+  `#stage`, the composer/controls/perm factories, one `APPLY` table, the focus model, the
+  parking rule (never auto-close, never auto-grow), and why the old window-width breakpoints
+  became `@container` on `.cell`. Also condenses what a cell reuses from MA1 (per-tab status)
+  and MA2 (git worktrees), the two open items headless Edge could not settle, and what MA4
+  changed for the web edition (the segmented `۱ | ۲ | ۴` control, `positionMenu` measuring
+  inside a cell, the perm dialog no longer modal).
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

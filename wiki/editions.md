@@ -37,10 +37,10 @@ other.
 Every test that reads a static folder takes the edition from `PCG_UI` and imports `EDITIONS`
 from `server.py`. Defaults: web for `run_spec_test.py`, `test_layout.py`, `test_no_console.py`;
 terminal for `test_column.py`, `test_keys.py`, `test_dialogs.py`, `test_shell.py`,
-`test_strings.py`, `test_tui_vocab.py`. `test_layout.py` runs on both and gates its
-edition-specific selectors in one `SHELL` table. Run the web gates with `PCG_UI` unset and the
-terminal gates with `PCG_UI=terminal`; a gate you forget to flip passes against the wrong tree
-silently.
+`test_strings.py`, `test_tui_vocab.py`. `test_layout.py` and `test_split.py` (MA4, the
+1/2/4 grid) both run on both editions and gate their edition-specific selectors in one table
+each. Run the web gates with `PCG_UI` unset and the terminal gates with `PCG_UI=terminal`; a
+gate you forget to flip passes against the wrong tree silently.
 
 ## The terminal edition's left sidebar (E2, 2026-09-05)
 

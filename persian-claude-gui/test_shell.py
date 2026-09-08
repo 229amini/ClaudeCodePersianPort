@@ -62,13 +62,18 @@ PROBE = STATIC / "_shell_probe.html"
 PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
 <script type="module">
+/* The tab registry and the synchronous half of a switch. Importing the ENTRY
+   module is safe from here and only from here (see the load-order note in
+   app.js): this block runs after every module has evaluated, and the page is
+   `data-render-only`, so nothing has opened a stream of its own. */
+import { routeEvent, applySwitch, applyTabs } from "/static/js/app.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FA = window.STRINGS;
-const log = document.getElementById("log");
-const input = document.getElementById("input");
-const composer = document.getElementById("composer");
-const statusline = document.getElementById("statusline");
-const picker = document.getElementById("picker");
+const log = document.querySelector(".log");
+const input = document.querySelector(".input");
+const composer = document.querySelector(".composer");
+const statusline = document.querySelector(".statusline");
+const picker = document.querySelector(".picker");
 const sidebar = document.getElementById("projects");
 
 /* --- every route the window can reach, answered here ----------------------- */
@@ -193,8 +198,8 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   /* --- /status ------------------------------------------------------------- */
   await send("/status");
   out.statusOpen = !!picker?.open;
-  out.statusTitle = document.getElementById("picker-title")?.textContent ?? "";
-  out.statusBody = document.getElementById("picker-body")?.textContent ?? "";
+  out.statusTitle = document.querySelector(".picker-title")?.textContent ?? "";
+  out.statusBody = document.querySelector(".picker-body")?.textContent ?? "";
   out.faStatusTitle = FA.statusTitle;
   out.faVersion = FA.statusVersion;
   keyAt(picker.querySelector(".opts"), "Escape");
@@ -217,7 +222,7 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
     document.activeElement?.closest("li")?.dataset.session === SESSIONS[1].session_id;
   keyAt(document.activeElement, "Escape");
   await sleep(40);
-  out.resumeEscHome = document.activeElement?.id === "input";
+  out.resumeEscHome = document.activeElement === input;
   out.resumeHint = metaSaid(FA.cmdResumeHint);
 
   /* --- /cd, /add-dir, /branch --------------------------------------------- */
@@ -266,10 +271,10 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   await send("/memory");
   out.memoryOpen = !!picker?.open;
   out.memoryRows = picker.querySelectorAll(".opt").length;
-  out.memoryBody = document.getElementById("picker-body")?.textContent ?? "";
+  out.memoryBody = document.querySelector(".picker-body")?.textContent ?? "";
   out.faMemoryTitle = FA.memoryTitle;
   out.faMemoryUser = FA.memoryUser;
-  out.memoryTitle = document.getElementById("picker-title")?.textContent ?? "";
+  out.memoryTitle = document.querySelector(".picker-title")?.textContent ?? "";
   keyAt(picker.querySelector(".opts"), "Escape");
   await sleep(40);
 
@@ -281,7 +286,7 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   mark = calls.length;
   await send("/help");
   out.helpOpen = !!picker?.open;
-  out.helpTitle = document.getElementById("picker-title")?.textContent ?? "";
+  out.helpTitle = document.querySelector(".picker-title")?.textContent ?? "";
   out.faHelpTitle = FA.helpTitle;
   out.helpRows = [...picker.querySelectorAll(".opt-title")].map((el) => el.textContent);
   out.helpNotSent = !since("/api/message", mark);
@@ -296,6 +301,65 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
     out["sent_" + name] = calls.slice(mark)
       .some((c) => c.url.startsWith("/api/message") && c.body?.text === text);
   }
+
+  /* --- MA1: the per-conversation status dot, unread count, running badge ---
+     Six conversations, one window: what is happening in the five you are NOT
+     looking at is only legible from the sidebar. Everything below is derived in
+     ONE place (chrome.js tabStatus) out of state this window already keeps, so
+     each case drives the real event and reads the real row. */
+  const stTab = "shell-tab-status";
+  const otherTab = "shell-tab-other";
+  applyTabs({ active: otherTab, tabs: [
+    { tab: otherTab, session_id: null, cwd: "C:/kar/proje", busy: false },
+    { tab: stTab, session_id: null, cwd: "C:/kar/digar", busy: false },
+  ] });
+  await sleep(60);
+  const stRow = () =>
+    document.querySelector('#open-tabs .tab-row[data-tab="' + stTab + '"]');
+  const stDot = () => stRow()?.querySelector(".tab-dot");
+  const stBadge = () =>
+    document.getElementById("tabs-title")?.querySelector(".tabs-badge");
+  const stUnread = () => stRow()?.querySelector(".tab-unread")?.textContent ?? "";
+
+  routeEvent({ tab: stTab, type: "wrapper", subtype: "user_echo",
+               uuid: "shell-status-uuid", text: "kar" });
+  out.stRunning = stDot()?.dataset.status ?? "";
+  out.stGlyph = stDot()?.textContent ?? "";
+  out.stRunningLabel = stDot()?.getAttribute("aria-label") ?? "";
+  out.stRunningBadge = stBadge()?.textContent ?? "";
+
+  // Waiting on a human beats a turn in flight: it is the only one of the four
+  // that will never resolve itself.
+  routeEvent({ tab: stTab, type: "wrapper", subtype: "permission_request",
+               request_id: "shell-status-perm", tool_name: "Bash",
+               tool_use_id: "shell-status-tool",
+               tool_input: { command: "echo status" } });
+  out.stWaiting = stDot()?.dataset.status ?? "";
+  out.stWaitingBadge = stBadge()?.textContent ?? "";
+  routeEvent({ tab: stTab, type: "wrapper", subtype: "permission_resolved",
+               request_id: "shell-status-perm", tool_use_id: "shell-status-tool",
+               decision: "deny" });
+
+  // A user-pressed stop arrives as is_error + aborted_streaming (B-9.10): not a
+  // failure, and not news either — it would be reporting the reader's own stop
+  // back to them as an unread answer.
+  routeEvent({ tab: stTab, type: "result", subtype: "error_during_execution",
+               is_error: true, terminal_reason: "aborted_streaming",
+               total_cost_usd: 0, duration_ms: 5 });
+  out.stAborted = stDot()?.dataset.status ?? "";
+  out.stAbortedUnread = stUnread();
+  out.stAbortedBadge = stBadge()?.textContent ?? "";
+
+  routeEvent({ tab: stTab, type: "result", subtype: "success", is_error: true,
+               result: "nashod", total_cost_usd: 0, duration_ms: 5 });
+  out.stError = stDot()?.dataset.status ?? "";
+  out.stUnread = stUnread();
+  applySwitch(stTab);
+  await sleep(60);
+  out.stUnreadAfterSwitch = stUnread();
+  out.faRunning = FA.tabStatus.running;
+  out.faRunningBadge = FA.tabsRunning.replace("{n}", "\u06f1");
+  out.faWaitingBadge = FA.tabsWaiting.replace("{n}", "\u06f1");
 
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
@@ -457,6 +521,30 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     check("and so does a command nobody here has heard of",
           m.get("sent_unknown") is True, str(m.get("sent_unknown")))
+
+    # --- MA1: per-tab status, unread, running badge --------------------------
+    check("an outstanding message in a background conversation paints «در حال کار»",
+          m.get("stRunning") == "running" and m.get("stGlyph") == "●"
+          and m.get("stRunningLabel") == m.get("faRunning")
+          and m.get("stRunningBadge") == m.get("faRunningBadge"),
+          f"{m.get('stRunning')} / glyph «{m.get('stGlyph')}» / "
+          f"badge «{m.get('stRunningBadge')}»")
+
+    check("a tool waiting on a person outranks the turn it is inside, badge and all",
+          m.get("stWaiting") == "waiting"
+          and m.get("stWaitingBadge") == m.get("faWaitingBadge"),
+          f"{m.get('stWaiting')} / badge «{m.get('stWaitingBadge')}»")
+
+    check("a STOPPED turn is neither an error nor an unread answer",
+          m.get("stAborted") == "idle" and m.get("stAbortedUnread") == ""
+          and m.get("stAbortedBadge") == "",
+          f"{m.get('stAborted')} / unread «{m.get('stAbortedUnread')}»")
+
+    check("a failed turn paints «error» and counts one unread, cleared by looking at it",
+          m.get("stError") == "error" and m.get("stUnread") == "۱"
+          and m.get("stUnreadAfterSwitch") == "",
+          f"{m.get('stError')} / unread «{m.get('stUnread')}» -> "
+          f"«{m.get('stUnreadAfterSwitch')}»")
 
     return out
 

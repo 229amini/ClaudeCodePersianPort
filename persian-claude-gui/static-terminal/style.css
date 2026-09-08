@@ -71,6 +71,10 @@
   --accent-strong: #c4633f;
   --accent-soft: rgb(217 119 87 / .13);
   --danger: #e5695a;
+  /* The amber the context meter already warned in, promoted to a token:
+     the status dot for a conversation waiting on a person uses the same
+     one, and «needs you» is the same message in both places. */
+  --warn: #d9a441;
   /* `!` bash mode. The TUI recolours its prompt bar for it; this is that
      colour, kept off the accent so it cannot be mistaken for a running turn. */
   --bash: #b072b5;
@@ -159,8 +163,17 @@ body.app {
   grid-template-columns: minmax(0, 1fr) 288px;
   grid-template-rows: 100%;
 }
-body.app > #sidebar { grid-column: 2; }
-body.app > #stage   { grid-column: 1; }
+/* `grid-row: 1` on BOTH, not just the column. The sidebar comes first in the
+   DOM and asks for column 2, which leaves the auto-placement cursor past the
+   end of row 1 — so #stage, asking for column 1, was pushed into an IMPLICIT
+   second row that is auto-sized from its own content. That row was tall enough
+   to hide the mistake while the stage's content set its height; MA3's #grid
+   carries `min-height: 0` (a grid track's automatic minimum is its content, so
+   without it a long transcript grows the column off the window), and an
+   auto-sized row full of zero-minimum content is zero pixels tall. Measured by
+   test_split.py: stage 958x0. */
+body.app > #sidebar { grid-column: 2; grid-row: 1; }
+body.app > #stage   { grid-column: 1; grid-row: 1; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: rgb(217 119 87 / .35); }
@@ -277,19 +290,21 @@ pre, code, .path, .diff, .tool-output, .mono {
    global button:hover otherwise repaints it) — same trap as .sess. */
 .tab-open:hover { background: none; }
 
+/* The binary's own filled bullet (wiki/tui-strings.md, U+25CF) rather than a
+   drawn circle: this edition prints glyphs, and a new shape would be the one
+   thing on the row the TUI never draws. Sized by the font, coloured by state. */
 .tab-dot {
   flex: none;
-  inline-size: 7px;
-  block-size: 7px;
-  border-radius: 50%;
-  background: var(--fg-muted);
+  color: var(--fg-muted);
+  font-size: .8em;
+  line-height: 1;
 }
-.tab-row[data-current="true"] .tab-dot { background: var(--accent); }
+.tab-row[data-current="true"] .tab-dot { color: var(--accent); }
 /* Working: it breathes rather than blinks, and the tokens layer's
    reduced-motion rule stops it outright. Shares the agents strip's keyframes —
    same meaning, same motion. */
 .tab-row[data-busy="true"] .tab-dot {
-  background: var(--accent);
+  color: var(--accent);
   animation: ag-pulse 2s var(--ease) infinite;
 }
 
@@ -315,6 +330,19 @@ pre, code, .path, .diff, .tool-output, .mono {
   opacity: .8;
 }
 
+/* The `⎇ agent-2` chip on a tab row and on a folded session row. It IS .path
+   (LTR + isolate, from the base layer) — the name is ASCII and names a folder;
+   this only sizes it down and stops it stealing the title's room. */
+.wt-chip {
+  flex: none;
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: .82em;
+}
+
 /* `.tab-row .tab-close`, not `.tab-close`: it reuses .sess-act, whose
    `display: none` (revealed on row hover) is declared LATER in this same layer
    and would win the tie on source order. */
@@ -325,15 +353,78 @@ pre, code, .path, .diff, .tool-output, .mono {
 }
 .tab-row .tab-close:hover { background: var(--surface-2); color: var(--fg); }
 
+/* --- per-conversation status (chrome.js tabStatus) ---------------------------
+   Four states, one dot. Written AFTER the [data-current] / [data-busy] rules
+   above and at the same specificity, so the DERIVED status is what the reader
+   sees; `data-busy` is the server's coarser answer and survives only as what
+   paints before this window has learned anything about a tab. */
+.tab-row[data-status="running"] .tab-dot {
+  color: var(--accent);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+/* Waiting on a person. It breathes too — the difference from «running» is the
+   colour, because the difference in meaning is who is holding it up. */
+.tab-row[data-status="waiting"] .tab-dot {
+  color: var(--warn);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+.tab-row[data-status="error"] .tab-dot { color: var(--danger); animation: none; }
+.tab-row[data-status="idle"] .tab-dot { color: var(--fg-muted); animation: none; }
+
+/* The same four on the history row for the same conversation. */
+.sess-dot[data-status="running"] {
+  color: var(--accent);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+.sess-dot[data-status="waiting"] {
+  color: var(--warn);
+  animation: ag-pulse 2s var(--ease) infinite;
+}
+.sess-dot[data-status="error"] { color: var(--danger); }
+.sess-dot[data-status="idle"] { color: var(--fg-muted); }
+
+/* Turns that finished while this conversation was parked. fa-IR digits in a
+   pill, next to the dot — no `dir` of its own: Persian digits in an RTL row
+   need no isolation, and forcing one would seat the pill on the wrong side. */
+.tab-unread {
+  flex: none;
+  min-inline-size: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: .78em;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* The header carries one status chip, so it is a row rather than a line. */
+#tabs-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tabs-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .95em;
+  white-space: nowrap;
+}
+.tabs-badge[data-status="waiting"] {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+
 /* A history row whose session is open in a tab right now: clicking it switches
    to that conversation instead of resuming it a second time. */
 .sess-dot {
   flex: none;
   align-self: center;
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: var(--accent);
+  color: var(--accent);
+  font-size: .75em;
+  line-height: 1;
 }
 
 .proj { margin-block-end: 2px; }
@@ -520,17 +611,127 @@ pre, code, .path, .diff, .tool-output, .mono {
   min-height: 0;
 }
 
-#topbar {
+/* --- the grid (MA3) ----------------------------------------------------------
+   1, 2 or 4 cells, chosen by `/split` and written on #grid as data-split.
+   `minmax(0, 1fr)` on BOTH axes, never a bare `1fr`: a grid track's automatic
+   minimum is its content, so a long transcript would grow its cell off the
+   window instead of scrolling inside it (wiki/rtl-rendering-notes.md — the same
+   lesson body.app's own columns already carry). */
+#grid {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--border);   /* the gap IS the divider: one colour, no rules */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+#grid[data-split="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+#grid[data-split="4"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* A cell is exactly what #stage used to be. `min-*: 0` for the same reason the
+   tracks carry it, and `container-type: size` so the narrow-window rules at the
+   foot of this file measure the CELL rather than the window: a 2x2 at 1280px
+   gives ~496px cells, which is the width that broke the shell on 2026-08-23 —
+   and a 2x2 at 800px gives ~354px-TALL cells, which is what MA3-T4 was written
+   for.
+
+   `size` and not `inline-size`: the height half of it is what `cqh` and
+   `@container (max-height: …)` below both need. It is safe here for exactly one
+   reason — a cell is a grid item in a `minmax(0, 1fr)` track on BOTH axes, so
+   its used size comes from the track and never from its own content, which is
+   the thing size containment takes away. (Size containment does not include
+   PAINT containment, so the slash/file popups that open upward out of the
+   prompt are still not clipped — that was the worry, and it is not one.) */
+.cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* Redundant with the tracks' own `minmax(0, …)` and kept anyway: removing
+     EITHER alone still passes test_split.py, removing BOTH fails it 26 ways
+     (that pair is the guard, measured). */
+  min-height: 0;
+  background: var(--bg);
+  container-type: size;
+}
+
+/* THE CELL STACK, HONESTLY (MA3-T4, measured in a real window 2026-09-07).
+   One child of a cell may give way — the transcript. Everything else is chrome
+   with a floor. A flex child whose `min-height` is `auto` refuses to shrink
+   below its own content, so a stack that does not say so overflows the CELL and
+   paints over the column below it; the window-level checks see nothing, because
+   the column it spilled into is still inside the window. This is the fourth
+   time this project has paid for that family (wiki/rtl-rendering-notes.md
+   §"Three defects the spec gate could not see"; the 2026-08-23 `.menu-row`). */
+.cell > .topbar,
+.cell > .replay-banner,
+.cell > .context-notice,
+.cell > .composer,
+.cell > .statusline { flex: none; }
+
+/* The two in-flow dialogs are the exception: they GROW, so they are the one
+   piece of chrome that has to be allowed to shrink and scroll inside itself.
+   Capped against the CELL and not the window — a picker sized in `vh` is half
+   the window, which is the whole of a quarter-window column, and what it pushed
+   out was the prompt and the entire status line (defect 2: 66 boxes outside
+   their cell, the option list cut mid-row). */
+.cell > .perm,
+.cell > .picker {
+  flex: 0 1 auto;
+  min-block-size: 0;
+  max-block-size: 50cqh;
+}
+
+/* The popups are anchored to the prompt and open UPWARD, so their cap is the
+   CELL's height, not the window's — one rule replacing both the `40vh` these
+   carry by default and the `22vh` that used to be written out for split 4
+   alone. A quarter-height cell at 800px is ~354px: 40cqh of list plus the
+   prompt under it still fits, and the top row's popup still starts below y=0.
+   (Size containment does NOT clip — `container-type: size` applies size,
+   layout and style containment and never paint — so these still draw over the
+   transcript above them, which is the whole point of a popup.) */
+.cell .slash-popup,
+.cell .file-popup { max-height: 40cqh; }
+
+/* Which cell the keyboard is in. A 1px inset line in the edition's own accent —
+   visible at a glance, nothing animated, and drawn INSIDE the cell so it costs
+   no layout (emil-design-eng: restraint). With one cell on screen there is
+   nothing to disambiguate, so it is not drawn at all. */
+#grid:not([data-split="1"]) > .cell.focused {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The cell's own number, «۱»…«۴», so Alt+N names something visible. Muted: it
+   is a label for a key, not a piece of the conversation. */
+.cell-badge {
+  flex: none;
+  min-width: 1.4em;
+  padding: 0 .35em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: .74rem;
+  line-height: 1.5;
+  text-align: center;
+}
+#grid[data-split="1"] .cell-badge { display: none; }
+.cell.focused .cell-badge { border-color: var(--accent); color: var(--accent); }
+
+.topbar {
   display: flex;
   align-items: baseline;
   gap: 12px;
   padding: 10px 24px 6px;
   min-height: 40px;
 }
-#topbar-name { font-weight: 700; font-size: .95em; }
+.topbar-name { font-weight: 700; font-size: .95em; }
 
 /* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
-#topbar-cwd {
+.topbar-cwd {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -540,7 +741,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   font-size: .76em;
 }
 
-#replay-banner {
+.replay-banner {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -553,45 +754,74 @@ pre, code, .path, .diff, .tool-output, .mono {
   color: var(--fg-muted);
   font-size: .88em;
 }
-#replay-banner[hidden] { display: none; }
+.replay-banner[hidden] { display: none; }
 
-/* --- home / empty state ---------------------------------------------------- */
-#home { display: none; }
+/* --- home / empty state ------------------------------------------------------
+   Keyed on the CELL, not on <body>: with a grid one column can be showing a
+   conversation while the one beside it is empty, and `body.home .log
+   {display:none}` would have hidden BOTH transcripts (MA3-T2). chrome.js
+   toggles `.home` on each cell from that cell's own log. */
+.home { display: none; }
 
-body.home #topbar,
-body.home #log,
-body.home #replay-banner { display: none; }
+.cell.home .log,
+.cell.home .replay-banner { display: none; }
 
-body.home #stage {
+/* The topbar's name and folder describe a conversation, and a blank column has
+   none — but the digit badge describes the CELL, and with the column empty it
+   is the only thing on screen saying which Alt+N reaches it. So the bar stays
+   and empties instead of going away (MA3-T4 defect 5: the badge's box measured
+   0x0 in every empty column). At `data-split="1"` the badge is hidden anyway
+   and what is left is an 8px strip. */
+.cell.home .topbar-name,
+.cell.home .topbar-cwd { display: none; }
+.cell.home .topbar { min-height: 0; padding: 8px 24px 0; }
+
+.cell.home {
   display: grid;
-  /* The welcome box sits just above the prompt, the way the terminal's does.
-     The first row never drops below its content; the trailing empty row is
-     what gives way on a short window. */
-  grid-template-rows: minmax(min-content, 1fr) auto minmax(0, 1.2fr);
+  /* TP1 §2/§3: the greeting grows from the TOP and the prompt + status line are
+     bottom-anchored TOGETHER. So the one elastic track is the greeting's, and
+     the two rows under it are `auto` — the status line used to sit in a
+     `minmax(0, 1.2fr)` track with `align-self: end`, which is exactly how it
+     ended up 424px below the prompt it is supposed to be attached to.
+
+     `minmax(0, 1fr)` and not `minmax(min-content, 1fr)` — a track that refuses
+     to drop below its content makes the whole COLUMN taller than its grid cell,
+     and `/split 4` in a 700px-tall window put the bottom two columns 72px below
+     the window (measured by test_split.py). What gives way instead is the
+     greeting's own scroller below.
+
+     Four rows, not three: the first is the emptied topbar above (the digit
+     badge), and giving it a track of its own is what keeps the greeting, the
+     prompt and the status line in rows of their own. */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
-body.home #home {
+.cell.home > .home {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  padding-block-end: 26px;
+  /* Flush at the TOP, and at the START of the line — which under dir="rtl" is
+     the right edge, mirroring the TUI's top-left (TP1 §3). `safe` for the
+     reason it was here before: an overflowing flex container aligned against
+     its start would push content past the scroll origin. */
+  justify-content: safe flex-start;
+  align-items: stretch;
+  min-height: 0;
+  overflow-y: auto;
+  /* The composer's own inline padding, so the greeting and the prompt line up
+     on the same reading column instead of being two boxes of different widths. */
+  padding: 10px max(20px, calc((100% - 50rem) / 2)) 26px;
 }
-body.home #statusline { align-self: end; }
 
-/* --- the TUI's welcome box (V2-PLAN §2) --------------------------------------
-   A drawn box, because that is what the terminal prints — but with a CSS
-   border rather than `─ │ ╭ ╮` characters, for the reason the whole plan
-   exists: a box drawn out of glyphs has to be padded to a cell count, and
-   Persian has no cell count (wiki/tui-strings.md §1, last row of the table).
+/* --- the TUI's greeting (V2-PLAN §2, unboxed by TP1 §3) ----------------------
+   THERE IS NO BOX. The running CLI prints the mark and its lines flush at the
+   top of the screen with no border, no fill and nothing centred, and TP1 is
+   the user's decision to follow it — so the border, the radius, the surface
+   fill and the fixed width are all gone. What is left is text at the top start
+   of the column, on the same reading measure as the prompt (its parent's
+   padding, above).
 
-   Same reading column as the composer below it, so the empty state reads as
-   one block and not two centred things of different widths. */
+   Kept: the three hint columns (`/`, `@`, `?`) and the key-outside-the-sentence
+   rule they are built under (wiki/tui-strings.md §5). Only the chrome went. */
 .welcome {
-  width: min(50rem, calc(100% - 40px));
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
   line-height: 1.9;
 }
 .welcome p { margin: 0; }
@@ -686,7 +916,7 @@ body.home #statusline { align-self: end; }
 .sc-line.assistant { color: var(--fg-muted); }
 
 /* --- message list ---------------------------------------------------------- */
-#log {
+.log {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -723,7 +953,7 @@ body.home #statusline { align-self: end; }
      .ag-log (the agents drawer) is the same design without the bug — it pins
      to the bottom the same way and has never carried this property. */
 }
-#log > * { flex: none; }
+.log > * { flex: none; }
 
 .msg {
   max-width: 62ch;          /* readable measure; Persian counts the same */
@@ -925,7 +1155,7 @@ body.home #statusline { align-self: end; }
    They are now quiet rows on a rail — icon, what happened, to what — that open
    in place. The surface only appears once you ask for it, on [open].
    `flex: none` is load-bearing: overflow:hidden zeroes a flex item's automatic
-   minimum size and #log is a column flex box, so without it every card is
+   minimum size and .log is a column flex box, so without it every card is
    crushed to nothing once the transcript scrolls (spec-test guards this). */
 details.card {
   align-self: stretch;
@@ -952,27 +1182,27 @@ details.card[open] {
    Descendant, not child, so the rail also runs down the cards nested inside a
    collapsed tool group — that is the one place a run of steps is densest.
 
-   The rail could not actually be continuous before: `#log` is a flex column
+   The rail could not actually be continuous before: `.log` is a flex column
    with a `gap`, and a gap is not a margin — no `margin-block-start: 0` can
    close it, so the line broke once per card. Cards cancel the gap instead.
    Only the DIRECT children: inside a group's body there is no flex gap, and a
    negative margin there would overlap the cards. Only when BOTH are shut, which
    is the same condition the rail itself draws under — two OPEN cards are two
    surfaces with their own borders and need the gap to stay two things. */
-#log > details.card:not([open]) + details.card:not([open]) {
+.log > details.card:not([open]) + details.card:not([open]) {
   margin-block-start: calc(-1 * var(--log-gap));
 }
 
-#log details.card:has(+ details.card):not([open]) > summary::before,
-#log details.card + details.card:not([open]) > summary::after {
+.log details.card:has(+ details.card):not([open]) > summary::before,
+.log details.card + details.card:not([open]) > summary::after {
   content: "";
   position: absolute;
   inset-inline-start: 19px;
   border-inline-start: 1px solid var(--border);
   pointer-events: none;
 }
-#log details.card:has(+ details.card):not([open]) > summary::before { inset-block: 50% 0; }
-#log details.card + details.card:not([open]) > summary::after { inset-block: 0 50%; }
+.log details.card:has(+ details.card):not([open]) > summary::before { inset-block: 50% 0; }
+.log details.card + details.card:not([open]) > summary::after { inset-block: 0 50%; }
 
 /* A run of consecutive tool calls, folded into one row. The summary is the
    only part that is chrome; everything inside is the ordinary cards, so the
@@ -1205,11 +1435,11 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 
 /* --- the turn's pulse -------------------------------------------------------
    The CLI's «✻ Sketching… (4m 35s · ↓ 10.9k tokens)», as a transcript entry.
-   `order: 1` is what pins it last while the turn runs: #log is a flex column,
+   `order: 1` is what pins it last while the turn runs: .log is a flex column,
    so a reorder needs no DOM move and nothing appended after it can race ahead.
    The class comes off at the end of the turn and it settles where it was
    appended — that turn's own closing line, kept in the history.
-   `flex: none` for the same reason every card carries it: #log is a scrolling
+   `flex: none` for the same reason every card carries it: .log is a scrolling
    flex column and an automatic minimum size crushes its entries. */
 .pulse {
   align-self: stretch;
@@ -1324,23 +1554,61 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .todos li[data-status="in_progress"] { color: var(--accent); font-weight: 500; }
 
 /* --- composer ---------------------------------------------------------------- */
-#composer {
-  padding: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+/* THE PROMPT IS A TUI PROMPT (TP1 §1). The rounded card is gone: what the
+   terminal draws is one rule, the prompt line, and a second rule — and the
+   rules span the WHOLE column, not the reading measure, so they read as the
+   terminal's own horizontal lines rather than as the edges of a box.
+
+   That is why the border lives on `.composer` (a full-width child of the cell)
+   while the reading column stays where it was, as this element's inline
+   padding. `padding-block: 0` is the other half of TP1 §2: the lower rule and
+   the status line have to touch, so there is nothing between them — including
+   the `6px` that used to sit here, and including `.statusline`'s own
+   `border-top`, which was removed for the same reason. */
+.composer {
+  padding: 0 max(20px, calc((100% - 50rem) / 2));
+  border-block: 1px solid var(--border);
+  transition: border-color var(--dur) var(--ease);
 }
+.composer:focus-within { border-color: #57544e; }
 
 .comp-box {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 12px 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 18px rgb(0 0 0 / .22);
-  transition: border-color var(--dur) var(--ease);
+  padding: 8px 0 4px;
 }
-.comp-box:focus-within { border-color: #57544e; }
+
+/* The prompt line itself: the mark, then the field. A ROW flex box, so the
+   mark is laid out beside the textarea instead of above it — and the page is
+   dir="rtl", so being first in the DOM puts it at the RIGHT, where the line
+   starts. `min-inline-size: 0` on the field for the reason the old rule
+   already spelled out one level up: a <textarea> carries an intrinsic width
+   from `cols` (~180px) and would hand the whole cell that as its minimum. */
+.comp-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+/* The mark is DECORATION. It is the product's own mirrored prompt (the same
+   geometry as the sidebar head and assets/make_icon.py — never Anthropic's
+   mark), drawn at the size of one line of text and muted, and it is a sibling
+   of the textarea rather than a character in it: it cannot be typed over,
+   selected, copied, or sent. `pointer-events: none` so a click on it still
+   lands in the field. */
+.comp-mark {
+  flex: none;
+  color: var(--fg-muted);
+  /* Aligned to the FIRST line's baseline as the box grows downward: the row is
+     `align-items: flex-start`, so this offset is what centres it on line 1
+     instead of on the whole field. */
+  margin-block-start: 11px;
+  pointer-events: none;
+  user-select: none;
+}
 
 /* Wraps. Five chips of user-determined length (folder name, model name, effort,
    posture, the auto counter) plus two buttons do not fit one line in a narrow
@@ -1356,7 +1624,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .comp-spacer { flex: 1; }
 
 /* Base field style is for pages without the comp-box (spec-test.html). */
-#input {
+.input {
   font: inherit;
   line-height: var(--lh-fa);
   color: var(--fg);
@@ -1369,24 +1637,23 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   min-height: 44px;         /* touch-target floor */
   flex: 1;
 }
-.comp-box #input {
+.comp-box .input {
   background: none;
   border: 0;
-  padding: 4px 4px 2px;
+  padding: 4px 0 2px;
   min-height: 36px;
-  /* The base rule's `flex: 1` sets flex-basis:0% — in this COLUMN flex box that
-     replaces the height property on the main axis, so the auto-grow in
-     composer.js (input.style.height = scrollHeight) computed to nothing and a
-     multi-line message stayed a 1-line box with a hidden scrollbar. */
-  flex: none;
-  /* A <textarea> carries an intrinsic width from `cols` (~180px), and that
-     width is what the whole stage reported as its min-content — so a narrow
-     window handed the grid column less than the composer's minimum and the box
-     was drawn off the start edge (measured: a 500px window put .comp-box at
-     x = -30). A percentage width contributes nothing to intrinsic sizing. */
-  inline-size: 100%;
+  /* TP1 moved the field into a ROW flex box (.comp-line). `flex: 1 1 0%` sizes
+     it on the INLINE axis here, so the height property is untouched and the
+     auto-grow in composer.js (input.style.height = scrollHeight) still works —
+     the trap the old rule documented was `flex: 1` inside the COLUMN box, where
+     flex-basis replaced height and a multi-line message stayed one line.
+     `min-inline-size: 0` is what keeps the textarea's intrinsic `cols` width
+     (~180px) out of the cell's min-content: a 500px window used to draw
+     .comp-box at x = -30 because of it. */
+  flex: 1 1 0%;
+  min-inline-size: 0;
 }
-.comp-box #input:focus-visible { outline: none; }   /* the box shows focus */
+.comp-box .input:focus-visible { outline: none; }   /* the box shows focus */
 
 button {
   font: inherit;
@@ -1467,22 +1734,25 @@ button.round {
   font-family: inherit;     /* a folder name is a name, not code */
 }
 
-#composer-hint {
+/* Under the prompt line and INSIDE the two rules, where the terminal keeps its
+   own footer hints. Start-aligned, not centred: with the box gone there is no
+   box to centre it in, and the line it belongs to starts at the mark. */
+.composer-hint {
   font-size: .74em;
-  text-align: center;
+  text-align: start;
   padding-top: 5px;
   min-height: 1.4em;
 }
 
 /* --- attachments ------------------------------------------------------------- */
-#attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
-#attachments[hidden] { display: none; }
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
+.attachments[hidden] { display: none; }
 
 /* Long pastes, parked (js/composer.js). Same row shape as the attachments
    above it — they are the same kind of thing: something riding along with the
    message that is not the sentence being written. */
-#pastes { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 0; }
-#pastes[hidden] { display: none; }
+.pastes { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 0; }
+.pastes[hidden] { display: none; }
 .paste-chip { max-width: 40ch; }
 .paste-chip bdi {
   overflow: hidden;
@@ -1521,7 +1791,7 @@ button.round {
 .chip button:hover { background: none; color: var(--fg); }
 
 /* --- slash autocomplete ------------------------------------------------------ */
-#slash-popup {
+.slash-popup {
   position: absolute;
   inset-block-end: calc(100% + 8px);
   inset-inline-start: 0;
@@ -1537,13 +1807,13 @@ button.round {
   box-shadow: 0 8px 24px rgb(0 0 0 / .4);
   z-index: 40;
 }
-#slash-popup[hidden] { display: none; }
+.slash-popup[hidden] { display: none; }
 
 /* The row itself stays in the shell's RTL flow so the command name leads on
    the right for a Persian reader; each span sets its own direction (the row
    used to be direction:ltr as a whole, which put the Persian description of a
    skill command in the wrong order). */
-#slash-popup li {
+.slash-popup li {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1552,8 +1822,8 @@ button.round {
   cursor: pointer;
   font-size: .88em;
 }
-#slash-popup li[aria-selected="true"],
-#slash-popup li:hover { background: var(--surface-2); }
+.slash-popup li[aria-selected="true"],
+.slash-popup li:hover { background: var(--surface-2); }
 
 .slash-name, .slash-arg {
   unicode-bidi: isolate;
@@ -1573,7 +1843,7 @@ button.round {
 
 /* The `@` file menu is the same object as the slash list — same anchor, same
    rows, same keys — so it is the same rules, not a second copy of them. */
-#file-popup {
+.file-popup {
   position: absolute;
   inset-block-end: calc(100% + 8px);
   inset-inline-start: 0;
@@ -1589,8 +1859,8 @@ button.round {
   box-shadow: 0 8px 24px rgb(0 0 0 / .4);
   z-index: 40;
 }
-#file-popup[hidden] { display: none; }
-#file-popup li {
+.file-popup[hidden] { display: none; }
+.file-popup li {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1599,20 +1869,22 @@ button.round {
   cursor: pointer;
   font-size: .88em;
 }
-#file-popup li[aria-selected="true"],
-#file-popup li:hover { background: var(--surface-2); }
-#file-popup li.is-empty { cursor: default; color: var(--fg-muted); }
-#file-popup li.is-empty:hover { background: none; }
+.file-popup li[aria-selected="true"],
+.file-popup li:hover { background: var(--surface-2); }
+.file-popup li.is-empty { cursor: default; color: var(--fg-muted); }
+.file-popup li.is-empty:hover { background: none; }
 
 /* --- `!` bash mode, Ctrl+R search --------------------------------------------
 
    The TUI recolours its prompt bar while the line starts with `!`. Same signal
-   here, on the box's own border, so the state is visible without a second
-   widget saying what mode you are in. */
-.comp-box.bash { border-color: var(--bash); }
-.comp-box.bash #input::placeholder { color: var(--bash); }
+   here — on the two rules and on the prompt mark, since TP1 moved the border
+   off .comp-box and onto .composer; composer.js still writes the class on
+   .comp-box, so the selector reaches up rather than the class moving down. */
+.composer:has(.comp-box.bash) { border-color: var(--bash); }
+.comp-box.bash .comp-mark { color: var(--bash); }
+.comp-box.bash .input::placeholder { color: var(--bash); }
 
-#history-search {
+.history-search {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1621,17 +1893,17 @@ button.round {
   font-size: .86em;
   border-bottom: 1px solid var(--border);
 }
-#history-search[hidden] { display: none; }
-#hs-label { color: var(--fg-muted); white-space: nowrap; }
-#hs-match {
+.history-search[hidden] { display: none; }
+.hs-label { color: var(--fg-muted); white-space: nowrap; }
+.hs-match {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#hs-match.empty { color: var(--fg-muted); }
-#hs-hint { white-space: nowrap; }
+.hs-match.empty { color: var(--fg-muted); }
+.hs-hint { white-space: nowrap; }
 
 /* --- the `?` key sheet -------------------------------------------------------- */
 #keys-body {
@@ -1693,16 +1965,16 @@ button.round {
    that hangs off a chip has to be measured against a shrink-to-fit width and
    the room above it (the 2026-08-23 "the picker menu was sizing itself"
    report). A row in the flow is laid out by the browser. */
-#perm,
-#picker {
+.perm,
+.picker {
   position: static;
   display: none;
   /* #stage is a flex column: without this the dialog is squeezed instead of
-     pushing the prompt down — the `#log > * { flex: none }` family. */
+     pushing the prompt down — the `.log > * { flex: none }` family. */
   flex: none;
   inline-size: auto;
   max-inline-size: none;
-  /* The same centred column the prompt uses (#composer's padding), so the
+  /* The same centred column the prompt uses (.composer's padding), so the
      list sits exactly over the box it is answering for instead of drifting
      wider on a big window and narrower on a small one. */
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 10px;
@@ -1716,10 +1988,10 @@ button.round {
   max-block-size: 52vh;
   overflow-y: auto;
 }
-#perm[open],
-#picker[open] { display: block; }
+.perm[open],
+.picker[open] { display: block; }
 
-#picker h2 { margin: 0 0 .5em; font-size: .95rem; font-weight: 700; }
+.picker h2 { margin: 0 0 .5em; font-size: .95rem; font-weight: 700; }
 
 /* --- the numbered option list (js/choice.js) ---------------------------------
    One list, three owners: the permission dialog, the pickers and the audit
@@ -1860,7 +2132,7 @@ button.round {
    then everything the four chips used to say. A column of rows rather than one
    wrapping row, because the posture line is a sentence and must not be broken
    up by whatever fits beside it. */
-#statusline {
+.statusline {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1869,9 +2141,12 @@ button.round {
   color: var(--fg-muted);
   font-size: .74em;
   line-height: 1.6;
-  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  /* NO `border-top`. TP1 §2: the status rows sit immediately beneath the
+     prompt's lower rule with no gap — and that rule is `.composer`'s own
+     `border-block-end`, one element up. A border here as well drew the second
+     of two lines 1px apart. */
 }
-#statusline .sl-line {
+.statusline .sl-line {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
@@ -1879,31 +2154,31 @@ button.round {
   justify-content: center;
   max-width: 100%;
 }
-#statusline .sl-item { display: flex; gap: 6px; align-items: center; }
-#statusline .sl-label { opacity: .7; }
+.statusline .sl-item { display: flex; gap: 6px; align-items: center; }
+.statusline .sl-label { opacity: .7; }
 
 /* `⏵⏵ پذیرش خودکار ویرایش‌ها روشن · shift+tab برای تغییر`. The pill is gone,
    so this line carries the affordance too — a mode nobody can see how to
    change is a mode that stays where it was left. */
-#statusline .sl-posture { gap: 4px 8px; color: var(--fg); }
-#statusline .sl-arrow {
+.statusline .sl-posture { gap: 4px 8px; color: var(--fg); }
+.statusline .sl-arrow {
   color: var(--accent);
   inline-size: auto;
   margin-inline-end: -3px;   /* `⏵⏵` is one shape, not two words */
 }
-#statusline .sl-posture.is-danger .sl-arrow,
-#statusline .sl-posture.is-danger .sl-posture-text { color: var(--danger); }
-#statusline .sl-hint { opacity: .6; }
+.statusline .sl-posture.is-danger .sl-arrow,
+.statusline .sl-posture.is-danger .sl-posture-text { color: var(--danger); }
+.statusline .sl-hint { opacity: .6; }
 
 /* The five-hour window is nearly spent. Warning colour, full opacity: the rest
    of this bar is reference data the eye skips, and this one line is the reason
    the next answer will be shorter than the last. */
-#statusline .sl-warn { color: var(--danger); }
+.statusline .sl-warn { color: var(--danger); }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
-#statusline .sl-meter { display: flex; gap: 6px; align-items: center; }
-#statusline progress {
+.statusline .sl-meter { display: flex; gap: 6px; align-items: center; }
+.statusline progress {
   appearance: none;
   inline-size: 44px;
   block-size: 4px;
@@ -1911,20 +2186,20 @@ button.round {
   border-radius: 2px;
   overflow: hidden;
 }
-#statusline progress::-webkit-progress-bar {
+.statusline progress::-webkit-progress-bar {
   background: color-mix(in srgb, var(--fg-muted) 25%, transparent);
 }
-#statusline progress::-webkit-progress-value {
+.statusline progress::-webkit-progress-value {
   background: var(--fg-muted);
   border-radius: 2px;
   transition: inline-size .3s ease;
 }
-#statusline progress[data-level="warn"]::-webkit-progress-value { background: #d9a441; }
-#statusline progress[data-level="high"]::-webkit-progress-value { background: var(--accent); }
+.statusline progress[data-level="warn"]::-webkit-progress-value { background: var(--warn); }
+.statusline progress[data-level="high"]::-webkit-progress-value { background: var(--accent); }
 
 /* cwd is a Windows path sitting inside RTL chrome — the exact regression
    plan §B-10 item 2 sweeps for. It must stay .path + <bdi>. */
-#statusline .path {
+.statusline .path {
   max-width: 46ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1937,17 +2212,17 @@ button.round {
    for the cwd and was chopping the script's last field to «claude-op…».
    This must stay AFTER the rule above: same specificity, so source order is
    the only thing deciding it. */
-#statusline .sl-custom {
+.statusline .sl-custom {
   max-width: none;
   opacity: .95;
 }
-#statusline .sl-custom span:not(:empty) { padding-block: 1px; }
+.statusline .sl-custom span:not(:empty) { padding-block: 1px; }
 
 /* --- permission dialog -------------------------------------------------------- */
-#perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: 700; }
-#perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
+.perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: 700; }
+.perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
 
-#perm-tool {
+.perm-tool {
   font-weight: 700;
   margin-block-end: 8px;
 }
@@ -1955,10 +2230,10 @@ button.round {
 /* Which conversation is asking, when it is not the one on screen. Sits between
    the question and the tool, quiet but not hidden: it is the difference between
    approving a write here and approving one in a project you are not looking at. */
-/* `#perm #perm-source`, not `#perm-source`: `#perm p` above is (1,0,1) and
+/* `.perm .perm-source`, not `.perm-source`: `.perm p` above is (1,0,1) and
    would beat a bare id on display and margin — the trap the kebab row already
    taught this file (wiki/rtl-rendering-notes.md). */
-#perm #perm-source {
+.perm .perm-source {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1974,7 +2249,7 @@ button.round {
    user is about to approve. The box stays LTR so paths and code keep their
    order; each line inside gets dir="auto" so Persian content is readable at the
    moment of consent (spec rule 8, render.js renderParamRows). */
-#perm-params {
+.perm-params {
   background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1985,12 +2260,12 @@ button.round {
   white-space: pre-wrap;
   line-height: 1.6;
 }
-#perm-params .path { background: none; padding: 0; }
+.perm-params .path { background: none; padding: 0; }
 /* The value boxes come from the shared builder and bring their own background;
    inside the dialog's box that would be a box in a box. */
-#perm-params .tool-output { background: none; padding: 0; max-height: none; }
+.perm-params .tool-output { background: none; padding: 0; max-height: none; }
 
-#perm-remember-row {
+.perm-remember-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1999,7 +2274,7 @@ button.round {
   font-size: .92em;
   color: var(--fg-muted);
 }
-#perm-remember-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.perm-remember-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 
 /* --- diffs -------------------------------------------------------------------
    .diff already carries direction:ltr + isolate + monospace + its own scroll box
@@ -2039,7 +2314,7 @@ button.round {
 .d-del { color: var(--danger); }
 
 /* Inside the permission dialog the box already has one background. */
-#perm-params .diff { background: none; padding: 0; max-height: 18em; }
+.perm-params .diff { background: none; padding: 0; max-height: 18em; }
 
 /* --- context notice ----------------------------------------------------------
    Sits above the composer, in the flow — not a floating toast. This is a
@@ -2053,7 +2328,7 @@ button.round {
    classes the 174 spec assertions read are all still here, and the actions
    still press exactly what they pressed) and only its shape moved: one line,
    the buttons inline, the per-button explanations dropped to their titles. */
-#context-notice {
+.context-notice {
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 4px;
   padding: 4px 10px;
   border: 0;
@@ -2067,9 +2342,9 @@ button.round {
   align-items: baseline;
   gap: 2px 12px;
 }
-#context-notice[hidden] { display: none; }   /* beats the flex above */
-#context-notice.urgent { border-inline-start-color: var(--danger); }
-#context-notice.urgent .ctx-title { color: var(--danger); }
+.context-notice[hidden] { display: none; }   /* beats the flex above */
+.context-notice.urgent { border-inline-start-color: var(--danger); }
+.context-notice.urgent .ctx-title { color: var(--danger); }
 
 /* One line: the title and the sentence after it, the way a terminal warning
    reads. `flex: 1 1 auto` rather than a fixed basis — it must give way to the
@@ -2108,21 +2383,21 @@ button.round {
    the CLI's own command queue, and this is where it waits. Deliberately the
    quietest thing in the composer column — muted text, no fill, no motion, no
    counter. It is a fact about the CLI, not an event in the conversation. */
-#queue-strip {
+.queue-strip {
   display: flex;
   flex-direction: column;
   gap: 1px;
   /* The composer's own column, to the pixel. */
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
   /* #stage is a flex column: without `flex: none` a queue several messages deep
-     is crushed instead of scrolling — the `#log > * { flex: none }` family,
+     is crushed instead of scrolling — the `.log > * { flex: none }` family,
      which has now cost this project three separate defects
      (wiki/rtl-rendering-notes.md). The cap is what makes the scroll reachable. */
   flex: none;
   max-block-size: 22vh;
   overflow-y: auto;
 }
-#queue-strip[hidden] { display: none; }   /* beats the flex above */
+.queue-strip[hidden] { display: none; }   /* beats the flex above */
 
 .queued-row {
   display: flex;
@@ -2182,13 +2457,13 @@ button.round {
    context notice sits: what the CLI has working in the background, and for how
    long. Quiet by construction — these rows are status, not conversation, and
    the whole strip disappears when there is nothing out. */
-#agents-strip {
+.agents-strip {
   display: flex;
   flex-direction: column;
   gap: 1px;
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
 }
-#agents-strip[hidden] { display: none; }   /* beats the flex above */
+.agents-strip[hidden] { display: none; }   /* beats the flex above */
 
 .ag-row {
   display: flex;
@@ -2353,7 +2628,7 @@ button.ag-close {
 button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 
 /* The render target. `flex: none` on the children is the same load-bearing rule
-   #log carries: details.card sets overflow:hidden, which zeroes a flex item's
+   .log carries: details.card sets overflow:hidden, which zeroes a flex item's
    automatic minimum size, and every card would be crushed to its own border the
    moment this box scrolled. */
 .ag-log {
@@ -2376,40 +2651,40 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    Same <dialog>, different act: the model is asking, not requesting consent.
    So the tool name, the raw params and the "don't ask again" checkbox all go —
    there is no tool to remember and nothing to approve. */
-#perm-ask { display: none; }
-#perm.asking #perm-ask { display: block; }
-#perm.asking #perm-tool,
-#perm.asking #perm-params,
-#perm.asking #perm-remember-row { display: none; }
+.perm-ask { display: none; }
+.perm.asking .perm-ask { display: block; }
+.perm.asking .perm-tool,
+.perm.asking .perm-params,
+.perm.asking .perm-remember-row { display: none; }
 
 /* The two modes answer with different chrome. A permission answers with the
    numbered list and its note box; a question answers with its own inputs and
    the two buttons, because "send the answers" and "skip" are not options in a
    list — they are what happens to whatever the inputs hold.
 
-   #perm-remember-row is the harness's copy of this markup (spec-test.html) and
+   .perm-remember-row is the harness's copy of this markup (spec-test.html) and
    is what its «a question offers no remember» assertion reads; in the window
    the remember scope is «۲.» in the list and this row never shows. */
-#perm menu { display: none; }
-#perm.asking menu {
+.perm menu { display: none; }
+.perm.asking menu {
   display: flex;
   gap: 8px;
   justify-content: flex-start;   /* RTL start = right edge */
   margin: 12px 0 0;
   padding: 0;
 }
-#perm #perm-remember-row { display: none; }
-#perm.asking #perm-proceed,
-#perm.asking #perm-opts,
-#perm.asking #perm-feedback { display: none; }
+.perm .perm-remember-row { display: none; }
+.perm.asking .perm-proceed,
+.perm.asking .perm-opts,
+.perm.asking .perm-feedback { display: none; }
 
-#perm #perm-proceed {
+.perm .perm-proceed {
   margin: 2px 0 8px;
   color: var(--fg);
   font-weight: 600;
   font-size: .95em;
 }
-#perm-feedback {
+.perm-feedback {
   display: block;
   inline-size: 100%;
   margin-block-start: 10px;
@@ -2422,8 +2697,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   line-height: var(--lh-fa);
   resize: vertical;
 }
-#perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-#perm #perm-hint { margin: 8px 0 0; font-size: .78em; }
+.perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.perm .perm-hint { margin: 8px 0 0; font-size: .78em; }
 
 .ask-q {
   border: 1px solid var(--border);
@@ -2438,7 +2713,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   font-weight: 700;
   color: var(--fg-muted);
 }
-#perm .ask-text {
+.perm .ask-text {
   margin: 0 0 10px;
   color: var(--fg);
   font-size: 1em;
@@ -2516,13 +2791,51 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 
 @media (max-width: 820px) {
   body.app { grid-template-columns: minmax(0, 1fr) 200px; }
-  #log { padding-inline: 12px; }
-  #composer { padding-inline: 12px; }
-  #topbar { padding-inline: 12px; }
-  #context-notice { margin-inline: 12px; }
-  #queue-strip { margin-inline: 12px; }
-  #replay-banner { width: calc(100% - 24px); }
-  .welcome { width: calc(100% - 24px); }
+}
+
+/* Everything INSIDE a conversation is measured against the cell it is in, not
+   against the window: a 2x2 split at 1280px hands each cell ~496px — the exact
+   width that drew the composer off the start edge on 2026-08-23 — while the
+   window is still wide. `container-type: inline-size` on .cell (above) is the
+   whole mechanism; it is native, needs no JS, and re-measures on every resize
+   and on every /split. */
+@container (max-width: 820px) {
+  .log { padding-inline: 12px; }
+  .composer { padding-inline: 12px; }
+  .topbar { padding-inline: 12px; }
+  .context-notice { margin-inline: 12px; }
+  .queue-strip { margin-inline: 12px; }
+  .replay-banner { width: calc(100% - 24px); }
+  /* The greeting has no width of its own since TP1 unboxed it; what gives way
+     is the gutter it shares with the prompt. */
+  .cell.home > .home { padding-inline: 12px; }
+}
+
+/* A SHORT cell (MA3-T4 defect 3). Four columns of an 800px window are ~354px
+   tall and of a 622px window ~265px; the chrome — topbar, prompt, the key hint
+   under it and three or four status rows — was taking ~70% of that, so what was
+   left of the conversation was one or two clipped lines. The column stopped
+   being a conversation and became a frame around one.
+
+   The threshold is the cell's own height, which is why .cell is a `size`
+   container: a window-height media query cannot tell a 4-way split at 800px
+   from a single cell at 800px, and only one of those is short.
+
+   What goes, in the order it earns its place back:
+     - the key hint under the prompt. It is a reminder, and `?` still opens the
+       whole sheet.
+     - every status row except the posture line, which is the one that carries
+       both the mode and the chord that changes it (V2-PLAN §3.4), and the
+       warning row, which is never noise — a «گفتگو پر شده» hidden to save 20px
+       is the defect this file exists to avoid.
+     - the prompt's own growth: a message may still be several lines, it just
+       may no longer eat the transcript to be so. */
+@container (max-height: 460px) {
+  .composer-hint { display: none; }
+  .statusline .sl-line:not(.sl-posture):not(.sl-warn) { display: none; }
+  .statusline { padding-block: 3px 5px; }
+  .topbar { min-height: 0; padding-block: 6px 2px; }
+  .comp-box .input { max-height: 22cqh; }
 }
 }
 

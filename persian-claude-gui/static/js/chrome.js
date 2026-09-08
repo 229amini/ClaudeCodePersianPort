@@ -16,28 +16,53 @@ import { api, token } from "./api.js";
    two sources". Nothing below runs at module-evaluation time; initChrome() is
    called from app.js once every module is live. */
 import {
-  bubble, bulkAppend, label, renderEvent, renderToolDetail, resetTurn, state,
-  setStatus, questionProse, questionOption,
+  bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus,
 } from "./render.js";
+/* The permission dialog moved out of this file at MA4-T1: it is per cell, and
+   the sidebar is not. Same cycle rules — nothing crosses at evaluation time. */
+import { permAsking, permSeenTab } from "./perm.js";
 
 const FA = window.STRINGS;
 
-const log = document.getElementById("log");
-
+// Window-level chrome: one of each, whatever the split is.
 const ui = {
-  topbarName: document.getElementById("topbar-name"),
-  topbarCwd: document.getElementById("topbar-cwd"),
   projects: document.getElementById("projects"),
   openTabs: document.getElementById("open-tabs"),
   tabsTitle: document.getElementById("tabs-title"),
   btnNew: document.getElementById("btn-new"),
-  projChip: document.getElementById("proj-chip"),
-  projChipName: document.getElementById("proj-chip-name"),
-  home: document.getElementById("home"),
-  greeting: document.getElementById("greeting-text"),
-  banner: document.getElementById("replay-banner"),
-  cardResume: document.getElementById("home-resume"),
 };
+
+/* THE CELL-LOCAL HALF (MA4-T2). The topbar, the home state and its four cards,
+   the folder chip and the replay banner belong to ONE column, and there are up
+   to four of them — so they are looked up inside the cell that owns them rather
+   than once at load, where every lookup would have found cell 1. Cached on the
+   cell itself, which is the only object whose lifetime they share.
+   spec-test.html carries some of this markup and none of the rest: every field
+   comes back null or not, and every caller below degrades rather than throws. */
+function cui(cell) {
+  if (!cell) return {};
+  if (!cell.chromeUI) {
+    const q = (cls) => cell.root.querySelector("." + cls);
+    cell.chromeUI = {
+      topbarName: q("topbar-name"), topbarCwd: q("topbar-cwd"),
+      projChip: q("proj-chip"), projChipName: q("proj-chip-name"),
+      home: q("home"), greeting: q("greeting-text"), banner: q("replay-banner"),
+      cardResume: q("home-resume"),
+    };
+  }
+  return cell.chromeUI;
+}
+
+/* Which column a piece of chrome belongs to when the caller did not say: the
+   one being rendered into (render.js `state.cell`), and failing that the one
+   the keyboard is in. */
+function chromeCell(cell) {
+  return cell ?? state.cell ?? tabBridge?.focused?.() ?? null;
+}
+
+function focusedRef() {
+  return tabBridge?.focused?.() ?? null;
+}
 
 let currentCwd = "";
 let currentSession = null;
@@ -62,11 +87,15 @@ export function setCurrentSession(sessionId) {
    render.js, and importing the ENTRY module (whose body runs last) is the one
    shape that guarantees a temporal-dead-zone crash — see the load-order note in
    app.js. So app.js hands its two verbs in at init instead. */
-let openTabs = [];        // [{tab, session_id, cwd, busy}] — app.js's view
+let openTabs = [];        // [{tab, session_id, cwd, busy, pending_permission}]
 let openActive = "";
 let tabBridge = null;     // {switchTo(tab), close(tab)}
 let lastTabsKey = "";     // identity of the last painted set, see setOpenTabs
-
+/* tab -> {running, error, unread}: what app.js reads off each conversation's
+   own render scope, which is the only place those three facts exist. Kept
+   between paints, because setOpenTabs is also called by callers that have no
+   opinion about them (the spec harness, a title arriving late). */
+let liveFacts = {};
 const sessionTitles = new Map();   // session_id -> the title the sidebar shows
 
 /* The bridge's switch, for anything outside this module that opens a tab and
@@ -80,23 +109,97 @@ export function setTabBridge(bridge) {
   tabBridge = bridge;
 }
 
-export function setOpenTabs(list, active) {
+export function setOpenTabs(list, active, facts) {
   openTabs = Array.isArray(list) ? list : [];
   openActive = active || "";
+  // Omitted means "no news", not "none": the harness and the title-arrived
+  // repaint below both call this with two arguments.
+  if (facts) liveFacts = facts;
+  repaintTabs();
+}
+
+/* Every paint of the open-conversations group, and of the session rows whose
+   dot mirrors it. Separate from setOpenTabs() because the permission queue
+   changes a tab's status without the tab LIST changing at all. */
+export function repaintTabs() {
   paintOpenTabs();
   // A session row's live dot and its click behaviour both depend on the tab
   // list, so the project tree repaints too — from what /api/projects already
   // answered, not by asking again. Only when the SET changed, though: this runs
   // a few times per turn, and a redraw cancels an open ⋯ menu or a rename
-  // in progress by construction (startRename).
-  const key = openTabs.map((t) => t.tab + ":" + (t.session_id || "")).join(",")
+  // in progress by construction (startRename). The status is part of the key
+  // because it is painted on those rows too — a dot that goes red in the
+  // sidebar with the tree untouched would otherwise never repaint.
+  const key = openTabs.map((t) => t.tab + ":" + (t.session_id || "")
+                                 + ":" + tabStatus(t.tab)).join(",")
             + "|" + openActive;
   if (key === lastTabsKey) return;
   lastTabsKey = key;
   if (ui.projects) renderProjects(lastProjects);
 }
 
-function tabTitle(entry) {
+/* THE ONE PLACE A CONVERSATION'S STATE IS DECIDED. Four values, painted as
+   `data-status` on the tab's dot and on the matching session row's:
+
+     waiting  a `can_use_tool` / AskUserQuestion is sitting on a human. First,
+              because it is the only one that will not resolve itself.
+     running  the uuid ledger for that tab is not empty (render.js state).
+     error    its last turn failed — a real failure, never a stop, and never
+              the aborted `result` a stop produces (render.js state.error).
+     idle     nothing to say.
+
+   Everything it reads is already kept somewhere else: `perm` below, and the
+   facts app.js hands in. No second bookkeeping path, and no polling. */
+function tabStatus(tab) {
+  if (isWaiting(tab)) return "waiting";
+  const facts = liveFacts[tab];
+  if (facts?.running) return "running";
+  if (facts?.error) return "error";
+  return "idle";
+}
+
+function isWaiting(tab) {
+  if (!tab) return false;
+  if (permAsking(tab)) return true;
+  return !permSeenTab(tab)
+    && !!openTabEntry(tab)?.pending_permission;
+}
+
+/* The two questions the permission dialogs ask of the sidebar: which
+   conversation is on screen, and what this window knows about a given tab.
+   Exported rather than handing `openTabs` out, so this module stays the only
+   owner of the list. */
+export function activeTabId() {
+  return openActive;
+}
+
+export function openTabEntry(tab) {
+  return openTabs.find((t) => t.tab === tab) ?? null;
+}
+
+/* «۲ منتظر تأیید» / «۳ در حال کار» over the whole list: what is happening in
+   the conversations that are NOT on screen is the only thing this header can
+   usefully add. Waiting wins and there is only ever ONE chip — a header
+   carrying two numbers is read as neither, and the one that needs a person is
+   the one worth reading. */
+function tabsBadge() {
+  let running = 0;
+  let waiting = 0;
+  for (const entry of openTabs) {
+    const status = tabStatus(entry.tab);
+    if (status === "waiting") waiting += 1;
+    else if (status === "running") running += 1;
+  }
+  const count = waiting || running;
+  if (!count) return null;
+  const chip = label(
+    FA[waiting ? "tabsWaiting" : "tabsRunning"]
+      .replace("{n}", count.toLocaleString("fa-IR")), "tabs-badge");
+  chip.dataset.status = waiting ? "waiting" : "running";
+  return chip;
+}
+
+export function tabTitle(entry) {
   return (entry.session_id && sessionTitles.get(entry.session_id)) || FA.tabFresh;
 }
 
@@ -107,26 +210,49 @@ function paintOpenTabs() {
   ui.openTabs.hidden = !any;
   if (ui.tabsTitle) {
     ui.tabsTitle.hidden = !any;
-    ui.tabsTitle.textContent = FA.openSessions;
+    ui.tabsTitle.replaceChildren(document.createTextNode(FA.openSessions));
+    const badge = tabsBadge();
+    if (badge) ui.tabsTitle.append(badge);
   }
   if (!any) return;
 
   for (const entry of openTabs) {
+    const status = tabStatus(entry.tab);
     const row = document.createElement("div");
     row.className = "tab-row";
+    row.dataset.tab = entry.tab;
     row.dataset.current = String(entry.tab === openActive);
     row.dataset.busy = String(!!entry.busy);
+    row.dataset.status = status;
 
     const open = document.createElement("button");
     open.type = "button";
     open.className = "tab-open";
+    // Not aria-hidden: the colour IS the message, so the word behind it has to
+    // reach anyone who cannot see the colour. `role=img` + a label is what
+    // gives a bare <span> an accessible name; `title` is the same word again,
+    // for the pointer.
     const dot = label("", "tab-dot");
-    dot.setAttribute("aria-hidden", "true");
+    dot.dataset.status = status;
+    dot.setAttribute("role", "img");
+    dot.setAttribute("aria-label", FA.tabStatus[status]);
+    dot.title = FA.tabStatus[status];
     const name = document.createElement("span");
     name.className = "tab-name";
     name.setAttribute("dir", "auto");   // the user's own words, either script
     name.textContent = tabTitle(entry);
-    open.append(dot, name);
+    open.append(dot);
+    // Turns that finished while this conversation was parked. Next to the dot,
+    // because the pair is one sentence: what it is doing, and what it did while
+    // you were elsewhere. fa-IR digits like every other count in this window.
+    const unread = liveFacts[entry.tab]?.unread ?? 0;
+    if (unread) {
+      const digits = unread.toLocaleString("fa-IR");
+      const count = label(digits, "tab-unread");
+      count.title = FA.tabUnread.replace("{n}", digits);
+      open.append(count);
+    }
+    open.append(name);
     // Which project it is running in. A display NAME, not a path: it is
     // whatever the user renamed the project to and is Persian as often as not,
     // so pathEl's forced LTR would misorder it and seat it on the wrong side of
@@ -136,6 +262,7 @@ function paintOpenTabs() {
     if (entry.cwd) {
       open.append(projectChip(entry.cwd));
     }
+    if (entry.worktree) open.append(worktreeChip(entry.worktree));
     open.title = entry.cwd || tabTitle(entry);
     open.addEventListener("click", () => tabBridge?.switchTo(entry.tab));
 
@@ -165,6 +292,8 @@ const SVG = {
   unpin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M4 4l16 16"/></svg>',
   explorer: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M14 11h4v4"/><path d="M18 11l-5 5"/></svg>',
   rename: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17l-4 1 1-4z"/></svg>',
+  // Two commits and a branch leaving the trunk — the ⎇ chip in icon form.
+  branch: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16"/><circle cx="7" cy="5" r="1.8"/><circle cx="17" cy="9" r="1.8"/><path d="M17 11v1a4 4 0 01-4 4H7"/></svg>',
 };
 
 function basename(p) {
@@ -186,12 +315,33 @@ function displayName(path) {
    name reads right-to-left, a Latin one still resolves LTR, and either is
    isolated from the Persian around it (spec rule 2). The tooltip keeps the real
    path — that, not the label, is what tells two same-named folders apart. */
-function projectChip(cwd) {
+export function projectChip(cwd) {
   const chip = document.createElement("bdi");
   chip.className = "tab-proj";
   chip.setAttribute("dir", "auto");
   chip.textContent = displayName(cwd);
   chip.title = cwd;
+  return chip;
+}
+
+/* The git worktree a conversation is editing in, as `⎇ agent-2`. UNLIKE the
+   project chip this IS a technical value — the name is ASCII by construction
+   (server.py WORKTREE_NAME_RE) and it names a folder — so it takes .path's
+   LTR + isolate, the same discipline every path site in this window uses
+   (plan §B-10 item 2). The Persian sentence explaining it is the tooltip. */
+/* A folded session's row knows the REPO path and the worktree name; its
+   transcript is under the worktree. The server joins the two (server.py
+   _cwd_for) rather than the window building a path out of a separator it
+   cannot know. */
+function worktreeQuery(name) {
+  return name ? "&worktree=" + encodeURIComponent(name) : "";
+}
+
+function worktreeChip(name) {
+  const chip = document.createElement("bdi");
+  chip.className = "wt-chip path";
+  chip.textContent = "⎇ " + name;
+  chip.title = FA.worktreeOf.replace("{name}", name);
   return chip;
 }
 
@@ -209,20 +359,34 @@ function whenLabel(epochSeconds) {
   return WHEN_FORMAT.format(new Date(epochSeconds * 1000));
 }
 
-/* Project name and cwd everywhere in chrome: topbar, composer chip, tab-title
-   stays the constant «کلاد فارسی» (an OS titlebar cannot carry <bdi>). */
-export function setChrome(cwd) {
-  if (cwd) currentCwd = cwd;
+/* Project name and cwd in ONE column's chrome: its topbar and its folder chip.
+   The tab title stays the constant «کلاد فارسی» (an OS titlebar cannot carry
+   <bdi>). `cell` is explicit only where the caller knows better than
+   `state.cell` does (app.js, on a focus change); everything else lets
+   chromeCell() decide. */
+export function setChrome(cwd, cell = null) {
+  const target = chromeCell(cell);
+  if (cwd) {
+    if (target) target.cwd = cwd;
+    else currentCwd = cwd;     // spec harness: no cells, one folder
+  }
+  const path = target ? target.cwd || "" : currentCwd;
+  // `currentCwd` is what the WINDOW is working in — the folder «گفتگوی جدید»
+  // opens and the one a replay falls back to — so it follows the focused
+  // column, never whichever conversation happened to speak last.
+  if (!target || target === focusedRef()) currentCwd = path;
   // render.js calls this on system/init with a bare cwd, before any projects
   // fetch, so the folder name is what shows for a moment; the debounced
   // refreshProjects() that follows corrects it to the override.
-  const name = displayName(currentCwd);
-  if (ui.topbarName) ui.topbarName.textContent = name;
-  if (ui.topbarCwd) ui.topbarCwd.textContent = currentCwd;
-  if (ui.projChipName) {
-    ui.projChipName.textContent = name || FA.chooseProject;
-    ui.projChip.title = currentCwd;
+  const u = cui(target);
+  const name = displayName(path);
+  if (u.topbarName) u.topbarName.textContent = name;
+  if (u.topbarCwd) u.topbarCwd.textContent = path;
+  if (u.projChipName) {
+    u.projChipName.textContent = name || FA.chooseProject;
+    u.projChip.title = path;
   }
+  syncHome(target);
 }
 
 /* --- home / empty state ---------------------------------------------------- */
@@ -235,26 +399,39 @@ function greetingText() {
   return FA.greetNight;
 }
 
-function syncHome() {
-  if (!ui.home) return;   // spec-test.html has no home section
-  const empty = log.childElementCount === 0;
-  if (empty) ui.greeting.textContent = greetingText();
-  document.body.classList.toggle("home", empty);
+/* The home state is PER COLUMN: four of them can be empty at once, and
+   `body.home` could only ever have described one. */
+function syncHome(cell) {
+  const u = cui(cell);
+  if (!cell || !u.home) return;   // spec-test.html has no home section
+  const empty = cell.log.childElementCount === 0;
+  if (empty) {
+    u.greeting.textContent = greetingText();
+    syncResumeCard(cell);
+  }
+  cell.root.classList.toggle("home", empty);
+}
+
+/* Every column's home state at once: `lastSession` is a fact about the WINDOW's
+   current folder, and each empty column offers it. */
+function syncHomeAll() {
+  for (const cell of tabBridge?.cells?.() ?? []) syncHome(cell);
 }
 
 /* The «ادامه آخرین گفتگو» card is the only one whose availability is data-
    dependent: a brand-new folder has nothing to resume, and offering a dead
    button is worse than offering three. */
-function syncResumeCard() {
-  if (!ui.cardResume) return;
-  ui.cardResume.hidden = !lastSession;
+function syncResumeCard(cell) {
+  const card = cui(cell).cardResume;
+  if (!card) return;
+  card.hidden = !lastSession;
   if (lastSession) {
-    ui.cardResume.querySelector(".hc-note").textContent = lastSession.label;
+    card.querySelector(".hc-note").textContent = lastSession.label;
   }
 }
 
-function cardText(id, title, note) {
-  const el = document.getElementById(id);
+function cardText(cell, cls, title, note) {
+  const el = cell.root.querySelector("." + cls);
   if (!el) return null;
   el.querySelector(".hc-title").textContent = title;
   if (note !== undefined) el.querySelector(".hc-note").textContent = note;
@@ -305,7 +482,9 @@ async function loadProjects() {
     path: here.path,
     label: prev.title || prev.preview || prev.session_id.slice(0, 8),
   };
-  syncResumeCard();
+  // Every empty column offers the same «ادامه» card: `lastSession` is a fact
+  // about the folder the window is working in, not about one conversation.
+  syncHomeAll();
 }
 
 let archOpen = false;   // the «بایگانی» section, collapsed by default
@@ -397,6 +576,17 @@ function projEl(proj, projects) {
   // is writing into that folder's transcript right now and the server refuses
   // it with a 409. The menu says which one it is instead of going quiet.
   top.append(...kebabMenu([
+    // The «گفتگوی جدید» beside it, but in a git worktree of its own, so two
+    // conversations can edit this repo at the same time without overwriting
+    // each other. Offered only where git can actually do it — the server
+    // refuses it anyway (400), but a menu item that always fails is worse than
+    // no menu item. The name is the server's to pick ("auto"): a worktree is
+    // not a thing this audience should have to name.
+    ...(proj.git ? [{
+      icon: SVG.branch,
+      text: FA.newChatWorktree,
+      run: () => switchProject(proj.path, "auto"),
+    }] : []),
     {
       // Renames the label only — see startRename().
       icon: SVG.rename,
@@ -530,9 +720,15 @@ function sessionRow(sess, projPath, isCurrent) {
   btn.type = "button";
   btn.className = "sess";
   if (liveTab) {
+    // The same four states the tab strip paints, on the history row for the
+    // same conversation — this list is where a project with six open sessions
+    // is actually read.
+    const status = tabStatus(liveTab);
     const dot = label("", "sess-dot");
-    dot.setAttribute("aria-hidden", "true");
-    dot.title = FA.sessionLive;
+    dot.dataset.status = status;
+    dot.setAttribute("role", "img");
+    dot.setAttribute("aria-label", FA.tabStatus[status]);
+    dot.title = status === "idle" ? FA.sessionLive : FA.tabStatus[status];
     btn.append(dot);
   }
   const preview = document.createElement("span");
@@ -543,10 +739,15 @@ function sessionRow(sess, projPath, isCurrent) {
   // transcript). The 160-char first-prompt preview is the fallback.
   preview.textContent = sess.title || sess.preview || sess.session_id.slice(0, 8);
   preview.title = sess.preview || "";
-  btn.append(preview, label(whenLabel(sess.modified), "sess-when"));
+  btn.append(preview);
+  // Folded in from a worktree of this project (server.py list_projects): the
+  // row lives under the repo, so the chip is the only thing that says the
+  // conversation was not editing the repo's own checkout.
+  if (sess.worktree) btn.append(worktreeChip(sess.worktree));
+  btn.append(label(whenLabel(sess.modified), "sess-when"));
   btn.addEventListener("click", () => {
     if (liveTab) tabBridge?.switchTo(liveTab);
-    else resumeSession(sess.session_id, projPath);
+    else resumeSession(sess.session_id, projPath, sess.worktree);
   });
 
   // One truncated line cannot tell two sessions apart; the card can.
@@ -561,7 +762,7 @@ function sessionRow(sess, projPath, isCurrent) {
     {
       icon: SVG.eye,
       text: FA.viewSession,
-      run: () => replaySession(sess.session_id, projPath),
+      run: () => replaySession(sess.session_id, projPath, sess.worktree),
     },
     ...(isCurrent ? [] : [null, {
       icon: SVG.trash,
@@ -569,7 +770,8 @@ function sessionRow(sess, projPath, isCurrent) {
       danger: true,
       run: async () => {
         await api("/api/session/delete",
-          { session_id: sess.session_id, path: projPath });
+          { session_id: sess.session_id, path: projPath,
+            worktree: sess.worktree });
         loadProjects();
       },
     }]),
@@ -628,7 +830,8 @@ function schedulePreview(row, sess, projPath) {
     if (!items) {
       try {
         const data = await api("/api/session?id=" + encodeURIComponent(sess.session_id)
-                               + "&cwd=" + encodeURIComponent(projPath || currentCwd));
+                               + "&cwd=" + encodeURIComponent(projPath || currentCwd)
+                               + worktreeQuery(sess.worktree));
         items = exchanges(data.events ?? []);
       } catch (err) {
         return;   // best-effort chrome; never interrupts the conversation
@@ -779,7 +982,7 @@ function kebabMenu(items) {
 
 /* Read-only view of an old conversation. Goes through renderEvent exactly as
    the live stream does — plan §B-4's "one renderer, two sources". */
-async function replaySession(sessionId, projPath) {
+async function replaySession(sessionId, projPath, worktree) {
   // WHOSE view this replaces, pinned before the fetch and resolved again after
   // it: the user can switch conversations while a transcript is in the air, and
   // rendering it into whatever is on screen then would hand one conversation
@@ -788,13 +991,14 @@ async function replaySession(sessionId, projPath) {
   let data;
   try {
     data = await api("/api/session?id=" + encodeURIComponent(sessionId)
-                     + "&cwd=" + encodeURIComponent(projPath || currentCwd));
+                     + "&cwd=" + encodeURIComponent(projPath || currentCwd)
+                     + worktreeQuery(worktree));
   } catch (err) {
     bubble("error", FA.sendFailed);
     return;
   }
   renderInto(tab, data.events);
-  showReplayBanner(sessionId, projPath);
+  showReplayBanner(sessionId, projPath, worktree);
 }
 
 /* An old transcript, into the tab it was asked for. Nothing here paints window
@@ -821,33 +1025,50 @@ function renderInto(tab, events, resumedNote = false) {
   });
 }
 
-function showReplayBanner(sessionId, projPath) {
-  ui.banner.replaceChildren();
+/* Every column's, not just the focused one's: a replay banner left standing in
+   a column whose conversation has moved on is an offer to resume something the
+   reader is already looking at. */
+function hideBanner() {
+  for (const cell of tabBridge?.cells?.() ?? []) {
+    const banner = cui(cell).banner;
+    if (banner) banner.hidden = true;
+  }
+}
+
+function showReplayBanner(sessionId, projPath, worktree) {
+  // The banner belongs to the column the replay was rendered into, which is
+  // the one the keyboard is in (tabBridge.active() is the focused cell's tab).
+  const banner = cui(focusedRef()).banner;
+  if (!banner) return;
+  banner.replaceChildren();
   const text = document.createElement("span");
   text.setAttribute("dir", "auto");
   text.textContent = FA.replaying;
   const cont = document.createElement("button");
   cont.type = "button";
   cont.textContent = FA.continueSession;
-  cont.addEventListener("click", () => resumeSession(sessionId, projPath));
-  ui.banner.append(text, cont);
-  ui.banner.hidden = false;
+  cont.addEventListener("click", () => resumeSession(sessionId, projPath, worktree));
+  banner.append(text, cont);
+  banner.hidden = false;
 }
 
 /* Resuming is a SPAWN now: the conversation opens in a tab of its own and
    everything already running keeps running. The server answers `adopted: true`
    when that session was live all along, and then there is nothing to resume —
    only a tab to switch to. */
-async function resumeSession(sessionId, projPath) {
+async function resumeSession(sessionId, projPath, worktree) {
   const live = openTabs.find((t) => t.session_id === sessionId)?.tab;
   if (live) {
     await tabBridge?.switchTo(live);
     return;
   }
-  ui.banner.hidden = true;
+  hideBanner();
   let data;
   try {
-    data = await api("/api/session/resume", { session_id: sessionId, path: projPath });
+    // `worktree` carries the session back into the tree it was started in:
+    // --resume + --worktree reuses it rather than making a second one.
+    data = await api("/api/session/resume",
+                     { session_id: sessionId, path: projPath, worktree });
   } catch (err) {
     reportOpenFailure(err);
     return;
@@ -866,7 +1087,8 @@ async function resumeSession(sessionId, projPath) {
   let history;
   try {
     history = await api("/api/session?id=" + encodeURIComponent(sessionId)
-                        + "&cwd=" + encodeURIComponent(projPath || currentCwd));
+                        + "&cwd=" + encodeURIComponent(projPath || currentCwd)
+                        + worktreeQuery(worktree));
   } catch (err) {
     return;   // the session IS resumed; only its backfill failed to arrive
   }
@@ -876,11 +1098,13 @@ async function resumeSession(sessionId, projPath) {
 
 /* «گفتگوی جدید» and the folder picker both land here, and both now OPEN one
    more conversation instead of killing the one that was running. */
-async function switchProject(folder) {
+async function switchProject(folder, worktree) {
   if (!folder) return;
-  if (ui.banner) ui.banner.hidden = true;
+  hideBanner();
   try {
-    const data = await api("/api/project/open", { path: folder });
+    // `worktree: "auto"` asks the server to open this one in a git worktree of
+    // its own and to name it; anything else here is the ordinary new chat.
+    const data = await api("/api/project/open", { path: folder, worktree });
     await tabBridge?.switchTo(data.tab);
     // The new tab's CLI has not said anything yet, so its own scope is empty:
     // seed the folder it was opened in rather than leaving the previous
@@ -898,255 +1122,20 @@ async function switchProject(folder) {
    open. The server answers 409 with `max_tabs`; api() throws with the status in
    its message, which is the same shape agents.js reads a 404 out of. */
 function reportOpenFailure(err) {
-  bubble("error", /-> 409$/.test(err?.message ?? "") ? FA.maxTabs : FA.sendFailed);
-}
-
-/* --- permission dialog (plan §B-5) ---------------------------------------- */
-
-const perm = {
-  dialog: document.getElementById("perm"),
-  form: document.getElementById("perm-form"),
-  tool: document.getElementById("perm-tool"),
-  params: document.getElementById("perm-params"),
-  ask: document.getElementById("perm-ask"),
-  remember: document.getElementById("perm-remember"),
-  title: document.getElementById("perm-title"),
-  text: document.getElementById("perm-body"),
-  source: document.getElementById("perm-source"),
-  allow: document.getElementById("perm-allow"),
-  deny: document.getElementById("perm-deny"),
-  queue: [],
-  current: null,
-};
-
-/* AskUserQuestion travels over the permission pipe but is NOT a permission: the
-   model is asking the user something and the answer rides back in the allow
-   reply's `updatedInput.answers` (server.py ASK_TOOL). So the dialog has two
-   modes, and the difference is not cosmetic — in ask mode there is nothing to
-   "allow", the remember checkbox is meaningless, and dismissing must skip the
-   question rather than refuse a tool call. */
-const ASK_TOOL = "AskUserQuestion";
-
-function askQuestions(req) {
-  const list = req?.tool_name === ASK_TOOL && req.tool_input?.questions;
-  return Array.isArray(list) && list.length ? list : null;
-}
-
-export function showPermission(req) {
-  perm.queue.push(req);
-  if (!perm.current) nextPermission();
-}
-
-function nextPermission() {
-  perm.current = perm.queue.shift() ?? null;
-  if (!perm.current) return;
-
-  /* Optional chaining throughout: spec-test.html carries this markup as a copy,
-     and a missing element must degrade, not take the whole renderer down with
-     it — which is exactly what an unguarded replaceChildren() did once. */
-  const questions = askQuestions(perm.current);
-  paintPermSource(perm.current.tab);
-  perm.dialog.classList.toggle("asking", !!questions);
-  if (perm.title) perm.title.textContent = questions ? FA.askTitle : FA.permTitle;
-  if (perm.text) perm.text.textContent = questions ? FA.askBody : FA.permBody;
-  if (perm.allow) perm.allow.textContent = questions ? FA.askSubmit : FA.permAllow;
-  if (perm.deny) perm.deny.textContent = questions ? FA.askSkip : FA.permDeny;
-
-  if (questions) {
-    perm.tool?.replaceChildren();
-    perm.params?.replaceChildren();
-    perm.ask?.replaceChildren(renderQuestions(questions));
-  } else {
-    perm.ask?.replaceChildren();
-    perm.tool?.replaceChildren(label(perm.current.tool_name ?? "?", "mono"));
-    renderParams(perm.current.tool_name, perm.current.tool_input ?? {});
-  }
-  if (perm.remember) perm.remember.checked = false;
-  if (!perm.dialog.open) perm.dialog.showModal();
-  // A permission defaults to the safe answer (deny). A question has no unsafe
-  // answer, so focus goes to the first option instead of to Skip.
-  (questions ? perm.ask?.querySelector("input") : perm.deny)?.focus();
-}
-
-/* ONE dialog serves every open conversation, so when the asking one is not the
-   one on screen it has to say WHICH — «اجازه بده» to a tool you cannot see
-   running, in a project you are not looking at, is exactly the consent this
-   window exists to make legible. Silent for the visible tab: naming the
-   conversation you are already reading is noise. */
-function paintPermSource(tab) {
-  if (!perm.source) return;
-  // `openActive` is empty until /api/tabs has answered — before that this
-  // window does not know which conversation it is showing, and guessing
-  // "another one" would be a false alarm on the very first request.
-  const other = !!tab && !!openActive && tab !== openActive;
-  perm.source.hidden = !other;
-  if (!other) return;
-  // A tab that spawned a moment ago may not be in the list yet. It is still not
-  // the one on screen, and saying so unnamed beats saying nothing at all.
-  const entry = openTabs.find((t) => t.tab === tab);
-  const name = document.createElement("bdi");
-  name.setAttribute("dir", "auto");   // the user's own words, either script
-  name.textContent = entry ? tabTitle(entry) : FA.tabFresh;
-  perm.source.replaceChildren(document.createTextNode(FA.permOtherSession + " "), name);
-  if (entry?.cwd) perm.source.append(projectChip(entry.cwd));
-}
-
-/* Built from the tool's own payload, so a question the model invents at runtime
-   renders without any list here to keep in sync. Radio for a single choice,
-   checkbox for multiSelect — the native controls carry keyboard support, group
-   semantics and the checked state for free. */
-function renderQuestions(questions) {
-  const frag = document.createDocumentFragment();
-  questions.forEach((q, index) => {
-    const set = document.createElement("fieldset");
-    set.className = "ask-q";
-    set.dataset.question = q.question ?? "";
-
-    /* The prose — header, question, and each option below — goes through
-       render.js's builders, which are the ONE implementation of the BiDi
-       contract for this tool. This is the place the user has to READ the
-       question to answer it, and as textContent an inline `code` span kept its
-       backticks and its neutral characters («/price-photo/») reordered against
-       the Persian around them: the scrambled question that was reported. This
-       file keeps the chrome — the fieldset, the inputs, the free-text box. */
-    if (q.header) {
-      set.append(questionProse(document.createElement("legend"), q.header));
-    }
-    const text = document.createElement("p");
-    text.className = "ask-text";
-    set.append(questionProse(text, q.question));
-    if (q.multiSelect) set.append(label(FA.askMulti, "ask-hint"));
-
-    for (const option of q.options ?? []) {
-      const row = document.createElement("label");
-      row.className = "ask-opt";
-      const box = document.createElement("input");
-      box.type = q.multiSelect ? "checkbox" : "radio";
-      box.name = "ask-" + index;
-      // The RAW label, never the rendered one: this value is the wire format
-      // the CLI matches the answer against (wiki/permission-transport.md).
-      box.value = option.label ?? "";
-      row.append(box);
-      const stack = document.createElement("span");
-      stack.className = "ask-opt-text";
-      row.append(questionOption(stack, option, "ask-label", "ask-desc"));
-      set.append(row);
-    }
-
-    /* The tool always offers a free-text answer, so the dialog must too —
-       otherwise a question whose real answer is none of the options can only be
-       skipped. Typing here does not clear the boxes: the CLI accepts both. */
-    const other = document.createElement("label");
-    other.className = "ask-other";
-    other.append(label(FA.askOther, "ask-label"));
-    const field = document.createElement("input");
-    field.type = "text";
-    field.className = "ask-free";
-    field.setAttribute("dir", "auto");
-    field.placeholder = FA.askOtherPlaceholder;
-    other.append(field);
-    set.append(other);
-
-    frag.append(set);
-  });
-  return frag;
-}
-
-/* Keyed by the question TEXT and valued with option labels — the CLI's own
-   validator reads it that way (measured; wiki/permission-transport.md). A
-   multiSelect answer may be an array, a single choice must be a string. */
-function collectAnswers() {
-  const answers = {};
-  for (const set of perm.ask.querySelectorAll(".ask-q")) {
-    const key = set.dataset.question;
-    if (!key) continue;
-    const picked = [...set.querySelectorAll("input:checked")].map((i) => i.value);
-    const free = set.querySelector(".ask-free")?.value.trim();
-    if (free) picked.push(free);
-    if (!picked.length) continue;
-    const multi = set.querySelector('input[type="checkbox"]');
-    answers[key] = multi ? picked : picked[0];
-  }
-  return answers;
-}
-
-/* The dialog and the tool card render parameters with the SAME function
-   (render.js). They used to differ, and the dialog's version forced every
-   string LTR through pathEl — so a Persian Write.content or Edit.new_string
-   was unreadable exactly at the moment of consent. Spec rule 8. */
-function renderParams(toolName, toolInput) {
-  if (!Object.keys(toolInput ?? {}).length) {
-    perm.params?.replaceChildren("—");
-    return;
-  }
-  // renderToolDetail, not renderParamRows: an Edit shows as a real diff here
-  // too. This is the moment of consent — making the reader diff old_string
-  // against new_string by eye is the worst possible place to do it.
-  perm.params?.replaceChildren(renderToolDetail(toolName, toolInput));
-}
-
-async function resolvePermission(decision) {
-  const req = perm.current;
-  const asking = !!askQuestions(req);
-  // Read the form before anything closes or the queue moves on.
-  const answers = asking && decision === "allow" && perm.ask ? collectAnswers() : {};
-  perm.current = null;
-  if (perm.dialog.open) perm.dialog.close();
-  if (!req) return;
-
-  try {
-    await fetch("/api/permission/respond?t=" + encodeURIComponent(token), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        // Skipping a question is still an "allow" with an empty answer set —
-        // the CLI reads that as "the user did not answer", where a deny would
-        // reach the model as a tool failure.
-        request_id: req.request_id,
-        decision: asking ? "allow" : decision,
-        remember: !asking && perm.remember.checked,
-        tool_name: req.tool_name,
-        ...(asking ? { answers } : {}),
-      }),
-    });
-  } catch (err) {
-    console.error("permission respond failed", err);
-  }
-  nextPermission();
-}
-
-/* Requests that can no longer be answered: they leave the queue, and the dialog
-   goes with them if it was the one asking. */
-function dropPermissions(match) {
-  perm.queue = perm.queue.filter((req) => !match(req));
-  if (perm.current && match(perm.current)) {
-    perm.current = null;
-    if (perm.dialog?.open) perm.dialog.close();
-    nextPermission();
-  }
-}
-
-/* The server resolved it without us (timeout, or another window answered). */
-export function dismissPermission(requestId) {
-  dropPermissions((req) => req.request_id === requestId);
-}
-
-/* That conversation is gone (app.js dropTab, off a tagged `wrapper/closed`).
-   The server denies whatever was pending before it drops the tab, so the
-   resolved event normally clears these first — this is the belt for the race
-   where it does not, because a dialog still asking on behalf of a dead CLI can
-   only be answered into nothing. */
-export function dismissTabPermissions(tab) {
-  if (tab) dropPermissions((req) => req.tab === tab);
+  const message = err?.message ?? "";
+  // 400 reaches here from one place only: a worktree was asked for in a folder
+  // that is not a git repository (server.py resolve_worktree).
+  if (/-> 400$/.test(message)) return void bubble("error", FA.notGitRepo);
+  bubble("error", /-> 409$/.test(message) ? FA.maxTabs : FA.sendFailed);
 }
 
 /* --- init ------------------------------------------------------------------ */
 
 /* Every side effect this module used to run at load time. app.js calls it once,
-   in the same order the single-file version ran in. */
+   in the same order the single-file version ran in. The WINDOW half only — the
+   per-column half is initCellChrome() below, which app.js runs once per cell
+   (and again for a cell `/split 4` adds). */
 export function initChrome() {
-  if (ui.home) new MutationObserver(syncHome).observe(log, { childList: true });
-
   if (ui.projects) {
     document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
@@ -1156,72 +1145,58 @@ export function initChrome() {
     document.getElementById("btn-help").href =
       "/static/help.html?t=" + encodeURIComponent(token);
 
-    ui.home.hidden = false;   // visibility is class-driven from here on
     ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
 
-    /* Home action cards. Every one of them presses a control that already
-       exists — no second implementation to keep in sync, and a card whose
-       control is missing simply never fires. Same idiom as the composer's
-       lifecycle verbs. */
-    cardText("home-resume", FA.homeResume)
-      ?.addEventListener("click", () => {
-        if (lastSession) resumeSession(lastSession.id, lastSession.path);
-      });
-    cardText("home-open", FA.homeOpen, FA.homeOpenNote)
-      ?.addEventListener("click", () => ui.projChip.click());
-    cardText("home-explain", FA.homeExplain, FA.homeExplainNote)
-      ?.addEventListener("click", () => {
-        // The card's own label goes into the composer verbatim, so the user
-        // sees exactly what is about to be sent — no hidden prompt.
-        const input = document.getElementById("input");
-        input.value = FA.homeExplain;
-        document.getElementById("composer").requestSubmit();
-      });
-    cardText("home-help", FA.homeHelp, FA.homeHelpNote)
-      ?.addEventListener("click", () => document.getElementById("btn-help").click());
-    ui.projChip.addEventListener("click", async () => {
-      // Blocks in a child process while the native dialog is up.
-      try {
-        const { path } = await api("/api/project/pick", {});
-        if (path) await switchProject(path);
-      } catch (err) {
-        bubble("error", FA.sendFailed);
-      }
-    });
-
     loadProjects();
-    syncHome();
   }
+}
 
-  if (perm.dialog) {
-    // Title, body and both button labels are set per request instead: they
-    // differ between an approval and a question (nextPermission).
-    document.getElementById("perm-remember-label").textContent = FA.permRemember;
+/* The per-column half, run once per cell as app.js stamps it. Everything here
+   is cell-local, which is why it cannot live in initChrome(): there are N of
+   each, and a `document.querySelector` would have found column 1 every time. */
+export function initCellChrome(cell) {
+  const u = cui(cell);
+  if (!u.home) return;      // spec-test.html carries no home markup
+  new MutationObserver(() => syncHome(cell)).observe(cell.log, { childList: true });
+  u.home.hidden = false;    // visibility is class-driven from here on
 
-    // Escape / backdrop dismissal must resolve as deny. Closing a window is not
-    // consent, and leaving it unanswered would block the CLI until the timeout.
-    // In ask mode resolvePermission turns that same deny into a skip.
-    perm.dialog.addEventListener("cancel", (e) => {
-      e.preventDefault();
-      resolvePermission("deny");
+  /* Home action cards. Every one of them presses a control that already
+     exists — no second implementation to keep in sync, and a card whose
+     control is missing simply never fires. Same idiom as the composer's
+     lifecycle verbs. Each card presses THIS column's control: the folder chip
+     and the composer it submits are the ones beside it, not cell 1's. */
+  cardText(cell, "home-resume", FA.homeResume)
+    ?.addEventListener("click", () => {
+      if (lastSession) resumeSession(lastSession.id, lastSession.path);
     });
-
-    perm.form.addEventListener("submit", (e) => {
-      // <form method="dialog"> closes natively; capture which button was used.
-      resolvePermission(e.submitter?.value === "allow" ? "allow" : "deny");
+  cardText(cell, "home-open", FA.homeOpen, FA.homeOpenNote)
+    ?.addEventListener("click", () => u.projChip.click());
+  cardText(cell, "home-explain", FA.homeExplain, FA.homeExplainNote)
+    ?.addEventListener("click", () => {
+      // The card's own label goes into the composer verbatim, so the user
+      // sees exactly what is about to be sent — no hidden prompt.
+      cell.composer.input.value = FA.homeExplain;
+      cell.root.querySelector(".composer").requestSubmit();
     });
+  cardText(cell, "home-help", FA.homeHelp, FA.homeHelpNote)
+    ?.addEventListener("click", () => document.getElementById("btn-help").click());
 
-    // Enter inside the question area ANSWERS, never skips. Implicit form
-    // submission "clicks" the form's default button — the tree-first submit
-    // button, which is #perm-deny — so typing a free-text answer (or picking a
-    // radio, where focus starts) and pressing Enter submitted the skip: the
-    // CLI reported "the user did not answer" with the form fully filled in
-    // (reported 2026-08-31). Only ask mode populates #perm-ask, so a plain
-    // permission never reaches this handler.
-    perm.ask?.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      resolvePermission("allow");
-    });
-  }
+  u.projChip?.addEventListener("click", async () => {
+    // Blocks in a child process while the native dialog is up.
+    try {
+      const { path } = await api("/api/project/pick", {});
+      if (path) await switchProject(path);
+    } catch (err) {
+      bubble("error", FA.sendFailed);
+    }
+  });
+
+  syncHome(cell);
+}
+
+/* `/split 1|2|4` and the window bar's segmented control (js/app.js owns the
+   grid, because it owns the cells). This is the one-way bridge js/composer.js
+   already uses for switchToTab — it cannot import the entry module. */
+export function splitView(n) {
+  return tabBridge?.split?.(n) ?? false;
 }

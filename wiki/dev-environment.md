@@ -71,6 +71,14 @@ Four more, all measured 2026-08-06 during the §4/§5 acceptance pass:
    off the screenshot and clicking it lands ~300 px away — silently, on the modal backdrop, with
    no error. Always take the target from `getBoundingClientRect()` via `javascript_tool` and click
    that. This burned one paid turn.
+   **Re-measured 2026-09-07 and the direction is the opposite of the line above**: a click at
+   screenshot (660, 115) landed at `clientX/Y` (524, 91), i.e. the `computer` tool takes
+   screenshot-space coordinates and scales them. The safe rule is unchanged — never translate by
+   hand; read the rect in JS and dispatch `click()` from JS, or click the screenshot pixel you
+   actually see. Also: `resize_window` reports success but does not resize a maximized window (it
+   applied once, late, then never again). For narrow-viewport measurements, load the page in a
+   same-origin `<iframe>` of the wanted CSS size via `javascript_tool` instead — that is how the
+   1000×700 / 1242×622 grid defects of MA3-T4 were measured.
 6. **The permission dialog self-destructs in 110 s** (`PERMISSION_TIMEOUT`, server.py). Every
    screenshot round-trip costs 5–30 s, so open→look→click→look blows the budget and the broker
    auto-denies; the client then closes the dialog without ever calling `resolvePermission`, so
@@ -84,6 +92,19 @@ Four more, all measured 2026-08-06 during the §4/§5 acceptance pass:
 8. **`javascript_tool` refuses to return anything that looks like a token or a query string** —
    `[BLOCKED: Cookie/query string data]`. Returning the log's `textContent` trips it. Return shapes
    and computed styles, not raw page text.
+
+9. **Never stop reading the server's stdout** (measured 2026-09-08, cost most of a browser pass).
+   `BaseHTTPRequestHandler` logs EVERY request, so a boot harness that does
+   `for line in proc.stdout: ... break` on the URL and then leaves the pipe alone will wedge the
+   server the moment ~64 KB of log fills the pipe buffer: the server blocks inside `write()`,
+   **burns zero CPU**, and stops answering every request. One page reload's burst of static-file
+   requests is enough. From the browser this is indistinguishable from a frozen renderer —
+   `Runtime.evaluate` and `Page.captureScreenshot` both time out, and a naive read of it is
+   "the app hangs with 4 cells open". The tell is that Chrome's CPU is flat AND `curl /api/tabs`
+   from outside also times out; a live server answers that in ~1.5 ms. Drain the pipe in a thread
+   for the life of the run:
+   `threading.Thread(target=lambda: [None for _ in proc.stdout], daemon=True).start()`.
+   `test_layout.py` and `run_spec_test.py` get away without it only because their runs are short.
 
 ## First author PC (`ladyg`) — historical, probed 2026-08-04
 
