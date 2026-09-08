@@ -113,6 +113,11 @@ SH = SHELL[EDITION]
 # its own visible split control brings with it.
 CHECKS = 19 + (2 if EDITION == "web" else 0)
 
+# MA5: what the two extra page loads at the foot of main() assert about the
+# layout coming back after a reload. Their own loads, not the size loop's: a
+# restore happens ONCE per page load, which is the whole point of the flag.
+LAYOUT_CHECKS = 6 + (1 if EDITION == "web" else 0)
+
 # ...and what it asserts only where four columns can hold their own chrome at
 # all: every descendant inside its own column, in three states, plus the empty
 # column's digit badge and the transcript's share of its column.
@@ -242,9 +247,61 @@ async function stream(tab, n) {
   return {paints, copied};
 }
 
+/* --- MA5: the layout across a reload -----------------------------------------
+   sessionStorage is per page load out here (measure() gives every load a fresh
+   browser profile), so each case IS a page load: `restore` is a window coming
+   back to a saved 4-way split, `fresh` is one with nothing saved - and then, on
+   that same load, the reconnect that must not put a layout back a second
+   time. */
+const CASE = new URLSearchParams(location.search).get("case") || "";
+
+function shot() {
+  return {split: document.getElementById("grid").dataset.split,
+          cells: APP.cells.map((c) => c.tab),
+          blank: APP.cells.map((c) => !!c.root.querySelector("textarea.input")?.disabled),
+          seg: [...(document.getElementById("split-seg")?.children ?? [])]
+                 .filter((b) => b.getAttribute("aria-pressed") === "true")
+                 .map((b) => b.dataset.split)};
+}
+
+async function layoutCase(which) {
+  if (which === "restore") {
+    // Four columns, three conversations in them, one of which the server does
+    // not list any more - and none of them in the column today's auto-pick
+    // would have used.
+    sessionStorage.setItem("pcg.layout", JSON.stringify(
+      {split: 4, cells: ["t2", "t-gone", "t4", "t1"]}));
+    APP.applyTabs({tabs: TABS, active: "t1"});
+    await sleep(300);
+    return {restored: shot()};
+  }
+  sessionStorage.removeItem("pcg.layout");
+  APP.applyTabs({tabs: TABS, active: "t1"});
+  await sleep(300);
+  const fresh = shot();
+  // A reconnect, after the user has closed every conversation, with a layout
+  // saved in between: restoring here would resurrect what they just closed.
+  for (let i = 0; i < 8 && APP.cells.some((c) => c.tab); i++) {
+    for (const c of APP.cells) if (c.tab) await APP.closeTab(c.tab);
+    await sleep(80);
+  }
+  const emptied = APP.cells.map((c) => c.tab);
+  sessionStorage.setItem("pcg.layout", JSON.stringify(
+    {split: 4, cells: ["t1", "t2", "t3", "t4"]}));
+  APP.applyTabs({tabs: TABS, active: "t1"});
+  await sleep(300);
+  return {fresh, emptied, again: shot()};
+}
+
 (async () => {
  const out = {};
  try {
+  if (CASE) {
+    out.layout = await layoutCase(CASE);
+    document.getElementById("probe-out").textContent =
+      "PROBE" + JSON.stringify(out) + "ENDPROBE";
+    return;
+  }
   /* --- four EMPTY columns --------------------------------------------------
      Measured before anything is placed, because the welcome box is content a
      column cannot scroll away: `.log` is a scroller and contributes nothing to
@@ -659,6 +716,42 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 "deltas - the per-frame coalescing is gone")
 
 
+def check_layout(restore: dict, fresh: dict, bad: list[str]) -> None:
+    """MA5: the grid a window had before a reload, and the two ways it must NOT
+    come back - nothing saved, and a reconnect on a load that already restored.
+    """
+    say = lambda msg: bad.append("layout: " + msg)   # noqa: E731
+
+    got = restore["restored"]
+    if got["split"] != "4" or len(got["cells"]) != 4:
+        say(f"a saved 4-way split came back as data-split={got['split']!r} with "
+            f"{len(got['cells'])} cells")
+    # Positional, and the tab the server no longer lists is dropped in place -
+    # today's auto-pick would have put t1 in cell 1 and nothing anywhere else.
+    if got["cells"] != ["t2", "", "t4", "t1"]:
+        say(f"the restored columns hold {got['cells']}, not "
+            "['t2', '', 't4', 't1'] - the map is positional and a dead tab "
+            "leaves its own column blank")
+    if got["blank"] != [False, True, False, False]:
+        say(f"the message box of each restored column is disabled={got['blank']} "
+            "- the column left blank by a dead tab has nothing to send to")
+    if EDITION == "web" and got["seg"] != ["4"]:
+        say(f"the split control reads {got['seg']} after a restore, not «4» - "
+            "paintSplitControl runs inside setSplit and should need no line")
+
+    if fresh["fresh"]["split"] != "1" or fresh["fresh"]["cells"] != ["t1"]:
+        say(f"with nothing saved the window booted to split "
+            f"{fresh['fresh']['split']!r} with {fresh['fresh']['cells']} - it "
+            "must be byte-identical to the behaviour before this bead")
+    if any(fresh["emptied"]):
+        say(f"the conversations did not all close: {fresh['emptied']}")
+    if fresh["again"]["split"] != "1" or fresh["again"]["cells"] != ["t1"]:
+        say(f"a second applyTabs on the same page load restored split "
+            f"{fresh['again']['split']!r} with {fresh['again']['cells']} - a "
+            "reconnect after the user closed everything must not resurrect a "
+            "stale layout")
+
+
 def boot() -> tuple[subprocess.Popen, str, str]:
     """One server, and the URL it is answering on."""
     proc = subprocess.Popen(
@@ -724,6 +817,35 @@ def main() -> int:
                               for name, v in (("1 cell:", p["one"]),
                                               ("4 cells, focused:", p["four"]),
                                               ("4 cells, other:", p["other"]))))
+        # MA5: the layout across a reload. Two more page loads, one server -
+        # each case needs a page that has NOT restored yet, and the flag that
+        # guarantees that is per page load. Same probe file, driven by ?case=.
+        try:
+            proc, base, token = boot()
+        except Exception as err:                      # noqa: BLE001
+            bad.append(f"layout: {err}")
+        else:
+            stop = threading.Event()
+            threading.Thread(target=hold_sse, args=(base, token, stop),
+                             daemon=True).start()
+            try:
+                pages = {}
+                for case in ("restore", "fresh"):
+                    m = measure(edge, f"{base}/static/{PROBE.name}?t={token}"
+                                      f"&case={case}", 1280, 800)
+                    pages[case] = m["layout"]
+                check_layout(pages["restore"], pages["fresh"], bad)
+                checks += LAYOUT_CHECKS
+                print("  layout: restored "
+                      f"{pages['restore']['restored']['cells']} at split "
+                      f"{pages['restore']['restored']['split']}, a fresh window "
+                      f"{pages['fresh']['fresh']['cells']}, a reconnect "
+                      f"{pages['fresh']['again']['cells']}")
+            except Exception as err:                  # noqa: BLE001
+                bad.append(f"layout: {err}")
+            finally:
+                stop.set()
+                proc.terminate()
     finally:
         PROBE.unlink(missing_ok=True)
 

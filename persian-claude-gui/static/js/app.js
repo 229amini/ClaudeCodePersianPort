@@ -48,7 +48,7 @@ import {
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
-  setChrome, refreshProjects,
+  setChrome, refreshProjects, backfillTab,
 } from "./chrome.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
 import { makeComposer } from "./composer.js";
@@ -199,6 +199,7 @@ export function setSplit(n) {
     cell.composer.setBlank(true);
   }
   grid.dataset.split = String(want);
+  saveLayout();
   paintSplitControl(want);
   if (focused >= cells.length) focused = cells.length - 1;
   applyFocus({ focusInput: false });
@@ -411,6 +412,7 @@ function park(cell) {
   const tab = cell.tab;
   const entry = tab && tabs.get(tab);
   cell.tab = "";
+  saveLayout();
   if (!entry) return;
   // Read BEFORE the move: an emptied log reports scrollTop 0, so the other
   // order silently sends every returning tab back to the top.
@@ -474,6 +476,7 @@ function placeIn(cell, tab) {
   entry.scope.tab = tab;
   cell.tab = tab;
   cell.blankScope = null;
+  saveLayout();
 
   // The restore reads and writes THIS conversation's scope, whether or not the
   // keyboard is in this column -- which is what withRenderTarget is for. The
@@ -504,6 +507,13 @@ function placeIn(cell, tab) {
   // A conversation is on screen again: there is somewhere for a message to go.
   cell.composer.setBlank(false);
   paintTabs();
+  /* A conversation whose rows this window has never seen. The hub replays only
+     what it published, and a resumed session's transcript was fetched by the
+     client and published nowhere -- so a reloaded window opens on an empty
+     column with the greeting over it (pcg-1ug). Here, at the one point every
+     placement routes through, and only for a column that has nothing to show:
+     chrome.js backfillTab decides the rest. */
+  if (wantsTransport && !cell.log.childElementCount) backfillTab(tab);
   refreshProjects();
 }
 
@@ -652,6 +662,65 @@ async function loadTabs() {
   applyTabs(data);
 }
 
+/* --- the layout survives a reload (pcg-6nf.8) --------------------------------
+
+   How many columns are on screen, and which conversation is in each one, is a
+   fact about THIS WINDOW: the server has no cell index and no split count, and
+   giving it one would make it the owner of something it cannot see. So the
+   layout is remembered here, in sessionStorage rather than localStorage -- the
+   server binds a random free port every run, so the page origin differs run to
+   run and neither store survives a relaunch, but localStorage would leave one
+   dead entry per port behind forever while sessionStorage cleans itself up when
+   the window closes. The scope is therefore exactly what was asked for: across
+   a RELOAD, not across a relaunch.
+
+   This is the first and only client-side persistence in this project. Keep it
+   that way: one key, one shape, and a try/catch around both ends because a
+   window with site data blocked must still boot. */
+const LAYOUT_KEY = "pcg.layout";
+
+function saveLayout() {
+  try {
+    sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(
+      { split: cells.length, cells: cells.map((one) => one.tab || "") }));
+  } catch (err) {
+    // No store, no memory of the layout. Everything else still works.
+  }
+}
+
+/* ONCE per page load, and it says how many conversations it actually put back.
+   applyTabs() runs on every reconnect too, and a reconnect after the user has
+   closed everything must not resurrect the layout they left behind; zero
+   placed means the caller's own pick runs, exactly as it does today. */
+let layoutRestored = false;
+
+function restoreLayout(alive) {
+  if (layoutRestored) return 0;
+  layoutRestored = true;
+  let saved;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(LAYOUT_KEY) || "null");
+  } catch (err) {
+    return 0;            // absent, or something else wrote over the key
+  }
+  if (!saved || !Array.isArray(saved.cells)) return 0;
+  setSplit(saved.split);
+  let placed = 0;
+  for (const [at, tab] of saved.cells.entries()) {
+    // POSITIONAL: cell 2 gets what was in cell 2. A conversation the server no
+    // longer lists is dropped silently and its column stays blank rather than
+    // the layout shuffling up around the hole.
+    if (!tab || !alive.has(tab) || !cells[at] || cellOf(tab)) continue;
+    placeIn(cells[at], tab);
+    placed += 1;
+  }
+  // Including the column this window booted with: nothing to send TO, so the
+  // box says so rather than 404ing on submit (setSplit does this for the
+  // columns it adds; a hole in a restored layout is the same state).
+  for (const one of cells) if (!one.tab) one.composer.setBlank(true);
+  return placed;
+}
+
 /* THE SNAPSHOT ADDS, IT NEVER DELETES. A GET served mid-spawn answers without
    the tab that is being spawned, so pruning on it dropped the entry holding
    that conversation's buffered `wrapper/init_info` — the slash commands and the
@@ -671,7 +740,10 @@ export function applyTabs(data) {
   // tab, and this is the moment one of them becomes the visible conversation.
   // With a conversation already on screen the snapshot's `active` is a second
   // opinion about a question this window has answered more recently.
-  if (!focusedTab()) {
+  // ...and it is also where the layout this window had before a reload is
+  // put back (restoreLayout above). It answers 0 when there is nothing
+  // saved or nothing left of it, and then this branch runs unchanged.
+  if (!focusedTab() && !restoreLayout(alive)) {
     const free = tabList.map((t) => t.tab).filter((one) => !cellOf(one));
     // Showing what the server already calls active needs no POST; picking a
     // different one does, or this window would send into another conversation.

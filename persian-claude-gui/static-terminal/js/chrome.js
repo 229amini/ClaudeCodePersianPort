@@ -1124,6 +1124,53 @@ function renderInto(tab, events, resumedNote = false) {
   });
 }
 
+/* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT (pcg-1ug).
+
+   A conversation's rows have two sources and only one of them survives a
+   reload. Live events are published to the hub, which replays its whole
+   per-tab backlog to a fresh window; a resumed session's history is fetched
+   HERE (renderInto above) and published nowhere, and the resumed CLI never
+   re-emits it either — that fetch is why this function exists at all. So a
+   window reloaded onto a resumed conversation subscribed, got the status line
+   and the usage and nothing that draws a message row, and showed the greeting
+   over a transcript sitting on disk.
+
+   Fetching it again is the whole fix, and it belongs at the one moment a tab
+   is put on screen (app.js placeIn) rather than in any caller: boot, `/split`,
+   a switch and the sidebar all route through that point, and the already-open
+   short-circuit in resumeSession() below is correct as it stands.
+
+   Best-effort chrome the user did not ask for: a fetch that fails, or a
+   conversation with nothing said in it yet, leaves the column showing exactly
+   what it shows today. */
+const backfilled = new Set();
+
+/* ONCE per tab per page load. Parking and replacing a tab calls placeIn()
+   again and again, and re-fetching a transcript this window already has would
+   clear the live rows that arrived since. */
+export function backfillTab(tab) {
+  const entry = openTabEntry(tab);
+  if (!entry?.session_id || backfilled.has(tab)) return;
+  backfilled.add(tab);
+  (async () => {
+    let history;
+    try {
+      history = await api("/api/session?id=" + encodeURIComponent(entry.session_id)
+                          + "&cwd=" + encodeURIComponent(entry.cwd || "")
+                          + worktreeQuery(entry.worktree));
+    } catch (err) {
+      return;
+    }
+    if (!history.events?.length) return;
+    // resumedNote false: the reader was already looking at this conversation,
+    // so «گفتگو از سر گرفته شد» on every reload would be a lie about what just
+    // happened. renderInTab (through renderInto) resolves the destination
+    // AFTER the await, so a tab parked or closed while this was in the air
+    // paints into its own buffer, or into nothing.
+    renderInto(tab, history.events);
+  })();
+}
+
 function showReplayBanner(sessionId, projPath, worktree) {
   // The banner belongs to the column the replay was rendered into, which is
   // the one the keyboard is in (tabBridge.active() is the focused cell's tab).
