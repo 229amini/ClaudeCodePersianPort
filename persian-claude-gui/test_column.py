@@ -23,7 +23,11 @@ built from the real file — and asks the questions v2.2 is answerable for:
     the pasted text rather than the placeholder;
   - `!` output replayed out of a transcript is the same shell card the live
     wrapper/shell event draws, not `<bash-input>` markup in the user's bubble
-    (E4/F6).
+    (E4/F6);
+  - the user's own turn is the TUI's `>` prompt echo and not a chat bubble (T1):
+    no fill, dimmed, the composer's own mirrored prompt mark standing in the ⏺'s
+    gutter — measured live AND replayed, since the reload backfill re-renders
+    one on every reload.
 
 Free: no CLI turn, no login. The probe page is deleted again on the way out.
 
@@ -236,6 +240,52 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   out.replayBubble = (userRow?.textContent ?? "").trim();
   out.replayRawTags = log.textContent.includes("<bash-");
 
+  /* --- the user row is the TUI's `>` echo, not a bubble (T1) ---------------
+     BOTH paths, deliberately. The live row arrives as `wrapper/user_echo`; the
+     replayed one as a `user` text event out of /api/session — and the reload
+     backfill re-renders one on every reload, so a shape that only holds live is
+     a defect this project has shipped before (wiki/frontend-modules.md, "A
+     reload RE-RENDERS every finished turn"). The uuid on the live echo is what
+     makes the queued row below possible too: a second send while the first is
+     still outstanding parks in the strip instead of the transcript.
+
+     Everything read here is computed style or geometry. A pill, a colour and a
+     gutter are all invisible to textContent (wiki/rtl-rendering-notes.md). */
+  const rowShape = (el) => {
+    const cs = getComputedStyle(el);
+    const pb = getComputedStyle(el, "::before");
+    const r = el.getBoundingClientRect();
+    return {
+      bg: cs.backgroundColor, radius: cs.borderTopLeftRadius, color: cs.color,
+      padBlock: Math.round(parseFloat(cs.paddingTop)),
+      padInline: Math.round(parseFloat(cs.paddingLeft)),
+      markFill: pb.backgroundColor,
+      mask: pb.maskImage || pb.webkitMaskImage || "none",
+      // The pseudo-element has no box to query, so its centre is computed from
+      // the edge it is pinned to and its own width — geometry, not text.
+      markX: Math.round(r.right - parseFloat(pb.right) - parseFloat(pb.width) / 2),
+    };
+  };
+  const said = "\u0627\u06cc\u0646 \u0641\u0627\u06cc\u0644 \u0631\u0627 \u0628\u062e\u0648\u0627\u0646";
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       uuid: "t1-live", text: said });
+  window.renderEvent({ type: "user",
+                       message: { content: [{ type: "text", text: said }] } });
+  await sleep(40);
+  const rows = [...log.querySelectorAll(".msg.user")].slice(-2);
+  out.liveShape = rows[0] ? rowShape(rows[0]) : null;
+  out.replayShape = rows[1] ? rowShape(rows[1]) : null;
+  out.assistantMarkX = rowShape(bubbles[0]).markX;
+  out.assistantColor = getComputedStyle(bubbles[0]).color;
+
+  // Guard, not a change: the queue strip is already dim and unfilled, and this
+  // pass must not drag it into the pill the transcript row just gave up.
+  window.renderEvent({ type: "wrapper", subtype: "user_echo",
+                       uuid: "t1-queued", text: said });
+  await sleep(20);
+  const qRow = document.querySelector(".queue-strip .queued-row");
+  out.queuedBg = qRow ? getComputedStyle(qRow).backgroundColor : "no row";
+
   document.getElementById("probe-out").textContent =
     "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
@@ -256,6 +306,16 @@ def write_probe() -> None:
         sys.exit("index.html no longer opens with " + marker)
     page = page.replace(marker, '<body class="app" data-render-only>', 1)
     PROBE.write_text(page.replace("</body>", PROBE_JS + "\n</body>", 1), encoding="utf-8")
+
+
+def comp_mark_paths() -> list[str]:
+    """The two `d` values of the composer's `.comp-mark`, read out of the real
+    index.html. Tying the transcript row's mask to THIS is what turns «the
+    product's own mirrored prompt» into an assertion instead of a claim: swap
+    either shape for a glyph that merely looks right and the gate fails."""
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    svg = re.search(r'<svg class="comp-mark".*?</svg>', page, re.S)
+    return re.findall(r'\bd="([^"]+)"', svg.group(0)) if svg else []
 
 
 def checks(m: dict) -> list[tuple[str, bool, str]]:
@@ -369,6 +429,63 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"card \u00ab{m.get('replayShellCmd')}\u00bb / "
           f"bubble \u00ab{m.get('replayBubble')}\u00bb"
           + (" / RAW TAGS IN THE COLUMN" if m.get("replayRawTags") else ""))
+
+    # T1 — the user row is the TUI's `>` echo (V2-PLAN §3.1 row 1). Computed
+    # style and geometry throughout: a fill, a colour and a gutter are all
+    # invisible to textContent, which is how this shipped as a pill for a month.
+    live = m.get("liveShape") or {}
+    replay = m.get("replayShape") or {}
+    clear = ("rgba(0, 0, 0, 0)", "transparent")
+
+    check("the user row wears no pill — no fill, no radius, no bubble padding",
+          live.get("bg") in clear and live.get("radius") == "0px"
+          and live.get("padBlock", 99) <= 2 and live.get("padInline", 99) <= 2,
+          f"bg {live.get('bg')}, radius {live.get('radius')}, padding "
+          f"{live.get('padBlock')}/{live.get('padInline')}")
+
+    check("and it is dimmed, unlike the answer under it",
+          bool(live.get("color")) and live.get("color") != m.get("assistantColor"),
+          f"{live.get('color')} vs assistant {m.get('assistantColor')}")
+
+    paths = comp_mark_paths()
+    flat = (live.get("mask") or "none").replace(" ", "").replace("%20", "")
+    same_mark = bool(paths) and all(d.replace(" ", "") in flat for d in paths)
+    check("its marker is the product's own mirrored prompt, not a new glyph",
+          same_mark,
+          f"{len(paths)} paths from .comp-mark; mask "
+          + ("carries them all" if same_mark else (live.get("mask") or "none")[:80]))
+
+    # Not a computed style, deliberately: on a modern Chromium the prefixed
+    # property is an alias of the unprefixed one, so both read back identically
+    # whichever was declared — the only place the fallback exists is the file.
+    # It matters because a dropped `mask` paints the whole box: a solid muted
+    # rectangle in every user row, on an old Edge and nowhere a gate can see.
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    check("the mask keeps its -webkit- fallback for a pre-120 Chromium",
+          css.count("-webkit-mask: url(\"data:image/svg+xml") == 1,
+          "present" if "-webkit-mask: url(\"data:image/svg+xml" in css else "GONE")
+
+    check("and the marker takes the row's own colour, so the dimming reaches it",
+          live.get("markFill") is not None and live.get("markFill") == live.get("color"),
+          f"mark {live.get('markFill')} vs row {live.get('color')}")
+
+    check("the marker stands in the ⏺'s gutter",
+          live.get("markX") is not None and m.get("assistantMarkX") is not None
+          and abs(live["markX"] - m["assistantMarkX"]) <= 1
+          and abs(live["markX"] - m.get("iconX", -999)) <= 3,
+          f"user at {live.get('markX')}, ⏺ at {m.get('assistantMarkX')}, "
+          f"icon at {m.get('iconX')}")
+
+    # The reload backfill re-renders a user row from /api/session on every
+    # reload, and a replayed turn drifting from a live one is this project's
+    # most repeated defect (wiki/frontend-modules.md).
+    check("a replayed user row is the same row as a live one, to the pixel",
+          bool(live) and live == replay,
+          "identical" if live and live == replay
+          else f"live {live} / replayed {replay}")
+
+    check("and the queue strip still carries no fill of its own",
+          m.get("queuedBg") in clear, str(m.get("queuedBg")))
 
     return out
 

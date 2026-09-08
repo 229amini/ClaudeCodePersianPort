@@ -2479,7 +2479,22 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    from a single cell at 800px, and only one of those is short. */
 @container (max-height: 460px) {
   .composer .composer-hint { display: none; }
-  .statusline { padding-block: 3px 5px; }
+  /* ...and the STATUS LINE, which is the piece that actually ate the column
+     (pcg-6nf.11, measured 2026-09-08 in a 1052x711 window at split 4): a
+     RESUMED session names its model, folder, mode, context, quota, cost,
+     session id AND the machine's own statusLine script all at once, and at
+     ~380px wide that one wrapping row is six to eight lines - 97px to 120px of
+     a ~290px column, which left the transcript 8% of it. Two rows and it
+     scrolls. NOTHING IS HIDDEN, for the same reason the chips above are not:
+     a field the user was reading that silently disappears is worse than one
+     they have to scroll to. `3.2em` is two lines of THIS element's own font
+     (line-height 1.6, and 1em here is already the .74em below), plus its own
+     padding because `* { box-sizing: border-box }`. */
+  .statusline {
+    padding-block: 3px 5px;
+    max-height: calc(3.2em + 8px);
+    overflow-y: auto;
+  }
   .topbar { min-height: 0; padding-block: 6px 2px; }
   /* The prompt may still be several lines; it may no longer eat the transcript
      to be so. js/composer.js autoGrow() writes an inline `height` off the

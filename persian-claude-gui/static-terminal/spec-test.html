@@ -930,6 +930,73 @@ check("an English list still reads left-to-right — the list decides, nothing i
   dirOf(enList) === "ltr" && enList !== faList,
   dirOf(enList) ?? "no list");
 
+/* --- a URL in prose: the trailing `/` (bead pcg-agb) -------------------------
+   Reported 2026-09-07: «https://www.bridgemind.ai/» typed inside a Persian
+   sentence drew as «/https://www.bridgemind.ai» — the slash on the wrong end of
+   its own URL. Rule 2's <bdi> never reached it: marked's gfm autolink turns
+   every bare URL into an <a>, and isolateTechnicalTokens() skips A on the
+   stated grounds that it is "already isolated" — which is true of <bdi> and
+   false of <a>. An anchor is an ordinary inline box (unicode-bidi: normal), so
+   the URL's trailing neutral takes the PARAGRAPH's direction by UAX#9 N2 and is
+   painted on the far side of its own run.
+   Checked on a `user` message, where it was reported — the user's bubble, the
+   model's prose and the AskUserQuestion dialog are one builder (renderMarkdown /
+   fillInline → bidi.js), so one case covers all three.
+   textContent is blind to every part of this: it reads the URL in logical order
+   whichever end the slash is painted at (the "+2 −1" lesson). These assert the
+   isolate and then MEASURE where the slash landed. */
+window.renderEvent({ type: "user", message: { content: [{ type: "text", text:
+  "این آدرس سایت رسمی آن‌ها را باز کن و صفحه‌ی معرفی را برای من بخوان: " +
+  "https://www.bridgemind.ai/\n\n" +
+  "آدرس https://www.bridgemind.ai/ را در همان صفحه‌ی معرفی هم آورده‌اند و " +
+  "بعد از آن توضیح فارسی ادامه دارد.\n\n" +
+  "Open https://www.bridgemind.ai/ and read the whole page, please." }] } });
+const urlBubble = [...specLog.querySelectorAll(".msg.user")].at(-1);
+const urlParas = [...urlBubble.querySelectorAll("p")];
+const urlLinks = [...urlBubble.querySelectorAll("a")];
+
+/* Geometry, because the property that is wrong is never the one being asked
+   about. `charX(el, i)` is the centre of one character of `el`'s own text: the
+   trailing `/` of a correctly isolated LTR URL sits at the RIGHT end of its box,
+   and with no isolate it is reordered out past the left of the whole run. */
+function charX(el, i) {
+  const node = i < 0 ? el.lastChild : el.firstChild;
+  const at = i < 0 ? node.textContent.length - 1 : 0;
+  const range = document.createRange();
+  range.setStart(node, at);
+  range.setEnd(node, at + 1);
+  const r = range.getBoundingClientRect();
+  return r.left + r.width / 2;
+}
+const boxMid = (el) => el.getBoundingClientRect().left +
+  el.getBoundingClientRect().width / 2;
+const urlIsolated = (el) => dirOf(el) === "ltr" &&
+  getComputedStyle(el).unicodeBidi === "isolate";
+const urlDetail = (el) => !el ? "no link" : dirOf(el) + "/" +
+  getComputedStyle(el).unicodeBidi + ", slash at " + Math.round(charX(el, -1)) +
+  " in box " + Math.round(el.getBoundingClientRect().left) + "–" +
+  Math.round(el.getBoundingClientRect().right);
+
+check("rule 2: a URL ending a Persian line keeps its trailing slash at its own end",
+  dirOf(urlParas[0]) === "rtl" && !!urlLinks[0] && urlIsolated(urlLinks[0]) &&
+  charX(urlLinks[0], -1) > boxMid(urlLinks[0]),
+  (dirOf(urlParas[0]) ?? "no p") + " paragraph / " + urlDetail(urlLinks[0]));
+
+check("rule 2: the same URL mid-sentence, Persian on both sides of it",
+  dirOf(urlParas[1]) === "rtl" && !!urlLinks[1] && urlIsolated(urlLinks[1]) &&
+  charX(urlLinks[1], -1) > boxMid(urlLinks[1]),
+  (dirOf(urlParas[1]) ?? "no p") + " paragraph / " + urlDetail(urlLinks[1]));
+
+// The other side, and the assertion that stops anyone "fixing" this with a
+// forced direction: an English line carrying the same URL still reads
+// left-to-right, paragraph and link alike.
+check("a bare URL in an English line still reads left-to-right",
+  dirOf(urlParas[2]) === "ltr" && charX(urlParas[2], 0) < boxMid(urlParas[2]) &&
+  !!urlLinks[2] && charX(urlLinks[2], -1) > boxMid(urlLinks[2]),
+  (dirOf(urlParas[2]) ?? "no p") + " paragraph, first char at " +
+  Math.round(charX(urlParas[2], 0)) + " of " + Math.round(boxMid(urlParas[2])) +
+  " / " + urlDetail(urlLinks[2]));
+
 /* Raw HTML in a message. marked v15 emits html tokens VERBATIM — it dropped its
    sanitizer on purpose — and both halves of this transcript are untrusted text:
    the model writes one, the user pastes the other. A user pasted code
