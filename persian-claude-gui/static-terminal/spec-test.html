@@ -26,25 +26,25 @@
      of the test log. js/app.js reads the attribute. -->
 <body data-render-only>
 
-<main id="log" aria-label="spec tests"></main>
+<main id="log" class="log" aria-label="spec tests"></main>
 
 <!-- Test 6 needs the real composer handler, so the harness carries the real
      composer markup and lets js/composer.js bind to it. -->
-<form id="composer">
+<form id="composer" class="composer">
   <label class="sr-only" for="input">ZWNJ test</label>
-  <textarea id="input" rows="1" dir="auto"
+  <textarea id="input" class="input" rows="1" dir="auto"
             placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
-  <button type="submit" id="send">ارسال</button>
+  <button type="submit" id="send" class="send">ارسال</button>
   <!-- The Esc case routes through the stop button's own click handler, so the
        harness needs the button itself; setBusy() also unhides it. -->
-  <button type="button" id="stop" hidden aria-label="توقف (Esc)">توقف</button>
+  <button type="button" id="stop" class="stop" hidden aria-label="توقف (Esc)">توقف</button>
 </form>
 
-<footer id="statusline"></footer>
+<footer id="statusline" class="statusline"></footer>
 
 <!-- js/composer.js reads this at module-evaluation time; without it the context
      notice silently no-ops, which is also what a broken one looks like. -->
-<div id="context-notice" hidden></div>
+<div id="context-notice" class="context-notice" hidden></div>
 
 <!-- Window chrome the concurrent-conversation cases assert against: a
      background tab's event must leave every one of these alone. js/chrome.js
@@ -55,9 +55,9 @@
      paints it wherever it exists. The rest of the composer row is deliberately
      absent — initControls() binds nothing without #picker. -->
 <div id="harness-chrome">
-  <bdi id="topbar-name"></bdi>
-  <button type="button" id="model-chip" hidden>
-    <span id="model-chip-name" dir="auto"></span>
+  <bdi id="topbar-name" class="topbar-name"></bdi>
+  <button type="button" id="model-chip" class="model-chip" hidden>
+    <span id="model-chip-name" class="model-chip-name" dir="auto"></span>
   </button>
   <!-- The open-conversations group. The rest of the sidebar is deliberately
        absent (#projects stays out, so no fetch is ever fired), but this list is
@@ -71,25 +71,25 @@
      harness needs its markup verbatim from index.html. js/chrome.js reads these
      ids at module-evaluation time; without them showPermission() throws and the
      verdict comes back empty. -->
-<dialog id="perm">
-  <form id="perm-form">
-    <h2 id="perm-title"></h2>
-    <p id="perm-body" dir="auto"></p>
-    <p id="perm-source" class="meta" dir="auto" hidden></p>
-    <div id="perm-tool"></div>
-    <pre id="perm-params"></pre>
-    <div id="perm-ask"></div>
-    <label id="perm-remember-row">
-      <input type="checkbox" id="perm-remember">
-      <span id="perm-remember-label"></span>
+<dialog id="perm" class="perm">
+  <form id="perm-form" class="perm-form">
+    <h2 id="perm-title" class="perm-title"></h2>
+    <p id="perm-body" class="perm-body" dir="auto"></p>
+    <p id="perm-source" class="perm-source meta" dir="auto" hidden></p>
+    <div id="perm-tool" class="perm-tool"></div>
+    <pre id="perm-params" class="perm-params"></pre>
+    <div id="perm-ask" class="perm-ask"></div>
+    <label id="perm-remember-row" class="perm-remember-row">
+      <input type="checkbox" id="perm-remember" class="perm-remember">
+      <span id="perm-remember-label" class="perm-remember-label"></span>
     </label>
-    <p id="perm-proceed" dir="auto"></p>
-    <div id="perm-opts"></div>
-    <textarea id="perm-feedback" rows="1" dir="auto"></textarea>
-    <p id="perm-hint" class="meta" dir="auto"></p>
+    <p id="perm-proceed" class="perm-proceed" dir="auto"></p>
+    <div id="perm-opts" class="perm-opts"></div>
+    <textarea id="perm-feedback" class="perm-feedback" rows="1" dir="auto"></textarea>
+    <p id="perm-hint" class="perm-hint meta" dir="auto"></p>
     <menu>
-      <button type="button" value="deny" class="ghost" id="perm-deny"></button>
-      <button type="button" value="allow" id="perm-allow"></button>
+      <button type="button" value="deny" class="perm-deny ghost" id="perm-deny"></button>
+      <button type="button" value="allow" id="perm-allow" class="perm-allow"></button>
     </menu>
   </form>
 </dialog>
@@ -115,15 +115,17 @@ import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
    import app.js (its body runs last — see the load-order note there), but this
    block runs after every module has evaluated. */
 import {
-  routeEvent, applySwitch, tabs, renderInTab, applyTabs,
+  routeEvent, applySwitch, tabs, renderInTab, applyTabs, cells,
 } from "/static/js/app.js";
 /* The sidebar's open-conversations group: app.js hands chrome.js the list and
    the two verbs, so the harness can stand in for app.js and drive the group
    exactly as the real window does. */
 import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
 /* The posture cycle's "nothing confirmed yet" branch: this is the only way to
-   put controls.js back to a conversation that has not answered. */
-import { restoreControls } from "/static/js/controls.js";
+   put the cell's controls back to a conversation that has not answered. The
+   harness IS the cell (app.js builds it with `root = document`), so it reaches
+   them the way the window does. */
+const controls = cells[0].controls;
 /* The «away» clock the session recap is gated on — a real five minutes, and the
    only way to test it without waiting them out. */
 import { isAway } from "/static/js/composer.js";
@@ -1503,7 +1505,7 @@ window.renderAgents([
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
-const strip = document.getElementById("agents-strip");
+const strip = document.querySelector(".agents-strip");
 const stripRows = [...(strip?.querySelectorAll(".ag-row") ?? [])];
 const stripDesc = stripRows[0]?.querySelector(".ag-desc");
 check("the agents strip isolates a Latin description inside the RTL shell",
@@ -2466,7 +2468,7 @@ check("Shift+Tab inside a text field belongs to the field, not to the posture pi
 // No posture confirmed for this conversation yet: the key is not ours, so it
 // must fall through to the browser's own reverse focus navigation rather than
 // being swallowed into a no-op.
-restoreControls(null);
+controls.restore(null);
 const unowned = pressShiftTab();
 window.fetch = realFetch;
 check("with no posture to cycle, Shift+Tab is left to the browser",
@@ -2568,7 +2570,7 @@ check("the recap waits five minutes of silence before it costs anything",
 input.value = "";
 const qLog = document.createElement("div");
 const qScope = newRenderScope();
-const qStrip = () => document.getElementById("queue-strip");
+const qStrip = () => document.querySelector(".queue-strip");
 const qRows = () => [...(qStrip()?.querySelectorAll(".queued-row") ?? [])];
 /* Every read below is null-tolerant on purpose: with the feature removed the
    strip does not exist at all, and a throw here empties the WHOLE verdict —

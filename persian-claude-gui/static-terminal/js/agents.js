@@ -41,14 +41,25 @@ let showHistory = false; // finished rows are folded behind the .ag-history togg
    on the spec harness too, which carries no composer markup of its own. It
    lands where the context notice already sits — the same kind of thing, a line
    ABOUT the conversation rather than part of it. */
+/* MA3-T2: there is one registry per window (the helpers belong to the session
+   the keyboard is in) but N columns it could be drawn in, so the strip is
+   RE-ANCHORED on every paint rather than parked in whichever column happened
+   to be first. Moving a node re-parents it, so this is one insert, not a
+   rebuild — and `state.cell` is the column being painted, which refreshAgents()
+   is already gated to the focused one (render.js onFocused). */
 function stripEl() {
-  if (strip?.isConnected) return strip;
-  strip = document.createElement("div");
-  strip.id = "agents-strip";
-  strip.hidden = true;
-  const anchor = document.getElementById("context-notice");
-  if (anchor) anchor.before(strip);
-  else document.body.append(strip);
+  if (!strip) {
+    strip = document.createElement("div");
+    strip.className = "agents-strip";
+    strip.hidden = true;
+  }
+  const root = state.cell?.root ?? document;
+  const anchor = root.querySelector(".context-notice");
+  if (anchor) {
+    if (strip.nextSibling !== anchor) anchor.before(strip);
+  } else if (!strip.isConnected) {
+    document.body.append(strip);
+  }
   return strip;
 }
 
@@ -313,7 +324,13 @@ function openDrawer(agent) {
     if (e.newState === "closed" && drawer?.panel === panel) closeDrawer();
   });
 
-  drawer = { id: agent.id, panel, body, live, head, scope: newRenderScope(),
+  // The drawer is a FOREGROUND replay of a background agent inside the cell the
+  // user is looking at, so its scope keeps that cell: the transcript is swapped
+  // (`body`), the status line and chrome are not — /api/agent returns the same
+  // filtered user+assistant shape /api/session does, so nothing it can carry
+  // reaches setStatus or toChrome in the first place.
+  drawer = { id: agent.id, panel, body, live, head,
+             scope: newRenderScope(false, state.cell, state.tab),
              cursor: 0, empty: false, fails: 0 };
   panel.showPopover();
   pollDrawer();

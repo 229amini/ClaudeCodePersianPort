@@ -16,16 +16,16 @@ import { renderMarkdown, pathEl, linesAuto, fillInline, autoDir } from "./bidi.j
    only at event time — never while the modules are still evaluating. */
 import {
   setChrome, refreshProjects, setCurrentSession,
-  showPermission, dismissPermission,
 } from "./chrome.js";
-import {
-  setBusy, setSlashCommands, noteContext, contextFull, isAway, restoreDraft,
-} from "./composer.js";
+/* The permission dialog moved out of chrome.js at MA3-T1: it is per cell, and
+   the sidebar is not. Same cycle rules — nothing crosses at evaluation time. */
+import { showPermission, dismissPermission } from "./perm.js";
+import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
-import {
-  applyInitInfo, setModelResolved, setPostureState, setAutoCount, noteAutoAction,
-  setEffortState, setOutputStyle, resetControls, effortLabel, styleLabel,
-} from "./controls.js";
+/* Only the two label helpers are still module-level in controls.js; everything
+   that PAINTS is per cell now and is reached through `state.cell.controls`
+   (the APPLY table below). */
+import { effortLabel, styleLabel } from "./controls.js";
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
    background agent's transcript back through this renderer. Same invariant —
    nothing crosses the edge until event time. */
@@ -34,9 +34,41 @@ import { refreshAgents, resetAgents } from "./agents.js";
 const FA = window.STRINGS;
 
 /* `let`, not `const`: withRenderTarget() below points it somewhere else for the
-   length of one replay. Every append in this file goes through it. */
-let log = document.getElementById("log");
-const statusline = document.getElementById("statusline");
+   length of one replay. Every append in this file goes through it.
+
+   NOT resolved at module-evaluation time any more (MA3-T2): the columns are
+   stamped from a <template> by app.js, which runs last, so there is no `.log`
+   in the document while this module is evaluating. setFocusedCell() below is
+   what points these two at the column the keyboard is in — which is exactly
+   what "the default render target" has meant since the grid existed. */
+let log = null;
+/* `let` for the same reason `log` is: withRenderTarget() points it at the cell
+   the scope belongs to. A background scope has no cell, so it points at nothing
+   and setStatus() below returns before it is touched. */
+let statusline = null;
+
+/* WHICH CELL THE KEYBOARD IS IN (MA3-T2). app.js owns focus and tells this
+   module; nothing here decides it. Two jobs in one call:
+
+     - the DEFAULT render target. `state` mirrors the focused column's scope
+       (app.js routeEvent), so an event for the focused tab is rendered with no
+       withRenderTarget around it — and `log`/`statusline` have to be that
+       column's, or it would paint into the one beside it.
+     - the WINDOW-level gate below. A placed but unfocused column paints its own
+       topbar and status line (that is `state.cell`), but it must not repaint the
+       one sidebar, project list or agents strip: four conversations answering at
+       once would each claim them. */
+let focusedRef = null;
+
+export function setFocusedCell(cell) {
+  focusedRef = cell;
+  log = cell?.log ?? null;
+  statusline = cell?.statusline ?? null;
+}
+
+function onFocused() {
+  return !!state.cell && state.cell === focusedRef;
+}
 
 /* The CLI's own wording for a turn the user stopped, seen in both live events
    and replayed transcripts: "[Request interrupted by user]" and
@@ -492,6 +524,11 @@ export const state = {
   // belong to a conversation the user is not looking at, and there is one box:
   // it is drained by the next paint that happens while this scope is visible.
   returned: [],
+  // Did this conversation's LAST turn fail? Read by app.js to colour the tab's
+  // status dot, so a failure in a conversation nobody is looking at is visible
+  // from the sidebar. A user-pressed stop is not a failure (it arrives as
+  // is_error + aborted_streaming), and the next send clears it.
+  error: false,
   // Was the last result worth a recap? Carried rather than acted on, because
   // the turn is not over at the result: on a fresh turn the CLI reports the
   // command finished microseconds AFTER it (measured, 2.1.241).
@@ -507,8 +544,17 @@ export const state = {
   repeat: null,          // the run of identical pairs being counted
   status: {},
   // True only while rendering a conversation the user is NOT looking at (a
-  // background tab, app.js). Everything below toChrome() reads it.
+  // background tab, app.js).
   background: false,
+  // The CELL this scope is on screen in, or null while it is in the background.
+  // Everything below toChrome() reads it: with more than one cell there is no
+  // longer a single window to repaint, only the one this conversation owns.
+  cell: null,
+  // Which conversation this scope IS. Read at POST time by the two
+  // session-scoped requests this module makes (recap, queue cancel) -- a
+  // tab-less body routes by the server's active tab, which is not necessarily
+  // this one (MA3 §2).
+  tab: "",
   // Where a background tab's chrome-shaped facts wait for their turn: posture,
   // effort, model, busy… app.js drains this when the tab is switched to.
   chrome: {},
@@ -525,9 +571,51 @@ export const state = {
    Last-write-wins per key is the whole storage model, and it is enough because
    every one of these is a scalar the CLI re-announces: nothing accumulates
    except the auto-approval list, which says so at its own call site. */
-function toChrome(key, value, apply) {
-  if (state.background) state.chrome[key] = value;
-  else apply(value);
+function toChrome(key, value) {
+  if (state.cell) APPLY[key](state.cell, value);
+  else state.chrome[key] = value;
+}
+
+/* THE ONE TABLE. Every chrome-shaped fact, and the single way to apply it to a
+   cell -- whether it arrived live (toChrome above, on screen) or was parked in
+   `scope.chrome` while the tab was in the background and is being drained at
+   switch time (applyChrome below). It used to be written twice, once here and
+   once in app.js, and the two drifted: a key added to one was silently dropped
+   by the other for the tab that was not being watched.
+
+   The keys are the parked-delta names, in the order they are applied. */
+const APPLY = {
+  // The conversation was cleared while we were away: its snapshot describes a
+  // session that no longer exists.
+  reset:       (cell) => { cell.controls.restore(null); cell.composer.restore(null); },
+  initInfo:    (cell, info) => cell.controls.applyInitInfo(info),
+  slash:       (cell, list) => cell.composer.setSlashCommands(list),
+  agents:      (cell, map) => setAgents(map),
+  model:       (cell, id) => cell.controls.setModelResolved(id),
+  outputStyle: (cell, name) => cell.controls.setOutputStyle(name),
+  effort:      (cell, level) => cell.controls.setEffortState(level),
+  // One value, because the pill and its counter are set together and a partial
+  // restore is this project's oldest defect family.
+  posture:     (cell, p) => cell.controls.setPostureState(p?.name, p?.autoCount ?? 0),
+  autoActions: (cell, list) => {
+    for (const a of list ?? []) cell.controls.noteAutoAction(a.tool, a.why);
+  },
+  autoCount:   (cell, n) => cell.controls.setAutoCount(n),
+  context:     (cell, pct) => cell.composer.noteContext(pct),
+  contextFull: (cell) => cell.composer.contextFull(),
+  busy:        (cell, running) => cell.composer.setBusy(running),
+};
+
+/* The chrome-shaped facts a background tab collected. Applied by app.js after
+   the snapshot restore, because they are newer than it. A key is applied when
+   it is PRESENT, not when it is truthy: it was recorded because the live path
+   would have applied it, and every setter already ignores a value it cannot
+   use. */
+export function applyChrome(cell, deltas) {
+  const d = deltas ?? {};
+  for (const key of Object.keys(APPLY)) {
+    if (key in d) APPLY[key](cell, d[key]);
+  }
 }
 
 /* keepPulse: a boundary INSIDE a queued batch (turn 2 of 3 starting) clears the
@@ -773,8 +861,8 @@ function notifyTurnEnd() {
 function endBatch(settled = true, live = true) {
   settlePulse();
   resetTurn();
-  toChrome("busy", false, setBusy);
-  if (live && settled && !state.background && document.hidden) notifyTurnEnd();
+  toChrome("busy", false);
+  if (live && settled && state.cell && document.hidden) notifyTurnEnd();
   const recap = settled && state.recapWorthy;
   state.recapWorthy = false;
   // The CLI writes its own «※ recap: …» when you come back to a turn you were
@@ -791,8 +879,8 @@ function endBatch(settled = true, live = true) {
   // request cannot fire on the free gate, so `recapEligible` is the only
   // observable of the rule this line exists for.
   state.recapEligible = !!recap;
-  if (recap && token && !state.background && isAway()) {
-    api("/api/recap", {}).catch(() => {});
+  if (recap && token && state.cell && isAway()) {
+    api("/api/recap", { tab: state.tab }).catch(() => {});
   }
 }
 
@@ -827,23 +915,22 @@ function endBatch(settled = true, live = true) {
    a fresh window rebuilds out of the SSE backlog is the same one it had — a
    message still genuinely queued at refresh time belongs back in it. */
 
-let queueStrip = null;
-
 /* Built here rather than in index.html, exactly like the background-agents
    strip (agents.js): it is pure chrome, and it has to exist on the spec
    harness too, which carries the composer markup and none of the rest of the
    shell. It sits directly above the composer — closer in than the context
    notice, because it is about the message just sent rather than about the
    conversation. */
-function queueStripEl() {
-  if (queueStrip?.isConnected) return queueStrip;
-  queueStrip = document.createElement("div");
-  queueStrip.id = "queue-strip";
-  queueStrip.hidden = true;
-  const anchor = document.getElementById("composer");
-  if (anchor) anchor.before(queueStrip);
-  else document.body.append(queueStrip);
-  return queueStrip;
+function queueStripEl(cell) {
+  if (cell.queueStrip?.isConnected) return cell.queueStrip;
+  const box = document.createElement("div");
+  box.className = "queue-strip";
+  box.hidden = true;
+  const anchor = cell.root.querySelector(".composer");
+  if (anchor) anchor.before(box);
+  else document.body.append(box);
+  cell.queueStrip = box;
+  return box;
 }
 
 /* One dim row per queued message: what it says, that it is waiting, and a way
@@ -886,7 +973,7 @@ function queueRowEl(uuid, entry) {
 async function cancelQueued(uuid, button) {
   button.disabled = true;
   try {
-    const { cancelled } = await api("/api/queue/cancel", { uuid });
+    const { cancelled } = await api("/api/queue/cancel", { uuid, tab: state.tab });
     // Idempotent with the server's own `cancelled` lifecycle event, which
     // arrives over SSE for the same uuid: whichever gets here first empties the
     // row, and the second finds nothing to do. Acting on the answer as well as
@@ -899,18 +986,19 @@ async function cancelQueued(uuid, button) {
 }
 
 /* Repaints the strip from `state.queued`, and hands back anything the queue
-   lost. GATED ON `state.background` for the same reason setStatus() is: the
-   model is per conversation (it lives in the render scope) but there is one
-   strip and one composer, so a background tab records and paints nothing. Its
-   rows appear the moment the user switches to it — composer.js restoreComposer()
-   calls this after the scope swap, which is where every other piece of
+   lost. GATED ON `state.cell` for the same reason setStatus() is: the model is
+   per conversation (it lives in the render scope) but the strip and the composer
+   belong to a CELL, so a background tab records and paints nothing. Its rows
+   appear the moment the user switches to it — the composer's restore() calls
+   this after the scope swap, which is where every other piece of
    per-conversation composer chrome is restored. */
 export function paintQueued() {
-  if (state.background) return;
-  for (const text of state.returned.splice(0)) restoreDraft(text);
+  const cell = state.cell;
+  if (!cell) return;
+  for (const text of state.returned.splice(0)) cell.composer.restoreDraft(text);
   // Nothing queued and no strip ever built: do not create one to hide it.
-  if (!state.queued.size && !queueStrip?.isConnected) return;
-  const box = queueStripEl();
+  if (!state.queued.size && !cell.queueStrip?.isConnected) return;
+  const box = queueStripEl(cell);
   box.replaceChildren();
   for (const [uuid, entry] of state.queued) box.append(queueRowEl(uuid, entry));
   box.hidden = !state.queued.size;
@@ -989,25 +1077,36 @@ function clearQueued(giveBack = false) {
    The statusline is deliberately NOT swapped: /api/agent returns the same
    user+assistant filtered event shape /api/session does, so nothing a replay
    can carry reaches setStatus in the first place. */
-export function newRenderScope(background = false) {
+/* `cell` defaults to whichever one is on screen, because that is what a
+   FOREGROUND scope means: this conversation is the one being watched. Only a
+   background tab (app.js) and the blank view name theirs explicitly. */
+export function newRenderScope(background = false,
+                               cell = background ? null : state.cell,
+                               tab = "") {
   return { streamBubble: null, streamText: "", thinkingBody: null,
            thinkingPeek: null, thinkingText: "", pulse: null, outstanding: new Set(),
-           queued: new Map(), returned: [],
+           queued: new Map(), returned: [], error: false,
            recapWorthy: false, recapEligible: false, toolCards: new Map(),
            run: null, cycle: null, repeat: null,
-           status: {}, background, chrome: {} };
+           status: {}, background, cell, tab, chrome: {} };
 }
 
 export function withRenderTarget(target, scope, fn) {
   const savedLog = log;
+  const savedStatusline = statusline;
   const savedState = { ...state };
   log = target;
+  // Beside `log`, and for the same reason: the status line belongs to the CELL
+  // the scope is on screen in. A background scope names no cell, so nothing here
+  // has a status line to paint — which is what setStatus() already checks.
+  statusline = scope.cell?.statusline ?? null;
   Object.assign(state, scope);
   try {
     fn();
   } finally {
     Object.assign(scope, state);   // what the replay built stays with the scope
     log = savedLog;
+    statusline = savedStatusline;
     Object.assign(state, savedState);
   }
 }
@@ -1564,7 +1663,7 @@ export function resetStatus() {
   setStatus({});
   // The «context is filling up» notice is the same number in another shape. A
   // new session starts empty, so it has to go with the meter that raised it.
-  toChrome("context", 0, noteContext);
+  toChrome("context", 0);
 }
 
 /* The TUI's own posture row — `⏵⏵ accept edits on (shift+tab to cycle)`,
@@ -1617,11 +1716,11 @@ export function setStatus(patch) {
   // One number, two readers: the meter below and the notice above the composer.
   // Driving the notice from here means every source of a context figure (the
   // CLI's own get_context_usage, and the `result` fallback) feeds it for free.
-  if (typeof patch.context === "number") toChrome("context", patch.context, noteContext);
+  if (typeof patch.context === "number") toChrome("context", patch.context);
   // state.status IS the tab's own statusline data (the scope carries it), so a
-  // background tab has already recorded everything above; only the paint is
-  // shared, and app.js repaints from the scope at switch time.
-  if (state.background) return;
+  // background tab has already recorded everything above; only the paint belongs
+  // to a cell, and app.js repaints from the scope at switch time.
+  if (!state.cell || !statusline) return;
   statusline.replaceChildren();
   const s = state.status;
 
@@ -1707,8 +1806,8 @@ export function setStatus(patch) {
    A card appended afterwards arrives shut like every other one — this is a
    view action, not a mode, and a mode would have to be per tab, restored on
    switch, and reconciled with every card the user opened by hand. */
-export function toggleTranscript() {
-  const cards = [...log.querySelectorAll("details.card")];
+export function toggleTranscript(logEl = log) {
+  const cards = [...logEl.querySelectorAll("details.card")];
   if (!cards.length) return false;
   const opening = cards.some((card) => !card.open);
   for (const card of cards) card.open = opening;
@@ -1776,23 +1875,27 @@ function splitBashBlocks(text) {
 /* The same view action, aimed at one KIND of card. `ctrl+t` is the TUI's
    `app:toggleTodos` and `alt+t` its `chat:thinkingToggle`; both are "show me
    the thing I collapsed", and neither is a mode — see the note above. */
-function toggleKind(selector) {
-  const cards = [...log.querySelectorAll(selector)];
+function toggleKind(logEl, selector) {
+  const cards = [...logEl.querySelectorAll(selector)];
   if (!cards.length) return false;
   const opening = cards.some((card) => !card.open);
   for (const card of cards) card.open = opening;
   return true;
 }
 
-export function toggleTodos() {
-  return toggleKind("details.card.todos");
+export function toggleTodos(logEl = log) {
+  return toggleKind(logEl, "details.card.todos");
 }
 
-export function toggleThinking() {
-  return toggleKind("details.card.thinking");
+export function toggleThinking(logEl = log) {
+  return toggleKind(logEl, "details.card.thinking");
 }
 
-export function initTranscript() {
+/* `getFocused` hands back the cell the keyboard belongs to right now. The key is
+   bound on the DOCUMENT — it means the same thing wherever focus happens to be —
+   so with more than one column on screen the binding cannot know which one it
+   acts on until it fires. */
+export function initTranscript(getFocused) {
   document.addEventListener("keydown", (e) => {
     if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
     if (e.defaultPrevented) return;
@@ -1801,12 +1904,13 @@ export function initTranscript() {
     // non-technical user will find. Edge --app intercepts ctrl+t before the
     // page ever sees it, which is why the checklist toggle is only reachable
     // in a normal tab — the browser's key wins, as wiki/tui-keys.md says.
+    const logEl = getFocused?.()?.log ?? log;
     if (e.key === "o") {
       e.preventDefault();
-      toggleTranscript();
+      toggleTranscript(logEl);
     } else if (e.key === "t") {
       e.preventDefault();
-      toggleTodos();
+      toggleTodos(logEl);
     }
   });
 }
@@ -1834,12 +1938,14 @@ export function renderEvent(ev) {
           mode: ev.permissionMode,
           sessionId: ev.session_id,
         });
-        // The sidebar highlight and the topbar name follow the VISIBLE
-        // conversation. A background tab's own cwd and session id are in its
-        // scope's status above, which is what app.js repaints from at switch.
-        if (!state.background) {
+        // The topbar name follows the column this conversation is IN; the
+        // sidebar highlight, the project list and the agents strip follow the
+        // column the keyboard is in, because there is one of each per window.
+        // A background tab's own cwd and session id are in its scope's status
+        // above, which is what app.js repaints from at switch.
+        if (state.cell) setChrome(ev.cwd);
+        if (onFocused()) {
           setCurrentSession(ev.session_id);
-          setChrome(ev.cwd);
           refreshProjects();
           // session_id is genuinely known only from here — agents.js's own
           // reset (below, wrapper/reset) fires this too early: it runs right
@@ -1852,14 +1958,14 @@ export function renderEvent(ev) {
         // The CLI is authoritative about what commands exist on this machine
         // (custom skills, plugins) — never scan skill directories ourselves.
         if (Array.isArray(ev.slash_commands)) {
-          toChrome("slash", ev.slash_commands, setSlashCommands);
+          toChrome("slash", ev.slash_commands);
         }
         // The model this turn actually ran on: the only real confirmation that
         // a set_model took effect (its own ack is empty).
-        toChrome("model", ev.model, setModelResolved);
+        toChrome("model", ev.model);
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
-        toChrome("outputStyle", ev.output_style, setOutputStyle);
+        toChrome("outputStyle", ev.output_style);
         // …and into the status line, which is where the style chip's text went
         // (V2-PLAN §3.4). setStatus writes the TAB's own status object, so a
         // background conversation records its style without painting it.
@@ -2057,7 +2163,7 @@ export function renderEvent(ev) {
           // not a turn in it.
           if (TASK_NOTE.test(part.text ?? "")) {
             renderTaskNote(part.text);
-            if (!state.background) refreshAgents();
+            if (onFocused()) refreshAgents();
             continue;
           }
           // The CLI narrates an interrupt as a `user` turn whose text is
@@ -2104,7 +2210,7 @@ export function renderEvent(ev) {
         // JSON.stringify(content) against an anchored ^-regex never fires.
         if (ASYNC_LAUNCH.test(toolResultText(part.content))) {
           intoCard(body, label(FA.agentLaunched, "meta"));
-          if (!state.background) refreshAgents();
+          if (onFocused()) refreshAgents();
           continue;
         }
         const text = typeof part.content === "string"
@@ -2154,7 +2260,7 @@ export function renderEvent(ev) {
         // — run /compact or /clear to continue." No percentage arrives with it,
         // so the meter-driven warning above cannot catch this case.
         if (CONTEXT_EXHAUSTED.test(String(ev.result ?? ""))) {
-          toChrome("contextFull", true, contextFull);
+          toChrome("contextFull", true);
         }
       }
       // A result is a TURN boundary, and a turn is not the batch: a mid-turn
@@ -2168,6 +2274,9 @@ export function renderEvent(ev) {
       }
       state.recapWorthy = !ev.is_error
         && ev.terminal_reason !== "aborted_streaming";
+      // Same predicate, kept for the tab's status dot: a stop is not a failure,
+      // and a turn that succeeded clears whatever the last one left behind.
+      state.error = !!ev.is_error && ev.terminal_reason !== "aborted_streaming";
       // A stop ends the batch whatever the ledger says — nothing else reaches
       // this window instantly on a stop, and without this every press of it
       // would leave the line breathing until the wrapper's five-second
@@ -2197,7 +2306,7 @@ export function renderEvent(ev) {
         // uuid at all, which is the pre-2.1.241 contract: one result, one turn.
         endBatch(true, !ev.replayed);
       }
-      if (!state.background) {
+      if (onFocused()) {
         refreshProjects();   // the turn changed this session's preview/mtime
         // The turn is over but the helpers it dispatched are not: this is where
         // «در انتظار N عامل پس‌زمینه…» appears. Debounced, so a replayed
@@ -2266,7 +2375,7 @@ export function renderEvent(ev) {
       if (ev.subtype === "user_echo") {
         // Derive busy from the stream, not from our own submit handler: a turn
         // can also start from another window on the same server.
-        toChrome("busy", true, setBusy);
+        toChrome("busy", true);
         // A send while a turn runs is QUEUED by the CLI, which keeps its one
         // spinner running over the whole queue — so the pulse it started keeps
         // its verb, its clock and its token count instead of restarting. The
@@ -2285,6 +2394,10 @@ export function renderEvent(ev) {
         // The CLI reports it finished on `command_lifecycle`, and that — not
         // the next `result` — is what ends the batch.
         if (ev.uuid) state.outstanding.add(ev.uuid);
+        // A new send retires the last turn's failure: the dot goes back to
+        // «در حال کار» rather than staying red over a conversation that is
+        // demonstrably working again.
+        state.error = false;
         if (toQueue) {
           queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0);
         } else {
@@ -2327,47 +2440,42 @@ export function renderEvent(ev) {
           // The one thing here that accumulates rather than overwrites: the
           // audit list is the whole defence of «خودکار», so a background tab
           // keeps every entry instead of the last one.
-          if (state.background) {
+          if (state.cell) {
+            state.cell.controls.noteAutoAction(ev.tool_name, ev.why);
+            state.cell.controls.setAutoCount(ev.auto_count);
+          } else {
             (state.chrome.autoActions ??= []).push({ tool: ev.tool_name, why: ev.why });
             state.chrome.autoCount = ev.auto_count;
-          } else {
-            noteAutoAction(ev.tool_name, ev.why);
-            setAutoCount(ev.auto_count);
           }
         }
       } else if (ev.subtype === "init_info") {
         // Everything the CLI can do, answered at spawn and free
         // (wiki/control-protocol.md §1). Richer than system/init.
-        toChrome("initInfo", ev.info, applyInitInfo);
+        toChrome("initInfo", ev.info);
         // The spawn value for the style, so the status line is not blank until
         // the user changes something (§3.4: it replaces a chip that was
         // painted from this same reply).
         if (ev.info?.output_style) setStatus({ style: ev.info.output_style });
         if (Array.isArray(ev.info?.commands)) {
-          toChrome("slash", ev.info.commands, setSlashCommands);
+          toChrome("slash", ev.info.commands);
         }
         // ponytail: the subagent label map is module-global, so a background
         // tab's set waits its turn too — its Task rows fall back to the raw
         // agent name until the user looks at them. A per-tab map would be a
         // second registry for a tooltip.
-        toChrome("agents", ev.info?.agents, setAgents);
+        toChrome("agents", ev.info?.agents);
       } else if (ev.subtype === "output_style") {
         // Published after a change only; the spawn value rode in on init_info.
-        toChrome("outputStyle", ev.style, setOutputStyle);
+        toChrome("outputStyle", ev.style);
         if (ev.style) setStatus({ style: ev.style });
       } else if (ev.subtype === "posture") {
-        if (state.background) {
-          state.chrome.posture = ev.posture;
-          state.chrome.autoCount = ev.auto_count;
-        } else {
-          setPostureState(ev.posture, ev.auto_count);
-        }
+        toChrome("posture", { name: ev.posture, autoCount: ev.auto_count });
         // The `⏵⏵` row. Recorded for every tab, painted only for the visible
         // one — the pill it replaces had exactly this rule.
         if (ev.posture) setStatus({ posture: ev.posture });
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
-        toChrome("effort", ev.effort, setEffortState);
+        toChrome("effort", ev.effort);
         if (ev.effort) setStatus({ effort: ev.effort });
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — the
@@ -2398,10 +2506,11 @@ export function renderEvent(ev) {
         // A settle that is a session swap, not a finished turn: whatever the
         // last result thought about a recap died with the old process.
         state.recapWorthy = false;
+        state.error = false;   // ...and so did its failure
         // agentsUrl() sends the session id only when it is truthy, so the
         // refresh at reset time was always a 400 — this is the first moment a
         // resumed session's helpers can be listed.
-        if (!state.background) refreshAgents();
+        if (onFocused()) refreshAgents();
       } else if (ev.subtype === "reset") {
         // Clearing is STRUCTURAL now — each tab owns its own node, and a new
         // chat is a new tab, so the server has no production publisher for
@@ -2414,17 +2523,20 @@ export function renderEvent(ev) {
         state.outstanding.clear();
         clearQueued();
         state.recapWorthy = false;
+        state.error = false;
         state.toolCards.clear();
-        if (state.background) {
+        if (state.cell) {
+          state.cell.controls.resetControls();
+          state.cell.composer.setBusy(false);  // a reset means no turn is running
+          if (onFocused()) {
+            resetAgents();  // list, strip, both poll timers and any open drawer
+            refreshProjects();
+          }
+        } else {
           // Everything parked for this tab described the session it just
           // dropped. `reset` tells app.js to restore the chips to their
           // defaults rather than to what it snapshotted.
           state.chrome = { reset: true };
-        } else {
-          resetControls();
-          resetAgents();  // list, strip, both poll timers and any open drawer
-          setBusy(false); // a reset means no turn is running, by definition
-          refreshProjects();
         }
       } else if (ev.subtype === "recap") {
         // The CLI's own «※ recap: …», asked for by the window (POST /api/recap)
@@ -2479,8 +2591,11 @@ export function renderEvent(ev) {
         // scope until it is on screen — there is only one box.)
         clearQueued(!ev.replayed);
         state.recapWorthy = false;
+        // The process is gone: that IS the failure the dot has to show, and
+        // only a fresh send (or a resume) can clear it.
+        state.error = true;
         clearPulse();
-        toChrome("busy", false, setBusy);
+        toChrome("busy", false);
       }
       return;
 

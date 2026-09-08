@@ -33,12 +33,17 @@
 import { api } from "./api.js";
 import { pathEl } from "./bidi.js";
 import { bubble, label, glyph, state, postureText } from "./render.js";
-import { focusSessions, chooseProject, switchToTab } from "./chrome.js";
-import { openPicker, effortLabel, styleLabel } from "./controls.js";
+import { focusSessions, chooseProject, switchToTab, splitView } from "./chrome.js";
+import { effortLabel, styleLabel } from "./controls.js";
 import { unfoldAgents } from "./agents.js";
 
 const FA = window.STRINGS;
-const log = document.getElementById("log");
+
+/* Every command here reads or writes ONE conversation, so each one takes the
+   `cell` it was typed in: its column (`cell.log`), its picker
+   (`cell.controls`) and its tab, which every session-scoped POST below now
+   carries explicitly (MA3 §2). Nothing in this module is per-cell state, so it
+   stayed a plain table rather than becoming a third factory. */
 
 /* A local answer is a `meta` row: the same shape «متوقف شد» and the permission
    notes already use. It is not an assistant message and must never look like
@@ -60,8 +65,8 @@ function notePath(text, path) {
    be a second answer to "what was said", and the two would disagree the first
    time the renderer changed. */
 
-function lastAnswer() {
-  const rows = [...log.querySelectorAll(".msg.assistant:not(.meta)")];
+function lastAnswer(cell) {
+  const rows = [...cell.log.querySelectorAll(".msg.assistant:not(.meta)")];
   return rows[rows.length - 1] ?? null;
 }
 
@@ -81,8 +86,8 @@ function textOf(el) {
   }
 }
 
-function copyLast() {
-  const el = lastAnswer();
+function copyLast(arg, cell) {
+  const el = lastAnswer(cell);
   if (!el) { note(FA.cmdCopyEmpty); return true; }
   // Secure context: the window is served from 127.0.0.1, which counts as one.
   // It can still be refused (no user gesture, no focus), and a silent failure
@@ -96,9 +101,9 @@ function copyLast() {
 /* Plain text, in the order it was said. Tool cards go in whole — a card is
    what the window showed, and an export that silently dropped the work is not
    a record of the session. */
-function transcriptText() {
+function transcriptText(cell) {
   const out = [];
-  for (const node of log.children) {
+  for (const node of cell.log.children) {
     if (node.hidden) continue;
     const text = textOf(node);
     if (!text) continue;
@@ -115,8 +120,8 @@ function transcriptText() {
   return out.join("\n\n");
 }
 
-function exportTranscript() {
-  const text = transcriptText();
+function exportTranscript(arg, cell) {
+  const text = transcriptText(cell);
   if (!text) { note(FA.cmdExportEmpty); return true; }
   api("/api/export", { text })
     .then((data) => notePath(FA.cmdExported, data.path))
@@ -130,9 +135,9 @@ function exportTranscript() {
    own status object — the status line under the prompt paints from the same
    place — so this asks nothing of the CLI and works while a turn is running.
    The version comes off the welcome box, which the server stamped. */
-function statusBlock() {
+function statusBlock(arg, cell) {
   const s = state.status;
-  const version = document.querySelector(".wel-ver")?.textContent?.trim();
+  const version = cell.root.querySelector(".wel-ver")?.textContent?.trim();
   const rows = [
     [FA.statusVersion, version],
     [FA.slModel, s.model],
@@ -142,10 +147,10 @@ function statusBlock() {
     [FA.slEffort, s.effort && effortLabel(s.effort)],
     [FA.slStyle, s.style && styleLabel(s.style)],
   ].filter(([, value]) => value);
-  return openPicker("status", FA.statusTitle,
-                    rows.map(([name, value]) => ({ key: "", title: name,
-                                                   note: String(value) })),
-                    null);
+  return cell.controls.openPicker("status", FA.statusTitle,
+                                  rows.map(([name, value]) => ({ key: "", title: name,
+                                                                 note: String(value) })),
+                                  null);
 }
 
 /* --- /resume ---------------------------------------------------------------
@@ -175,8 +180,8 @@ function changeFolder(arg) {
    `--fork-session`: a copy of this conversation in its own session, measured
    in §5.5. The original keeps running in its own tab — that is the whole
    point of a branch — and the sidebar lists both with no new code. */
-function branch() {
-  api("/api/session/fork", {})
+function branch(arg, cell) {
+  api("/api/session/fork", { tab: cell.tab })
     .then(async (data) => {
       // The note goes in AFTER the switch, so it lands in the branch's own
       // column: switching tabs swaps the render target, and a line written
@@ -202,11 +207,12 @@ function sideRow(kind, text) {
   return el;
 }
 
-function sideQuestion(text) {
+function sideQuestion(text, cell) {
   if (!text) return false;            // `/btw` alone is not a question
   sideRow("user", text);
   note(FA.cmdBtwCost);
-  api("/api/control", { subtype: "side_question", params: { question: text } })
+  api("/api/control", { subtype: "side_question", params: { question: text },
+                        tab: cell.tab })
     .then((data) => {
       const answer = data.ok && (data.response?.response ?? "");
       if (answer) sideRow("assistant", String(answer));
@@ -221,19 +227,54 @@ function sideQuestion(text) {
    The CLI edits these in a terminal editor it owns; the window opens the real
    file in whatever this machine edits text with. `what` is a KEY into a fixed
    map on the server (server.py known_files) — never a path from the page. */
-function openFile(what) {
-  api("/api/open-file", { what })
+function openFile(what, cell) {
+  // `tab` explicit, like every other session-scoped POST here (MA3 §2): the
+  // server resolves the project file off `session.cwd` for `tab or self.active`,
+  // and the active tab is not necessarily the column this was typed in.
+  api("/api/open-file", { what, tab: cell?.tab })
     .then((data) => notePath(FA.cmdOpened, data.path))
     .catch(() => bubble("error", FA.cmdOpenFailed));
   return true;
 }
 
 /* Two memory files, and the CLI asks which one too. */
-function memoryPicker() {
-  return openPicker("memory", FA.memoryTitle, [
+function memoryPicker(arg, cell) {
+  return cell.controls.openPicker("memory", FA.memoryTitle, [
     { key: "memory", title: FA.memoryUser, note: FA.memoryUserNote },
     { key: "project-memory", title: FA.memoryProject, note: FA.memoryProjectNote },
-  ], (row) => openFile(row.key));
+  ], (row) => openFile(row.key, cell));
+}
+
+/* --- /split ------------------------------------------------------------------
+
+   How many conversations are on screen at once (MA3): 1, 2 or a 2x2. The grid
+   itself is app.js's — it owns the cells — so this goes through chrome.js's
+   one-way bridge, the same arrow /branch already uses for switchToTab.
+
+   A bad argument does NOT fall through to the CLI: `/split 3` is unmistakably
+   aimed at this window, and a refusal row from the model is a worse answer than
+   the one line saying which numbers exist. */
+const SPLITS = new Set([1, 2, 4]);
+
+/* Persian and Arabic-Indic digits both reach the box — the composer is where a
+   Persian keyboard types. `choice.js` has the same trap for `e.key`. */
+function latinDigits(text) {
+  return text.replace(/[۰-۹٠-٩]/g,
+                      (d) => String((d.charCodeAt(0) & 0xF)));
+}
+
+function splitGrid(arg) {
+  const n = Number(latinDigits(String(arg ?? "").trim()));
+  if (!SPLITS.has(n)) {
+    note(FA.cmdSplitUsage);
+    return true;
+  }
+  if (!splitView(n)) return false;   // no grid here (the spec harness): not ours
+  // `/split 4` is a 2x2, not four columns — one of the two layouts this verb
+  // draws is not a row of columns at all, so it gets its own sentence.
+  note(n === 4 ? FA.cmdSplitDoneGrid
+               : FA.cmdSplitDone.replace("{n}", n.toLocaleString("fa-IR")));
+  return true;
 }
 
 /* --- /tasks ----------------------------------------------------------------
@@ -272,7 +313,7 @@ const COMPOSER_VERBS = ["bash", "model", "effort", "output-style",
    order would work and would also silently reorder the help the next time
    someone alphabetised a table. */
 const HELP_ORDER = ["help", "resume", "status", "copy", "export", "branch",
-                    "btw", "bash", "tasks", "cd", "add-dir", "memory",
+                    "btw", "bash", "tasks", "split", "cd", "add-dir", "memory",
                     "config", "hooks", "keybindings", "model", "effort",
                     "output-style", "permissions", "clear"];
 
@@ -292,8 +333,8 @@ function helpRows() {
   return rows;
 }
 
-function helpBlock() {
-  return openPicker("help", FA.helpTitle, helpRows(), (row) => {
+function helpBlock(arg, cell) {
+  return cell.controls.openPicker("help", FA.helpTitle, helpRows(), (row) => {
     if (row?.key === "guide") window.open("/static/help.html", "_blank", "noopener");
   });
 }
@@ -313,17 +354,18 @@ export const WINDOW_COMMANDS = {
   "add-dir": changeFolder,
   branch,
   btw: sideQuestion,
-  config: () => openFile("settings"),
-  hooks: () => openFile("settings"),
-  keybindings: () => openFile("keybindings"),
+  config: (arg, cell) => openFile("settings", cell),
+  hooks: (arg, cell) => openFile("settings", cell),
+  keybindings: (arg, cell) => openFile("keybindings", cell),
   memory: memoryPicker,
   tasks,
+  split: splitGrid,
 };
 
 /* Returns false when the verb is not one of ours, or when the one it names had
    nothing to do — both mean "send it to the CLI as text". */
-export function runWindowCommand(verb, arg) {
+export function runWindowCommand(verb, arg, cell) {
   const run = WINDOW_COMMANDS[verb];
   if (!run) return false;
-  return run(arg) !== false;
+  return run(arg, cell) !== false;
 }

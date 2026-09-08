@@ -88,6 +88,9 @@ def main() -> int:
     html = read(STATIC / "index.html")
     css = read(STATIC / "style.css")
     chrome = read(JS / "chrome.js")
+    # MA3-T1: the permission dialog moved out of chrome.js into its own per-cell
+    # factory. Same code, same rules — the checks below follow it.
+    perm_js = read(JS / "perm.js")
     controls = read(JS / "controls.js")
     composer = read(JS / "composer.js")
     choice = read(JS / "choice.js")
@@ -100,16 +103,16 @@ def main() -> int:
           f"still there: {gone}")
     # The audit counter stays: it reports what already happened, it is not a
     # control, and V2-PLAN §2 keeps it for that reason.
-    check('id="auto-chip"' in html, "the audit counter stays — it is a label, not a control")
+    check('class="auto-chip' in html, "the audit counter stays — it is a label, not a control")
 
     stage = html.index('<div id="stage">')
-    perm, picker = html.index('<dialog id="perm"'), html.index('<dialog id="picker"')
-    comp = html.index('<form id="composer">')
+    perm, picker = html.index('<dialog class="perm">'), html.index('<dialog class="picker">')
+    comp = html.index('<form class="composer">')
     check(stage < picker < comp and stage < perm < comp,
           "both dialogs sit inside #stage, above the prompt",
           f"stage@{stage} picker@{picker} perm@{perm} composer@{comp}")
 
-    form = html[html.index('<form id="perm-form">'):html.index("</dialog>", perm)]
+    form = html[html.index('<form class="perm-form">'):html.index("</dialog>", perm)]
     buttons = re.findall(r"<button[^>]*>", form)
     check(bool(buttons) and all('type="button"' in b for b in buttons)
           and "method=" not in form,
@@ -117,15 +120,15 @@ def main() -> int:
           f"{len(buttons)} buttons")
 
     # --- 2. in the flow, not over it ------------------------------------------
-    code = strip_comments(chrome) + strip_comments(controls)
+    code = strip_comments(chrome) + strip_comments(perm_js) + strip_comments(controls)
     check("showModal()" not in code and ".show()" in code,
           "the dialogs are opened with show(), never showModal()")
-    check("#perm::backdrop" not in css and "#picker::backdrop" not in css,
+    check(".perm::backdrop" not in css and ".picker::backdrop" not in css,
           "and no backdrop rule survives the move")
-    inline = re.search(r"#perm,\s*\n#picker\s*\{(.*?)\}", css, re.S)
+    inline = re.search(r"\.perm,\s*\n\.picker\s*\{(.*?)\}", css, re.S)
     check(inline is not None and "position: static" in inline.group(1)
           and "flex: none" in inline.group(1),
-          "#perm and #picker are static, non-shrinking rows of the stage")
+          ".perm and .picker are static, non-shrinking rows of the stage")
 
     # --- 3. pickers behind commands -------------------------------------------
     verbs = re.search(r"const LIFECYCLE_VERBS = \{(.*?)\n\};", composer, re.S)
@@ -140,12 +143,14 @@ def main() -> int:
           f"still there: {dead}")
     for name in ("openModelPicker", "openEffortPicker", "openStylePicker",
                  "openPosturePicker", "openAuditList"):
-        check(f"export function {name}" in controls, f"controls.js exports {name}()")
+        # A method of makeControls() since MA3-T1: one per cell, not one per
+        # window. The picker is still opened by exactly these four verbs.
+        check(f"function {name}" in controls, f"controls.js defines {name}()")
 
     # --- 4. choice.js is a leaf ------------------------------------------------
     check(not re.search(r"^\s*import\b", choice, re.M),
           "js/choice.js imports nothing — the option list is a leaf")
-    for owner, name in ((chrome, "chrome.js"), (controls, "controls.js")):
+    for owner, name in ((perm_js, "perm.js"), (controls, "controls.js")):
         check('from "./choice.js"' in owner, f"{name} draws its list from choice.js")
 
     # --- 5. the two wording rules ---------------------------------------------

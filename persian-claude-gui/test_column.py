@@ -58,8 +58,8 @@ PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
 <script type="module">
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = document.getElementById("log");
-const input = document.getElementById("input");
+const log = document.querySelector(".log");
+const input = document.querySelector(".input");
 const before = (el, prop) => el && getComputedStyle(el, "::before")[prop];
 const centre = (el) => { const r = el.getBoundingClientRect();
                          return Math.round(r.left + r.width / 2); };
@@ -179,14 +179,14 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   input.focus();
   out.shortTaken = paste("one line, short");
   await sleep(20);
-  out.shortParked = document.querySelectorAll("#pastes .paste-chip").length;
+  out.shortParked = document.querySelectorAll(".pastes .paste-chip").length;
 
   input.value = "";
   const long = "\u067e\u06cc\u0627\u0645\n" + Array.from(
     { length: 39 }, (_, i) => "line " + i).join("\n");
   out.longTaken = paste(long);
   await sleep(20);
-  const chip = document.querySelector("#pastes .paste-chip");
+  const chip = document.querySelector(".pastes .paste-chip");
   out.chipText = chip?.textContent ?? "";
   out.chipHolds = (chip?.title ?? "").startsWith("\u067e\u06cc\u0627\u0645");
   out.boxAfterPaste = input.value;
@@ -199,13 +199,13 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
     sent = { url: String(url), body: init?.body };
     return new Response("{}", { status: 200 });
   };
-  document.getElementById("composer").requestSubmit();
+  document.querySelector(".composer").requestSubmit();
   await sleep(80);
   window.fetch = realFetch;
   const body = sent?.body ? JSON.parse(sent.body) : {};
   out.sentText = body.text ?? "";
   out.sentLines = (out.sentText.match(/\n/g) || []).length;
-  out.chipsAfterSend = document.querySelectorAll("#pastes .paste-chip").length;
+  out.chipsAfterSend = document.querySelectorAll(".pastes .paste-chip").length;
 
   /* --- the mirror switch is one attribute --------------------------------- */
   document.documentElement.dataset.mirrorGlyphs = "off";

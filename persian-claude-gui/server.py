@@ -117,6 +117,26 @@ CLAUDE_ARGS = [
     "--permission-mode", "default",
 ]
 
+
+def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
+               worktree: str | None = None) -> list[str]:
+    """The CLI argv for one process, minus the binary itself.
+
+    Lifted out of ClaudeSession.start() so the flag combinations can be
+    asserted without spawning anything (test_units.py). `--worktree` is
+    appended LAST and is orthogonal to the resume flags: a resumed session
+    reuses the worktree it already had rather than making a second one
+    (measured 2026-09-06, CLI 2.1.263).
+    """
+    args = list(CLAUDE_ARGS)
+    if fork_id:
+        args += ["--resume", fork_id, "--fork-session"]
+    elif resume_id:
+        args += ["--resume", resume_id]
+    if worktree:
+        args += ["--worktree", worktree]
+    return args
+
 # Control-request subtypes the GUI may invoke through /api/control. A whitelist,
 # not a passthrough: the browser must not be able to drive arbitrary control
 # traffic into the CLI. Each one answered on a real 2.1.222 process.
@@ -468,6 +488,62 @@ def _sessions_in(folder: Path) -> list[dict]:
     return sessions
 
 
+# --- git worktrees -----------------------------------------------------------
+#
+# `claude … --worktree <name>` creates <cwd>/.claude/worktrees/<name> on branch
+# worktree-<name> AT SPAWN, before initialize, and holds a git lock on it for
+# the life of the process (measured 2026-09-06, CLI 2.1.263; a second spawn with
+# the same name reuses it silently). Two consequences the rest of this file has
+# to respect:
+#   * the process cwd stays the REPO — only the flag differs;
+#   * the transcript lands under the WORKTREE's sanitised path, not the repo's,
+#     so every by-id transcript lookup for such a tab uses worktree_cwd.
+# Removing a worktree is not ours to do: the CLI owns the lock.
+WORKTREE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# Either separator: the name arrives from a browser, the path from the CLI's own
+# transcript, and Windows writes both.
+_WORKTREE_IN_PATH = re.compile(
+    r"^(?P<parent>.+)[\\/]\.claude[\\/]worktrees[\\/](?P<name>[^\\/]+)[\\/]?$")
+
+
+def worktree_path(cwd: Path, name: str) -> Path:
+    return cwd / ".claude" / "worktrees" / name
+
+
+def split_worktree(path_str: str) -> tuple[str, str] | None:
+    """(repo, name) when this path IS a worktree the CLI made, else None."""
+    match = _WORKTREE_IN_PATH.match(path_str or "")
+    return (match.group("parent"), match.group("name")) if match else None
+
+
+def next_worktree_name(cwd: Path) -> str:
+    """What `worktree: "auto"` means: the smallest agent-<n> this repo has not
+    got yet. No name prompt — the audience does not know what a worktree is."""
+    n = 1
+    while worktree_path(cwd, f"agent-{n}").exists():
+        n += 1
+    return f"agent-{n}"
+
+
+def resolve_worktree(cwd: Path, raw) -> tuple[str | None, str | None]:
+    """(name, error) for a request's optional `worktree` field.
+
+    Empty/absent is not an error — it is the ordinary "open a chat here". A
+    name is refused outright outside a git repo, because the CLI would create
+    the worktree at spawn and fail there, after the tab already exists.
+    """
+    name = raw.strip() if isinstance(raw, str) else ""
+    if not name:
+        return None, None
+    if not (cwd / ".git").exists():
+        return None, "not a git repo"
+    if name == "auto":
+        return next_worktree_name(cwd), None
+    if not WORKTREE_NAME_RE.match(name):
+        return None, "bad worktree name"
+    return name, None
+
+
 def list_projects() -> list[dict]:
     """Sidebar data: every project the CLI has transcripts for, plus recent
     folders opened through the wrapper that have no transcripts yet.
@@ -478,6 +554,12 @@ def list_projects() -> list[dict]:
     would only produce a "not a folder" error.
     """
     projects: dict[str, dict] = {}   # lowercased real path -> entry
+    # Sessions the CLI wrote inside a worktree, waiting for their repo to turn
+    # up: [(repo path, sessions)]. They are NOT projects of their own — the
+    # user opened one conversation in a side branch of a project they already
+    # have, and a second sidebar row for `…/.claude/worktrees/agent-1` is the
+    # wrapper leaking its own mechanism at them.
+    folded: list[tuple[str, list[dict]]] = []
 
     def entry_for(path_str: str) -> dict:
         key = path_str.lower()
@@ -495,6 +577,16 @@ def list_projects() -> list[dict]:
             cwd = _first_field(transcripts[0], "cwd")
             if not cwd or not Path(cwd).is_dir():
                 continue
+            split = split_worktree(cwd)
+            if split:
+                repo, name = split
+                sessions = _sessions_in(candidate)
+                for item in sessions:
+                    # What the row shows as a chip, and what a resume has to
+                    # pass back so the CLI reuses this worktree.
+                    item["worktree"] = name
+                folded.append((repo, sessions))
+                continue
             entry = entry_for(cwd)
             entry["sessions"] = _sessions_in(candidate)
             if entry["sessions"]:
@@ -502,6 +594,17 @@ def list_projects() -> list[dict]:
     for recent in load_recents():
         if Path(recent).is_dir():
             entry_for(recent)
+    # Folded AFTER recents and only into a repo that is listed on its own
+    # account: entry_for() would otherwise CREATE the parent row, so a repo
+    # whose transcripts are gone would come back as a project made entirely of
+    # its worktrees.
+    for repo, sessions in folded:
+        entry = projects.get(repo.lower())
+        if entry is None or not sessions:
+            continue
+        entry["sessions"] = sorted(entry["sessions"] + sessions,
+                                   key=lambda item: item["modified"], reverse=True)
+        entry["modified"] = max(entry["modified"], entry["sessions"][0]["modified"])
     archived = {a.lower() for a in load_archived()}
     pinned = {p.lower() for p in load_pinned()}
     names = _names_lower()
@@ -512,6 +615,9 @@ def list_projects() -> list[dict]:
     for entry in result:
         entry["archived"] = entry["path"].lower() in archived
         entry["pinned"] = entry["path"].lower() in pinned
+        # Whether «گفتگوی جدید در شاخهٔ جدا» can be offered at all. exists(),
+        # not is_dir(): a worktree's own .git is a FILE pointing at the repo.
+        entry["git"] = (Path(entry["path"]) / ".git").exists()
         # Absent when there is no override -- the window falls back to the
         # folder's own name, so there is nothing to send.
         if entry["path"].lower() in names:
@@ -2094,9 +2200,16 @@ class ClaudeSession:
     """
 
     def __init__(self, cwd: Path, hub: "Hub | TabHub", claude_bin: str,
-                 broker: "PermissionBroker | None" = None) -> None:
+                 broker: "PermissionBroker | None" = None,
+                 worktree: str | None = None) -> None:
         self.broker = broker
         self.cwd = cwd
+        # An isolated git worktree for this conversation, or None. The PROCESS
+        # still runs in the repo — only the flag differs — but its transcript
+        # is written under the worktree's path, so history_cwd below is what
+        # every by-id lookup for this tab has to use.
+        self.worktree = worktree or None
+        self.worktree_cwd = worktree_path(cwd, self.worktree) if self.worktree else None
         self.hub = hub
         self.claude_bin = claude_bin
         self.proc: subprocess.Popen | None = None
@@ -2167,6 +2280,14 @@ class ClaudeSession:
     def busy(self) -> bool:
         return bool(self._outstanding)
 
+    @property
+    def history_cwd(self) -> Path:
+        """Where THIS session's transcript lives — the worktree when it has
+        one, the project otherwise. `cwd` stays the answer to "which project
+        is this", which is what the sidebar highlights and the statusline
+        prints."""
+        return self.worktree_cwd or self.cwd
+
     def _reset_inflight(self) -> list[str]:
         """Empty the ledger; returns the uuids that never reported.
 
@@ -2213,12 +2334,9 @@ class ClaudeSession:
         # measured). So the id we spawn with is NOT the id this session will
         # have -- it is left unknown until system/init names it, exactly as for
         # a session started from scratch.
-        if fork_id:
-            resume_args = ["--resume", fork_id, "--fork-session"]
-            self.session_id = None
-        else:
-            resume_args = ["--resume", resume_id] if resume_id else []
-            self.session_id = resume_id
+        self.session_id = None if fork_id else resume_id
+        args = spawn_args(resume_id=resume_id, fork_id=fork_id,
+                          worktree=self.worktree)
 
         # No --settings: hooks supplied that way are ignored entirely by claude
         # 2.1.221 (wiki/permission-hook-broken.md). Approvals arrive in-band as
@@ -2228,7 +2346,7 @@ class ClaudeSession:
         # CREATE_NO_WINDOW keeps a console from flashing when launched via pythonw.
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen(
-            [self.claude_bin, *CLAUDE_ARGS, *resume_args],
+            [self.claude_bin, *args],
             cwd=str(self.cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -3165,7 +3283,8 @@ class Handler(BaseHTTPRequestHandler):
 
     @classmethod
     def open_tab(cls, cwd: Path, resume_id: str | None = None,
-                 fork_id: str | None = None) -> str | None:
+                 fork_id: str | None = None,
+                 worktree: str | None = None) -> str | None:
         """Spawn one more conversation and make it active, or None at the cap.
 
         The boot tab comes through here too, so there is one spawn path rather
@@ -3178,7 +3297,7 @@ class Handler(BaseHTTPRequestHandler):
         tab = uuid.uuid4().hex
         view = TabHub(cls.hub, tab)
         session = ClaudeSession(cwd=cwd, hub=view, claude_bin=cls.claude_bin,
-                                broker=PermissionBroker(view))
+                                broker=PermissionBroker(view), worktree=worktree)
         with _SESSIONS_LOCK:
             if len(cls.sessions) >= MAX_TABS:
                 return None
@@ -3235,7 +3354,17 @@ class Handler(BaseHTTPRequestHandler):
                 "session_id": session.session_id,
                 "cwd": str(session.cwd),
                 "busy": session.busy,
+                # Is this conversation blocked on a human? Read-only, and the
+                # ONLY reason it is here: a window that reconnects mid-dialog
+                # can paint its status dot «منتظر تأیید» straight away instead
+                # of waiting for the SSE backlog to replay the request. Once
+                # the window has seen that request itself, its own queue is the
+                # truth (static/js/chrome.js permSeen).
+                "pending_permission": bool(
+                    session.broker is not None and session.broker.has_pending()),
                 "spawned_at": session.spawned_at,
+                # The tab strip's ⎇ chip, and null for the ordinary case.
+                "worktree": session.worktree,
             } for tab, session in list(cls.sessions.items())],
         }
 
@@ -3252,13 +3381,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such tab"})
         return session
 
-    def _cwd_for(self, cwd_raw: str, tab: str | None) -> Path | None:
-        """The explicit `cwd` a history endpoint was given, else the tab's own.
-        None means no such tab and the 404 has already been sent."""
+    def _cwd_for(self, cwd_raw: str, tab: str | None,
+                 worktree: str | None = None) -> Path | None:
+        """Where a history endpoint should LOOK: the explicit `cwd` it was
+        given, else the tab's own transcript folder.
+
+        `worktree` names a side branch of that project (the sidebar folds those
+        sessions into their repo, so the row knows the repo path and the name,
+        not the worktree path). It is a path segment off a request, so the
+        regex is the traversal guard at the door — transcript_path() is still
+        the one behind it.
+
+        None means the answer has already been sent (404 or 400).
+        """
         if cwd_raw:
-            return Path(cwd_raw).expanduser()
+            base = Path(cwd_raw).expanduser()
+            if not worktree:
+                return base
+            if not WORKTREE_NAME_RE.match(worktree):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad worktree name"})
+                return None
+            return worktree_path(base, worktree)
         session = self._target(tab)
-        return session.cwd if session is not None else None
+        return session.history_cwd if session is not None else None
 
     def _owner(self, session_id: str) -> ClaudeSession | None:
         """The live session running this CLI session id, in whichever tab —
@@ -3339,7 +3484,7 @@ class Handler(BaseHTTPRequestHandler):
                 "cwd": str(session.cwd),
                 "current": session.session_id,
                 "recents": load_recents(),
-                "sessions": list_sessions(session.cwd),
+                "sessions": list_sessions(session.history_cwd),
             })
         elif parsed.path == "/api/projects":
             # Sidebar payload: all known projects with their sessions inline,
@@ -3356,7 +3501,8 @@ class Handler(BaseHTTPRequestHandler):
             projects = list_projects()
             current = str(session.cwd) if session is not None else ""
             if current and not any(p["path"].lower() == current.lower() for p in projects):
-                bare = {"path": current, "modified": 0.0, "sessions": []}
+                bare = {"path": current, "modified": 0.0, "sessions": [],
+                        "git": (Path(current) / ".git").exists()}
                 # Decorated here too: a brand-new project skips list_projects()
                 # entirely, and without this its rename would show up nowhere.
                 name = _names_lower().get(current.lower())
@@ -3375,7 +3521,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # Optional cwd: the sidebar replays sessions from any project, not
             # just the open one. A bogus path just yields an empty event list.
-            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
+            # Optional worktree: a folded session's transcript is under the
+            # worktree, while the row carries the repo path (list_projects).
+            cwd = self._cwd_for(params.get("cwd", [""])[0], tab,
+                                params.get("worktree", [""])[0])
             if cwd is None:
                 return
             self._send_json(HTTPStatus.OK, {
@@ -3461,9 +3610,19 @@ class Handler(BaseHTTPRequestHandler):
             # Up/Down and Ctrl+R walk this. Shared with the real TUI: same file,
             # same shape, filtered to this project the way the terminal filters
             # it (wiki/cli-stream-json-findings.md §5.8).
-            cwd = self._cwd_for(params.get("cwd", [""])[0], tab)
-            if cwd is None:
-                return
+            #
+            # session.cwd, NOT history_cwd: history.jsonl is keyed by the
+            # process's working directory, and a worktree tab still RUNS in the
+            # repo — only its transcript moves. append_history() writes with the
+            # same key, so the two stay one file.
+            raw = params.get("cwd", [""])[0]
+            if raw:
+                cwd = Path(raw).expanduser()
+            else:
+                session = self._target(tab)
+                if session is None:
+                    return
+                cwd = session.cwd
             self._send_json(HTTPStatus.OK, {"prompts": read_history(cwd)})
         elif parsed.path == "/api/files":
             # `@` completion, through the CLI's own index (§5.11). The empty
@@ -3813,15 +3972,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
                 return
             target = target.resolve()
+            # Optional: open this conversation in a git worktree of its own, so
+            # several of them can edit one repo without overwriting each other.
+            # "auto" means "name it for me" -- see next_worktree_name().
+            name, error = resolve_worktree(target, body.get("worktree"))
+            if error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": error})
+                return
             # The cap is enforced inside open_tab, atomically with the slot it
             # hands out -- checking it here would race every other spawn.
-            new_tab = self.open_tab(target)
+            new_tab = self.open_tab(target, worktree=name)
             if new_tab is None:
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "too many tabs", "max_tabs": MAX_TABS})
                 return
             self._send_json(HTTPStatus.OK, {
-                "cwd": str(target), "tab": new_tab,
+                "cwd": str(target), "tab": new_tab, "worktree": name,
                 "recents": remember_recent(target),
             })
         elif parsed.path == "/api/project/archive":
@@ -3923,7 +4089,15 @@ class Handler(BaseHTTPRequestHandler):
                 if current is None:
                     return
                 cwd = current.cwd
-            new_tab = self.open_tab(cwd, resume_id=session_id)
+            # A session that was started in a worktree resumes in the SAME one:
+            # the sidebar folds those rows into the repo, so it sends the repo
+            # path plus the name, and --resume + --worktree reuses the existing
+            # tree rather than making a second (measured).
+            name, error = resolve_worktree(cwd, body.get("worktree"))
+            if error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": error})
+                return
+            new_tab = self.open_tab(cwd, resume_id=session_id, worktree=name)
             if new_tab is None:
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "too many tabs", "max_tabs": MAX_TABS})
@@ -3932,6 +4106,7 @@ class Handler(BaseHTTPRequestHandler):
                 remember_recent(cwd)
             self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
                                             "adopted": False,
+                                            "worktree": name,
                                             "session_id": session_id})
         elif parsed.path == "/api/session/fork":
             # `/branch`: keep this conversation and continue a COPY of it.
@@ -3948,7 +4123,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "session has no id yet"})
                 return
-            new_tab = self.open_tab(session.cwd, fork_id=source)
+            # A branch of a worktree conversation stays in that worktree —
+            # otherwise the copy would look at different files from the
+            # conversation it copied.
+            new_tab = self.open_tab(session.cwd, fork_id=source,
+                                    worktree=session.worktree)
             if new_tab is None:
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "too many tabs", "max_tabs": MAX_TABS})
@@ -3969,7 +4148,7 @@ class Handler(BaseHTTPRequestHandler):
             # Optional path: the sidebar deletes sessions in any project. The
             # traversal guard on the id lives in transcript_path either way.
             raw = (body.get("path") or "").strip()
-            cwd = self._cwd_for(raw, tab)
+            cwd = self._cwd_for(raw, tab, (body.get("worktree") or "").strip())
             if cwd is None:
                 return
             transcript = transcript_path(cwd, session_id)

@@ -26,7 +26,7 @@
      of the test log. js/app.js reads the attribute. -->
 <body data-render-only>
 
-<main id="log" aria-label="spec tests"></main>
+<main id="log" class="log" aria-label="spec tests"></main>
 
 <!-- Test 6 needs the real composer handler, so the harness carries the real
      composer markup and lets js/composer.js bind to it.
@@ -37,41 +37,42 @@
      positions it AND what wears the `.bash` state. The rest of the composer row
      is still deliberately absent — initControls() binds nothing without
      #menu-popup. -->
-<form id="composer">
+<form id="composer" class="composer">
   <div class="comp-box">
-    <ul id="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
+    <ul id="slash-popup" class="slash-popup" hidden role="listbox" aria-label="دستورها"></ul>
     <label class="sr-only" for="input">ZWNJ test</label>
-    <textarea id="input" rows="1" dir="auto"
+    <textarea id="input" class="input" rows="1" dir="auto"
               placeholder="تست ۶: «می» سپس Shift+Space سپس «رود»"></textarea>
     <div class="comp-row">
-      <span id="bash-chip" class="chip is-bash" hidden>
+      <span id="bash-chip" class="chip is-bash bash-chip" hidden>
         <span class="shell-mark" dir="ltr">$</span>
-        <span id="bash-chip-label"></span>
+        <span id="bash-chip-label" class="bash-chip-label"></span>
       </span>
       <span class="comp-spacer"></span>
-      <button type="submit" id="send">ارسال</button>
+      <button type="submit" id="send" class="send">ارسال</button>
       <!-- The Esc case routes through the stop button's own click handler, so
            the harness needs the button itself; setBusy() also unhides it. -->
-      <button type="button" id="stop" hidden aria-label="توقف (Esc)">توقف</button>
+      <button type="button" id="stop" class="stop" hidden aria-label="توقف (Esc)">توقف</button>
     </div>
   </div>
 </form>
 
-<footer id="statusline"></footer>
+<footer id="statusline" class="statusline"></footer>
 
 <!-- js/composer.js reads this at module-evaluation time; without it the context
      notice silently no-ops, which is also what a broken one looks like. -->
-<div id="context-notice" hidden></div>
+<div id="context-notice" class="context-notice" hidden></div>
 
 <!-- Window chrome the concurrent-conversation cases assert against: a
      background tab's event must leave every one of these alone. js/chrome.js
-     and js/controls.js grab the ids at module-evaluation time; the model chip
-     ships `hidden`, exactly as in index.html. The rest of the composer row is
-     deliberately absent — initControls() binds nothing without #menu-popup. -->
+     and js/controls.js grab the ids/classes at module-evaluation time; the
+     model chip ships `hidden`, exactly as in index.html. The rest of the
+     composer row is deliberately absent — initControls() binds nothing
+     without #menu-popup. -->
 <div id="harness-chrome">
-  <bdi id="topbar-name"></bdi>
-  <button type="button" id="model-chip" hidden>
-    <span id="model-chip-name" dir="auto"></span>
+  <bdi id="topbar-name" class="topbar-name"></bdi>
+  <button type="button" id="model-chip" class="model-chip" hidden>
+    <span id="model-chip-name" class="model-chip-name" dir="auto"></span>
   </button>
   <!-- The open-conversations group. The rest of the sidebar is deliberately
        absent (#projects stays out, so no fetch is ever fired), but this list is
@@ -83,23 +84,25 @@
 
 <!-- Case 10 drives the REAL permission dialog through window.renderEvent, so the
      harness needs its markup verbatim from index.html. js/chrome.js reads these
-     ids at module-evaluation time; without them showPermission() throws and the
-     verdict comes back empty. -->
-<dialog id="perm">
-  <form method="dialog" id="perm-form">
-    <h2 id="perm-title"></h2>
-    <p id="perm-body" dir="auto"></p>
-    <p id="perm-source" class="meta" dir="auto" hidden></p>
-    <div id="perm-tool"></div>
-    <pre id="perm-params"></pre>
-    <div id="perm-ask"></div>
-    <label id="perm-remember-row">
-      <input type="checkbox" id="perm-remember">
-      <span id="perm-remember-label"></span>
+     ids/classes at module-evaluation time; without them showPermission() throws
+     and the verdict comes back empty. MA4-T0: index.html itself dropped these
+     ids for classes (the dialog moved in-flow, non-modal) — this harness keeps
+     BOTH so its own getElementById calls below still work. -->
+<dialog id="perm" class="perm">
+  <form method="dialog" id="perm-form" class="perm-form">
+    <h2 id="perm-title" class="perm-title"></h2>
+    <p id="perm-body" class="perm-body" dir="auto"></p>
+    <p id="perm-source" class="meta perm-source" dir="auto" hidden></p>
+    <div id="perm-tool" class="perm-tool"></div>
+    <pre id="perm-params" class="perm-params"></pre>
+    <div id="perm-ask" class="perm-ask"></div>
+    <label id="perm-remember-row" class="perm-remember-row">
+      <input type="checkbox" id="perm-remember" class="perm-remember">
+      <span id="perm-remember-label" class="perm-remember-label"></span>
     </label>
     <menu>
-      <button value="deny" class="ghost" id="perm-deny"></button>
-      <button value="allow" id="perm-allow"></button>
+      <button value="deny" class="ghost perm-deny" id="perm-deny"></button>
+      <button value="allow" class="perm-allow" id="perm-allow"></button>
     </menu>
   </form>
 </dialog>
@@ -125,15 +128,16 @@ import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
    import app.js (its body runs last — see the load-order note there), but this
    block runs after every module has evaluated. */
 import {
-  routeEvent, applySwitch, tabs, renderInTab, applyTabs,
+  routeEvent, applySwitch, tabs, renderInTab, applyTabs, cells,
 } from "/static/js/app.js";
 /* The sidebar's open-conversations group: app.js hands chrome.js the list and
    the two verbs, so the harness can stand in for app.js and drive the group
    exactly as the real window does. */
 import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
 /* The posture cycle's "nothing confirmed yet" branch: this is the only way to
-   put controls.js back to a conversation that has not answered. */
-import { restoreControls } from "/static/js/controls.js";
+   put the control set back to a conversation that has not answered. MA4-T1 made
+   it a per-cell factory; the harness IS the cell (root = document.body). */
+const controls = cells[0].controls;
 /* The «away» clock the session recap is gated on — a real five minutes, and the
    only way to test it without waiting them out. */
 import { isAway } from "/static/js/composer.js";
@@ -1513,7 +1517,7 @@ window.renderAgents([
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
-const strip = document.getElementById("agents-strip");
+const strip = document.querySelector(".agents-strip");
 const stripRows = [...(strip?.querySelectorAll(".ag-row") ?? [])];
 const stripDesc = stripRows[0]?.querySelector(".ag-desc");
 check("the agents strip isolates a Latin description inside the RTL shell",
@@ -1838,6 +1842,81 @@ check("closing a background tab mid-turn stops its pulse instead of leaking the 
   pulseWasLive && pulseEntry.scope.pulse === null && !tabs.has(pulseTab),
   (pulseWasLive ? "" : "no pulse to begin with; ") +
   "scope.pulse " + (pulseEntry?.scope.pulse === null ? "cleared" : "STILL RUNNING"));
+
+/* --- the status dot, the unread count and the running badge (MA1) ------------
+
+   Six conversations, one window: what is happening in the five you are NOT
+   looking at is only ever legible from the sidebar. Every value below is
+   derived in one place (chrome.js tabStatus) out of state this window already
+   keeps — the uuid ledger, the permission queue, the last result — so each case
+   drives the real event and reads the real row rather than a status field
+   somebody remembered to set. */
+const stTab = "spec-tab-status";
+applyTabs({ active: otherTab, tabs: [
+  { tab: otherTab, session_id: null, cwd: "C:\\spec", busy: false },
+  { tab: stTab, session_id: null, cwd: "C:\\spec\\status", busy: false },
+] });
+const stRow = () =>
+  document.querySelector('#open-tabs .tab-row[data-tab="' + stTab + '"]');
+const stDot = () => stRow()?.querySelector(".tab-dot");
+const stBadge = () => document.getElementById("tabs-title")?.querySelector(".tabs-badge");
+const stUnread = () => stRow()?.querySelector(".tab-unread")?.textContent ?? "";
+const faStatus = window.STRINGS.tabStatus;
+
+routeEvent({ tab: stTab, type: "wrapper", subtype: "user_echo",
+             uuid: "spec-status-uuid", text: "کاری بکن" });
+check("a message still outstanding in a background conversation paints its dot «در حال کار»",
+  stDot()?.dataset.status === "running" &&
+  stDot()?.getAttribute("aria-label") === faStatus.running &&
+  stBadge()?.textContent === window.STRINGS.tabsRunning.replace("{n}", "۱"),
+  "dot " + (stDot()?.dataset.status ?? "NO ROW") +
+  ", badge «" + (stBadge()?.textContent ?? "none") + "»");
+
+/* A tool waiting on a human beats a turn in flight: it is the only one of the
+   four that will never resolve itself. The request is for a tab that is not on
+   screen, which is the case the whole dot exists for. */
+routeEvent({ tab: stTab, type: "wrapper", subtype: "permission_request",
+             request_id: "spec-status-perm", tool_name: "Bash",
+             tool_use_id: "spec-status-tool",
+             tool_input: { command: "echo status" } });
+check("a tool waiting on a person outranks the turn it is inside, and the badge says «منتظر تأیید»",
+  stDot()?.dataset.status === "waiting" &&
+  stDot()?.title === faStatus.waiting &&
+  stBadge()?.textContent === window.STRINGS.tabsWaiting.replace("{n}", "۱"),
+  "dot " + (stDot()?.dataset.status ?? "NO ROW") +
+  ", badge «" + (stBadge()?.textContent ?? "none") + "»");
+
+routeEvent({ tab: stTab, type: "wrapper", subtype: "permission_resolved",
+             request_id: "spec-status-perm", tool_use_id: "spec-status-tool",
+             decision: "deny" });
+
+/* A user-pressed stop arrives as is_error + aborted_streaming (B-9.10). It is
+   not a failure and it is not news: painting it red would alarm the reader
+   about the thing they just did, and counting it would report their own stop
+   back to them as an unread answer. */
+routeEvent({ tab: stTab, type: "result", subtype: "error_during_execution",
+             is_error: true, terminal_reason: "aborted_streaming",
+             total_cost_usd: 0, duration_ms: 10 });
+check("a STOPPED turn paints no error dot and is not counted as unread",
+  stDot()?.dataset.status === "idle" && stUnread() === "" && !stBadge(),
+  "dot " + (stDot()?.dataset.status ?? "NO ROW") +
+  ", unread «" + stUnread() + "»");
+
+routeEvent({ tab: stTab, type: "result", subtype: "success", is_error: true,
+             result: "کار نکرد", total_cost_usd: 0, duration_ms: 10 });
+check("a failed turn in a parked conversation paints «error» and counts one unread answer",
+  stDot()?.dataset.status === "error" && stUnread() === "۱",
+  "dot " + (stDot()?.dataset.status ?? "NO ROW") +
+  ", unread «" + stUnread() + "»");
+
+applySwitch(stTab);
+check("...and looking at that conversation clears the count",
+  !stRow()?.querySelector(".tab-unread") &&
+  stRow()?.dataset.current === "true",
+  "unread «" + stUnread() + "», current " + (stRow()?.dataset.current ?? "no row"));
+
+applySwitch(otherTab);
+routeEvent({ tab: stTab, type: "wrapper", subtype: "closed" });
 
 specLog.replaceChildren(...specKeep);   // the harness takes its own DOM back
 
@@ -2476,7 +2555,7 @@ check("Shift+Tab inside a text field belongs to the field, not to the posture pi
 // No posture confirmed for this conversation yet: the key is not ours, so it
 // must fall through to the browser's own reverse focus navigation rather than
 // being swallowed into a no-op.
-restoreControls(null);
+controls.restore(null);
 const unowned = pressShiftTab();
 window.fetch = realFetch;
 check("with no posture to cycle, Shift+Tab is left to the browser",
@@ -2578,7 +2657,7 @@ check("the recap waits five minutes of silence before it costs anything",
 input.value = "";
 const qLog = document.createElement("div");
 const qScope = newRenderScope();
-const qStrip = () => document.getElementById("queue-strip");
+const qStrip = () => document.querySelector(".queue-strip");
 const qRows = () => [...(qStrip()?.querySelectorAll(".queued-row") ?? [])];
 /* Every read below is null-tolerant on purpose: with the feature removed the
    strip does not exist at all, and a throw here empties the WHOLE verdict —
