@@ -35,9 +35,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -45,7 +47,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from server import EDITIONS, PROJECTS_DIR                # noqa: E402
+from server import EDITIONS, PROJECTS_DIR, transcript_dir  # noqa: E402
 from test_layout import boot_server, find_edge, hold_sse, measure  # noqa: E402
 
 EDITION = os.environ.get("PCG_UI", "web")
@@ -185,11 +187,28 @@ def main() -> int:
             print(f"  {where}: {m['rows']} rows, home={m['home']}")
     finally:
         stop.set()
+        # Leave no project behind: server.py lists every ~/.claude/projects entry
+        # whose recorded cwd still exists, so a temp workdir that outlives this
+        # gate shows up in the window's sidebar as a "pcg-reload-…" project
+        # forever (wiki/dev-environment.md). taskkill /T because a plain kill
+        # orphans the claude child, and Windows will not delete a folder that is
+        # some process's cwd.
         if proc is not None:
-            proc.terminate()
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True)
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                pass
         PROBE.unlink(missing_ok=True)
-        shutil.rmtree(folder, ignore_errors=True)
-        shutil.rmtree(project, ignore_errors=True)
+        transcripts = transcript_dir(project)          # == folder, resolved fresh
+        for _ in range(20):
+            shutil.rmtree(project, ignore_errors=True)
+            if not project.exists():
+                break
+            time.sleep(0.25)
+        if transcripts:
+            shutil.rmtree(transcripts, ignore_errors=True)
 
     if bad:
         print(f"FAIL - {len(bad)} problems")
