@@ -34,8 +34,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import subprocess
 import sys
 import threading
 
@@ -44,7 +42,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from server import EDITIONS                        # noqa: E402
-from test_layout import find_edge, hold_sse, measure  # noqa: E402
+from test_layout import boot_server, find_edge, hold_sse, measure  # noqa: E402
 
 # The edition decides which UI folder this gate reads. PCG_UI picks it; the
 # table itself lives in server.py and is never duplicated.
@@ -898,55 +896,33 @@ def check_layout(restore: dict, fresh: dict, bad: list[str]) -> None:
             "stale layout")
 
 
-def boot() -> tuple[subprocess.Popen, str, str]:
-    """One server, and the URL it is answering on."""
-    proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
-         "--ui", EDITION],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-    for line in proc.stdout:                          # type: ignore[union-attr]
-        found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
-        if found:
-            return proc, found.group(1), found.group(2)
-    proc.terminate()
-    raise RuntimeError("server never printed a listening URL")
-
-
 def main() -> int:
     edge = find_edge()
     write_probe()
     bad: list[str] = []
     checks = 0
+    # ONE server for the whole run - seven headless pages against it. This used
+    # to be a server per window size, because the fourth page against one
+    # server always wedged (pcg-4hg, 2026-09-07). The cause was the harness,
+    # not the browser: nobody drained the server's stdout, so its own [http]
+    # request log filled the pipe buffer and the server blocked inside write().
+    # boot_server() drains it - see its docstring for the measurement.
+    try:
+        proc, base, token = boot_server()
+    except Exception as err:                          # noqa: BLE001
+        print(f"FAIL - {err}")
+        PROBE.unlink(missing_ok=True)
+        return 1
+    stop = threading.Event()
+    threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
     try:
         for width, height, tight in SIZES:
             where = f"{width}x{height}"
-            # A SERVER PER WINDOW SIZE, not one for the run. Measured
-            # 2026-09-07: the FOURTH headless page against one server never
-            # finishes - it wedges past the 180s cap whatever size it is asked
-            # for (proven by moving the sizes around: the fourth fails, the
-            # first three pass). Three pages was the old limit and the old file
-            # had exactly three sizes, so nothing had found it yet. A fresh
-            # server per size costs ~1s and makes the run independent of its
-            # own length; the underlying limit is a server/headless one and is
-            # not this gate's to fix.
-            try:
-                proc, base, token = boot()
-            except Exception as err:                  # noqa: BLE001
-                bad.append(f"{where}: {err}")
-                continue
-            stop = threading.Event()
-            threading.Thread(target=hold_sse, args=(base, token, stop),
-                             daemon=True).start()
             try:
                 m = measure(edge, f"{base}/static/{PROBE.name}?t={token}", width, height)
             except Exception as err:                  # noqa: BLE001 - reported, not raised
                 bad.append(f"{where}: {err}")
                 continue
-            finally:
-                stop.set()
-                proc.terminate()
             check(m, where, bad, tight, (width, height))
             checks += CHECKS + (0 if tight else FIT_CHECKS)
             p = m["paints"]
@@ -966,36 +942,27 @@ def main() -> int:
                               for name, v in (("1 cell:", p["one"]),
                                               ("4 cells, focused:", p["four"]),
                                               ("4 cells, other:", p["other"]))))
-        # MA5: the layout across a reload. Two more page loads, one server -
-        # each case needs a page that has NOT restored yet, and the flag that
-        # guarantees that is per page load. Same probe file, driven by ?case=.
+        # MA5: the layout across a reload. Two more page loads - each case
+        # needs a page that has NOT restored yet, and the flag that guarantees
+        # that is per page load. Same probe file, driven by ?case=.
         try:
-            proc, base, token = boot()
+            pages = {}
+            for case in ("restore", "fresh"):
+                m = measure(edge, f"{base}/static/{PROBE.name}?t={token}"
+                                  f"&case={case}", 1280, 800)
+                pages[case] = m["layout"]
+            check_layout(pages["restore"], pages["fresh"], bad)
+            checks += LAYOUT_CHECKS
+            print("  layout: restored "
+                  f"{pages['restore']['restored']['cells']} at split "
+                  f"{pages['restore']['restored']['split']}, a fresh window "
+                  f"{pages['fresh']['fresh']['cells']}, a reconnect "
+                  f"{pages['fresh']['again']['cells']}")
         except Exception as err:                      # noqa: BLE001
             bad.append(f"layout: {err}")
-        else:
-            stop = threading.Event()
-            threading.Thread(target=hold_sse, args=(base, token, stop),
-                             daemon=True).start()
-            try:
-                pages = {}
-                for case in ("restore", "fresh"):
-                    m = measure(edge, f"{base}/static/{PROBE.name}?t={token}"
-                                      f"&case={case}", 1280, 800)
-                    pages[case] = m["layout"]
-                check_layout(pages["restore"], pages["fresh"], bad)
-                checks += LAYOUT_CHECKS
-                print("  layout: restored "
-                      f"{pages['restore']['restored']['cells']} at split "
-                      f"{pages['restore']['restored']['split']}, a fresh window "
-                      f"{pages['fresh']['fresh']['cells']}, a reconnect "
-                      f"{pages['fresh']['again']['cells']}")
-            except Exception as err:                  # noqa: BLE001
-                bad.append(f"layout: {err}")
-            finally:
-                stop.set()
-                proc.terminate()
     finally:
+        stop.set()
+        proc.terminate()
         PROBE.unlink(missing_ok=True)
 
     if bad:

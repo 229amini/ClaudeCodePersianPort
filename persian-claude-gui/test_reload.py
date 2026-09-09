@@ -34,9 +34,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -48,7 +46,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from server import EDITIONS, PROJECTS_DIR                # noqa: E402
-from test_layout import find_edge, hold_sse, measure     # noqa: E402
+from test_layout import boot_server, find_edge, hold_sse, measure  # noqa: E402
 
 EDITION = os.environ.get("PCG_UI", "web")
 STATIC = HERE / EDITIONS[EDITION][0]
@@ -121,21 +119,6 @@ def write_probe() -> None:
                      encoding="utf-8")
 
 
-def boot(cwd: Path) -> tuple[subprocess.Popen, str, str]:
-    proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(cwd), "--no-window",
-         "--ui", EDITION],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-    for line in proc.stdout:                          # type: ignore[union-attr]
-        found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
-        if found:
-            return proc, found.group(1), found.group(2)
-    proc.terminate()
-    raise RuntimeError("server never printed a listening URL")
-
-
 def post(base: str, token: str, path: str, body: dict) -> dict:
     req = urllib.request.Request(
         f"{base}{path}?t={token}", data=json.dumps(body).encode("utf-8"),
@@ -161,7 +144,7 @@ def main() -> int:
     proc = None
     stop = threading.Event()
     try:
-        proc, base, token = boot(project)
+        proc, base, token = boot_server(cwd=project, edition=EDITION)
         threading.Thread(target=hold_sse, args=(base, token, stop),
                          daemon=True).start()
 
