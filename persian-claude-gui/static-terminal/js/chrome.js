@@ -1072,7 +1072,12 @@ function kebabMenu(items) {
     const height = menu.offsetHeight;
     const below = rect.bottom + 4;
     menu.style.top = (below + height > innerHeight ? rect.top - height - 4 : below) + "px";
+    // The UA [popover] sheet sets inset:0, so left+right+width are all
+    // definite — over-constrained — and under dir="rtl" the browser drops
+    // `left`, pinning every menu to the window's right edge no matter what
+    // we write here. `right: auto` frees `left` to actually apply.
     menu.style.insetInlineStart = "";
+    menu.style.right = "auto";
     menu.style.left = Math.max(6, Math.min(rect.left, innerWidth - menu.offsetWidth - 6)) + "px";
   });
 
