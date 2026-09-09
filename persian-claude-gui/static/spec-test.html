@@ -1009,6 +1009,38 @@ check("a bare URL in an English line still reads left-to-right",
   Math.round(charX(urlParas[2], 0)) + " of " + Math.round(boxMid(urlParas[2])) +
   " / " + urlDetail(urlLinks[2]));
 
+/* --- a mailto: autolink ending a Persian line (bead pcg-cl4) -----------------
+   Same mechanism as pcg-agb, one token type over: marked's gfm autolink turns a
+   bare email address into an <a href="mailto:…"> before isolateTechnicalTokens()
+   walks, so the trailing punctuation after it is a neutral that UAX#9 N2 hands
+   the paragraph direction. TECHNICAL_ONLY did not match an email, so the
+   anchor never got dir="ltr". Same geometric proof as the URL case — textContent
+   cannot see which end of the address the punctuation painted on. */
+window.renderEvent({ type: "user", message: { content: [{ type: "text", text:
+  "برای هماهنگی به این نشانی ایمیل بزنید: someone@example.com.\n\n" +
+  "Please email someone@example.com. for scheduling." }] } });
+const mailBubble = [...specLog.querySelectorAll(".msg.user")].at(-1);
+const mailParas = [...mailBubble.querySelectorAll("p")];
+const mailLinks = [...mailBubble.querySelectorAll("a")];
+const mailIsolated = (el) => dirOf(el) === "ltr" &&
+  getComputedStyle(el).unicodeBidi === "isolate";
+const mailDetail = (el) => !el ? "no link" : dirOf(el) + "/" +
+  getComputedStyle(el).unicodeBidi + ", last char at " + Math.round(charX(el, -1)) +
+  " in box " + Math.round(el.getBoundingClientRect().left) + "–" +
+  Math.round(el.getBoundingClientRect().right);
+
+check("rule 2: a mailto: address ending a Persian line keeps its last char at its own end",
+  dirOf(mailParas[0]) === "rtl" && !!mailLinks[0] && mailIsolated(mailLinks[0]) &&
+  charX(mailLinks[0], -1) > boxMid(mailLinks[0]),
+  (dirOf(mailParas[0]) ?? "no p") + " paragraph / " + mailDetail(mailLinks[0]));
+
+check("a mailto: address in an English line still reads left-to-right",
+  dirOf(mailParas[1]) === "ltr" && charX(mailParas[1], 0) < boxMid(mailParas[1]) &&
+  !!mailLinks[1] && charX(mailLinks[1], -1) > boxMid(mailLinks[1]),
+  (dirOf(mailParas[1]) ?? "no p") + " paragraph, first char at " +
+  Math.round(charX(mailParas[1], 0)) + " of " + Math.round(boxMid(mailParas[1])) +
+  " / " + mailDetail(mailLinks[1]));
+
 /* Raw HTML in a message. marked v15 emits html tokens VERBATIM — it dropped its
    sanitizer on purpose — and both halves of this transcript are untrusted text:
    the model writes one, the user pastes the other. A user pasted code

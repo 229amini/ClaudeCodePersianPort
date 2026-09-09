@@ -297,6 +297,40 @@ def find_edge() -> str:
     sys.exit("msedge.exe not found - this gate needs a Chromium engine.")
 
 
+def boot_server(cwd: Path | None = None, edition: str | None = None) -> tuple[subprocess.Popen, str, str]:
+    """One server, and the URL it answers on - with its stdout DRAINED.
+
+    pcg-4hg: this was the "a fourth headless page never finishes" bug, and it
+    was never a browser or watchdog limit. `Handler.log_message` writes a line
+    per request to stderr, merged into this pipe; a harness that stops reading
+    after the URL line fills the Windows pipe buffer (~4 KB) and the server
+    then blocks forever inside `write()` at 0% CPU, answering nothing. Measured
+    2026-09-09: undrained, `GET /api/tabs` wedges after 47 requests; drained,
+    3000 pass. One index.html load is ~15 requests, which is why exactly the
+    fourth page hung and the first three never did.
+
+    `cwd` and `edition` default to this module's own (HERE.parent / the
+    PCG_UI-derived EDITION) - pass them explicitly when a caller's default
+    edition differs (test_column.py/test_keys.py/test_shell.py default to
+    "terminal") or it boots a throwaway project dir (test_reload.py).
+    """
+    proc = subprocess.Popen(
+        [sys.executable, str(HERE / "server.py"), "--cwd", str(cwd if cwd is not None else HERE.parent),
+         "--no-window", "--ui", edition if edition is not None else EDITION],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    for line in proc.stdout:                          # type: ignore[union-attr]
+        found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
+        if found:
+            # For the life of the run, not just to the end of this loop.
+            threading.Thread(target=lambda: [None for _ in proc.stdout],
+                             daemon=True).start()
+            return proc, found.group(1), found.group(2)
+    proc.terminate()
+    raise RuntimeError("server never printed a listening URL")
+
+
 def hold_sse(base: str, token: str, stop: threading.Event) -> None:
     """Keep one SSE client attached so the idle watchdog stays disarmed."""
     try:
@@ -354,24 +388,13 @@ def measure(edge: str, url: str, width: int, height: int) -> dict:
 def main() -> int:
     edge = find_edge()
     write_probe()
-    proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
-         "--ui", EDITION],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     failures: list[str] = []
     try:
-        base = token = None
-        for line in proc.stdout:                     # type: ignore[union-attr]
-            found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
-            if found:
-                base, token = found.group(1), found.group(2)
-                break
-        if not base:
-            print("FAIL - server never printed a listening URL")
-            return 1
-
+        proc, base, token = boot_server()
+    except Exception as err:                          # noqa: BLE001
+        print(f"FAIL - {err}")
+        return 1
+    try:
         stop = threading.Event()
         threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
         url = f"{base}/static/_layout_probe.html?t={token}"

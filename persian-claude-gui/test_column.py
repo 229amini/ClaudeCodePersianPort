@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -48,7 +47,7 @@ sys.path.insert(0, str(HERE))
 
 # The Edge lookup, the SSE hold and the PROBE/ENDPROBE read are the same job
 # test_layout.py already does; a second copy would drift from it.
-from test_layout import find_edge, hold_sse, measure  # noqa: E402
+from test_layout import boot_server, find_edge, hold_sse, measure  # noqa: E402
 
 from server import EDITIONS  # noqa: E402
 
@@ -493,23 +492,12 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 def main() -> int:
     edge = find_edge()
     write_probe()
-    proc = subprocess.Popen(
-        [sys.executable, str(HERE / "server.py"), "--cwd", str(HERE.parent), "--no-window",
-         "--ui", EDITION],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     try:
-        base = token = None
-        for line in proc.stdout:                     # type: ignore[union-attr]
-            found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
-            if found:
-                base, token = found.group(1), found.group(2)
-                break
-        if not base:
-            print("FAIL - server never printed a listening URL")
-            return 1
-
+        proc, base, token = boot_server(edition=EDITION)
+    except Exception as err:                          # noqa: BLE001
+        print(f"FAIL - {err}")
+        return 1
+    try:
         stop = threading.Event()
         threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
         url = f"{base}/static/_column_probe.html?t={token}"

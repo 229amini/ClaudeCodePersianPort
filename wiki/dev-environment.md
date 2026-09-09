@@ -106,6 +106,19 @@ Four more, all measured 2026-08-06 during the §4/§5 acceptance pass:
    `threading.Thread(target=lambda: [None for _ in proc.stdout], daemon=True).start()`.
    `test_layout.py` and `run_spec_test.py` get away without it only because their runs are short.
 
+   **This was also `pcg-4hg`, "any fourth headless page against one server never finishes"**
+   (diagnosed 2026-09-09). It was never a Chromium connection cap, an SSE client limit or the
+   idle watchdog: `measure()` gives every page its own `--user-data-dir` and its own browser
+   process, so pages share nothing. What they shared was the server's undrained log pipe.
+   Measured with a probe that spawns no CLI: undrained, `GET /api/tabs` wedges after **47**
+   requests; with the drain thread, 3000 pass. One `index.html` load is ~15 requests — which is
+   exactly why the first three pages always passed and the fourth always hung, whatever size it
+   asked for. `test_split.py`'s server-per-window-size workaround is gone; it boots one server
+   for seven pages via `test_layout.boot_server()`, which drains. **Any new harness must boot
+   through `boot_server()`** — `test_column.py`, `test_keys.py`, `test_shell.py`,
+   `test_reload.py` and `run_spec_test.py` still have their own copy of the undrained loop and
+   are one page away from the same wedge.
+
 ## First author PC (`ladyg`) — historical, probed 2026-08-04
 
 Kept for the install-branch evidence (winget absence, the Store-stub trap, the exact Python and

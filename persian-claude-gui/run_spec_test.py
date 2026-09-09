@@ -32,10 +32,10 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SERVER = HERE / "server.py"
 
 sys.path.insert(0, str(HERE))
 from server import EDITIONS  # noqa: E402
+from test_layout import boot_server  # noqa: E402
 
 # The edition decides which UI folder this gate reads. PCG_UI picks it;
 # the table itself lives in server.py and is never duplicated.
@@ -67,24 +67,12 @@ def hold_sse(base: str, token: str, stop: threading.Event) -> None:
 
 
 def main() -> int:
-    proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--cwd", str(HERE.parent), "--no-window",
-         "--ui", EDITION],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-    )
-    url = None
     try:
-        for line in proc.stdout:                     # type: ignore[union-attr]
-            match = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
-            if match:
-                base, token = match.group(1), match.group(2)
-                url = f"{base}/static/spec-test.html?t={token}"
-                break
-        if not url:
-            return fail("server never printed a listening URL")
-
+        proc, base, token = boot_server()
+    except Exception as err:                          # noqa: BLE001
+        return fail(str(err))
+    url = f"{base}/static/spec-test.html?t={token}"
+    try:
         stop = threading.Event()
         threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
 

@@ -23,6 +23,7 @@ const TECHNICAL = new RegExp(
     "https?://[^\\s\"'`]+",                         // URLs
     "\\B--[A-Za-z][\\w-]*",                         // --flags
     "\\bv?\\d+\\.\\d+(?:\\.\\d+)+\\b",              // 2.1.221
+    "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", // someone@example.com
   ].join("|"),
   "g"
 );
