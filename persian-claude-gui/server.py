@@ -1371,28 +1371,100 @@ IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 IMAGE_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                      ".gif": "image/gif", ".webp": "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# The CLI's own at-mention read cap, read out of the 2.1.263 bundle:
+# `the = 262144`, compared with `<=`. Past it the read hands back `null` and
+# says nothing at all — see save_pasted_file's docstring for why that makes
+# this constant ours to enforce rather than the CLI's.
+MAX_TEXT_BYTES = 256 * 1024
 PASTE_DIR = Path(tempfile.gettempdir()) / "persian-claude-gui-paste"
+# `"` and `#` are not merely awkward in a filename, they are grammar: the CLI's
+# mention scanner reads `@"([^"]+)"` and splits a `#L10-20` line range off the
+# tail (§5.2), so either character in the stored basename truncates the path the
+# CLI resolves. The separators go for the ordinary reason — the client names a
+# file, never a place.
+UNSAFE_NAME_CHARS = '"#\\/:*?<>|'
 
 
-def save_pasted_image(media_type: str, data: str) -> str | None:
-    """Spill a clipboard image to disk and hand back its path.
+def _as_utf8_text(raw: bytes) -> bytes | None:
+    """The same bytes as UTF-8, or None if they are not text at all.
+
+    Notepad still writes UTF-16 with a BOM on this platform, and the CLI's
+    reader assumes UTF-8, so a BOM-marked UTF-16 file is re-encoded rather than
+    refused. Everything else has to decode as UTF-8 (BOM tolerated); a NUL byte
+    is the cheap and reliable "this is a zip/exe/pdf" test, and it has to be
+    checked AFTER the UTF-16 branch because ASCII in UTF-16 is half NULs.
+    """
+    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+    if encoding == "utf-8-sig" and b"\x00" in raw:
+        return None
+    try:
+        text = raw.decode(encoding)
+    except (UnicodeDecodeError, UnicodeError):
+        return None
+    if "\x00" in text:      # UTF-32, or a binary that happened to carry a BOM
+        return None
+    return text.encode("utf-8")
+
+
+def _safe_paste_name(name: str) -> tuple[str, str]:
+    """Stem and suffix to store a text paste under: nothing here is trusted.
+
+    The client supplies a display name, so this keeps the part a person would
+    recognise («گزارش ماهانه») and drops everything that could steer where the
+    file lands or how the CLI decodes it once it is there.
+    """
+    clean = "".join(c for c in name
+                    if c.isprintable() and c not in UNSAFE_NAME_CHARS).strip(" .")
+    stem, _, ext = clean.rpartition(".")
+    if not stem:                       # no dot, or nothing in front of it
+        stem, ext = clean, ""
+    suffix = ("." + ext).lower() if ext else ""
+    # Text content behind a `.png` or `.pdf` name routes the CLI to the wrong
+    # decoder (`HYe = {"pdf"}` is a separate path), and it fails silently there.
+    if suffix in IMAGE_SUFFIXES or suffix == ".pdf" or not suffix:
+        suffix = ".txt"
+    return (stem or "file")[:60], suffix
+
+
+def save_pasted_file(media_type: str, data: str, name: str = "") -> str | None:
+    """Spill pasted or dropped bytes to disk and hand back their path.
 
     Ctrl+V in the CLI attaches an image; in the window the clipboard gives us
     bytes with no path, and every downstream step here (the chip row,
     build_message_blocks, the size cap) is written against paths. Writing one
     temp file reuses all of it instead of growing a second attachment shape.
+
+    A non-image lands here too (A1), because a non-image attachment is already
+    an `@path` mention that the CLI resolves in its own attachment pass (§5.2) —
+    no tool call, no permission prompt, so nothing about this reaches the broker.
+    But **every failure on that side is a silent `return null`**: too big, a
+    `permissions.deny` Read rule, an undecodable byte. All three are
+    indistinguishable from success by the time the model answers, so the size
+    and text-decodability checks are made HERE, where a refusal can still be a
+    sentence the colleague can act on. `media_type` is ignored for text —
+    Windows reports `""` for a dropped `.log`.
     """
-    suffix = next((s for s, m in IMAGE_MEDIA_TYPES.items() if m == media_type), None)
-    if suffix is None:
-        return None
     try:
         raw = base64.b64decode(data, validate=True)
     except (ValueError, TypeError):
         return None
-    if not raw or len(raw) > MAX_IMAGE_BYTES:
+    if not raw:
         return None
+
+    suffix = next((s for s, m in IMAGE_MEDIA_TYPES.items() if m == media_type), None)
+    if suffix is not None:
+        if len(raw) > MAX_IMAGE_BYTES:
+            return None
+        stem = f"paste-{uuid.uuid4().hex[:12]}"
+    else:
+        raw = _as_utf8_text(raw)
+        if raw is None or len(raw) > MAX_TEXT_BYTES:
+            return None
+        safe_stem, suffix = _safe_paste_name(name)
+        stem = f"paste-{uuid.uuid4().hex[:8]}-{safe_stem}"
+
     PASTE_DIR.mkdir(parents=True, exist_ok=True)
-    target = PASTE_DIR / f"paste-{uuid.uuid4().hex[:12]}{suffix}"
+    target = PASTE_DIR / f"{stem}{suffix}"
     target.write_bytes(raw)
     return str(target)
 
@@ -1403,6 +1475,12 @@ def build_message_blocks(text: str, attachments: list[str]) -> list[dict]:
     Images become base64 `image` blocks (verified accepted, B-9.5). Everything
     else becomes an `@path` mention appended to the text, which is what the CLI
     natively understands — the wrapper does not read the file itself.
+
+    The mention is QUOTED. The CLI's unquoted form is `@([^\\s]+)\\b`, so an
+    `@C:\\Users\\ali reza\\note.txt` attaches `C:\\Users\\ali` and nothing tells
+    anyone — and both a temp paste (`%TEMP%` is under the profile) and any file
+    the paperclip picks can carry a space. `@"([^"]+)"` is the CLI's own quoted
+    alternative and it is scanned first (§5.2).
     """
     blocks: list[dict] = []
     mentions: list[str] = []
@@ -1422,7 +1500,7 @@ def build_message_blocks(text: str, attachments: list[str]) -> list[dict]:
                 },
             })
         else:
-            mentions.append(f"@{path}")
+            mentions.append(f'@"{path}"')
 
     combined = " ".join([text, *mentions]).strip()
     if combined:
@@ -3266,6 +3344,15 @@ def stop_all(sessions: dict[str, ClaudeSession]) -> None:
         session.stop()
 
 
+# One base64 image at MAX_IMAGE_BYTES is ~6.7 MB of JSON; 8 MiB is that with
+# room to spare and still far below anything worth worrying about locally.
+MAX_BODY_BYTES = 8 * 1024 * 1024
+
+
+class BodyTooLarge(Exception):
+    """A POST whose Content-Length is past MAX_BODY_BYTES -> 413."""
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "PersianClaudeGUI/0.1"
     protocol_version = "HTTP/1.1"
@@ -3451,6 +3538,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY_BYTES:
+            # There was no cap here at all until A1: the client's own `image/*`
+            # filter was the only thing bounding a POST, and A1 removes it, so a
+            # dropped 4 GB video would otherwise be base64'd into this process's
+            # memory before anything looked at it.
+            raise BodyTooLarge(length)
         if not length:
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
@@ -3660,6 +3753,13 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             body = self._read_body()
+        except BodyTooLarge:
+            # The body is never read, so this connection cannot be reused: the
+            # unread bytes would be parsed as the next request line. HTTP/1.1
+            # keeps it alive by default, hence the explicit close.
+            self.close_connection = True
+            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too large"})
+            return
         except (ValueError, json.JSONDecodeError):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad json"})
             return
@@ -3939,10 +4039,13 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
         elif parsed.path == "/api/attach/paste":
-            path = save_pasted_image(str(body.get("media_type") or ""),
-                                     str(body.get("data") or ""))
+            path = save_pasted_file(str(body.get("media_type") or ""),
+                                    str(body.get("data") or ""),
+                                    str(body.get("name") or ""))
             if path is None:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not an image"})
+                # The one place a refusal can speak: the CLI's own side of an
+                # `@path` read fails silently (save_pasted_file's docstring).
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not attachable"})
                 return
             self._send_json(HTTPStatus.OK, {"path": path})
         elif parsed.path == "/api/permission/respond":

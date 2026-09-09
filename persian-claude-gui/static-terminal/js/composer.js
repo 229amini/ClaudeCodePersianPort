@@ -1377,15 +1377,25 @@ export function makeComposer(root, cell) {
        conversation: one Esc would have stopped four turns. The reasoning that
        chose those keys, and what they back off from, moved with them. */
 
-    /* Bytes with no path — a pasted or dropped image. The server spills them to
-       a temp file and we attach that; from here on it is an ordinary
-       attachment. `/api/attach/paste` takes images and nothing else, which is
-       why both callers filter first. */
+    /* Bytes with no path — a pasted or dropped file. The server spills them to a
+       temp file and we attach that; from here on it is an ordinary attachment.
+
+       Since A1 that is any file, not only an image: an image becomes a real
+       image block, anything else has to decode as text and fit the CLI's own
+       256 KiB at-mention cap. The SERVER decides both, and it is the only layer
+       that can — every failure on the CLI's side of an `@path` read is a silent
+       null. What the size check here buys is only that a 4 GB video is never
+       base64-encoded inside the tab first; the refusal the colleague reads is
+       the same one either way. */
+    const ATTACH_LIMITS = { image: 5 * 1024 * 1024, text: 256 * 1024 };
     async function attachBytes(files) {
       for (const file of files) {
         try {
+          const kind = file.type.startsWith("image/") ? "image" : "text";
+          if (file.size > ATTACH_LIMITS[kind]) throw new Error("too large: " + file.size);
           const { path } = await api("/api/attach/paste", {
             media_type: file.type,
+            name: file.name,
             data: await base64Of(file),
           });
           if (path) setAttachments([...attachments, path]);
@@ -1395,14 +1405,13 @@ export function makeComposer(root, cell) {
       }
     }
 
-    // Ctrl+V with an image on the clipboard. The clipboard hands over bytes with
+    // Ctrl+V with a file on the clipboard. The clipboard hands over bytes with
     // no path, so the server spills them to a temp file and we attach that —
     // from here on it is an ordinary attachment. A text paste falls through
     // untouched, which is why the guard runs before preventDefault().
     input.addEventListener("paste", async (e) => {
-      const images = [...(e.clipboardData?.files ?? [])]
-        .filter((f) => f.type.startsWith("image/"));
-      if (!images.length) {
+      const dropped = [...(e.clipboardData?.files ?? [])];
+      if (!dropped.length) {
         // A long text paste is parked as a chip instead of filling the box.
         // Read BEFORE preventDefault, and only prevented when it is actually
         // parked — a short paste has to reach the box the browser's own way,
@@ -1411,7 +1420,7 @@ export function makeComposer(root, cell) {
         return;
       }
       e.preventDefault();
-      await attachBytes(images);
+      await attachBytes(dropped);
     });
 
     /* Drag-and-drop. TP1 took the paperclip off the prompt (a terminal prompt
@@ -1432,8 +1441,7 @@ export function makeComposer(root, cell) {
     composer.addEventListener("drop", async (e) => {
       if (!hasFiles(e.dataTransfer)) return;
       e.preventDefault();
-      await attachBytes([...(e.dataTransfer?.files ?? [])]
-        .filter((f) => f.type.startsWith("image/")));
+      await attachBytes([...(e.dataTransfer?.files ?? [])]);
     });
 
     input.addEventListener("input", refreshSlash);

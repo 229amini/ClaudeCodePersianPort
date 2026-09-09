@@ -90,9 +90,17 @@ const PROJECTS = {
   projects: [{ path: "C:/kar/proje", name: "", archived: false, pinned: false,
                sessions: SESSIONS }],
 };
+/* A1: the attach route is the one stub with a settable status — a 400 there is
+   not an edge case, it is the ONLY way a refused attachment can ever be seen
+   (the CLI's own side of an `@path` read fails silently). */
+let attachStatus = 200;
 window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
+  if (u.startsWith("/api/attach/paste"))
+    return attachStatus === 200
+      ? json({ path: "C:/Users/ali reza/AppData/Local/Temp/paste-ab12cd34-note.txt" })
+      : new Response("no", { status: attachStatus });
   if (u.startsWith("/api/projects")) return json(PROJECTS);
   if (u.startsWith("/api/agents")) return json({ agents: [] });
   if (u.startsWith("/api/open-file")) return json({ ok: true, path: "C:/khane/.claude/settings.json" });
@@ -299,6 +307,71 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
     out["sent_" + name] = calls.slice(mark)
       .some((c) => c.url.startsWith("/api/message") && c.body?.text === text);
   }
+
+  /* --- A1: dropping a NON-image file on the prompt -------------------------
+     The terminal prompt has no paperclip (TP1 took it off to match the TUI), and
+     `@` only sees files inside the project tree — so drop and Ctrl+V are the
+     only way in for a text file on the desktop. Before A1 the drop handler
+     filtered `image/*` and a dropped `.txt` did nothing whatsoever: no call, no
+     chip, no error. That silence is what the first check below is for. */
+  const dropTarget = document.querySelector(".composer");
+  const attachRow = document.querySelector(".attachments");
+  const chipCount = () => attachRow?.querySelectorAll(".chip").length ?? -1;
+  const errorsSaying = (text) => [...log.querySelectorAll(".msg.error")]
+    .filter((el) => el.textContent === text).length;
+  /* Waiting on the OUTCOME, not on a stopwatch: every drop ends as exactly one
+     chip or one error bubble, and a fixed sleep measured a FileReader that had
+     not come back yet — which read as "the server said yes" and then landed a
+     chip in the middle of the next case. (Why: --virtual-time-budget skips a
+     timer forward instantly but does NOT wait on a FileReader, so a sleep here
+     buys real time only by accident.)
+
+     The loop is bounded tightly on purpose. A drop that never resolves burns
+     its whole budget, and four of those would run the page past the 9 s virtual
+     budget — so the gate would die as «the probe never ran» instead of naming
+     the check that broke. */
+  const settled = () => chipCount() + errorsSaying(FA.pasteFailed);
+  const drop = async (file, expect) => {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    dropTarget.dispatchEvent(new DragEvent("drop",
+      { dataTransfer: dt, bubbles: true, cancelable: true }));
+    for (let i = 0; i < 25 && settled() < expect; i++) await sleep(10);
+  };
+
+  let attachMark = calls.length;
+  await drop(new File(["salam"], "note.txt", { type: "text/plain" }), 1);
+  const attachBody = bodyOf("/api/attach/paste");
+  out.a1Called = since("/api/attach/paste", attachMark);
+  out.a1Name = attachBody?.name ?? "";
+  out.a1Data = attachBody?.data ?? "";
+  out.a1Chips = chipCount();
+  out.a1Errors = errorsSaying(FA.pasteFailed);
+
+  // 300 KiB of text is past the CLI's own 256 KiB at-mention cap, so it must be
+  // refused BEFORE it is base64-encoded inside the tab.
+  attachMark = calls.length;
+  await drop(new File(["a".repeat(300 * 1024)], "big.log", { type: "text/plain" }), 2);
+  out.a1BigCalled = since("/api/attach/paste", attachMark);
+  out.a1BigChips = chipCount();
+  out.a1BigErrors = errorsSaying(FA.pasteFailed);
+
+  // The server's own refusal reads as the same sentence, because every reason it
+  // can refuse looks identical from here.
+  attachStatus = 400;
+  await drop(new File(["salam"], "deny.txt", { type: "text/plain" }), 3);
+  out.a1DeniedErrors = errorsSaying(FA.pasteFailed);
+  out.a1DeniedChips = chipCount();
+  attachStatus = 200;
+
+  // And an image is still an image: same route, same body it always sent.
+  attachMark = calls.length;
+  await drop(new File([new Uint8Array([137, 80, 78, 71])], "x.png",
+                      { type: "image/png" }), 4);
+  out.a1ImageCalled = since("/api/attach/paste", attachMark);
+  out.a1ImageType = bodyOf("/api/attach/paste")?.media_type ?? "";
+  out.a1ImageChips = chipCount();
+  out.faPasteFailed = FA.pasteFailed;
 
   /* --- MA1: the per-conversation status dot, unread count, running badge ---
      Six conversations, one window: what is happening in the five you are NOT
@@ -519,6 +592,39 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     check("and so does a command nobody here has heard of",
           m.get("sent_unknown") is True, str(m.get("sent_unknown")))
+
+    # --- A1: a non-image file on the prompt ----------------------------------
+    # The first of these is the whole defect: before A1 a dropped .txt made no
+    # call at all, and the colleague was told nothing.
+    check("a dropped text file posts to /api/attach/paste, with its own name",
+          m.get("a1Called") is True and m.get("a1Name") == "note.txt",
+          f"called={m.get('a1Called')} / name «{m.get('a1Name')}»")
+
+    check("...carrying the file's bytes as base64, and one chip appears",
+          m.get("a1Data") == "c2FsYW0=" and m.get("a1Chips") == 1
+          and m.get("a1Errors") == 0,
+          f"data «{m.get('a1Data')}» / chips {m.get('a1Chips')} / "
+          f"errors {m.get('a1Errors')}")
+
+    check("300 KiB is refused before it is ever encoded: no call, one sentence",
+          m.get("a1BigCalled") is False and m.get("a1BigErrors") == 1
+          and m.get("a1BigChips") == 1,
+          f"called={m.get('a1BigCalled')} / errors {m.get('a1BigErrors')} / "
+          f"chips {m.get('a1BigChips')}")
+
+    check("a 400 from the server reads as the same sentence, and adds no chip",
+          m.get("a1DeniedErrors") == 2 and m.get("a1DeniedChips") == 1,
+          f"errors {m.get('a1DeniedErrors')} / chips {m.get('a1DeniedChips')}")
+
+    check("the refusal names the rule, so it is actionable",
+          "۲۵۶" in (m.get("faPasteFailed") or ""),
+          m.get("faPasteFailed") or "")
+
+    check("an image still posts exactly as it did, media_type and all",
+          m.get("a1ImageCalled") is True and m.get("a1ImageType") == "image/png"
+          and m.get("a1ImageChips") == 2,
+          f"called={m.get('a1ImageCalled')} / type «{m.get('a1ImageType')}» / "
+          f"chips {m.get('a1ImageChips')}")
 
     # --- MA1: per-tab status, unread, running badge --------------------------
     check("an outstanding message in a background conversation paints «در حال کار»",

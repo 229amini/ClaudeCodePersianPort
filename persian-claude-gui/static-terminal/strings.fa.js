@@ -199,7 +199,10 @@ window.FA = {
 
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
-  pasteFailed: "چسباندن تصویر ناموفق بود",
+  // A1: this sentence is the whole refusal. Every reason the file could be
+  // turned down — too big, not text, unreadable — is one silent null on the
+  // CLI's side, so the rule itself has to be in the message.
+  pasteFailed: "این فایل ضمیمه نشد — فقط عکس، یا فایل متنی تا ۲۵۶ کیلوبایت",
   moreActions: "کارهای بیشتر",
   copyCode: "کپی کد",
   copied: "کپی شد",
