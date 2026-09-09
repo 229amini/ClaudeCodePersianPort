@@ -451,15 +451,29 @@ dies on a space and `PASTE_DIR` is under the user's profile — which also fixes
 paperclip on space paths. And **every CLI-side failure on this path is a silent `return null`** (over
 256 KiB, a `permissions.deny` Read rule, any read error), so the wrapper's door is the only place a
 refusal can speak: text-decodable, <= 256 KiB, sanitised basename, plus a `MAX_BODY_BYTES` cap where
-`_read_body` had none. `@` over the stream-json pipe is still **bundle-read, never paid-proven**
-(`wiki/cli-stream-json-findings.md` §5.2) — fold a check into the next scheduled smoke turn.
+`_read_body` had none. `@` over the stream-json pipe is **no longer bundle-read only — it is proven, and it was free.**
+`probe_mention.py` spawns the CLI with `--model <bogus>`: the local attachment pass runs first and the
+process only dies later at the API, so the result event is `subtype: "success"`, `is_error: true`,
+`total_cost_usd: 0`, and the transcript already carries the `attachment/file` record with `filename`,
+`displayPath` and the file's whole content. The unquoted control produced **zero** such records, which
+is what makes the quoting in `build_message_blocks` load-bearing rather than cosmetic. Keep that probe
+for the next CLI upgrade; `wiki/cli-stream-json-findings.md` §5.2 now records the proof.
 
 Gate numbers after this session: spec **212/212** web and **179/179** terminal, `test_split.py`
 **152/152** web and **141/141** terminal, `test_reload.py` **8/8** both, column **31**, keys **60**,
 shell **39**, dialogs 31, strings 24, vocab 82, layout both, units, transcript guard,
-`test_no_console` under `pythonw.exe` both editions. `smoke_test.py` has NOT run since `036c561` —
-correct at each step (no transport change) but it is now several commits stale, and it is the only
-gate that drives a real CLI turn. Run it before anything ships to the colleague's machine.
+`test_no_console` under `pythonw.exe` both editions, and `smoke_test.py` **PASS — 16/16 on CLI
+2.1.263** (one paid turn, closing a six-commit gap; drift list in
+`wiki/cli-stream-json-findings.md` §"2.1.263 re-verification").
+
+One defect was introduced and fixed the same night: **`test_reload.py` leaked its throwaway project
+into the sidebar on every run** — 21 `pcg-reload-*` temp folders with 21 matching
+`~/.claude/projects` entries, because `server.py` lists any projects entry whose recorded cwd still
+exists. It now carries the `finally` block the other CLI-spawning probes already had (`taskkill /T`
+and wait before touching the folder — Windows will not delete a live process's cwd — then a retry
+`rmtree` on the cwd and on its `transcript_dir`), and it cleans up on the **failure** path too, which
+is the path you are on while debugging. Any new gate that spawns the real CLI in a `mkdtemp` cwd owes
+the same block; `wiki/dev-environment.md` is where the rule lives.
 Still open: `pcg-p7g` (visual pass, deferred by the user until they are at the screen), `pcg-b67.8`
 (M8prime) and `pcg-12n`, both of which need the colleague's PC.
 
@@ -653,8 +667,8 @@ Two checks exist:
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 | TUI vocabulary (v2.0) | `python persian-claude-gui\test_tui_vocab.py` | `wiki/tui-keys.md` and `wiki/tui-strings.md` still agree with the installed `claude` binary: the binding table parses (206 bindings / 25 contexts on 2.1.261), the ~20 chords v2 actually commits to are the ones the binary has, the two platform-computed chords resolve to their Windows branch (`alt+v`, `shift+tab`), every English string and glyph the docs quote is present, every table row carries a Persian column, the per-context counts printed in the docs are real, and (added v2.6, §10) the five-hour usage-warning threshold and its two per-plan siblings are re-derived from the bundle. **82 checks.** Free, login-independent, spawns nothing — it reads `claude.exe` as a file. Regenerate the underlying data with `extract_tui_vocab.py`. This exists because the binary self-updates overnight (most recently 2.1.260 → 2.1.261 on 2026-09-05) and silently invalidates any hand-written key table. |
-| Reload (2026-09-09) | `python persian-claude-gui	est_reload.py` | the one class every other gate here is blind to: a SECOND page load. Writes a transcript into a throwaway project, boots the server, resumes the session, then loads the real `index.html` again and asserts the transcript is still there and the greeting is off — the `pcg-1ug` bug, where a resumed session's rows are fetched client-side and never published, so nothing repainted them. **8 checks**, both editions (`PCG_UI`). Free. Stubs `window.EventSource` only, because a page holding a live SSE request never settles under `--dump-dom` (`wiki/dev-environment.md` §9). |
-| Split/grid (MA3-T2) | `python persian-claude-gui	est_split.py` | the 1/2/4 grid measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **152 checks** web, **141** terminal. Free. |
+| Reload (2026-09-09) | `python persian-claude-gui\test_reload.py` | the one class every other gate here is blind to: a SECOND page load. Writes a transcript into a throwaway project, boots the server, resumes the session, then loads the real `index.html` again and asserts the transcript is still there and the greeting is off — the `pcg-1ug` bug, where a resumed session's rows are fetched client-side and never published, so nothing repainted them. **8 checks**, both editions (`PCG_UI`). Free. Stubs `window.EventSource` only, because a page holding a live SSE request never settles under `--dump-dom` (`wiki/dev-environment.md` §9). |
+| Split/grid (MA3-T2) | `python persian-claude-gui\test_split.py` | the 1/2/4 grid measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **152 checks** web, **141** terminal. Free. |
 | Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |
 | Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: the `⏺` marker shares one gutter with a tool icon, a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text, and the user row is the dimmed prompt echo (no pill) whose mark is re-read out of the shipping `index.html`. **31 checks.** Free, no CLI process, no login. |
 | Keys (v2.3) | `python persian-claude-gui\test_keys.py` | every chord the «کلید v2» column of `wiki/tui-keys.md` binds, across the five contexts the prompt owns (Global, Chat, Confirmation, Autocomplete, HistorySearch), dispatched at the real composer in the real `index.html` with the new routes stubbed in, plus `!`, `@`, `\`+Enter and `?` as characters rather than chords. Fails in both directions: a table chord with nothing behind it, or a scenario here for a chord the table never bound. **40 checks** at v2.3, grown to **60** at v2.4 with the whole `Confirmation` context (permission/plan/question Esc and shift+Tab semantics). Free, no CLI process, no login. |
