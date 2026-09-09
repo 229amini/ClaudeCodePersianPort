@@ -85,8 +85,14 @@ Standard Anthropic shape, sent as a block in the stream-json user message:
 
 Verified twice: a 1×1 red PNG ("Pink.") and a 64×64 blue PNG, asked in Persian, answered «آبی».
 
-Non-image attachments become an `@path` mention appended to the text — CLI-native behaviour, so
+Non-image attachments become an `@"path"` mention appended to the text — CLI-native behaviour, so
 the wrapper never reads those files itself. Images are capped at 5 MB.
+
+The mention is **quoted** (A1, 2026-09-09): the CLI's unquoted form stops at the first space, so
+`@C:\Users\ali reza\note.txt` attached `C:\Users\ali` and said nothing. A non-image dropped or
+pasted into the terminal edition is spilled to `PASTE_DIR` first and capped at **256 KiB** with a
+text-decodability check, both enforced here rather than by the CLI — see
+`cli-stream-json-findings.md` §5.2 for why the CLI cannot report either failure.
 
 ## statusLine passthrough (plan §B-7)
 

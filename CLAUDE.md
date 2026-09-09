@@ -394,6 +394,75 @@ units, transcript guard, `test_no_console` on both. `smoke_test.py` not re-run �
 change. Open follow-up: a session started in the real TUI still replays without shell rows
 (server-side, bead filed).
 
+**2026-09-09 — the reload family, three narrow-window defects, and the pipe wedge.** Six beads, and
+four of the root causes were nowhere near where the report pointed.
+
+**A reload threw away two different things (`645abf4`).** A tab's transcript had TWO sources and only
+one survived F5: live events replay from `Hub.publish`'s per-tab bucket, but a resumed session's
+transcript is fetched CLIENT-side by `resumeSession` and painted straight into the node, never
+published — and a resumed CLI does not re-emit its conversation, which is why that fetch exists. So a
+fresh window got status, usage and lifecycle (all six status rows populated — that is what made it
+look like a rendering bug) and nothing that draws a message row. Fixed with a `backfillTab()` at
+`placeIn`, the one point every placement routes through, reusing `/api/session` -> `renderInto` ->
+`renderInTab` so the target resolves AFTER the await. Separately, neither `data-split` nor the
+cell->tab map persisted, so a 4-way split came back as one empty cell: `sessionStorage` under
+`pcg.layout`, restored once per load inside `applyTabs()`'s own `!focusedTab()` branch.
+**`sessionStorage`, not `localStorage`, deliberately** — the server binds a random free port every
+run, so the origin differs run to run and neither store survives a relaunch, but `localStorage` would
+leave a dead entry per port forever. New free gate `test_reload.py` does a real SECOND page load.
+
+**Three narrow-window defects and a BiDi one (`6d5ce46`).** At 1052x711 in split 4 the transcript got
+8-27% of the cell, and the culprit was the STATUS LINE, not the composer: in a 370px cell it wrapped
+to 5-8 rows. Clamped to two rows with `overflow-y: auto` — every field stays reachable, nothing
+hidden; the terminal edition additionally **dropped a `.sl-line display:none` rule**, so its old "59%
+transcript" had been measured against six hidden fields. 40% is arithmetically out of reach without
+also clamping the composer's chip row, and a picker the user cannot find is a feature that is gone —
+so 25% is deliberate. The popup cap was **dead code at all three sites**: a `[popover]` is `[hidden]`
+until it opens, `[hidden]` is `display:none`, and an element in no box tree has
+`offsetParent === null`, so `el.offsetParent?.getBoundingClientRect()` was `undefined` and `if (box)`
+swallowed the write every time — read `wiki/rtl-rendering-notes.md` §"A `[hidden]` element has no
+`offsetParent`" before measuring any popup. The terminal edition's user row was still the web
+edition's chat bubble; it is now one dimmed row opening with **the product's own already-shipping
+mirrored prompt mark** (the `.comp-mark` geometry as a `mask-image` over `currentColor`, with
+`-webkit-mask` alongside because a dropped `mask` on a pre-120 Chromium paints a solid rectangle per
+row). Not routed through `strings.fa.js`: no glyph in that edition is, and `.msg.user.side` is
+excluded because a `/btw` question is one. And a URL ending a Persian line drew as `/https://…`
+because **marked's gfm autolink makes an `<a>` before `isolateTechnicalTokens()` walks, and `A` sits
+in `SKIP_TAGS` under the comment "already isolated" — true of `<bdi>`, false of `<a>`.**
+
+**`pcg-4hg` was never the browser (`2e321e3`).** "Any fourth headless page against one server wedges"
+was `Handler.log_message`: one `[http]` line per request into a stdout pipe that every gate stopped
+reading at the URL line, so the ~4 KB Windows buffer filled and the server blocked forever inside
+`write()` at 0% CPU. Measured — undrained, `TimeoutError` at **47** requests; drained, **3000/3000**;
+one `index.html` load is ~15 requests, which is why three pages always passed and the fourth never
+did. Same family as the 2026-08-07 `pythonw` defect. `test_layout.boot_server()` starts the drain
+thread BEFORE returning and the five gates that carried their own loop are rewired onto it;
+`test_split.py` runs one server for seven pages instead of one per size. **Any new headless gate must
+boot through `boot_server()`** — `wiki/dev-environment.md` §9. Also here: `mailto:` isolation
+(`pcg-cl4`, one alternation), and the web edition to **1.3.0**, which lives in the `EDITIONS` table
+now, not a bare constant.
+
+**Attaching a non-image file (`pcg-qmy.11`).** User decision over the documented workaround. The
+shape reuses what the wrapper already does — a non-image attachment is an `@path` mention, and the
+CLI resolves those in its OWN attachment pass (`Cps` -> `a8e` -> the Read implementation called
+directly, injected as `isMeta`), so **nothing rides `can_use_tool`**: no tool call, no permission
+prompt. Two things are load-bearing. The mention is **quoted** (`@"<path>"`) because an unquoted one
+dies on a space and `PASTE_DIR` is under the user's profile — which also fixes the web edition's
+paperclip on space paths. And **every CLI-side failure on this path is a silent `return null`** (over
+256 KiB, a `permissions.deny` Read rule, any read error), so the wrapper's door is the only place a
+refusal can speak: text-decodable, <= 256 KiB, sanitised basename, plus a `MAX_BODY_BYTES` cap where
+`_read_body` had none. `@` over the stream-json pipe is still **bundle-read, never paid-proven**
+(`wiki/cli-stream-json-findings.md` §5.2) — fold a check into the next scheduled smoke turn.
+
+Gate numbers after this session: spec **212/212** web and **179/179** terminal, `test_split.py`
+**152/152** web and **141/141** terminal, `test_reload.py` **8/8** both, column **31**, keys **60**,
+shell **39**, dialogs 31, strings 24, vocab 82, layout both, units, transcript guard,
+`test_no_console` under `pythonw.exe` both editions. `smoke_test.py` has NOT run since `036c561` —
+correct at each step (no transport change) but it is now several commits stale, and it is the only
+gate that drives a real CLI turn. Run it before anything ships to the colleague's machine.
+Still open: `pcg-p7g` (visual pass, deferred by the user until they are at the screen), `pcg-b67.8`
+(M8prime) and `pcg-12n`, both of which need the colleague's PC.
+
 **M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
 this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
 offline, not-logged-in) never executed here because this PC already has both tools; see
@@ -578,17 +647,19 @@ Two checks exist:
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). **Also asserts the uuid ledger (2026-08-24)**: the `command_uuid` the turn's send returns comes back on `command_lifecycle` events and reaches a terminal state by the time the result settles — zero extra turns, read off the one send this file already pays for. 16 checks, still one subscription turn. |
 | Queue/lifecycle contract | `python persian-claude-gui\probe_queue.py` | free re-probe for the next CLI upgrade: boots the real CLI, checks `initialize`/`system/init` advertise `msg_lifecycle_v1`/`interrupt_receipt_v1`/`interrupt_cancel_queued_v1`, that a top-level `uuid` on the user frame produces `command_lifecycle` events reaching a terminal state, that the same frame with no `uuid` produces none, and that `cancel_async_message` on a never-enqueued uuid answers `cancelled: false`. 8 checks. Free because its payload is `/recap` on an empty session, which refuses locally — `total_cost_usd` must print `0`. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown by later passes; the gate is `PASS — 202/202` for the web edition (`PCG_UI` unset) and `PASS — 174/174` for the terminal edition (`PCG_UI=terminal`) — run both when a change touches shared code. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown by later passes; the gate is `PASS — 212/212` for the web edition (`PCG_UI` unset) and `PASS — 179/179` for the terminal edition (`PCG_UI=terminal`) — run both when a change touches shared code. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Narrow windows | `python persian-claude-gui\test_layout.py` | the shipping `index.html` (not a copy — the probe page is generated from it and deleted again) measured headlessly at 1280×800, 760×640 and 500×560: nothing drawn off the window, nothing wider than its own box, and the posture menu open — full width, on screen, rows at their natural height. Free. This is the class the spec gate is structurally blind to: it runs at one size and asserts message content |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 | TUI vocabulary (v2.0) | `python persian-claude-gui\test_tui_vocab.py` | `wiki/tui-keys.md` and `wiki/tui-strings.md` still agree with the installed `claude` binary: the binding table parses (206 bindings / 25 contexts on 2.1.261), the ~20 chords v2 actually commits to are the ones the binary has, the two platform-computed chords resolve to their Windows branch (`alt+v`, `shift+tab`), every English string and glyph the docs quote is present, every table row carries a Persian column, the per-context counts printed in the docs are real, and (added v2.6, §10) the five-hour usage-warning threshold and its two per-plan siblings are re-derived from the bundle. **82 checks.** Free, login-independent, spawns nothing — it reads `claude.exe` as a file. Regenerate the underlying data with `extract_tui_vocab.py`. This exists because the binary self-updates overnight (most recently 2.1.260 → 2.1.261 on 2026-09-05) and silently invalidates any hand-written key table. |
+| Reload (2026-09-09) | `python persian-claude-gui	est_reload.py` | the one class every other gate here is blind to: a SECOND page load. Writes a transcript into a throwaway project, boots the server, resumes the session, then loads the real `index.html` again and asserts the transcript is still there and the greeting is off — the `pcg-1ug` bug, where a resumed session's rows are fetched client-side and never published, so nothing repainted them. **8 checks**, both editions (`PCG_UI`). Free. Stubs `window.EventSource` only, because a page holding a live SSE request never settles under `--dump-dom` (`wiki/dev-environment.md` §9). |
+| Split/grid (MA3-T2) | `python persian-claude-gui	est_split.py` | the 1/2/4 grid measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **152 checks** web, **141** terminal. Free. |
 | Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |
-| Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: the `⏺` marker shares one gutter with a tool icon, a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text. **22 checks.** Free, no CLI process, no login. |
+| Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: the `⏺` marker shares one gutter with a tool icon, a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text, and the user row is the dimmed prompt echo (no pill) whose mark is re-read out of the shipping `index.html`. **31 checks.** Free, no CLI process, no login. |
 | Keys (v2.3) | `python persian-claude-gui\test_keys.py` | every chord the «کلید v2» column of `wiki/tui-keys.md` binds, across the five contexts the prompt owns (Global, Chat, Confirmation, Autocomplete, HistorySearch), dispatched at the real composer in the real `index.html` with the new routes stubbed in, plus `!`, `@`, `\`+Enter and `?` as characters rather than chords. Fails in both directions: a table chord with nothing behind it, or a scenario here for a chord the table never bound. **40 checks** at v2.3, grown to **60** at v2.4 with the whole `Confirmation` context (permission/plan/question Esc and shift+Tab semantics). Free, no CLI process, no login. |
 | Dialogs (v2.4) | `python persian-claude-gui\test_dialogs.py` | the *shape* `test_keys.py` dispatches keys at: the capability chips and the old popup are gone from `index.html`, both dialogs sit inside `#stage` above the prompt, the permission form has no submit button, dialogs open with `show()` and never `showModal()`, the four picker verbs (`/model` `/effort` `/output-style` `/permissions`) map to openers, `choice.js` stays a leaf module, the option digit is never inside the string, and every `FA.*` key the window reads exists in `strings.fa.js`. **31 checks.** Reads files and spawns nothing — the fastest gate here. |
-| Shell (v2.5) | `python persian-claude-gui\test_shell.py` | the status-line stack (three rows in §3.4's order, the posture row following the wrapper rather than the raw CLI mode, one turn-end notification on a live settle and none on a replayed one) and every window-local command of §3.5 — the route each one calls, the body it sends, and the two (`/theme`, an unowned verb) that fall through to the CLI as text. **29 checks.** Driven headlessly with every route stubbed inside the page — no `claude` process, no login. |
+| Shell (v2.5) | `python persian-claude-gui\test_shell.py` | the status-line stack (three rows in §3.4's order, the posture row following the wrapper rather than the raw CLI mode, one turn-end notification on a live settle and none on a replayed one) and every window-local command of §3.5 — the route each one calls, the body it sends, and the two (`/theme`, an unowned verb) that fall through to the CLI as text, plus the non-image drop (`pcg-qmy.11`): a text file posts, an oversize one never does, and a 400 says so. **39 checks.** Driven headlessly with every route stubbed inside the page — no `claude` process, no login. |
 | Strings (v2.6) | `python persian-claude-gui\test_strings.py` | the two arrows in `claude.exe → wiki/tui-strings.md → static/strings.fa.js → the page`: every wiki row's key exists in the file and the two texts agree, a row shipping nothing says so in both places, no un-allowlisted English in a Persian string, no key in the file that nothing reads, `/help` lists exactly the verbs the window answers, and `help.html` names every command V2-PLAN §4 says the window will not build. **24 checks.** Reads files and spawns nothing. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in

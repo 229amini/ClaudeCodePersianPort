@@ -3,8 +3,10 @@
 No server, no CLI, no cost. Run: C:\\Python314\\python.exe test_units.py
 
 Both of these guard failure modes that produce no error message at all —
-`run_statusline` swallowed a non-zero exit for months, and `save_pasted_image`
-takes bytes straight off a POST body.
+`run_statusline` swallowed a non-zero exit for months, and `save_pasted_file`
+takes bytes straight off a POST body — and since A1 it is also the ONLY layer
+that can refuse a non-image attachment out loud, because the CLI's own `@path`
+read hands back a null and says nothing.
 """
 import base64
 import http.client
@@ -56,18 +58,84 @@ check("quoted exe path survives",
       server.run_statusline(quoted, {"cwd": "D:/x"}) == [{"text": '{"cwd": "D:/x"}'}])
 check("a failing command is None", server.run_statusline("exit 1", {}) is None)
 
-print("save_pasted_image")
+print("save_pasted_file: the image branch, unchanged by A1")
 png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
-path = server.save_pasted_image("image/png", png)
+path = server.save_pasted_file("image/png", png)
 check("writes a .png and returns its path", path is not None and path.endswith(".png")
       and Path(path).read_bytes().startswith(b"\x89PNG"))
-check("rejects a non-image media type", server.save_pasted_image("text/html", png) is None)
-check("rejects bad base64", server.save_pasted_image("image/png", "not!base64") is None)
-check("rejects empty payload", server.save_pasted_image("image/png", "") is None)
+check("rejects a non-image media type", server.save_pasted_file("text/html", png) is None)
+check("rejects bad base64", server.save_pasted_file("image/png", "not!base64") is None)
+check("rejects empty payload", server.save_pasted_file("image/png", "") is None)
 oversize = base64.b64encode(b"0" * (server.MAX_IMAGE_BYTES + 1)).decode()
-check("rejects oversize", server.save_pasted_image("image/png", oversize) is None)
+check("rejects oversize", server.save_pasted_file("image/png", oversize) is None)
 if path:
     os.remove(path)
+
+print("save_pasted_file: a text file (A1)")
+# Everything the CLI would refuse here refuses SILENTLY on its side (a null
+# return plus telemetry), so each of these is a case that would otherwise reach
+# the model as a message with an attachment that was never attached.
+b64 = lambda raw: base64.b64encode(raw).decode()   # noqa: E731
+written = []
+
+
+def saved(raw, name, media_type=""):
+    p = server.save_pasted_file(media_type, b64(raw), name)
+    if p:
+        written.append(p)
+    return p
+
+report = saved("گزارش ماهانه ۱۴۰۴\n".encode("utf-8"), "گزارش ماهانه.txt")
+check("a Persian-named text file lands under PASTE_DIR",
+      report is not None and Path(report).parent == server.PASTE_DIR)
+check("its bytes are the bytes that were sent",
+      report is not None
+      and Path(report).read_bytes() == "گزارش ماهانه ۱۴۰۴\n".encode("utf-8"))
+check("the name survives, the grammar characters do not",
+      report is not None and "گزارش ماهانه" in Path(report).name
+      and not (set('"#\\/') & set(Path(report).name)))
+
+quoted = saved(b"salam", 'note"weird#L1-2.txt')
+check("a name carrying `\"` or `#` is stripped of both",
+      quoted is not None and not (set('"#') & set(Path(quoted).name))
+      and Path(quoted).suffix == ".txt")
+
+png_named = saved(b"this is text, not a png", "x.png")
+pdf_named = saved(b"this is text, not a pdf", "x.pdf")
+check("text behind an image or .pdf name is stored as .txt",
+      png_named is not None and png_named.endswith(".txt")
+      and pdf_named is not None and pdf_named.endswith(".txt"))
+
+check("a binary is refused: a NUL byte is the test",
+      saved(b"PK\x03\x04\x14\x00\x00\x00\x08\x00", "bundle.zip") is None)
+check("256 KiB + 1 is refused at our door, not the CLI's",
+      saved(b"a" * (server.MAX_TEXT_BYTES + 1), "big.log") is None)
+check("256 KiB exactly is accepted",
+      saved(b"a" * server.MAX_TEXT_BYTES, "just-fits.log") is not None)
+
+utf16 = saved("سلام".encode("utf-16"), "notepad.txt")
+check("a UTF-16 BOM file is re-encoded as UTF-8 (the CLI reads UTF-8)",
+      utf16 is not None and Path(utf16).read_bytes() == "سلام".encode("utf-8"))
+
+escaped = saved(b"nope", "..\\..\\x.txt")
+check("a traversal-shaped name stays inside PASTE_DIR",
+      escaped is not None and Path(escaped).parent == server.PASTE_DIR
+      and ".." not in Path(escaped).name)
+
+for p in written:
+    os.remove(p)
+
+print("build_message_blocks: the mention is QUOTED")
+# The one line that matters in both editions. The CLI's unquoted mention form is
+# `@([^\s]+)\b`, so an unquoted temp path under `C:\Users\ali reza\` attaches
+# `C:\Users\ali` and reports success. Revert the quotes in server.py and this
+# fails — that is what it is for.
+spaced = Path(tempfile.gettempdir()) / "pcg unit test.txt"
+spaced.write_text("salam", encoding="utf-8")
+blocks = server.build_message_blocks("hi", [str(spaced)])
+check("a non-image attachment becomes @\"<path>\"",
+      blocks == [{"type": "text", "text": f'hi @"{spaced}"'}])
+spaced.unlink()
 
 print("PermissionBroker: AskUserQuestion is a question, not an approval")
 # Every one of these fails SILENTLY in production: the question simply never
@@ -1515,6 +1583,21 @@ with tempfile.TemporaryDirectory() as tmp:
         check("the project list is still a list", isinstance(payload.get("projects"), list))
         check("and it reports no current project rather than failing",
               payload.get("current_cwd") == "" and payload.get("current_session") is None)
+
+        # A1 removed the client's `image/*` filter, which was the only thing
+        # bounding a POST body. The refusal has to come off the HEADER, before
+        # the bytes are read -- so this announces a huge Content-Length and
+        # sends nothing at all, which is a hang if the cap is not there.
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+        conn.putrequest("POST", "/api/attach/paste?t=unit-token")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(server.MAX_BODY_BYTES + 1))
+        conn.endheaders()
+        oversized = conn.getresponse()
+        oversized.read()
+        conn.close()
+        check("a POST past MAX_BODY_BYTES is 413, decided off the header",
+              oversized.status == 413)
     finally:
         if httpd is not None:
             httpd.shutdown()

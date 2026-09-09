@@ -64,6 +64,38 @@ the author writes that gate explicitly when they want it.
 **Consequence:** v2 sends `@path` as plain text and the CLI attaches the file. `/api/files`
 never needs to read file content.
 
+#### What happens after the scan, and why the wrapper has to refuse first (A1, 2.1.263)
+
+Read out of the bundle for A1 (attaching a text file from outside the project), and the reason
+`save_pasted_file()` in `server.py` does its own checking rather than handing everything to the
+CLI:
+
+- The mention is resolved in the CLI's own attachment pass: `Cps` → `a8e` → the **Read tool's
+  implementation, called directly**, and the product is injected as an `isMeta` «Called the Read
+  tool…» message. **Nothing rides `can_use_tool`** — no tool call to approve, no permission
+  dialog, so this path never reaches the broker. The file also enters `readFileState`, so a later
+  Edit of it needs no Read first.
+- **The read cap is 256 KiB** (`the = 262144`, compared with `<=`), and `.pdf` routes to a
+  different decoder entirely (`HYe = {"pdf"}`).
+- **Every failure on that side is `return null` plus telemetry.** Too big, a `permissions.deny`
+  Read rule, an unreadable or binary file: all four are indistinguishable from success by the
+  time the model answers, and the model simply answers as though no file had been mentioned.
+  **The wrapper's door is therefore the only place a refusal can speak to the user**, which is
+  what `MAX_TEXT_BYTES` and the text-decodability check in `save_pasted_file` are for.
+- Absolute paths outside the cwd resolve fine — this machine's own transcripts carry
+  `attachment/file` records for paths under `%TEMP%` and for a path containing a space.
+- **The mention must be quoted.** `@([^\s]+)\b` stops at the first space, so an unquoted
+  `@C:\Users\ali reza\note.txt` attaches `C:\Users\ali` and reports nothing;
+  `build_message_blocks` emits `@"<path>"`, the quoted alternative above, which is scanned first.
+  `#` is grammar too (the `#L10-20` suffix), so neither character may survive into a stored
+  basename.
+- Still **bundle-read, never paid-proven** over the stream-json pipe — v2.3's `@` menu already
+  stands on the same reading, so A1 adds no new risk, but it is not proven either. Fold an
+  `@"<temp>.txt"` plus a token word into the next scheduled smoke turn.
+- No `PASTE_DIR` cleanup exists (it never did for images either), and the attached file's content
+  lands in the transcript `.jsonl` regardless, so the temp copy adds no exposure of its own. A
+  boot-time sweep of files older than a week is optional and deliberately unbuilt.
+
 ### §5.3 `#note` — plain turn, `#` stays out (bundle)
 
 Same mechanism as `!`: a TUI input mode whose product is a `<user-memory-input>` user message.
