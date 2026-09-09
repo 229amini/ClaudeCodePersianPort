@@ -735,3 +735,43 @@ remote_control_auto_enable, remote_control_auto_on_by_default, session_state` �
 `interrupt_receipt_v1`, `interrupt_cancel_queued_v1`) — **but it is not emitted until the first turn
 starts**, as the trace above shows. So nothing may gate on capabilities at spawn time. Detect by
 observation instead, and keep a backstop that works either way.
+
+### `@` mentions: proven on the wire, free (2026-09-09, CLI 2.1.263, `probe_mention.py`)
+
+Spawning with `--model <bogus>` runs the local attachment pass and then dies at the API with
+`unrecognized_model`, so the whole path is measurable for nothing: `result` comes back
+`subtype: "success"` with `is_error: true` and **`total_cost_usd: 0`**.
+
+`build_message_blocks`'s `@"<path>"`, for a file in a folder whose name contains a space, produced an
+`attachment/file` record carrying `filename`, `displayPath` and the file's full `content` with line
+metadata — the Read tool's own product, with **no `can_use_tool` and no dialog**. The same path
+mentioned **unquoted produced no `attachment/file` record at all**, which is the negative half of the
+quoting rule: the quotes are load-bearing, not tidiness.
+
+What this does NOT cover: the 256 KiB cap, the `.pdf` decoder, a `permissions.deny` Read rule, and
+whether the model then *uses* the content — no inference ran.
+
+Two mechanics worth keeping: an `unrecognized_model` result **ends** the print-mode turn, so a second
+frame on the same process gets no events at all (one send per spawn — a first version of the probe
+passed vacuously on exactly this); and `assistant`/`system/init` still arrive first, so the failure is
+not a spawn-time argument rejection.
+
+`probe_mention.py` is kept as the free re-probe for the next CLI upgrade. **It spawns a CLI in a temp
+cwd, so it cleans up after itself** — see §"Any CLI run in a temp cwd pollutes the sidebar forever" in
+`wiki/dev-environment.md`.
+
+## 2.1.263 re-verification (2026-09-09, one paid turn)
+
+`claude --version` → **2.1.263** (it self-updates; 2.1.259 on 2026-09-03, 2.1.261 on 2026-09-05).
+`smoke_test.py` **PASS — 16/16** against it, which is the first paid turn since `036c561` and covers
+six commits at once: transport, the capability mirror, the posture round-trip and its
+`system/status` echo, `set_model` proven by the next turn's `system/init.model`, effort reporting
+what is in force, the output-style guard, CLI-reported usage, the session title read back off disk,
+and one `command_uuid` reaching a terminal state on `command_lifecycle`.
+
+Event drift on the wire, from that run's tally: `system/thinking_tokens` (already known, dropped by
+the renderer) and **`rate_limit_event`**, which is NOT new to us — `static/js/render.js:1626` and
+`:2027` already carry a case for it. Nothing unhandled appeared, so the unknown-event contract (an
+unrecognised type renders as a collapsed raw-JSON card, never a crash) was not exercised by this run.
+
+No contract change. Nothing in the wrapper needed a port for this version.
