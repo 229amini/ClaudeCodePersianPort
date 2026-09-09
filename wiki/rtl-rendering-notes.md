@@ -598,3 +598,31 @@ The same trap is waiting for anything that measures a `[popover]`, a `<dialog>` 
 a `display:none` ancestor's descendant. `getBoundingClientRect()` on such an element answers all
 zeroes rather than `undefined`, which is worse: the arithmetic proceeds and produces a plausible
 wrong number instead of skipping.
+
+## A `[popover]`'s `left` is dead under `dir="rtl"` (2026-09-09, bead pcg-p7g)
+
+`kebabMenu()` positions the sidebar ⋯ menu by hand, because CSS anchor positioning is newer than
+the Edge we are guaranteed on the target machine. It wrote `top` and `left`. Only `top` ever
+worked.
+
+The UA `[popover]` sheet sets `inset: 0`, and `.kebab-menu` resets only `margin`. So the box has a
+definite `left`, a definite `right` **and** a definite width (`inline-size: max-content`) — the
+over-constrained case. CSS resolves it by ignoring one of the two offsets, and which one it
+ignores depends on `direction`: LTR drops `right`, **RTL drops `left`**. The shell is
+`<html dir="rtl">`, so every kebab menu pinned itself to `right: 0` — the window's edge — and the
+author's `Math.max(6, Math.min(rect.left, innerWidth - width - 6))` clamp never ran at all.
+Measured at 1280×800 on the first session row: the inline style said `left: 987px`, the computed
+style agreed (`left: 987px`, `right: 0px`), and the box landed at 1088 with its right edge flush
+at the window edge.
+
+`menu.style.right = "auto"` is the whole fix — one definite offset, `left` applies, the menu lands
+under its own button. Both editions carry their own copy of `kebabMenu()` and both needed it; the
+terminal edition's sidebar is on the **left**, so there the menu was flying to the opposite edge
+of the window.
+
+Two reasons it survived a year of gates: it looked plausible (in the web edition the sidebar *is*
+on the right, so a right-pinned menu lands roughly where you expect), and no gate opens a kebab —
+`test_layout.py` opens the picker menu, which is `controls.js positionMenu()`, a different
+function. Same family as §"A `[hidden]` element has no `offsetParent`" and §"Nothing in the shell
+was responsive": **hand-written geometry on a top-layer element fails silently, and only a
+screenshot or a measured rect ever says so.**

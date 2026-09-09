@@ -32,13 +32,31 @@ Consequences, all of which cost time to rediscover:
   *"No such file or directory"*. Use `C:\Python314\python.exe`, or plain `python` — on this
   machine it resolves to 3.14 and is **not** a Store stub (that trap was `ladyg`-specific).
 - There is still no node, so no Playwright. That is why `run_spec_test.py` drives Edge directly.
-- **Headless `--screenshot` is a dead end — do not re-walk it.** `msedge --headless=new
-  --screenshot` produces a uniformly blank `--bg`-coloured PNG for both `index.html` and
-  `spec-test.html`, with or without an open SSE stream, with or without
-  `--virtual-time-budget`. `--dump-dom` on the same command line works fine —
-  **but only on pages without an open SSE stream**: `--dump-dom` on the real `index.html` hangs
-  forever because `EventSource` keeps the load pending (measured 2026-08-14, incl. with
-  `--timeout`). `spec-test.html` dumps fine — that is exactly what `data-render-only` exists for.
+- **`--dump-dom` works, but only on a page with no open SSE stream.** `--dump-dom` on the real
+  `index.html` hangs forever because `EventSource` keeps the load pending (measured 2026-08-14,
+  incl. with `--timeout`). `spec-test.html` dumps fine — that is exactly what `data-render-only`
+  exists for, and `test_reload.py` gets `index.html` to settle by stubbing `window.EventSource`.
+- **Headless `--screenshot` is NOT a dead end — that entry was wrong (corrected 2026-09-09).**
+  It renders the real app faithfully; the earlier "uniformly blank PNG" was the same open-SSE
+  hang, which writes no file at all. The recipe, which is how `pcg-p7g`'s by-eye screenshots
+  were finally taken:
+
+      probe page = index.html + the `NO_SSE` stub from test_reload.py + a module script
+      msedge --headless=new --disable-gpu --no-first-run --user-data-dir=<tmp>
+             --window-size=W,H --virtual-time-budget=6000 --screenshot=<png> <probe url>
+
+  Without the stub the same command sits for the full timeout (measured: 180 s, no file). With
+  it, a 1280x800 shot of the home state is ~70 KB and legible. The probe script feeds
+  `applyInitInfo` the way `test_layout.py`'s does — no picker has rows until something says what
+  the CLI offers.
+- **A synthetic `.click()` on a hover-revealed control measures a zero rect.** `.sess-act` (the
+  sidebar ⋯) is `display: none` until `li:hover` or `li:focus-within`, and a `display: none`
+  element has no box — so `btn.getBoundingClientRect()` returns all zeros and `kebabMenu()` puts
+  the popover at the top corner of the window instead of under its row. `.focus()` does not help:
+  focus is a no-op on a `display: none` element. Set `btn.style.display = "inline-flex"` before
+  clicking. A real pointer always hovers first, so this is a probe artifact, not a defect — but it
+  looks exactly like a positioning bug. Same family as §"A `[hidden]` element has no
+  `offsetParent`" in `wiki/rtl-rendering-notes.md`.
 
 ## Seeing the running app: the Chrome extension works now (2026-08-05)
 

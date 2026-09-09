@@ -253,7 +253,11 @@ The 2026-08-05 run of this path used a *stub* smoke test that exits 1 — which 
 one's false PASS survived two days. A stub proves the caller's error handling, never the check.
 Login itself still cannot be automated; that is the single manual step the plan allows.
 
-Do not claim M7 is proven end-to-end until it has run on a machine with nothing installed.
+**2026-09-09 — it has.** The user installed the app on the colleague's PC about a month ago
+(an early-August build) and the colleague has been using it since, so the online bootstrap has
+run on a real machine that had neither Python nor Claude Code. Two limits on what that proves:
+the build predates every `setup.ps1` change made after it, and `-Payload` offline was not the
+path used — that branch is still unexecuted anywhere.
 
 ## The setup left a project in the sidebar every time (2026-08-23)
 

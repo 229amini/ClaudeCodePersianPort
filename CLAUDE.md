@@ -36,8 +36,9 @@ itself.
 `LICENSE` (MIT), `CONTRIBUTING.md` are at the repo root; `.gitignore` already covered what the
 phase asked for. UI strings are now read as `window.STRINGS` (aliased to `window.FA` at the foot of
 `strings.fa.js`) — that alias is the whole i18n seam; keep new user-visible text out of the
-modules. **The README has no screenshots yet** — capture them manually, the tooling here cannot
-write a PNG into the repo. The phase's fresh-clone exit criterion found a shortcut bug in
+modules. **The README has no screenshots yet** — but as of 2026-09-09 the tooling
+here *can* write a PNG (see the headless-screenshot recipe in `wiki/dev-environment.md`), so they
+no longer have to be captured by hand. The phase's fresh-clone exit criterion found a shortcut bug in
 `setup.ps1` (`Rename-Item -Force` does not overwrite); fixed and re-verified — see
 `wiki/packaging.md`, which also records that `WScript.Shell` reads a Persian-named `.lnk` back as
 blank.
@@ -391,8 +392,11 @@ records — `wiki/sessions-and-history.md` §"Shell rows in replay"), an uncappe
 and a duplicate launcher check in `setup.ps1`. Gates: web spec **202/202**, layout on both,
 terminal spec 174 / column **23** / keys 60 / dialogs 31 / shell 29 / strings 24 / vocab 82,
 units, transcript guard, `test_no_console` on both. `smoke_test.py` not re-run — no transport
-change. Open follow-up: a session started in the real TUI still replays without shell rows
-(server-side, bead filed).
+change. That session's follow-up — a session started in the real TUI replaying without
+shell rows — was fixed in `4e2ee37` (`pcg-5g2`): `CLI_ENVELOPE_RE` matched `<bash-input>`/
+`<bash-stdout>` exactly as it matches the CLI's own self-talk envelopes, so both records were
+dropped. They now jump the filter and are rejoined into the one-message shape `splitBashBlocks()`
+expects, because a real transcript writes the command and its output as two consecutive records.
 
 **2026-09-09 — the reload family, three narrow-window defects, and the pipe wedge.** Six beads, and
 four of the root causes were nowhere near where the report pointed.
@@ -474,14 +478,36 @@ and wait before touching the folder — Windows will not delete a live process's
 `rmtree` on the cwd and on its `transcript_dir`), and it cleans up on the **failure** path too, which
 is the path you are on while debugging. Any new gate that spawns the real CLI in a `mkdtemp` cwd owes
 the same block; `wiki/dev-environment.md` is where the rule lives.
-Still open: `pcg-p7g` (visual pass, deferred by the user until they are at the screen), `pcg-b67.8`
-(M8prime) and `pcg-12n`, both of which need the colleague's PC.
+Still open: `pcg-p7g` (visual pass, deferred by the user until they are at the screen) and
+`pcg-12n` (needs the machine that runs the `.ps1` router).
 
-**M8 — acceptance on the colleague's PC — is the only milestone left, and it cannot be done from
-this machine.** Note that M7's install branches (Python install, Claude Code install, `-Payload`
-offline, not-logged-in) never executed here because this PC already has both tools; see
-`wiki/packaging.md`. Do not report the bootstrap as proven end-to-end until it has run on a bare
-machine.
+**2026-09-09 — M8 is closed. The app is installed and in use on the colleague's PC** (an early-
+August build, installed by the user about a month ago), so the bootstrap has met a real bare
+machine: the install branches that never executed here (Python install, Claude Code install,
+`-Payload` offline, not-logged-in — see `wiki/packaging.md`) ran there, and the colleague works
+without a terminal. `pcg-b67.8` and the `pcg-b67` epic are closed. What is NOT proven is any
+setup.ps1 change made after that install; re-verify the bootstrap on a clean machine before
+claiming a *current* build installs end to end.
+
+**2026-09-09 — the visual pass finally happened, and its blocker was a wrong wiki entry.**
+`pcg-p7g` had been parked since 2026-08-07 waiting for the Chrome extension, which still does not
+handshake on this profile. It never needed it: **headless `--screenshot` works here.** The entry
+calling it a dead end ("uniformly blank PNG") had misread the open-SSE hang — msedge sits for the
+whole timeout and writes *no* file. `index.html` + `test_reload.py`'s `NO_SSE` stub +
+`--virtual-time-budget` renders the real app; recipe in `wiki/dev-environment.md`. The four
+acceptance shots (home at 1280x800 and 760x640, project kebab, session kebab idle and armed) all
+read correctly — the armed row swaps to a coral «مطمئنید؟» and keeps its icon, exactly as the
+2026-08-07 fix intended. One real defect fell out of looking: **`kebabMenu()`'s hand-written
+`menu.style.left` was dead code.** A `[popover]`'s UA `inset: 0` leaves `left`, `right` and width
+all definite, and `direction: rtl` drops `left` — so every kebab menu pinned to the window's right
+edge and the author's 6px clamp never ran. `menu.style.right = "auto"` restores it (measured:
+`menuLeft` 1088 → 987, the anchor's own x). **Both editions carry their own `kebabMenu()` and both
+were wrong**; the terminal edition's sidebar is on the left, so its menus flew to the opposite edge
+of the window. No gate opens a kebab — `test_layout.py` opens the *picker*, which is a different
+function — so it survived on looking plausible. New section in `wiki/rtl-rendering-notes.md`. `pcg-12n` closed
+the same day as obsolete: no `.ps1` router is wired anywhere (`settings.json` invokes the `.js`
+one, which never deletes the other side's flag), and the LANG_RULE now lives in the global
+CLAUDE.md rather than in a hook injection. **The bead list is empty.**
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
@@ -621,10 +647,10 @@ Verification before features. Plan §B-9 items 1–3 are answered and recorded i
     The aborted turn arrives as `error_during_execution` / `aborted_streaming` — check
     `terminal_reason` **before** `is_error`, or every stop looks like a crash.
 
-All ten answered. What remains is packaging (M7) and acceptance on the target PC (M8).
+All ten answered. M7 (packaging) and M8 (acceptance on the target PC) are both done — the
+colleague has been running the app since early August 2026.
 
-Milestones M0–M8 are in the plan's B-11 table with exit criteria. M0–M3 are buildable on the
-author's PC; M8 requires the colleague's machine.
+Milestones M0–M8 are in the plan's B-11 table with exit criteria.
 
 Record every verification answer in `wiki/` as it lands — those are the facts that cost the most
 to rediscover, and they are version-pinned to the tested `claude` build.
@@ -677,10 +703,13 @@ Two checks exist:
 | Strings (v2.6) | `python persian-claude-gui\test_strings.py` | the two arrows in `claude.exe → wiki/tui-strings.md → static/strings.fa.js → the page`: every wiki row's key exists in the file and the two texts agree, a row shipping nothing says so in both places, no un-allowlisted English in a Persian string, no key in the file that nothing reads, `/help` lists exactly the verbs the window answers, and `help.html` names every command V2-PLAN §4 says the window will not build. **24 checks.** Reads files and spawns nothing. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
-the console. There is no Playwright here (no node), and headless `--screenshot` renders blank on
-this machine — do not spend time on it. **The Claude-in-Chrome extension does work as of
-2026-08-05** and is the only way to actually *see* the UI; it caught two defects on its first use
-that the 18/18 spec gate structurally cannot. Read `wiki/dev-environment.md` §"Seeing the running
+the console. There is no Playwright here (no node). **Headless `--screenshot` works** —
+the old "renders blank, do not spend time on it" note was wrong, and it cost this project a
+month of not looking at the UI: the blank was the same open-SSE hang that stops `--dump-dom`, and
+msedge writes no file at all rather than a blank one. Stub `window.EventSource` the way
+`test_reload.py` does and the real app renders; the recipe is in `wiki/dev-environment.md`. The
+Claude-in-Chrome extension also works (2026-08-05) **where it is installed** — it is not on this
+profile, and it caught two defects on its first use that the 18/18 spec gate structurally cannot. Read `wiki/dev-environment.md` §"Seeing the running
 app" first — the idle watchdog kills the server before the browser arrives unless you hold an SSE
 connection open, and a stale browser entry reports every page as an error page.
 
