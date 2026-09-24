@@ -18,7 +18,8 @@
      "never global dir=rtl" rule therefore survives only by discipline: every
      content-bearing element below carries its own direction, set in js/bidi.js.
      Being RTL, the first grid column lands on the RIGHT — style.css puts the
-     stage there and pins the sidebar to the LEFT edge (E2). -->
+     SIDEBAR there and the stage in column 2 (TERMINAL-REDESIGN.md §1; this
+     undoes E2's left-hand placement, so do not "fix" it back). -->
 
 <aside id="sidebar">
   <div class="side-head">
@@ -32,6 +33,22 @@
       <path d="M6.9 16.6h4"/>
     </svg>
     <span class="brand" id="brand"></span>
+    <!-- THE RAIL TOGGLE (TERMINAL-REDESIGN.md §1). The sidebar has two widths
+         and the width FOLLOWS THE SPLIT — `/split 2|4` collapses it to 48px so
+         the columns get the ~120px it was spending on empty tree, `/split 1`
+         opens it again. This button overrides that until the next split
+         change. Its name and its `aria-expanded` are written by js/app.js
+         (applyRail) because both say what the NEXT press does, not what the
+         sidebar currently is. The chevron points at the edge the pane is about
+         to move toward and is flipped by CSS in the rail — no second icon. -->
+    <button type="button" id="btn-rail" class="rail-toggle" aria-controls="sidebar"
+            aria-expanded="true">
+      <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <path d="M10 6l6 6-6 6"/>
+      </svg>
+    </button>
   </div>
 
   <button type="button" id="btn-new" class="new-chat">
@@ -41,6 +58,16 @@
     </svg>
     <span id="btn-new-label"></span>
   </button>
+
+  <!-- HOW MANY CONVERSATIONS ARE ON SCREEN. `/split 1|2|4` was the only way in
+       and a reader who will never type a command could not find it at all
+       (TERMINAL-REDESIGN.md §3). The three buttons are built in js/app.js, not
+       here, for the reason every other Persian label in this shell is: the
+       digits are formatted fa-IR and the titles come from strings.fa.js. -->
+  <div class="side-split">
+    <span class="side-split-label" id="split-label"></span>
+    <div id="split-seg" role="group"></div>
+  </div>
 
   <div class="side-scroll">
     <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
@@ -88,10 +115,22 @@
 
 <template id="cell-tpl">
   <section class="cell">
+  <!-- THE IDENTITY ROW (TERMINAL-REDESIGN.md §2.1). Reading right -> left under
+       dir="rtl", which is DOM order: the cell's own digit (Alt+N names it), the
+       status dot, the session TITLE, then the project as a muted chip. The mono
+       full path left this bar — it is the «پوشه» item of the status line below
+       (render.js) and the chip's own tooltip, so plan §B-10 item 2 loses no
+       path site. `.topbar-name` KEEPS its name and its contents: the terminal
+       spec-test.html reads it in three background-tab assertions. -->
   <header class="topbar">
     <span class="cell-badge" aria-hidden="true"></span>
+    <!-- The binary's own bullet, recoloured by tabStatus() — the same four
+         states the sidebar row and the history row already paint. Not
+         aria-hidden: the colour IS the message, so the word behind it has to
+         reach anyone who cannot see the colour (js/chrome.js paintCells). -->
+    <span class="cell-dot" role="img" data-status="idle" hidden>●</span>
+    <bdi class="topbar-title" dir="auto"></bdi>
     <bdi class="topbar-name"></bdi>
-    <span class="topbar-cwd path"></span>
   </header>
 
   <main class="log" aria-live="polite" aria-label="گفتگو"></main>

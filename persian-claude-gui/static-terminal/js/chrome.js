@@ -46,7 +46,8 @@ function cui(cell) {
   if (!cell.chromeUI) {
     const q = (cls) => cell.root.querySelector("." + cls);
     cell.chromeUI = {
-      topbarName: q("topbar-name"), topbarCwd: q("topbar-cwd"),
+      topbarName: q("topbar-name"), topbarTitle: q("topbar-title"),
+      cellDot: q("cell-dot"),
       projChip: q("proj-chip"), projChipName: q("proj-chip-name"),
       home: q("home"), welTitle: q("wel-title"), welCwdLabel: q("wel-cwd-label"),
       welCwd: q("wel-cwd"), welTips: q("wel-tips"), banner: q("replay-banner"),
@@ -119,6 +120,7 @@ export function setOpenTabs(list, active, facts) {
    changes a tab's status without the tab LIST changing at all. */
 export function repaintTabs() {
   paintOpenTabs();
+  paintCells();
   // A session row's live dot and its click behaviour both depend on the tab
   // list, so the project tree repaints too — from what /api/projects already
   // answered, not by asking again. Only when the SET changed, though: this runs
@@ -176,10 +178,17 @@ function tabsBadge() {
   }
   const count = waiting || running;
   if (!count) return null;
-  const chip = label(
-    FA[waiting ? "tabsWaiting" : "tabsRunning"]
-      .replace("{n}", count.toLocaleString("fa-IR")), "tabs-badge");
+  const digits = count.toLocaleString("fa-IR");
+  const text = FA[waiting ? "tabsWaiting" : "tabsRunning"].replace("{n}", digits);
+  const chip = label(text, "tabs-badge");
   chip.dataset.status = waiting ? "waiting" : "running";
+  // The rail has 48px and this is a sentence. `data-count` lets the rail draw
+  // the number alone as a ring (style.css) while the sentence stays in the DOM
+  // — clipped, not removed, so a screen reader still reads the whole of it and
+  // the tooltip says it to the pointer. No second computation and no second
+  // string: one chip, two widths.
+  chip.dataset.count = digits;
+  chip.title = text;
   return chip;
 }
 
@@ -259,7 +268,16 @@ function paintOpenTabs() {
       open.append(projectChip(entry.cwd));
     }
     if (entry.worktree) open.append(worktreeChip(entry.worktree));
-    open.title = entry.cwd || tabTitle(entry);
+    // «title · project», not the raw path: in the rail (TERMINAL-REDESIGN.md
+    // §1) the name, the chip and the ✕ are all off the row and the dot is the
+    // whole of it, so this tooltip is the only thing that says WHICH
+    // conversation a dot belongs to. The full path did not answer that — two
+    // conversations in one folder share it — and it is still the chip's own
+    // tooltip one width up. The dot gives up its hit-testing in the rail
+    // (style.css) so this is what the pointer lands on.
+    open.title = entry.cwd
+      ? `${tabTitle(entry)} · ${displayName(entry.cwd)}`
+      : tabTitle(entry);
     open.addEventListener("click", () => tabBridge?.switchTo(entry.tab));
 
     const close = actionButton("×", FA.closeSession);
@@ -271,6 +289,36 @@ function paintOpenTabs() {
 
     row.append(open, close);
     ui.openTabs.append(row);
+  }
+}
+
+/* THE FOURTH PAINT SITE (TERMINAL-REDESIGN.md §2.1/§4). The same tabStatus()
+   the sidebar row and the history row are drawn from, written onto the identity
+   row of every COLUMN — so a cell's dot can never disagree with the sidebar's.
+   Nothing new is computed and no server event is added: this runs from
+   repaintTabs(), which app.js already calls on every result, command_lifecycle,
+   permission change and /api/tabs answer.
+
+   The title is the one the sidebar shows for that session (tabTitle), so the
+   four columns of a 4-up are told apart by their own names rather than by four
+   copies of the same project path.
+
+   spec-test.html has no cell markup: `topbarTitle` comes back null there and
+   the loop skips, the way every other cui() caller degrades. */
+function paintCells() {
+  for (const cell of tabBridge?.cells?.() ?? []) {
+    const u = cui(cell);
+    if (!u.topbarTitle) continue;
+    const entry = cell.tab ? openTabEntry(cell.tab) : null;
+    u.topbarTitle.textContent = entry ? tabTitle(entry) : "";
+    if (!u.cellDot) continue;
+    // A column holding no conversation has no state to report; the digit badge
+    // is what stays, so the empty column still says which Alt+N reaches it.
+    u.cellDot.hidden = !entry;
+    const status = entry ? tabStatus(cell.tab) : "idle";
+    u.cellDot.dataset.status = status;
+    u.cellDot.setAttribute("aria-label", FA.tabStatus[status]);
+    u.cellDot.title = FA.tabStatus[status];
   }
 }
 
@@ -393,8 +441,13 @@ export function setChrome(cwd, cell = null) {
   // refreshProjects() that follows corrects it to the override.
   const u = cui(target);
   const name = displayName(path);
-  if (u.topbarName) u.topbarName.textContent = name;
-  if (u.topbarCwd) u.topbarCwd.textContent = path;
+  // The project chip. The full path is its TOOLTIP and no longer a second mono
+  // line beside it (§2.1): the path already has a home in the status line, and
+  // four columns cannot each spend a row on it.
+  if (u.topbarName) {
+    u.topbarName.textContent = name;
+    u.topbarName.title = path;
+  }
   if (u.projChipName) {
     u.projChipName.textContent = name || FA.chooseProject;
     u.projChip.title = path;
@@ -487,6 +540,7 @@ async function loadProjects() {
   lastProjects = data.projects ?? [];
   renderProjects(lastProjects);
   paintOpenTabs();   // titles may have only just arrived
+  paintCells();      // ...and a cell's identity row draws from the same map
 
   syncHome();          // the welcome box names the folder, which may have changed
   syncWindowTitle();   // and this is where a session's title finally arrives
@@ -962,9 +1016,9 @@ function showPreview(row, sess, items) {
 
   card.hidden = false;
   // Fixed positioning in px, deliberately not logical properties: the anchor is
-  // a measured rect, and the sidebar sits on the LEFT edge of the window (E2),
-  // so the card opens inward — clamped so a row near the bottom never opens
-  // offscreen.
+  // a measured rect, and the sidebar sits on the RIGHT edge of the window
+  // (TERMINAL-REDESIGN.md §1), so the card opens inward — leftward — clamped so
+  // a row near the bottom or the start edge never opens offscreen.
   const anchor = row.getBoundingClientRect();
   const top = Math.min(Math.max(anchor.top - 6, 8),
                        window.innerHeight - card.offsetHeight - 8);
@@ -973,9 +1027,10 @@ function showPreview(row, sess, items) {
   // stops short of the pane edge (the view/delete actions sit beside it), so
   // anchoring on the row leaves the card half-overlapping the list it explains.
   const pane = document.getElementById("sidebar")?.getBoundingClientRect();
-  const edge = Math.max(anchor.right, pane ? pane.right : anchor.right);
+  const edge = Math.min(anchor.left, pane ? pane.left : anchor.left);
   card.style.left =
-    Math.max(Math.min(edge + 10, window.innerWidth - card.offsetWidth - 8), 8) + "px";
+    Math.max(Math.min(edge - card.offsetWidth - 10,
+                      window.innerWidth - card.offsetWidth - 8), 8) + "px";
 }
 
 function block(cls, text) {
@@ -1006,7 +1061,7 @@ function actionButton(svg, title) {
    is newer than the Edge we are guaranteed on the target machine.
 
    `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
-function kebabMenu(items) {
+export function kebabMenu(items) {
   const btn = actionButton(SVG.dots, FA.moreActions);
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
@@ -1078,7 +1133,14 @@ function kebabMenu(items) {
     // we write here. `right: auto` frees `left` to actually apply.
     menu.style.insetInlineStart = "";
     menu.style.right = "auto";
-    menu.style.left = Math.max(6, Math.min(rect.left, innerWidth - menu.offsetWidth - 6)) + "px";
+    // Anchored by its RIGHT edge to the button's right edge, not by its left
+    // to the button's left: a `⋯` is ~28px and a menu ~200, so left-anchoring
+    // threw the whole panel across the row and, near a window edge, the clamp
+    // below then pinned it to the window instead of to the control that
+    // opened it. Still clamped, so a menu wider than the room to its start
+    // side lands 8px in rather than off-screen.
+    menu.style.left = Math.max(8, Math.min(rect.right - menu.offsetWidth,
+                                           innerWidth - menu.offsetWidth - 8)) + "px";
   });
 
   return [btn, menu];
@@ -1289,6 +1351,7 @@ export function initChrome() {
   if (ui.projects) {
     document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
+    document.getElementById("split-label").textContent = FA.splitLabel;
     document.getElementById("projects-title").textContent = FA.projects;
     document.getElementById("btn-help-label").textContent = FA.help;
     // The help page is served, so it needs the token like every other request.

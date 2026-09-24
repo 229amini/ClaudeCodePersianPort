@@ -92,7 +92,14 @@ LONG = 60
 # The transcript's share of its own column, in percent, below which the column
 # is not showing a conversation any more - it is showing chrome with one or two
 # clipped lines wedged between the pieces (defect 3).
-LOG_SHARE = 40
+# PER EDITION, and only since TERMINAL-REDESIGN.md §2.4/§8: Phase 2's one-row
+# identity bar, the prompt's tighter padding in a short column and the re-led
+# status stack measure 64% at 1000x700 and 65% at 1052x711 in the TERMINAL
+# edition (from 58/59), so its bar goes 40 -> 60 - a bar with room in it rather
+# than the measurement itself. Nothing was hidden to get there: the "holds more
+# than it shows" assertion below is unchanged and still passes. The web edition
+# is untouched by that pass (it measures 53/54%) and keeps the 40 it had.
+LOG_SHARE = {"terminal": 60, "web": 40}[EDITION]
 
 # The same measurement, two shells. The v2.4 terminal draws its pickers as
 # numbered <dialog class="picker"> lists opened from the keyboard; the web
@@ -124,14 +131,15 @@ SHELL = {
 SH = SHELL[EDITION]
 
 # What check() asserts per window size. Named so the PASS line cannot drift from
-# the acceptance bar the MA3 design set (>= 12). The web edition adds the two
-# its own visible split control brings with it.
-CHECKS = 19 + (2 if EDITION == "web" else 0)
+# the acceptance bar the MA3 design set (>= 12). BOTH editions now have a visible
+# split control (TERMINAL-REDESIGN.md §3), so the two checks it brings with it are
+# no longer web-only.
+CHECKS = 21
 
 # MA5: what the two extra page loads at the foot of main() assert about the
 # layout coming back after a reload. Their own loads, not the size loop's: a
 # restore happens ONCE per page load, which is the whole point of the flag.
-LAYOUT_CHECKS = 6 + (1 if EDITION == "web" else 0)
+LAYOUT_CHECKS = 7
 
 # ...and what it asserts only where four columns can hold their own chrome at
 # all: every descendant inside its own column, in three states, plus the empty
@@ -603,7 +611,11 @@ WEB_ONLY_JS = """
   closeMenu(APP.cells[leftAt]);
   await sleep(120);
 
-  /* --- the segmented control (web edition) ----------------------------------
+"""
+
+
+SEG_JS = """
+  /* --- the sidebar's segmented control (both editions) ---------------------
      How many conversations are on screen is a fact about this WINDOW. The
      server has no concept of the grid, so pressing a segment may only move
      `data-split` and the cells - the one request it is still allowed to make
@@ -641,7 +653,8 @@ def write_probe() -> None:
     script = (PROBE_JS.replace("%N%", str(DELTAS)).replace("%LONG%", str(LONG))
               .replace("%PARTS%", json.dumps(SH["parts"]))
               .replace("%OPENMENU%", SH["open_menu"])
-              .replace("%WEBONLY%", WEB_ONLY_JS if EDITION == "web" else ""))
+              .replace("%WEBONLY%",
+                       (WEB_ONLY_JS if EDITION == "web" else "") + SEG_JS))
     PROBE.write_text(page.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
 
 
@@ -795,8 +808,13 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                     f"outside the left-most column (worst "
                     f"{left['spill']['worst']['sel']} {left['spill']['worst']['out']}px "
                     f"past the {left['spill']['worst']['side']})")
-        # ...and the window bar's own control: it moves the grid and tells the
-        #    server nothing about it.
+    # 5d. THE SPLIT CONTROL, both editions. The web edition draws it in the
+    #     window bar and the terminal edition in the sidebar (§3), but it is
+    #     one control saying one thing: it moves the grid and tells the server
+    #     nothing about it. The terminal edition reached the grid through
+    #     `/split` alone until 2026-09-10, which is a layout a reader who never
+    #     types a command could not find.
+    if not tight:
         seg = m["seg"]
         if seg["labels"] != ["\u06f1", "\u06f2", "\u06f4"]:
             say(f"the split control reads {seg['labels']}, not the three "
@@ -879,7 +897,7 @@ def check_layout(restore: dict, fresh: dict, bad: list[str]) -> None:
     if got["blank"] != [False, True, False, False]:
         say(f"the message box of each restored column is disabled={got['blank']} "
             "- the column left blank by a dead tab has nothing to send to")
-    if EDITION == "web" and got["seg"] != ["4"]:
+    if got["seg"] != ["4"]:
         say(f"the split control reads {got['seg']} after a restore, not «4» - "
             "paintSplitControl runs inside setSplit and should need no line")
 

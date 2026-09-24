@@ -58,15 +58,27 @@
 :root {
   color-scheme: dark;
 
-  /* Warm graphite palette, claude.ai dark reference. Muted text holds ≥4.5:1
-     on --bg; coral is used for large glyphs/fills only (≥3:1 graphical). */
-  --bg: #262624;
-  --bg-side: #1e1d1b;
-  --surface: #30302e;
-  --surface-2: #3a3937;
-  --fg: #f0eee6;
-  --fg-muted: #aaa495;
-  --border: #3e3d39;
+  /* Neutral near-black, TERMINAL-REDESIGN.md §5. The web edition keeps
+     claude.ai's warm graphite; THIS edition is a terminal rendition, and a
+     default Windows Terminal ground is #0c0c0c — so the neutral is the more
+     faithful one here. Coral is unchanged (assets/make_icon.py).
+     Measured contrast on --bg: --fg 19:1, --fg-muted 7.4:1, --accent 6.5:1
+     (text-safe). §5's --fg-faint (#6e6e6e, 3.6:1) is NOT here: every surface
+     Phase 2 could have spent it on is small text, where 3.6:1 fails AA — the
+     project chip and the digit badge both take --fg-muted instead.
+     One ground for both panes; a hairline (#sidebar's border) separates them. */
+  --bg: #0a0a0a;
+  --bg-side: #0a0a0a;
+  /* Anything FLOATING over content is opaque and lands here. --surface below
+     is translucent, which is right on the ground and wrong over a transcript:
+     a menu you can read the conversation through is not a menu. */
+  --bg-elev: #161616;
+  --surface: rgb(255 255 255 / .04);
+  --surface-2: rgb(255 255 255 / .07);
+  --fg: #fafafa;
+  --fg-muted: #a1a1a1;
+  --border: rgb(255 255 255 / .08);
+  --border-strong: rgb(255 255 255 / .14);
   --accent: #d97757;
   --accent-strong: #c4633f;
   --accent-soft: rgb(217 119 87 / .13);
@@ -78,12 +90,21 @@
   /* `!` bash mode. The TUI recolours its prompt bar for it; this is that
      colour, kept off the accent so it cannot be mistaken for a running turn. */
   --bash: #b072b5;
-  --danger-bg: #3a2622;
+  --danger-bg: rgb(229 105 90 / .12);
   --ok: #82c091;
 
   --radius: 10px;
   --radius-lg: 16px;
   --gap: 12px;
+  /* The sidebar's track. A token because the two @media breakpoints below
+     retune the WIDTH and body.app's shorthand must not be restated three
+     times — the track ORDER is the decision (§1) and it is written once. */
+  --side-w: 272px;
+  /* ...and the width it collapses to (TERMINAL-REDESIGN.md §1). 48px is one
+     comfortable touch/click target plus its gutter — the mark, «+», the split
+     segments, one dot per conversation and the help link all fit a single
+     column at this width and nothing in it needs to wrap. */
+  --rail-w: 48px;
   /* Distance between two entries in the transcript. Its own token because the
      rail has to cancel it exactly: consecutive tool cards pull back by this
      much so the line through the icon gutter is continuous instead of broken
@@ -93,8 +114,15 @@
   /* Persian needs more leading than Latin: taller ascenders, deeper
      descenders. 1.9 is the spec rule 4 floor, not a preference. */
   --lh-fa: 1.9;
-  --dur: 180ms;
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: 160ms;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  /* A breathe is not an entrance. `--ease` is a strong ease-out — right for a
+     thing arriving, wrong for a loop that has to come back the way it went:
+     on a symmetric 0 -> 50% -> 100% opacity cycle it snapped bright and hung
+     there, which reads as a blink rather than as breathing. This is the
+     symmetric ease-in-out the loop actually wants (emil-design-eng: "moving
+     on screen -> ease-in-out"). One token, every pulse in the file. */
+  --ease-breathe: cubic-bezier(.4, 0, .6, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -152,19 +180,24 @@ body {
   grid-template-rows: auto 1fr auto auto auto;   /* spec-test.html layout */
 }
 
-/* The app shell: stage + sidebar. The page is dir="rtl", so grid column 1 is
-   the RIGHT edge — the sidebar goes in column 2 and lands on the LEFT (VS Code
-   placement, E2). The track order is swapped and both panes are pinned by
-   `grid-column` rather than flipping `direction` anywhere, which would re-order
-   every inline child of the shell (wiki/rtl-rendering-notes.md). The sidebar's
-   own inner direction is untouched.
+/* The app shell: sidebar + stage. The page is dir="rtl", so grid column 1 is
+   the RIGHT edge — and that is where the sidebar goes (TERMINAL-REDESIGN.md
+   §1, user decision 2026-09-10). This UNDOES E2's left-hand VS Code placement;
+   wiki/editions.md §E2 still describes the old side and is rewritten in Phase
+   4, so do not "fix" this back on its authority.
+   Both panes are still pinned by `grid-column` rather than by flipping
+   `direction` anywhere, which would re-order every inline child of the shell
+   (wiki/rtl-rendering-notes.md). The sidebar's own inner direction is
+   untouched.
    spec-test.html has no .app class and keeps the stacked layout above. */
 body.app {
-  grid-template-columns: minmax(0, 1fr) 288px;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
   grid-template-rows: 100%;
 }
-/* `grid-row: 1` on BOTH, not just the column. The sidebar comes first in the
-   DOM and asks for column 2, which leaves the auto-placement cursor past the
+/* `grid-row: 1` on BOTH, not just the column — KEPT after the §1 flip even
+   though DOM order and column order now agree, because the failure it prevents
+   costs nothing to keep out. When the sidebar came first in the DOM and asked
+   for column 2, the auto-placement cursor was left past the
    end of row 1 — so #stage, asking for column 1, was pushed into an IMPLICIT
    second row that is auto-sized from its own content. That row was tall enough
    to hide the mistake while the stage's content set its height; MA3's #grid
@@ -172,8 +205,8 @@ body.app {
    without it a long transcript grows the column off the window), and an
    auto-sized row full of zero-minimum content is zero pixels tall. Measured by
    test_split.py: stage 958x0. */
-body.app > #sidebar { grid-column: 2; grid-row: 1; }
-body.app > #stage   { grid-column: 1; grid-row: 1; }
+body.app > #sidebar { grid-column: 1; grid-row: 1; }
+body.app > #stage   { grid-column: 2; grid-row: 1; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: rgb(217 119 87 / .35); }
@@ -198,9 +231,71 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex-direction: column;
   min-height: 0;
   background: var(--bg-side);
-  /* The pane sits on the LEFT: under RTL its inner edge — the one facing the
-     stage — is inline-START. */
-  border-inline-start: 1px solid var(--border);
+  /* The pane sits on the RIGHT (§1): under RTL its inner edge — the one facing
+     the stage, now on its physical left — is inline-END. */
+  border-inline-end: 1px solid var(--border);
+}
+
+/* THE SPLIT CONTROL. Three segments, «۱ | ۲ | ۴», one of them pressed. A
+   segmented control and not three buttons or a menu: the choice is small,
+   closed and mutually exclusive, and it has to be readable at a glance from
+   across the room — which a menu that has to be opened first is not. Ported
+   from the web edition's window bar (static/style.css) into the sidebar,
+   because the sidebar head costs the grid nothing while a window bar would
+   take 36px off every cell at once (TERMINAL-REDESIGN.md §1 rejected (c)).
+
+   Nothing here animates on press beyond the 97% scale every pressable thing in
+   this shell gets: the layout change itself is the feedback, and it is
+   instant. */
+.side-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px 12px;
+}
+.side-split-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: .78rem;
+}
+#split-seg {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+#split-seg .seg {
+  min-width: 30px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  /* Named properties, never `all`: the pressed segment changes two of them and
+     the hover changes one. */
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+              transform 140ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  #split-seg .seg:hover { color: var(--fg); background: var(--surface-2); }
+}
+#split-seg .seg:active { transform: scale(.97); }
+#split-seg .seg[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--fg);
 }
 
 .side-head {
@@ -296,7 +391,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 .tab-dot {
   flex: none;
   color: var(--fg-muted);
-  font-size: .8em;
+  --dot-size: 10px;
   line-height: 1;
 }
 .tab-row[data-current="true"] .tab-dot { color: var(--accent); }
@@ -305,7 +400,7 @@ pre, code, .path, .diff, .tool-output, .mono {
    same meaning, same motion. */
 .tab-row[data-busy="true"] .tab-dot {
   color: var(--accent);
-  animation: ag-pulse 2s var(--ease) infinite;
+  animation: ag-pulse 2s var(--ease-breathe) infinite;
 }
 
 .tab-name {
@@ -354,34 +449,62 @@ pre, code, .path, .diff, .tool-output, .mono {
 .tab-row .tab-close:hover { background: var(--surface-2); color: var(--fg); }
 
 /* --- per-conversation status (chrome.js tabStatus) ---------------------------
-   Four states, one dot. Written AFTER the [data-current] / [data-busy] rules
-   above and at the same specificity, so the DERIVED status is what the reader
-   sees; `data-busy` is the server's coarser answer and survives only as what
-   paints before this window has learned anything about a tab. */
-.tab-row[data-status="running"] .tab-dot {
-  color: var(--accent);
-  animation: ag-pulse 2s var(--ease) infinite;
-}
-/* Waiting on a person. It breathes too — the difference from «running» is the
-   colour, because the difference in meaning is who is holding it up. */
-.tab-row[data-status="waiting"] .tab-dot {
-  color: var(--warn);
-  animation: ag-pulse 2s var(--ease) infinite;
-}
-.tab-row[data-status="error"] .tab-dot { color: var(--danger); animation: none; }
-.tab-row[data-status="idle"] .tab-dot { color: var(--fg-muted); animation: none; }
+   FOUR STATES, ONE RULE (Phase 4). All three dots — the sidebar row's
+   `.tab-dot` (which is also the rail dot), the history row's `.sess-dot` and
+   the cell identity row's `.cell-dot` — carry `data-status` on themselves, so
+   the map lives here once instead of being copied per paint site. A fourth
+   site inherits it by using one of those class names and nothing else.
 
-/* The same four on the history row for the same conversation. */
-.sess-dot[data-status="running"] {
+   SHAPE, NOT ONLY HUE. At 10px a coral dot and an amber one are the same dot
+   to a colour-blind reader and to anyone scanning four columns at arm's
+   length, and colour-only signalling is the a11y anti-pattern §2.3 already
+   refuses for the focus ring. So the glyph carries the state and the colour
+   agrees with it, one circle family so the row still reads as a row:
+
+     ●  filled   running   the CLI is working
+     ◉  ringed   waiting   it is holding on a person
+     ⊘  slashed  error     the last turn failed
+     ○  hollow   idle      nothing to say
+
+   `font-size: 0` blanks the element's OWN text without removing it: chrome.js
+   still writes the binary's own bullet (U+25CF) as the node's text, which is
+   what test_shell.py reads and what a no-CSS fallback renders, while ::before
+   draws what the eye actually gets. Same trick, same file, as the rail's
+   unread ring (`body.rail .tabs-badge::before`).
+
+   Written AFTER the [data-current] / [data-busy] rules above and at the same
+   specificity, so the DERIVED status is what the reader sees; `data-busy` is
+   the server's coarser answer and survives only as what paints before this
+   window has learned anything about a tab. */
+.tab-dot, .sess-dot, .cell-dot { font-size: 0; }
+.tab-dot::before, .sess-dot::before, .cell-dot::before {
+  content: "○";                 /* idle — the quiet default */
+  font-size: var(--dot-size, 10px);
+  line-height: 1;
+}
+.tab-dot[data-status="running"], .sess-dot[data-status="running"],
+.cell-dot[data-status="running"] {
   color: var(--accent);
-  animation: ag-pulse 2s var(--ease) infinite;
+  animation: ag-pulse 2s var(--ease-breathe) infinite;
 }
-.sess-dot[data-status="waiting"] {
+.tab-dot[data-status="running"]::before, .sess-dot[data-status="running"]::before,
+.cell-dot[data-status="running"]::before { content: "●"; }
+/* Waiting on a person. It breathes too — what differs from «running» is who
+   is holding it up, so it differs in shape (a ring around the disc) and in
+   colour, not in whether it moves. */
+.tab-dot[data-status="waiting"], .sess-dot[data-status="waiting"],
+.cell-dot[data-status="waiting"] {
   color: var(--warn);
-  animation: ag-pulse 2s var(--ease) infinite;
+  animation: ag-pulse 2s var(--ease-breathe) infinite;
 }
-.sess-dot[data-status="error"] { color: var(--danger); }
-.sess-dot[data-status="idle"] { color: var(--fg-muted); }
+.tab-dot[data-status="waiting"]::before, .sess-dot[data-status="waiting"]::before,
+.cell-dot[data-status="waiting"]::before { content: "◉"; }
+.tab-dot[data-status="error"], .sess-dot[data-status="error"],
+.cell-dot[data-status="error"] { color: var(--danger); animation: none; }
+.tab-dot[data-status="error"]::before, .sess-dot[data-status="error"]::before,
+.cell-dot[data-status="error"]::before { content: "⊘"; }
+.tab-dot[data-status="idle"], .sess-dot[data-status="idle"],
+.cell-dot[data-status="idle"] { color: var(--fg-muted); animation: none; }
 
 /* Turns that finished while this conversation was parked. fa-IR digits in a
    pill, next to the dot — no `dir` of its own: Persian digits in an RTL row
@@ -423,7 +546,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex: none;
   align-self: center;
   color: var(--accent);
-  font-size: .75em;
+  --dot-size: 9px;
   line-height: 1;
 }
 
@@ -603,6 +726,159 @@ pre, code, .path, .diff, .tool-output, .mono {
   opacity: .75;
 }
 
+/* --- the rail (TERMINAL-REDESIGN.md §1) --------------------------------------
+
+   The sidebar's second width. `body.rail` is written by js/app.js and follows
+   the split: at 2 or 4 columns the tree was spending ~120px per column on
+   empty space, and (1052-48-1)/2 = 501px a column instead of 382 is what puts
+   a 4-up above the 496px wiki/grid.md records as where this shell first broke.
+
+   Everything in here is a WIDTH change, never a content change: the same
+   markup, the same dots, the same four states. Nothing about a conversation is
+   computed differently because the pane is narrow.
+
+   Written after every other sidebar rule in this layer on purpose — most of
+   these are ties on specificity that source order has to settle — and as
+   `body.app.rail` (0,2,1) where the width is concerned, because the two
+   narrow-window @media blocks at the foot of this file retune `--side-w` on
+   `body.app` (0,1,1) and would otherwise reopen the tree at 1000px.
+
+   NOTHING here transitions. The layout change IS the feedback, the toggle is
+   keyboard-repeatable, and an animated grid track re-lays out four transcripts
+   on every frame of it. */
+body.app.rail { --side-w: var(--rail-w); }
+
+/* Text that has to stop taking room WITHOUT leaving the accessibility tree.
+   `display: none` on .tab-name would leave the rail's rows named «در حال کار»
+   and nothing else — four dots, four identical names — and the icon-only «+»
+   and help buttons with no accessible name at all. Clipped to a pixel, they
+   still name their own control; test_layout's overflow sweep skips them
+   because `overflow: hidden` already means nothing spilled unseen. */
+body.rail .brand,
+body.rail #btn-new-label,
+body.rail #btn-help-label,
+body.rail .tab-name {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Chrome about the tree rather than about a conversation: at this width there
+   is no tree, so it says nothing. */
+body.rail .side-split-label,
+body.rail #projects-title,
+body.rail #projects,
+body.rail .tab-proj,
+body.rail .wt-chip,
+body.rail .tab-row .tab-close,
+body.rail .side-ver { display: none; }
+
+body.rail .side-head {
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 4px 8px;
+}
+body.rail .new-chat {
+  margin: 2px 6px 10px;
+  min-height: 36px;
+  padding: 0;
+  justify-content: center;
+}
+body.rail .side-split { margin: 0 6px 10px; justify-content: center; }
+body.rail #split-seg { flex-direction: column; }
+body.rail .side-scroll { padding: 0 4px 8px; }
+body.rail .side-foot { padding: 8px 6px 10px; }
+body.rail .side-item { padding: 0; justify-content: center; }
+
+/* The count over the whole list, as a ring — the one thing on the rail that
+   says something the dots below it do not: how many of the conversations you
+   cannot see need you. The sentence stays in the element (font-size: 0 leaves
+   it readable to a screen reader and `title` says it to the pointer); the ring
+   draws the digits from `data-count` (js/chrome.js), so there is still exactly
+   one string and one computation behind both widths. */
+body.rail #tabs-title {
+  margin: 8px 0 4px;
+  justify-content: center;
+  font-size: 0;
+}
+body.rail .tabs-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid currentColor;
+  font-size: 0;
+}
+body.rail .tabs-badge::before { content: attr(data-count); font-size: .72rem; }
+
+/* One dot per open conversation, and which one the keyboard is in. */
+body.rail .tab-open {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+  min-height: 34px;
+  padding: 0;
+}
+body.rail .tab-dot {
+  --dot-size: 13px;
+  /* So the row's own tooltip — «title · project», the only thing at this width
+     that says WHICH conversation — is what the pointer lands on. The dot keeps
+     its role/aria-label, so the state is still announced. */
+  pointer-events: none;
+}
+/* Turns finished while it was parked, tucked onto the dot rather than beside
+   it: 40px of usable width is not a row, and the pair still reads as one
+   thing. Inline-start is the RIGHT edge here (dir="rtl") — held 5px off it,
+   because two fa-IR digits are ~20px and a badge flush against the window edge
+   reads as clipped whether or not it is. */
+body.rail .tab-unread {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 5px;
+  min-inline-size: 14px;
+  padding: 0 3px;
+  font-size: .62rem;
+  line-height: 14px;
+}
+
+/* The toggle itself. Present at BOTH widths — the override has to be
+   reversible from wherever it left you — and named by js/app.js, which is why
+   there is no text in it. `margin-inline-start: auto` seats it against the
+   pane's inner edge in the expanded head; in the rail the head is a column and
+   the auto margin does nothing. */
+.rail-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: auto;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .rail-toggle:hover { background: var(--surface); color: var(--fg); }
+}
+.rail-toggle:active { transform: scale(.97); }
+body.rail .rail-toggle { margin-inline-start: 0; }
+/* One chevron, two directions: it points at the edge the pane is about to move
+   toward. No `transition` — see the block header. */
+body.rail .rail-icon { transform: scaleX(-1); }
+
 /* --- stage ----------------------------------------------------------------- */
 #stage {
   display: flex;
@@ -711,7 +987,11 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex: none;
   min-width: 1.4em;
   padding: 0 .35em;
-  border: 1px solid var(--border);
+  /* --border-strong, not --border: at .08 alpha the box around a single digit
+     read as a smudge. This is the token §5 asks for and the one surface in the
+     cell that is a HAIRLINE rather than text, so the contrast note above does
+     not apply to it. */
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   color: var(--fg-muted);
   font-size: .74rem;
@@ -721,24 +1001,63 @@ pre, code, .path, .diff, .tool-output, .mono {
 #grid[data-split="1"] .cell-badge { display: none; }
 .cell.focused .cell-badge { border-color: var(--accent); color: var(--accent); }
 
+/* THE IDENTITY ROW (§2.1). ONE row, 26px, and every part of it is `flex: none`
+   except the title, which is the only thing allowed to ellipsis — at 4-up the
+   bar used to be a project basename and the same path again in mono, which told
+   four columns apart by nothing at all.
+
+   `line-height: 1.5`, not --lh-fa: spec rule 4's 1.9 is the floor for MESSAGE
+   text (`.msg`, in the binding layer) and this is chrome — the status stack
+   under it has run at 1.6 since v2.5 for the same reason. 1.5 of .84em still
+   clears Vazirmatn's descenders; it is the transcript, one element down, that
+   rule 4 is about. */
 .topbar {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 10px 24px 6px;
-  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 24px;
+  min-height: 26px;
+  line-height: 1.5;
+  /* §2.2's second focus cue: the row of the column the keyboard is in is
+     brighter than the other three. No background change, nothing animated. */
+  color: var(--fg-muted);
 }
-.topbar-name { font-weight: 700; font-size: .95em; }
+.cell.focused .topbar { color: var(--fg); }
 
-/* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
-.topbar-cwd {
+/* The conversation in THIS column. The four states themselves are the one
+   shared rule up in «--- per-conversation status » — same glyphs, colours and
+   motion as the sidebar row and the history row (§4: one function, four paint
+   sites), which is why nothing about them is repeated here. */
+.cell-dot {
+  flex: none;
+  --dot-size: 10px;
+  line-height: 1;
+}
+/* The session's own title — <bdi dir="auto">, so a Persian name reads RTL, a
+   Latin one still resolves LTR, and either is isolated from the chip beside it
+   (spec rule 2). The one elastic part of the row. */
+.topbar-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: none;
+  font-size: .84em;
+  font-weight: 500;
+}
+
+/* The project, as the sidebar row's own .tab-proj chip: a display NAME, not a
+   path, because the user can rename a project into Persian and .path's forced
+   LTR would misorder it. The real path is the `title` (chrome.js setChrome) —
+   that, not the label, is what tells two same-named folders apart. */
+.topbar-name {
+  flex: none;
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--fg-muted);
-  font-size: .76em;
+  font-size: .74em;
 }
 
 .replay-banner {
@@ -773,8 +1092,9 @@ pre, code, .path, .diff, .tool-output, .mono {
    0x0 in every empty column). At `data-split="1"` the badge is hidden anyway
    and what is left is an 8px strip. */
 .cell.home .topbar-name,
-.cell.home .topbar-cwd { display: none; }
-.cell.home .topbar { min-height: 0; padding: 8px 24px 0; }
+.cell.home .topbar-title,
+.cell.home .cell-dot { display: none; }
+.cell.home .topbar { min-height: 0; padding: 4px 24px 0; }
 
 .cell.home {
   display: grid;
@@ -889,7 +1209,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   max-height: 40vh;
   overflow: hidden;
   padding: 12px 14px;
-  background: var(--surface);
+  background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 10px 30px rgb(0 0 0 / .45);
@@ -1529,7 +1849,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   color: var(--accent);
 }
 
-.pulse.live .pulse-glyph { animation: pulse-breathe 2s var(--ease) infinite; }
+.pulse.live .pulse-glyph { animation: pulse-breathe 2s var(--ease-breathe) infinite; }
 @keyframes pulse-breathe { 50% { opacity: .3; } }
 
 .pulse-verb { color: var(--fg); }
@@ -1640,7 +1960,9 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 0 4px;
+  /* §2.4: 8/4 -> 5/3. Four columns pay this padding four times and the
+     transcript is what buys it back. */
+  padding: 5px 0 3px;
 }
 
 /* The prompt line itself: the mark, then the field. A ROW flex box, so the
@@ -1704,7 +2026,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   background: none;
   border: 0;
   padding: 4px 0 2px;
-  min-height: 36px;
+  min-height: 32px;   /* §2.4; one line of --lh-fa at this size still fits */
   /* TP1 moved the field into a ROW flex box (.comp-line). `flex: 1 1 0%` sizes
      it on the INLINE axis here, so the height property is untouched and the
      auto-grow in composer.js (input.style.height = scrollHeight) still works —
@@ -1864,7 +2186,7 @@ button.round {
   margin: 0;
   padding: 4px;
   list-style: none;
-  background: var(--surface);
+  background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgb(0 0 0 / .4);
@@ -1916,7 +2238,7 @@ button.round {
   margin: 0;
   padding: 4px;
   list-style: none;
-  background: var(--surface);
+  background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgb(0 0 0 / .4);
@@ -2134,7 +2456,7 @@ button.round {
   min-inline-size: 168px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-2);
+  background: var(--bg-elev);
   box-shadow: 0 10px 30px rgb(0 0 0 / .45);
   overflow: visible;
 }
@@ -2202,8 +2524,11 @@ button.round {
   gap: 2px;
   padding: 5px 16px 8px;
   color: var(--fg-muted);
-  font-size: .74em;
-  line-height: 1.6;
+  /* §2.4: .74em/1.6 -> .72em/1.45. Every row still ships — the clamp below is
+     a HEIGHT, never a `display: none` (pcg-6nf.11) — they are simply set
+     tighter, which is where a quarter-window column's density comes from. */
+  font-size: .72em;
+  line-height: 1.45;
   /* NO `border-top`. TP1 §2: the status rows sit immediately beneath the
      prompt's lower rule with no gap — and that rule is `.composer`'s own
      `border-block-end`, one element up. A border here as well drew the second
@@ -2255,7 +2580,12 @@ button.round {
 .statusline progress::-webkit-progress-value {
   background: var(--fg-muted);
   border-radius: 2px;
-  transition: inline-size .3s ease;
+  /* A meter, so `linear`: it is reporting a value, not entering the page, and
+     an eased fill reads as the number itself hesitating. Retimed onto --dur
+     from a hand-written .3s — the only duration in this file that was neither
+     a token nor under the 300ms UI ceiling, on the one bar that redraws after
+     every single turn. */
+  transition: inline-size var(--dur) linear;
 }
 .statusline progress[data-level="warn"]::-webkit-progress-value { background: var(--warn); }
 .statusline progress[data-level="high"]::-webkit-progress-value { background: var(--accent); }
@@ -2569,7 +2899,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 .ag-row[data-status="running"] .ag-dot,
 .ag-head[data-status="running"] .ag-dot {
   background: var(--accent);
-  animation: ag-pulse 2s var(--ease) infinite;
+  animation: ag-pulse 2s var(--ease-breathe) infinite;
 }
 .ag-row[data-status="completed"] .ag-dot {
   inline-size: auto;
@@ -2631,14 +2961,15 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 #agent-drawer {
   position: fixed;
   inset-block: 8vh;
-  inset-inline-start: 28px;   /* opens into the stage, away from the sidebar (grid column 2 =
-                                  physical left under dir=rtl) */
-  inset-inline-end: auto;     /* cancel the [popover] UA sheet's `inset: 0` on the other inline
+  inset-inline-end: 28px;     /* opens into the stage, away from the sidebar - which after the
+                                  §1 flip is grid column 1 = physical RIGHT under dir=rtl, so the
+                                  drawer wants the physical LEFT and that is inline-END. */
+  inset-inline-start: auto;   /* cancel the [popover] UA sheet's `inset: 0` on the other inline
                                   side - two non-auto inline insets plus an explicit inline-size
                                   over-constrain the box, and Chromium's tie-break keeps whichever
-                                  one maps to the browser's physical right, so the old
-                                  `inset-inline-end: 28px` alone (no `auto`) never even moved the
-                                  drawer off the UA's left:0 default - measured, not assumed. */
+                                  one maps to the browser's physical right, so one property alone
+                                  (no `auto`) never even moves the drawer - measured, not assumed
+                                  (wiki/editions.md). test_layout.py asserts drawer n sidebar = 0. */
   inline-size: min(44rem, 64vw);
   /* The UA popover sheet sets `height: fit-content`, and an absolutely
      positioned box with a non-auto height ignores its own `inset-block-end`.
@@ -2651,7 +2982,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: var(--bg-elev);
   color: var(--fg);
   box-shadow: 0 18px 50px rgb(0 0 0 / .5);
 }
@@ -2849,11 +3180,11 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    box's own gutter. The composer row itself needs nothing — it has wrapped
    since the effort chip vanished off it. */
 @media (max-width: 1000px) {
-  body.app { grid-template-columns: minmax(0, 1fr) 244px; }
+  body.app { --side-w: 244px; }
 }
 
 @media (max-width: 820px) {
-  body.app { grid-template-columns: minmax(0, 1fr) 200px; }
+  body.app { --side-w: 200px; }
 }
 
 /* Everything INSIDE a conversation is measured against the cell it is in, not
@@ -2905,8 +3236,13 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      1.6, and 1em here is already the .74em below), plus its own padding
      because `* { box-sizing: border-box }`. */
   .statusline {
-    padding-block: 3px 5px;
-    max-height: calc(3.2em + 8px);
+    padding-block: 2px;
+    /* Two lines of THIS element's own font — 1.45 x 2 at the .72em above —
+       plus its own padding, because `* { box-sizing: border-box }`. Recomputed
+       with the leading, not loosened: 46px -> 37px, still well under
+       test_split.py's STATUS_CAP and still scrolling, which is the assertion
+       that proves nothing was dropped to make it fit. */
+    max-height: calc(2.9em + 4px);
     overflow-y: auto;
   }
   /* WHICH two rows those are, though, is a decision - and it is the one the
@@ -2918,8 +3254,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      test_shell.py reads, and the facts are one flick away instead of gone. */
   .statusline .sl-warn { order: -2; }
   .statusline .sl-posture { order: -1; }
-  .topbar { min-height: 0; padding-block: 6px 2px; }
-  .comp-box .input { max-height: 22cqh; }
+  .topbar { min-height: 0; padding-block: 2px 1px; }
+  /* The prompt's own padding, in a column that has none to spare. NOT its
+     line-height: what is typed here is Persian the user is reading back, so
+     spec rule 4's 1.9 floor is the one thing in this block that may not move —
+     which is also why the prompt is the piece §2.4's arithmetic was most wrong
+     about (it costs 36px of line box before any padding, plus the 38px icon
+     row under it that the estimate left out entirely). */
+  .comp-box { gap: 2px; padding-block: 4px 2px; }
+  .comp-box .input { max-height: 22cqh; padding-block: 2px 1px; }
 }
 }
 

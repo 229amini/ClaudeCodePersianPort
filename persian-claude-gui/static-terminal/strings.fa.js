@@ -431,6 +431,18 @@ window.FA = {
      are the whole vocabulary — «۱ / ۲ / ۴» — so the refusal names them rather
      than describing them. Each column carries the same digit in its topbar, and
      the badge's tooltip is what says what that digit is for. */
+  /* ...and the sidebar's three-segment control, which is the way in for a
+     reader who will never type `/split` (TERMINAL-REDESIGN.md §3). Same two
+     strings as the web edition's window bar, deliberately: it is the same
+     control saying the same thing about the same window. */
+  splitLabel: "چند گفتگو کنار هم",
+  splitOptionTitle: "نمایش {n} گفتگو در یک پنجره",
+  /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
+     says is the ACTION it will take — not the state it is in: a control named
+     after its own state is read as a label and pressed by accident. It follows
+     the split on its own, so most readers never press it. */
+  sidebarCollapse: "جمع کردن نوار کناری",
+  sidebarExpand: "باز کردن نوار کناری",
   cmdSplitUsage: "این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد",
   cmdSplitDone: "چیدمان به {n} ستون تغییر کرد",
   /* ۴ is NOT four columns — it is a 2×2 grid, and the notice used to say
