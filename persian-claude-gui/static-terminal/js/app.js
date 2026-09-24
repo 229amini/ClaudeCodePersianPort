@@ -201,6 +201,7 @@ function paneMenuItems(cell) {
   if (typeof s.cost === "number") {
     items.push({ note: FA.paneCost.replace("{cost}", "$" + s.cost.toFixed(2)) });
   }
+  if (cells.length > 1) items.push({ icon: "", text: FA.paneEqualize, run: () => equalize() });
   items.push(null,
     { icon: "", text: FA.paneBranch, run: () => runWindowCommand("branch", "", cell) },
     null,
@@ -238,7 +239,275 @@ function toggleZoom(cell) {
    the sidebar still lists it, one click brings it back. */
 function takeOffScreen(cell) {
   if (zoomed) toggleZoom(null);
-  blank(cell);
+  if (cells.length > 1) removeCell(cell);
+  else blank(cell);
+}
+
+/* --- THE GRID THAT FITS N (BRIDGEMIND-PORT.md §D6) ---------------------------
+
+   The number of panes is the number of conversations on screen, 1 to
+   MAX_PANES. layoutFor() picks the column count whose panes read best (a pane
+   wants to be ~1.5x wider than tall: text lines want width), refusing any
+   layout whose panes fall under the minimum; the last row holds what is left
+   and its panes share its whole width, so three panes are 2 + 1 with the third
+   full-width. `strict: false` is the best effort a caller that must draw N
+   panes anyway gets (`/split` on a small window, a restored layout) - only
+   ADDING a pane is ever refused. */
+const MAX_PANES = 6;          // = server.py MAX_TABS
+const PANE_MIN_W = 360;
+const PANE_MIN_H = 240;
+
+export function layoutFor(n, W, H, gap = 8, strict = true) {
+  let best = null;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const w = (W - (cols - 1) * gap) / cols;
+    const h = (H - (rows - 1) * gap) / rows;
+    if (strict && (w < PANE_MIN_W || h < PANE_MIN_H)) continue;
+    // Strict ">" keeps the FEWER-columns layout on a tie.
+    const score = Math.min(w / 1.5, h);
+    if (!best || score > best.score) best = { cols, rows, score };
+  }
+  if (!best) return null;
+  const last = n - best.cols * (best.rows - 1);
+  return { rows: Array.from({ length: best.rows },
+                            (_, r) => (r === best.rows - 1 ? last : best.cols)) };
+}
+
+/* Each row's panes, and each row, as flex-grow proportions. `null` = equal.
+   Kept across a rebuild only while the shape is the same shape. */
+let fractions = null;
+
+function gapPx() {
+  return parseFloat(getComputedStyle(document.body).getPropertyValue("--gap")) || 8;
+}
+
+function gridBox() {
+  const r = document.getElementById("grid")?.getBoundingClientRect();
+  return { W: r?.width || innerWidth, H: r?.height || innerHeight };
+}
+
+function shapeNow() {
+  const { W, H } = gridBox();
+  const n = cells.length;
+  return (layoutFor(n, W, H, gapPx(), true) ?? layoutFor(n, W, H, gapPx(), false)).rows;
+}
+
+/* Rebuild #grid as rows of panes with a divider in every gutter. Cells are
+   MOVED, never recreated - their logs, dialogs and composers go with them - but
+   a detached element forgets its scroll offset and its focus, so both are put
+   back. */
+function arrangeGrid() {
+  const grid = document.getElementById("grid");
+  if (!grid || !cells.length) return;
+  const shape = shapeNow();
+  const same = fractions && fractions.rows.length === shape.length
+    && fractions.rows.every((row, r) => row.length === shape[r]);
+  if (!same) fractions = { rows: shape.map((c) => Array(c).fill(1)), rowH: shape.map(() => 1) };
+  const scrolls = cells.map((one) => one.log.scrollTop);
+  const active = document.activeElement;
+  const frag = document.createDocumentFragment();
+  let at = 0;
+  shape.forEach((count, r) => {
+    if (r) frag.append(divider("h", r - 1, 0));
+    const row = document.createElement("div");
+    row.className = "grid-row";
+    for (let k = 0; k < count; k++) {
+      if (k) row.append(divider("v", r, k - 1));
+      row.append(cells[at++].root);
+    }
+    frag.append(row);
+  });
+  grid.replaceChildren(frag);
+  applyFractions();
+  cells.forEach((one, i) => { one.log.scrollTop = scrolls[i]; });
+  if (active && active !== document.activeElement && document.contains(active)) {
+    active.focus({ preventScroll: true });
+  }
+  // «۱»..«۶» in reading order - a removed pane renumbers the ones after it.
+  cells.forEach((one, i) => {
+    const badge = one.root.querySelector(".cell-badge");
+    if (!badge) return;
+    badge.textContent = (i + 1).toLocaleString("fa-IR");
+    badge.title = (FA.cellBadgeTitle ?? "").replace("{n}", badge.textContent);
+    one.root.setAttribute("aria-keyshortcuts", "Alt+" + (i + 1));
+  });
+}
+
+function applyFractions() {
+  const rows = [...document.querySelectorAll("#grid > .grid-row")];
+  rows.forEach((row, r) => {
+    row.style.flexGrow = String(fractions.rowH[r] ?? 1);
+    [...row.querySelectorAll(":scope > .cell")].forEach((el, k) => {
+      el.style.flexGrow = String(fractions.rows[r]?.[k] ?? 1);
+    });
+  });
+}
+
+function equalize(row = null) {
+  if (!fractions) return;
+  if (row === null) {
+    fractions = { rows: fractions.rows.map((r) => r.map(() => 1)),
+                  rowH: fractions.rowH.map(() => 1) };
+  } else {
+    fractions.rows[row] = fractions.rows[row].map(() => 1);
+  }
+  applyFractions();
+  saveLayout();
+}
+
+/* A gutter you can grab (§D6). The 8px of ground IS the divider; it draws a
+   bar only on hover, focus and drag. `kind` "v" sits between panes k and k+1 of
+   row r, "h" between rows r and r+1. Geometry is read from rects, never from
+   "left"/"right" assumptions, so RTL needs no special case. */
+function divider(kind, r, k) {
+  const d = document.createElement("div");
+  d.className = "divider " + kind;
+  d.tabIndex = 0;
+  d.setAttribute("role", "separator");
+  d.setAttribute("aria-orientation", kind === "v" ? "vertical" : "horizontal");
+  d.setAttribute("aria-label", FA.dividerLabel);
+  d.title = FA.dividerLabel;
+  d.addEventListener("pointerdown", (e) => startDrag(e, d, kind, r, k));
+  d.addEventListener("dblclick", () => equalize(kind === "v" ? r : null));
+  d.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: -24, ArrowRight: 24, ArrowUp: -24, ArrowDown: 24 }[e.key];
+    const axisOk = kind === "v" ? /Left|Right/.test(e.key) : /Up|Down/.test(e.key);
+    if (step && axisOk) {
+      e.preventDefault();
+      resizePair(kind, r, k, step);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      equalize(kind === "v" ? r : null);
+    }
+  });
+  return d;
+}
+
+/* The two boxes a divider sits between, and their share of the fractions. */
+function pairOf(kind, r, k) {
+  if (kind === "v") {
+    const row = document.querySelectorAll("#grid > .grid-row")[r];
+    const panes = row ? [...row.querySelectorAll(":scope > .cell")] : [];
+    return { a: panes[k], b: panes[k + 1], list: fractions.rows[r], ia: k, ib: k + 1 };
+  }
+  const rows = [...document.querySelectorAll("#grid > .grid-row")];
+  return { a: rows[r], b: rows[r + 1], list: fractions.rowH, ia: r, ib: r + 1 };
+}
+
+/* Move a divider by `delta` physical px (+ = right/down). */
+function resizePair(kind, r, k, delta) {
+  const { a, b, list, ia, ib } = pairOf(kind, r, k);
+  if (!a || !b) return;
+  const ra = a.getBoundingClientRect();
+  const rb = b.getBoundingClientRect();
+  const horizontal = kind === "v";
+  // Which of the two is on the physical low side (left, or top).
+  const aLow = horizontal ? ra.left < rb.left : ra.top < rb.top;
+  const sizeA = horizontal ? ra.width : ra.height;
+  const sizeB = horizontal ? rb.width : rb.height;
+  const total = sizeA + sizeB;
+  const floor = Math.min(horizontal ? PANE_MIN_W / 2 : PANE_MIN_H / 2, total / 2 - 1);
+  const lowSize = (aLow ? sizeA : sizeB) + delta;
+  const clamped = Math.max(floor, Math.min(total - floor, lowSize));
+  const newA = aLow ? clamped : total - clamped;
+  const sum = list[ia] + list[ib];
+  list[ia] = sum * (newA / total);
+  list[ib] = sum - list[ia];
+  applyFractions();
+}
+
+function startDrag(e, d, kind, r, k) {
+  e.preventDefault();
+  let last = kind === "v" ? e.clientX : e.clientY;
+  try { d.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event */ }
+  d.classList.add("dragging");
+  const move = (m) => {
+    const now = kind === "v" ? m.clientX : m.clientY;
+    resizePair(kind, r, k, now - last);
+    last = now;
+  };
+  const up = () => {
+    d.classList.remove("dragging");
+    d.removeEventListener("pointermove", move);
+    d.removeEventListener("pointerup", up);
+    d.removeEventListener("pointercancel", up);
+    saveLayout();
+  };
+  d.addEventListener("pointermove", move);
+  d.addEventListener("pointerup", up);
+  d.addEventListener("pointercancel", up);
+}
+
+/* The window changed size: redraw only if the best SHAPE changed. Nothing is
+   parked - minimums apply to adding panes, never to a window getting smaller. */
+let resizeTimer = 0;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!fractions || !cells.length) return;
+    const shape = shapeNow();
+    if (shape.length !== fractions.rows.length
+        || shape.some((c, r) => c !== fractions.rows[r].length)) arrangeGrid();
+  }, 150);
+});
+
+/* One pane out of the grid; its conversation is parked, not closed. */
+function removeCell(cell) {
+  const at = cells.indexOf(cell);
+  if (at < 0 || cells.length < 2) return;
+  if (zoomed) toggleZoom(null);
+  park(cell);
+  cell.perm.retire();
+  cells.splice(at, 1);
+  cell.root.remove();
+  if (at < focused || focused >= cells.length) focused = Math.max(0, focused - 1);
+  document.getElementById("grid").dataset.split = String(cells.length);
+  applyRail(cells.length);
+  arrangeGrid();
+  saveLayout();
+  applyFocus({ focusInput: false });
+}
+
+/* One more pane, when the window has room for it (§D6). The sidebar's «باز
+   کردن در قاب تازه» asks this; `false` means it did not fit and the caller
+   places the conversation in the focused pane instead - never a silent drop. */
+function addPane() {
+  if (cells.length >= MAX_PANES) return false;
+  let { W, H } = gridBox();
+  // Going from one pane to two collapses the sidebar to the rail (§1), so the
+  // room the new layout will really have is the tree's width more.
+  if (railOverride === null && !document.body.classList.contains("rail")) {
+    const side = document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0;
+    W += Math.max(0, side - 48);
+  }
+  if (!layoutFor(cells.length + 1, W, H, gapPx(), true)) return false;
+  setSplit(cells.length + 1);
+  focusCell(cells.length - 1);
+  return true;
+}
+
+/* Nearest pane in an arrow's direction, from the rects (§D6/§D7). */
+function nearestPane(dir) {
+  const here = focusedCell()?.root.getBoundingClientRect();
+  if (!here) return -1;
+  const cx = here.left + here.width / 2;
+  const cy = here.top + here.height / 2;
+  let best = -1;
+  let bestD = Infinity;
+  cells.forEach((one, i) => {
+    if (one === focusedCell()) return;
+    const r = one.root.getBoundingClientRect();
+    if (!r.width) return;
+    const past = dir === "left" ? r.right <= here.left + 1
+      : dir === "right" ? r.left >= here.right - 1
+      : dir === "up" ? r.bottom <= here.top + 1
+      : r.top >= here.bottom - 1;
+    if (!past) return;
+    const d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
 }
 
 /* One more column, from the template index.html carries. Cell order is DOM
@@ -267,7 +536,7 @@ export function setSplit(n, keepRail) {
   const grid = document.getElementById("grid");
   const tpl = document.getElementById("cell-tpl");
   if (!grid || !tpl) return false;      // spec-test.html: no grid, not our verb
-  const want = n === 2 ? 2 : n === 4 ? 4 : 1;
+  const want = Math.max(1, Math.min(MAX_PANES, Math.round(Number(n)) || 1));
   // The sidebar's width follows the split, and a split change expires whatever
   // the toggle last said (§1). BEFORE the columns are stamped, so the track
   // and the column count change in one layout rather than two — the same
@@ -290,47 +559,11 @@ export function setSplit(n, keepRail) {
     cell.composer.setBlank(true);
   }
   grid.dataset.split = String(want);
+  arrangeGrid();
   saveLayout();
-  paintSplitControl(want);
   if (focused >= cells.length) focused = cells.length - 1;
   applyFocus({ focusInput: false });
   return true;
-}
-
-/* --- the sidebar's segmented control ----------------------------------------
-
-   Ported verbatim from the web edition (static/js/app.js paintSplitControl),
-   which is the point: it is the same control over the same window fact. The
-   terminal edition reached the grid through `/split` alone, and the user's
-   own read was that a non-technical reader cannot find a layout that has no
-   visible affordance (TERMINAL-REDESIGN.md §3). A declared departure from
-   V2-PLAN §2's "no chips": this is chrome about the WINDOW, not a mirror of a
-   CLI capability.
-
-   It POSTS NOTHING. How many conversations are on screen is a fact about this
-   window, not about the server -- the tabs it parks stay open exactly as they
-   were, and /api/tab/activate still follows the keyboard through applyFocus. */
-const SPLIT_OPTIONS = [1, 2, 4];
-
-function paintSplitControl(active) {
-  const seg = document.getElementById("split-seg");
-  if (!seg) return;
-  if (!seg.children.length) {
-    seg.setAttribute("aria-label", FA.splitLabel ?? "");
-    for (const n of SPLIT_OPTIONS) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "seg";
-      b.dataset.split = String(n);
-      b.textContent = n.toLocaleString("fa-IR");
-      b.title = (FA.splitOptionTitle ?? "").replace("{n}", b.textContent);
-      b.addEventListener("click", () => setSplit(n));
-      seg.append(b);
-    }
-  }
-  for (const b of seg.children) {
-    b.setAttribute("aria-pressed", String(Number(b.dataset.split) === active));
-  }
 }
 
 /* --- the rail (TERMINAL-REDESIGN.md §1) --------------------------------------
@@ -824,7 +1057,9 @@ const LAYOUT_KEY = "pcg.layout";
 function saveLayout() {
   try {
     sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(
-      { split: cells.length, cells: cells.map((one) => one.tab || ""),
+      { v: 2, split: cells.length, cells: cells.map((one) => one.tab || ""),
+        // The dividers' positions (§D6); a v1 record simply has none.
+        rows: fractions?.rows, rowH: fractions?.rowH,
         // The EFFECTIVE width, not the override: a boolean that disagrees with
         // the saved split is itself the record that the toggle was pressed, so
         // one field carries both facts and an older record simply reads as
@@ -859,6 +1094,9 @@ function restoreLayout(alive) {
   const rail = !!saved.rail;
   if (rail !== (saved.split !== 1)) railOverride = rail;
   document.body.classList.toggle("rail", rail);
+  if (Array.isArray(saved.rows) && Array.isArray(saved.rowH)) {
+    fractions = { rows: saved.rows, rowH: saved.rowH };   // kept if the shape matches
+  }
   setSplit(saved.split, true);
   let placed = 0;
   for (const [at, tab] of saved.cells.entries()) {
@@ -924,6 +1162,7 @@ setTabBridge({
   focused: focusedCell,
   cells: () => cells,
   split: setSplit,
+  addPane,
 });
 
 initChrome();
@@ -956,7 +1195,7 @@ if (events) events.onerror = () => setStatus({});
    root (an ELEMENT, so `cell.root.classList` and `.querySelector` both work). */
 if (document.getElementById("grid")) {
   addCell();
-  paintSplitControl(1);
+  arrangeGrid();
   document.getElementById("btn-rail")?.addEventListener("click", toggleRail);
   applyRail(1);   // names the toggle before anything has changed the split
 } else cells.push(makeCell(document.body));
@@ -1067,15 +1306,44 @@ window.addEventListener("blur", () => document.body.classList.remove("alt-held")
 /* Alt+1..4 moves the keyboard between columns. `e.code`, never `e.key`: a
    Persian keyboard layout puts «۱» in `e.key` and the chord would never match
    (js/choice.js carries the same trap for the numbered dialogs). */
-const DIGIT_CODES = ["Digit1", "Digit2", "Digit3", "Digit4"];
+const DIGIT_CODES = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"];
+
+/* THE WINDOW'S PANE KEYS (BRIDGEMIND-PORT.md §D7), in one table so a chord the
+   Windows measurement (M1) rules out is one line here and one row in
+   wiki/tui-keys.md. All are Alt + `e.code`, in CAPTURE, and swallowed, so the
+   prompt's own arrow handling (history) never sees an Alt+arrow. */
+const PANE_KEYS = {
+  ArrowLeft: () => focusCell(nearestPane("left"), { focusInput: true }),
+  ArrowRight: () => focusCell(nearestPane("right"), { focusInput: true }),
+  ArrowUp: () => focusCell(nearestPane("up"), { focusInput: true }),
+  ArrowDown: () => focusCell(nearestPane("down"), { focusInput: true }),
+  BracketRight: () => focusCell((focused + 1) % cells.length, { focusInput: true }),
+  BracketLeft: () => focusCell((focused - 1 + cells.length) % cells.length, { focusInput: true }),
+  Enter: () => toggleZoom(zoomed ? null : focusedCell()),
+  Equal: () => equalize(),
+};
 
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const at = DIGIT_CODES.indexOf(e.code);
-  if (at < 0 || at >= cells.length) return;
+  if (at >= 0) {
+    if (at >= cells.length) return;
+    e.preventDefault();
+    focusCell(at, { focusInput: true });
+    return;
+  }
+  const act = PANE_KEYS[e.code];
+  if (!act || cells.length < 2) return;
+  // The nearest-pane keys with nothing in that direction do nothing, quietly.
+  if (e.code.startsWith("Arrow") && nearestPane(e.code.slice(5).toLowerCase()) < 0) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   e.preventDefault();
-  focusCell(at, { focusInput: true });
-});
+  e.stopPropagation();
+  act();
+}, true);
 
 /* Focus follows the pointer and the keyboard, in CAPTURE so it lands before the
    click does anything: whatever the click is about, it is about that column. */

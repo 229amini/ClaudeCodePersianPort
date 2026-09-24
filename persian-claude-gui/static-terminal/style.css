@@ -280,68 +280,6 @@ pre, code, .path, .diff, .tool-output, .mono {
   border-radius: var(--r-panel);
 }
 
-/* THE SPLIT CONTROL. Three segments, «۱ | ۲ | ۴», one of them pressed. A
-   segmented control and not three buttons or a menu: the choice is small,
-   closed and mutually exclusive, and it has to be readable at a glance from
-   across the room — which a menu that has to be opened first is not. Ported
-   from the web edition's window bar (static/style.css) into the sidebar,
-   because the sidebar head costs the grid nothing while a window bar would
-   take 36px off every cell at once (TERMINAL-REDESIGN.md §1 rejected (c)).
-
-   Nothing here animates on press beyond the 97% scale every pressable thing in
-   this shell gets: the layout change itself is the feedback, and it is
-   instant. */
-.side-split {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0 12px 12px;
-}
-.side-split-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-muted);
-  font-size: .78rem;
-}
-#split-seg {
-  flex: none;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-#split-seg .seg {
-  min-width: 30px;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: .82rem;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  /* Named properties, never `all`: the pressed segment changes two of them and
-     the hover changes one. */
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
-              transform 140ms var(--ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  #split-seg .seg:hover { color: var(--fg); background: var(--surface-2); }
-}
-#split-seg .seg:active { transform: scale(.97); }
-#split-seg .seg[aria-pressed="true"] {
-  background: var(--surface-2);
-  color: var(--fg);
-}
-
 .side-head {
   display: flex;
   align-items: center;
@@ -461,7 +399,8 @@ pre, code, .path, .diff, .tool-output, .mono {
   --dot-size: 10px;
   line-height: 1;
 }
-.tab-row[data-current="true"] .tab-dot { color: var(--accent); }
+/* No colour for [data-current]: the status palette decides (BRIDGEMIND-PORT.md
+   §D2), and the row's own tint already says which one is current. */
 /* Working: it breathes rather than blinks, and the tokens layer's
    reduced-motion rule stops it outright. Shares the agents strip's keyframes —
    same meaning, same motion. */
@@ -855,7 +794,6 @@ body.rail .tab-name {
 
 /* Chrome about the tree rather than about a conversation: at this width there
    is no tree, so it says nothing. */
-body.rail .side-split-label,
 body.rail #projects-title,
 body.rail #projects,
 body.rail .tab-proj,
@@ -875,8 +813,6 @@ body.rail .new-chat {
   padding: 0;
   justify-content: center;
 }
-body.rail .side-split { margin: 0 6px 10px; justify-content: center; }
-body.rail #split-seg { flex-direction: column; }
 body.rail .side-scroll { padding: 0 4px 8px; }
 body.rail .side-foot { padding: 8px 6px 10px; }
 body.rail .side-item { padding: 0; justify-content: center; }
@@ -979,22 +915,54 @@ body.rail .rail-icon { transform: scaleX(-1); }
    minimum is its content, so a long transcript would grow its cell off the
    window instead of scrolling inside it (wiki/rtl-rendering-notes.md — the same
    lesson body.app's own columns already carry). */
+/* BRIDGEMIND-PORT.md §D6: rows of panes (js/app.js arrangeGrid), N from 1 to
+   6, every gutter a divider. Flex with a zero basis on both axes, so a pane's
+   size always comes from its share (flex-grow, written by app.js) and never
+   from its content - the job `minmax(0, 1fr)` did for the old fixed grid. */
 #grid {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  /* Panes are cards on the ground, one gutter apart (§D3) - the gap is ground,
-     not a hairline. */
-  gap: var(--gap);
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
 }
-#grid[data-split="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-#grid[data-split="4"] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+.grid-row {
+  flex: 1 1 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
+.grid-row > .cell { flex: 1 1 0; }
+
+/* THE DIVIDER IS THE GUTTER: 8px of ground, grabbable, drawing a 2px bar only
+   on hover, keyboard focus and drag. The hit area reaches 3px into each pane
+   so a pointer does not have to find an 8px strip. */
+.divider {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  touch-action: none;
+}
+/* 6px wider than the gutter and pulled back by 3px a side: the flow still
+   gives it exactly one gutter, the pointer gets 14px to find. A box, not a
+   pseudo-element hanging past one - that read as overflow (test_layout.py). */
+.divider.v { inline-size: calc(var(--gap) + 6px); margin-inline: -3px; cursor: col-resize; }
+.divider.h { block-size: calc(var(--gap) + 6px); margin-block: -3px; cursor: row-resize; }
+.divider::before {
+  content: "";
+  position: absolute;
+  border-radius: 1px;
+  background: var(--border-strong);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.divider.v::before { inset-block: 14px; inset-inline: calc(50% - 1px); }
+.divider.h::before { inset-inline: 14px; inset-block: calc(50% - 1px); }
+.divider:hover::before,
+.divider:focus-visible::before,
+.divider.dragging::before { opacity: 1; }
+.divider:focus-visible { outline: none; }
+.divider.dragging::before { transition: none; }
 
 /* A cell is exactly what #stage used to be. `min-*: 0` for the same reason the
    tracks carry it, and `container-type: size` so the narrow-window rules at the
@@ -1068,8 +1036,8 @@ body.rail .rail-icon { transform: scaleX(-1); }
    nothing to disambiguate, so it is not drawn at all. */
 /* §D5: the focused pane's edge is one step brighter and its header is
    tinted. No coral frame, no glow, no motion. */
-#grid:not([data-split="1"]) > .cell.focused { border-color: var(--border-strong); }
-#grid:not([data-split="1"]) > .cell.focused > .topbar { background: var(--surface); }
+#grid:not([data-split="1"]) .cell.focused { border-color: var(--border-strong); }
+#grid:not([data-split="1"]) .cell.focused > .topbar { background: var(--surface); }
 
 /* The cell's own number, «۱»…«۴», so Alt+N names something visible. Muted: it
    is a label for a key, not a piece of the conversation. */
@@ -1194,11 +1162,9 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 
 /* FULLSCREEN (§D5): the zoomed pane fills the grid; the others stay in the
    DOM, keep their logs and keep receiving events - only their box goes. */
-#grid[data-zoomed] {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-}
-#grid[data-zoomed] > .cell:not(.zoomed) { display: none; }
+#grid[data-zoomed] .cell:not(.zoomed),
+#grid[data-zoomed] .divider,
+#grid[data-zoomed] .grid-row:not(:has(.zoomed)) { display: none; }
 
 /* A PANE WITH NO CONVERSATION (§D5): one line, one button. No header controls,
    no welcome box, no prompt that can send nowhere and no status line. The

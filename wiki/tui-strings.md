@@ -168,9 +168,8 @@ into §2-5.
 
 | id | رشتهٔ TUI | فارسی v2 | strings.fa.js | یادداشت |
 |---|---|---|---|---|
-| `grid.split.usage` | — | «این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد» | `cmdSplitUsage` | `/split` با هر عدد دیگری |
-| `grid.split.done` | — | «چیدمان به {n} ستون تغییر کرد» | `cmdSplitDone` | پس از `/split 1` یا `/split 2` — هر دو واقعاً ستون‌اند |
-| `grid.split.done.grid` | — | «چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد» | `cmdSplitDoneGrid` | پس از `/split 4`. جملهٔ جدا دارد چون ۴ اصلاً چهار ستون نیست: دو ستون و دو ردیف است و پیام قبلی دروغ می‌گفت (MA3-T4) |
+| `grid.split.usage` | — | «این دستور عددی از ۱ تا ۶ می‌پذیرد» | `cmdSplitUsage` | `/split` با هر عدد دیگری |
+| `grid.split.done` | — | «چیدمان به {n} قاب تغییر کرد» | `cmdSplitDone` | پس از هر `/split n` — «قاب» نه «ستون»، چون از BridgeMind port P3 شبکه N قاب را در چند ردیف می‌چیند |
 | `grid.cell.badge` | — | «ستون {n} — با Alt+{n} به اینجا بیایید» | `cellBadgeTitle` | تولتیپ نشان رقمی هر ستون؛ رقم‌ها ترتیب DOM‌اند، پس زیر `dir=rtl` «۱» بالا-راست است، نه بالا-چپ |
 
 **Reused, not new:** `permOtherSession` («این درخواست از گفتگوی دیگری است:») already shipped

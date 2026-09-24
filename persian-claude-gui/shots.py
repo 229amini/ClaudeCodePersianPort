@@ -52,7 +52,7 @@ PROBE = STATIC / "_shot_probe.html"
 OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
-SCENES = ("home", "conversation", "panes4", "permission")
+SCENES = ("home", "conversation", "panes3", "panes4", "permission")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -183,6 +183,24 @@ async function run() {
                   file_path: "D:\\projects\\ClaudeCodePersianPort\\static\\strings.fa.js",
                   content: "window.FA = {\n  phIdle: \"پیام خود را بنویسید\",\n};\n"}});
     }
+    return;
+  }
+  if (SCENE === "panes3") {
+    const three = TABS.slice(0, 3);
+    useTabs(three, "t1");
+    APP.setSplit(3);
+    APP.applyTabs({tabs: three, active: "t1"});
+    for (let i = 1; i < 3; i++) { APP.focusCell(i); APP.applySwitch(three[i].tab); }
+    APP.focusCell(0);
+    await sleep(60);
+    for (const t of three) status(t.tab, t.cwd);
+    turn("t1", 1);
+    turn("t2", 1);
+    ev("t2", {type: "result", subtype: "success", is_error: false, duration_ms: 8000});
+    ev("t2", {type: "command_lifecycle", command_uuid: "u-t21", state: "completed"});
+    turn("t3", 1);
+    ev("t3", {type: "result", subtype: "success", is_error: false, duration_ms: 8000});
+    ev("t3", {type: "command_lifecycle", command_uuid: "u-t31", state: "completed"});
     return;
   }
   if (SCENE === "panes4") {

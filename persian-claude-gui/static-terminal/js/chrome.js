@@ -969,6 +969,18 @@ function sessionRow(sess, projPath, isCurrent) {
   // cannot be deleted; the server refuses it too.
   li.append(btn, ...kebabMenu([
     {
+      // §D6: a pane of its own when the window has room; otherwise the focused
+      // pane, and the reader is told - a conversation is never dropped silently.
+      icon: SVG.plus,
+      text: FA.openInNewPane,
+      run: () => {
+        const added = tabBridge?.addPane?.();
+        if (liveTab) tabBridge?.switchTo(liveTab);
+        else resumeSession(sess.session_id, projPath, sess.worktree);
+        if (added === false) bubble("error", FA.noRoomForPane);
+      },
+    },
+    {
       icon: SVG.eye,
       text: FA.viewSession,
       run: () => replaySession(sess.session_id, projPath, sess.worktree),
@@ -1419,7 +1431,6 @@ export function initChrome() {
   if (ui.projects) {
     document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
-    document.getElementById("split-label").textContent = FA.splitLabel;
     // The projects' own section title is drawn inside #projects now, after
     // the pinned section (renderProjects); the static one stays for the rail's
     // rules and the markup's shape, and is never shown.

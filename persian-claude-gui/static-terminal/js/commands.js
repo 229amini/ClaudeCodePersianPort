@@ -258,7 +258,7 @@ function memoryPicker(arg, cell) {
    A bad argument does NOT fall through to the CLI: `/split 3` is unmistakably
    aimed at this window, and a refusal row from the model is a worse answer than
    the one line saying which numbers exist. */
-const SPLITS = new Set([1, 2, 4]);
+const SPLITS = new Set([1, 2, 3, 4, 5, 6]);   // the grid fits N (§D6)
 
 /* Persian and Arabic-Indic digits both reach the box — the composer is where a
    Persian keyboard types. `choice.js` has the same trap for `e.key`. */
@@ -274,10 +274,9 @@ function splitGrid(arg) {
     return true;
   }
   if (!splitView(n)) return false;   // no grid here (the spec harness): not ours
-  // `/split 4` is a 2x2, not four columns — one of the two layouts this verb
-  // draws is not a row of columns at all, so it gets its own sentence.
-  note(n === 4 ? FA.cmdSplitDoneGrid
-               : FA.cmdSplitDone.replace("{n}", n.toLocaleString("fa-IR")));
+  // «قاب», not «ستون»: since the grid fits N (§D6) most layouts are rows of
+  // panes, and a sentence counting columns would be wrong more often than not.
+  note(FA.cmdSplitDone.replace("{n}", n.toLocaleString("fa-IR")));
   return true;
 }
 
