@@ -499,6 +499,19 @@ window.FA = {
   nsFailed: "راه‌اندازی نشد؛ هیچ گفتگویی باز نماند",
   nsStepFailed: "گفتگو باز شد، ولی کار مشترک یا سطح اجازه‌اش فرستاده نشد",
   presetReviewerBrief: "تو بازبین هستی: هیچ فایلی را تغییر نده. کار گفتگوی دیگر را در همین پوشه بخوان و گزارش بده.",
+
+  /* The notification centre (BRIDGEMIND-PORT.md §D9): what happened in a
+     conversation you were not looking at. */
+  bellTitle: "اعلان‌ها",
+  bellUnread: "اعلان‌ها — {n} خوانده‌نشده",
+  noticesAllRead: "همه خوانده شد",
+  noticesEmpty: "اعلانی نیست",
+  noticeKind: {
+    done: "پاسخ داد",
+    needs: "منتظر شماست",
+    failed: "خطا داد",
+  },
+  noticeClosed: "این گفتگو بسته شده است",
   /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
      says is the ACTION it will take — not the state it is in: a control named
      after its own state is read as a label and pressed by accident. It follows

@@ -79,7 +79,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   control too, plus the 48 px rail that takes a 4-up cell from 378 px to 490 px, and the per-cell
   identity row — with the three accessibility traps collapsing a sidebar sets. **2026-09-24 (P4):**
   the new-session page — why its limit reads `/api/tabs` and not the debounced tab list, why
-  `fits()` measures `#stage`, and the open/posture/message order it must keep.
+  `fits()` measures `#stage`, and the open/posture/message order it must keep. **P5:** the notification
+  centre — what counts as news, and why a notice's title is looked up when it is drawn.
   **2026-09-24 (pcg-0o7):** why `focusCell()` defers itself while a `withRenderTarget` is open
   — a dialog focusing itself mid-render used to file one conversation's state under another.
   Same day, pcg-973: the web edition's status dots differ in shape as well as hue.

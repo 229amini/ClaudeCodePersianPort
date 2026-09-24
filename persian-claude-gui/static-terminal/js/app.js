@@ -53,7 +53,7 @@ import {
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
-  setChrome, refreshProjects, backfillTab, refreshWhen, kebabMenu,
+  setChrome, refreshProjects, backfillTab, refreshWhen, kebabMenu, tabTitle,
 } from "./chrome.js";
 import { runWindowCommand } from "./commands.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
@@ -62,6 +62,7 @@ import { makeControls } from "./controls.js";
 import { initAgents, applyAgents, refreshAgents, resetAgents } from "./agents.js";
 import { api, token } from "./api.js";
 import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
+import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 
 const FA = window.STRINGS;
 
@@ -706,6 +707,15 @@ function noteTabEvent(ev, tab) {
       && ev.terminal_reason !== "aborted_streaming") {
     unread.set(tab, (unread.get(tab) ?? 0) + 1);
   }
+  // The notification centre (§D9): the same "nobody saw it" rule, widened to
+  // any pane but the one the keyboard is in, and to a permission request.
+  if (!ev.replayed && !(tab === focusedTab() && !document.hidden)) {
+    if (ev.type === "result" && ev.terminal_reason !== "aborted_streaming") {
+      pushNotice(tab, ev.is_error ? "failed" : "done", titleOf(tab));
+    } else if (ev.type === "wrapper" && ev.subtype === "permission_request") {
+      pushNotice(tab, "needs", titleOf(tab));
+    }
+  }
   // The dot is derived from render state this window already holds, so it
   // repaints off the event itself instead of waiting out the /api/tabs round
   // trip below. `command_lifecycle` is here and not in TAB_NEWS because it
@@ -720,6 +730,29 @@ function noteTabEvent(ev, tab) {
     refreshTabs();
   }
 }
+
+function titleOf(tab) {
+  const entry = tabList.find((t) => t.tab === tab);
+  return entry ? tabTitle(entry) : FA.tabFresh;
+}
+
+/* A notice (or the OS notification) says "go there": focus the pane holding
+   it, or put it in the focused pane, then flash that pane once (§D9). */
+async function jumpTo(tab) {
+  if (!tabs.has(tab) && !tabList.some((t) => t.tab === tab)) return;
+  if (newSessionOpen()) document.querySelector("#new-session .ns-cancel")?.click();
+  await switchTab(tab);
+  const cell = cellOf(tab);
+  if (!cell) return;
+  cell.root.classList.remove("flash");
+  void cell.root.offsetWidth;        // restart the animation on a second jump
+  cell.root.classList.add("flash");
+  setTimeout(() => cell.root.classList.remove("flash"), 700);
+}
+window.addEventListener("pcg:jump", (e) => {
+  window.focus();
+  jumpTo(e.detail?.tab);
+});
 
 /* What this WINDOW knows about each conversation and the server does not: the
    uuid ledger says whether it is working, and the last result says whether it
@@ -870,6 +903,7 @@ function placeIn(cell, tab) {
     adoptFocusedScope();
     setCurrentSession(entry.scope.status.sessionId ?? null);
     refreshAgents();   // the strip belongs to the session now on screen
+    markRead(tab);     // the bell's notices for it are read by looking (§D9)
   }
   mirrorBusy();
   // On screen is read: whatever landed while this one was parked is not news
@@ -915,6 +949,7 @@ function applyFocus({ focusInput = false, post = true } = {}) {
   adoptFocusedScope();
   mirrorBusy();
   if (!cell) return;
+  if (cell.tab) markRead(cell.tab);
   // The one sidebar, the one project list and the one agents strip follow the
   // keyboard: with four columns answering at once there is no other honest
   // answer to "which conversation is this window about?".
@@ -1176,6 +1211,12 @@ function stageBox() {
   return { W: r?.width || innerWidth, H: r?.height || innerHeight };
 }
 
+initNotices({
+  jump: jumpTo,
+  alive: (tab) => tabs.has(tab) || tabList.some((t) => t.tab === tab),
+  title: titleOf,
+});
+
 initNewSession({
   currentCwd: () => state.status.cwd || focusedCell()?.cwd || "",
   openCount: () => tabList.length,
@@ -1369,9 +1410,10 @@ const PANE_KEYS = {
   Enter: () => toggleZoom(zoomed ? null : focusedCell()),
   Equal: () => equalize(),
   KeyN: () => (newSessionOpen() ? null : openNewSession()),
+  KeyB: () => togglePanel(),
 };
 // Keys that mean something with one pane too (the rest move between panes).
-const SOLO_KEYS = new Set(["KeyN"]);
+const SOLO_KEYS = new Set(["KeyN", "KeyB"]);
 
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -1426,7 +1468,10 @@ function tickIdle(now) {
 }
 setInterval(tickIdle, 60_000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) tickIdle();
+  if (document.hidden) return;
+  tickIdle();
+  // Back at the window: the conversation in front of you is read (§D9).
+  if (focusedTab()) markRead(focusedTab());
 });
 
 focusedCell()?.composer.focus();

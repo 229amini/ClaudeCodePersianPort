@@ -309,6 +309,117 @@ pre, code, .path, .diff, .tool-output, .mono {
 .new-chat:hover { background: var(--surface-2); }
 .new-chat svg { color: var(--accent); flex: none; }
 
+/* THE BELL (BRIDGEMIND-PORT.md §D9). An icon button in the head; the count is a
+   small pill on it, faint while the news is only answers and in the waiting
+   colour while any unread notice is a conversation asking for you. */
+.bell-btn {
+  position: relative;
+  flex: none;
+  margin-inline-start: auto;
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-row);
+  background: none;
+  color: var(--fg-muted);
+}
+.bell-btn:hover, .bell-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.bell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bell-btn + .rail-toggle { margin-inline-start: 0; }
+.bell-count {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-end: -4px;
+  min-inline-size: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: var(--wt-title);
+  text-align: center;
+}
+.bell-btn.needs .bell-count { background: var(--st-wait); color: #111; }
+.bell-panel {
+  position: fixed;
+  margin: 0;
+  inline-size: min(340px, calc(100vw - 16px));
+  max-block-size: min(70vh, 520px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+  font-size: var(--fs-ui);
+}
+.bell-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 6px;
+}
+.bell-head h2 { margin: 0; font-size: var(--fs-ui); font-weight: var(--wt-title); }
+.bell-allread {
+  margin-inline-start: auto;
+  min-height: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: none;
+  color: var(--fg-muted);
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-body);
+}
+.bell-allread:hover { background: var(--surface); color: var(--fg); }
+.bell-list { list-style: none; margin: 0; padding: 0; }
+.bell-empty { padding: 10px 8px; color: var(--fg-faint); }
+.bell-row {
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: 1em minmax(0, 1fr) auto;
+  grid-template-areas: "g t w" "g k k";
+  align-items: baseline;
+  column-gap: 8px;
+  min-height: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-row);
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-weight: var(--wt-body);
+  text-align: start;
+}
+.bell-row:hover:not(:disabled), .bell-row:focus-visible { background: var(--surface); outline: none; }
+.bell-row.unread { background: var(--surface-2); color: var(--fg); }
+.bell-row.unread .bell-title { font-weight: var(--wt-title); }
+.bell-row:disabled { opacity: .55; cursor: default; }
+.bell-glyph { grid-area: g; font-size: 11px; }
+.bell-row[data-kind="needs"] .bell-glyph { color: var(--st-wait); }
+.bell-row[data-kind="failed"] .bell-glyph { color: var(--st-err); }
+.bell-row[data-kind="done"] .bell-glyph { color: var(--st-run); }
+.bell-title { grid-area: t; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bell-what { grid-area: k; font-size: var(--fs-meta); color: var(--fg-muted); }
+.bell-when { grid-area: w; font-size: var(--fs-meta); color: var(--fg-faint); }
+
+/* The pane a notice jumped to says "here" once: a 2px ring that fades out.
+   Reduced motion keeps the ring for the same 700ms and drops the fade. */
+.cell.flash { animation: pane-flash 700ms var(--ease) forwards; }
+@keyframes pane-flash {
+  from { box-shadow: 0 0 0 2px var(--border-strong); }
+  to { box-shadow: 0 0 0 2px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.flash { animation: none; box-shadow: 0 0 0 2px var(--border-strong); }
+}
+
 /* Section labels (§D4): small, faint, no rule lines and no tracking -
    letter-spacing breaks Persian joining. A count pill says how many. */
 .side-title {

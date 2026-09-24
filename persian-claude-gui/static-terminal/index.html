@@ -33,6 +33,16 @@
       <path d="M6.9 16.6h4"/>
     </svg>
     <span class="brand" id="brand"></span>
+    <!-- THE BELL (BRIDGEMIND-PORT.md §D9): unread notices from conversations
+         you are not looking at. Its panel is built by js/notices.js. -->
+    <button type="button" id="btn-bell" class="bell-btn" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/>
+        <path d="M10 20.5a2.2 2.2 0 004 0"/>
+      </svg>
+      <span class="bell-count" hidden></span>
+    </button>
     <!-- THE RAIL TOGGLE (TERMINAL-REDESIGN.md §1). The sidebar has two widths
          and the width FOLLOWS THE SPLIT — `/split 2|4` collapses it to 48px so
          the columns get the ~120px it was spending on empty tree, `/split 1`

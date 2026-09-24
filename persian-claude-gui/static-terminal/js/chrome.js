@@ -426,7 +426,7 @@ const REL_FORMAT = new Intl.RelativeTimeFormat("fa", { numeric: "auto", style: "
 const REL_UNITS = [["year", 31536000], ["month", 2592000], ["week", 604800],
                    ["day", 86400], ["hour", 3600], ["minute", 60]];
 
-function relWhen(epochSeconds) {
+export function relWhen(epochSeconds) {
   const diff = epochSeconds - Date.now() / 1000;
   for (const [unit, size] of REL_UNITS) {
     if (Math.abs(diff) >= size) return REL_FORMAT.format(Math.round(diff / size), unit);

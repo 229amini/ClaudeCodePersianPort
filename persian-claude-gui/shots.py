@@ -53,7 +53,7 @@ OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
-          "newsession-pair")
+          "newsession-pair", "bell")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -215,6 +215,21 @@ async function run() {
     turn("t3", 1);
     ev("t3", {type: "result", subtype: "success", is_error: false, duration_ms: 8000});
     ev("t3", {type: "command_lifecycle", command_uuid: "u-t31", state: "completed"});
+    return;
+  }
+  if (SCENE === "bell") {
+    useTabs(TABS, "t1");
+    APP.applyTabs({tabs: TABS, active: "t1"});
+    await sleep(60);
+    for (const t of TABS) status(t.tab, t.cwd);
+    turn("t1", 1);
+    ev("t2", {type: "result", subtype: "success", is_error: false, duration_ms: 8000});
+    ev("t3", {type: "result", subtype: "success", is_error: true,
+              result: "API Error: overloaded", duration_ms: 9000});
+    ev("t4", {type: "wrapper", subtype: "permission_request", request_id: "r4",
+              tool_name: "Bash", tool_use_id: "b4", tool_input: {command: "npm run build"}});
+    await sleep(400);     // the session titles arrive with /api/projects
+    document.getElementById("btn-bell").click();
     return;
   }
   if (SCENE === "panes4") {

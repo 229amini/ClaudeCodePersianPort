@@ -189,6 +189,23 @@ Three things that are not obvious from the code:
   `/clear` is not this page: it is `chrome.js newChatHere()`, one fresh conversation in this
   folder, as in the TUI.
 
+## The notification centre (BRIDGEMIND-PORT.md §D9, P5, 2026-09-24)
+
+`static-terminal/js/notices.js` owns the model (window memory, cap 50), the bell in the sidebar
+head and its `[popover]` panel; `app.js noteTabEvent()` decides what is news. The rule: never a
+`replayed` event, never a stop (`aborted_streaming`), and never the focused pane of a **visible**
+window — a hidden window's focused pane is news, because nobody saw it. One unread "needs" per
+conversation; a second permission request is the same news. A notice is read when its
+conversation is placed in, or focused in, a pane, or the window comes back visible on it.
+
+- **The title is asked at paint time**, not stored at creation: session titles arrive with
+  `/api/projects`, often after the event that made the notice. The stored one is only for a
+  closed conversation, whose row is drawn disabled with «این گفتگو بسته شده است».
+- **The OS notification's click jumps through a `pcg:jump` CustomEvent** on `window`:
+  `render.js notifyTurnEnd()` cannot import `app.js`, and the event carries `state.tab` captured
+  when the notification was made.
+- Gate: `test_notices.py` (17 checks, negative-tested against a missing replay guard).
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:
