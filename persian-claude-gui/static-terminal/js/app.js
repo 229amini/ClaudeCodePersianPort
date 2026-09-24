@@ -49,7 +49,7 @@ import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, state, resetTurn, clearPulse,
   newRenderScope, withRenderTarget, inRenderTarget, initTranscript, applyChrome,
-  setFocusedCell, shortModel,
+  setFocusedCell, shortModel, bubble,
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
@@ -61,6 +61,7 @@ import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
 import { initAgents, applyAgents, refreshAgents, resetAgents } from "./agents.js";
 import { api, token } from "./api.js";
+import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
 
 const FA = window.STRINGS;
 
@@ -184,9 +185,11 @@ function initPaneHeader(cell) {
   cell.root.append(menu);               // a popover: its parent only owns its lifetime
   q("pane-zoom").addEventListener("click", () => toggleZoom(cell));
   q("pane-close").addEventListener("click", () => takeOffScreen(cell));
-  // An empty pane's one button. The pointerdown above has already put the
-  // keyboard in this pane, so «گفتگوی جدید» lands here.
-  q("empty-btn")?.addEventListener("click", () => document.getElementById("btn-new")?.click());
+  // An empty pane's one button opens the new-session page (§D8). In the home
+  // state (one pane, nothing open) it is the whole page; in an empty pane of a
+  // grid it asks for exactly one conversation, placed HERE.
+  q("empty-btn")?.addEventListener("click", () =>
+    openNewSession({ target: cells.length > 1 ? cell : null }));
 }
 
 function paneMenuItems(cell) {
@@ -1163,6 +1166,50 @@ setTabBridge({
   cells: () => cells,
   split: setSplit,
   addPane,
+  newSession: (opts) => openNewSession(opts),
+});
+
+/* The new-session page's view of the grid (BRIDGEMIND-PORT.md §D8). Handed in,
+   because newsession.js may not import this module. */
+function stageBox() {
+  const r = document.getElementById("stage")?.getBoundingClientRect();
+  return { W: r?.width || innerWidth, H: r?.height || innerHeight };
+}
+
+initNewSession({
+  currentCwd: () => state.status.cwd || focusedCell()?.cwd || "",
+  openCount: () => tabList.length,
+  // Would N panes fit this window? Measured off #stage (the grid is hidden
+  // while the page is open), with the sidebar at the width N panes will give
+  // it: more than one collapses it to the rail (§1) unless a press says not.
+  fits(n) {
+    if (n <= 1) return true;
+    let { W, H } = stageBox();
+    if (railOverride === null && !document.body.classList.contains("rail")) {
+      const side = document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0;
+      W += Math.max(0, side - 48);
+    }
+    return !!layoutFor(n, W, H, gapPx(), true);
+  },
+  focusBack: () => focusedCell()?.composer.focus(),
+  // Slot order is pane order: slot ۱ in pane ۱. A target is the empty pane
+  // whose button asked, and it gets the one conversation.
+  async place(opened, target) {
+    if (target && opened.length === 1 && cells.includes(target)) {
+      focusCell(cells.indexOf(target));
+      applySwitch(opened[0]);
+    } else {
+      setSplit(opened.length);
+      opened.forEach((tab, i) => {
+        focusCell(i);
+        applySwitch(tab);
+      });
+      focusCell(0);
+    }
+    refreshTabs();
+    focusedCell()?.composer.focus();
+  },
+  say: (tab, text) => renderInTab(tab, () => bubble("error", text)),
 });
 
 initChrome();
@@ -1321,7 +1368,10 @@ const PANE_KEYS = {
   BracketLeft: () => focusCell((focused - 1 + cells.length) % cells.length, { focusInput: true }),
   Enter: () => toggleZoom(zoomed ? null : focusedCell()),
   Equal: () => equalize(),
+  KeyN: () => (newSessionOpen() ? null : openNewSession()),
 };
+// Keys that mean something with one pane too (the rest move between panes).
+const SOLO_KEYS = new Set(["KeyN"]);
 
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -1333,7 +1383,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const act = PANE_KEYS[e.code];
-  if (!act || cells.length < 2) return;
+  if (!act || (cells.length < 2 && !SOLO_KEYS.has(e.code))) return;
   // The nearest-pane keys with nothing in that direction do nothing, quietly.
   if (e.code.startsWith("Arrow") && nearestPane(e.code.slice(5).toLowerCase()) < 0) {
     e.preventDefault();

@@ -964,6 +964,146 @@ body.rail .rail-icon { transform: scaleX(-1); }
 .divider:focus-visible { outline: none; }
 .divider.dragging::before { transition: none; }
 
+/* --- the new-session page (BRIDGEMIND-PORT.md §D8) ---------------------------
+   A full-stage view over the grid: #grid is display:none while it is open, so
+   the conversations keep running and keep their scroll. One centred card on
+   the ground, the same card language as the panes. */
+#stage.ns-open > #grid { display: none; }
+.ns {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-block: 6vh var(--pad);
+}
+.ns-card {
+  inline-size: min(640px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-panel);
+  padding: calc(var(--pad) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+.ns-title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: var(--wt-title);
+  color: var(--fg);
+}
+.ns-field {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.ns-label { color: var(--fg-muted); padding-block-start: 5px; }
+.ns-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-self: start;
+}
+.ns-opt {
+  font: inherit;
+  min-inline-size: 2.4em;
+  padding: 4px 12px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-muted);
+  min-height: 0;
+  font-weight: var(--wt-body);
+  cursor: pointer;
+}
+.ns-opt:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+.ns-opt[aria-pressed="true"] {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+.ns-opt:disabled { opacity: .4; cursor: not-allowed; }
+.ns-opt:focus-visible,
+.ns-folder:focus-visible,
+.ns-task:focus-visible,
+.ns-go:focus-visible,
+.ns-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ns-folder-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-inline-size: 0; }
+.ns-folder {
+  font: inherit;
+  min-inline-size: 16em;
+  max-inline-size: 100%;
+  padding: 4px 8px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--border);
+  background: var(--raise);
+  color: var(--fg);
+}
+.ns-folder-path { color: var(--fg-faint); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.ns-iso { display: flex; flex-direction: column; gap: 4px; }
+.ns-radio { display: flex; align-items: center; gap: 8px; color: var(--fg); cursor: pointer; }
+.ns-radio:has(input:disabled) { color: var(--fg-faint); cursor: not-allowed; }
+.ns-radio input { accent-color: var(--accent); margin: 0; }
+.ns-note { margin: 0; color: var(--fg-faint); font-size: var(--fs-meta); }
+.ns-task {
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: var(--lh-fa);
+  resize: vertical;
+  min-block-size: 4.5em;
+  padding: 8px 10px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  background: var(--raise);
+  color: var(--fg);
+}
+.ns-task::placeholder { color: var(--fg-faint); }
+.ns-sub {
+  margin: 6px 0 0;
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-title);
+  color: var(--fg-muted);
+}
+.ns-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ns-slot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--r-row);
+  background: var(--surface);
+  color: var(--fg);
+}
+.ns-slot-n { color: var(--fg-faint); min-inline-size: 1em; }
+.ns-slot-proj { font-weight: var(--wt-title); }
+.ns-slot-iso, .ns-slot-role { color: var(--fg-muted); }
+.ns-slot-iso::before, .ns-slot-role::before { content: "· "; color: var(--fg-faint); }
+.ns-slot-role.is-reviewer { color: var(--st-wait); }
+.ns-slot-task { background: none; color: var(--fg-faint); font-size: var(--fs-meta); }
+.ns-error { margin: 0; color: var(--danger); }
+.ns-actions { display: flex; justify-content: flex-end; gap: 8px; margin-block-start: 4px; }
+.ns-cancel, .ns-go {
+  font: inherit;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-row);
+  cursor: pointer;
+}
+.ns-cancel { background: none; border: 1px solid var(--border); color: var(--fg-muted); }
+.ns-cancel:hover { color: var(--fg); background: var(--surface); }
+.ns-go { background: var(--accent); border: 1px solid var(--accent); color: #111; font-weight: var(--wt-title); }
+.ns-go:hover:not(:disabled) { background: var(--accent-strong); }
+.ns-go:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 620px) {
+  .ns-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .ns-card { padding: var(--pad); }
+}
+
 /* A cell is exactly what #stage used to be. `min-*: 0` for the same reason the
    tracks carry it, and `container-type: size` so the narrow-window rules at the
    foot of this file measure the CELL rather than the window: a 2x2 at 1280px

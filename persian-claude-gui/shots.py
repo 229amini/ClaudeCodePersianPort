@@ -52,7 +52,8 @@ PROBE = STATIC / "_shot_probe.html"
 OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
-SCENES = ("home", "conversation", "panes3", "panes4", "permission")
+SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
+          "newsession-pair")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -163,6 +164,19 @@ function turn(tab, n) {
 
 async function run() {
   if (SCENE === "home") return;
+  if (SCENE.startsWith("newsession")) {
+    document.getElementById("btn-new").click();
+    await sleep(150);
+    const page = document.getElementById("new-session");
+    const pick = (key) => page.querySelector(`.ns-seg [data-key="${key}"]`).click();
+    pick(SCENE === "newsession" ? "group" : "pair");
+    const task = page.querySelector(".ns-task");
+    task.value = SCENE === "newsession"
+      ? "آزمون‌های لینوکس را درست کن و نتیجه را گزارش بده."
+      : "صفحهٔ تازه‌ٔ گفتگو را پیاده کن.";
+    task.dispatchEvent(new Event("input"));
+    return;
+  }
   if (SCENE === "conversation" || SCENE === "permission") {
     useTabs([TABS[0]], "t1");
     APP.applyTabs({tabs: [TABS[0]], active: "t1"});

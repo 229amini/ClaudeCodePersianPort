@@ -167,6 +167,28 @@ hiding a status field — `test_split.py`'s "holds more than it shows" assertion
 that non-negotiable, and `LOG_SHARE` is keyed by edition (`terminal: 60, web: 40`) because the
 two editions measure differently and one shared number red-gates the other.
 
+## The new-session page (BRIDGEMIND-PORT.md §D8, P4, 2026-09-24)
+
+`static-terminal/js/newsession.js` fills `section#new-session` inside `#stage`; while it is open
+`#stage.ns-open > #grid` is `display: none` (hidden, never destroyed — the conversations keep
+running). It imports only the leaf modules and gets the grid through a bridge from `app.js`
+(`initNewSession`): `currentCwd`, `fits(n)`, `place(tabs, target)`, `say`, `focusBack`.
+
+Three things that are not obvious from the code:
+
+- **The six-conversation limit is read from `/api/tabs` when the page opens**, not from the
+  window's `tabList`. `refreshTabs()` is a 200 ms debounce, so a page opened right after a launch
+  counted the conversations it had just opened as not there — `test_newsession.py` caught it.
+- **`fits(n)` measures `#stage`, not `#grid`**: the grid has no box while the page covers it. It
+  adds the sidebar's tree-minus-rail width back for n > 1, the same correction `addPane()` makes,
+  because more than one pane collapses the sidebar (§1 of the rail section).
+- **Order is the contract.** Opens are sequential (`worktree: "auto"` reserves its name
+  server-side — `next_worktree_name` remembers names handed out in this process, since the CLI
+  makes the folder only after spawn); any refusal closes every tab this launch opened; the
+  reviewer's `plan` posture is set **before** its first message, or the first turn could edit.
+  `/clear` is not this page: it is `chrome.js newChatHere()`, one fresh conversation in this
+  folder, as in the TUI.
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:

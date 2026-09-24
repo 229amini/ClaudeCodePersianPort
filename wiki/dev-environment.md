@@ -316,3 +316,10 @@ overflow of a 5-deep accept queue where Windows queues it. `test_reload` kills w
 off Windows and builds the transcript folder with `transcript_dir()`'s own `/` rule; this
 container has a real `claude` (2.1.281) and an idle `--resume` is free. Still Windows-only:
 `test_no_console.py`, `test_tui_vocab.py`, `smoke_test.py` (a paid turn) and `setup.ps1`.
+
+**Headless screenshots freeze CSS transitions** (`shots.py`, 2026-09-24). Under
+`--virtual-time-budget` a `transition` on `color`/`background` did not advance: a segmented
+control drew the previously pressed option lit and the newly pressed one dim, while
+`aria-pressed` was right. A probe reading `getComputedStyle` 20 ms after the click saw the same
+mid-transition values. Before reading a state colour off a shot, check the element carries no
+transition — the new-session page's options carry none for that reason.

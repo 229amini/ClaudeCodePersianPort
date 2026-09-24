@@ -15,6 +15,7 @@ import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking } from "./render.js";
 import { runWindowCommand } from "./commands.js";
+import { newChatHere } from "./chrome.js";
 
 const FA = window.STRINGS;
 
@@ -110,12 +111,9 @@ const LIFECYCLE_VERBS = {
   effort: (cell) => cell.controls.openEffortPicker(),
   "output-style": (cell) => cell.controls.openStylePicker(),
   permissions: (cell) => cell.controls.openPosturePicker(),
-  clear: () => {
-    const button = document.getElementById("btn-new");
-    if (!button || button.hidden) return false;
-    button.click();
-    return true;
-  },
+  // A fresh conversation in this folder, as the TUI's /clear gives - not the
+  // new-session page «+ گفتگوی تازه» opens.
+  clear: () => newChatHere(),
 };
 
 /* The window-local commands that TAKE an argument, and are this module's own:
@@ -345,7 +343,7 @@ export function makeComposer(root, cell) {
       }));
     }
     row.append(ctxButton(FA.ctxClear, FA.ctxClearNote, compact ? "" : "primary", () =>
-      document.getElementById("btn-new")?.click()));
+      newChatHere()));
     if (!urgent) {
       row.append(ctxButton(FA.ctxDismiss, "", "ghost", () => {
         dismissedAt = lastContext;

@@ -1412,6 +1412,14 @@ async function switchProject(folder, worktree) {
   }
 }
 
+/* One more conversation in the folder the keyboard is in, no page: `/clear`
+   and the context notice's «گفتگوی تازه» (js/composer.js). */
+export function newChatHere() {
+  if (!currentCwd) return false;
+  switchProject(currentCwd);
+  return true;
+}
+
 /* The one failure a user can actually cause here: six conversations already
    open. The server answers 409 with `max_tabs`; api() throws with the status in
    its message, which is the same shape agents.js reads a 404 out of. */
@@ -1440,7 +1448,10 @@ export function initChrome() {
     document.getElementById("btn-help").href =
       "/static/help.html?t=" + encodeURIComponent(token);
 
-    ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
+    // «+ گفتگوی تازه» opens the new-session page (BRIDGEMIND-PORT.md §D8);
+    // the project row's «+» stays the one-click path, and `/clear` is
+    // newChatHere() below.
+    ui.btnNew.addEventListener("click", () => tabBridge?.newSession?.());
 
     // One menu, three ways in (§D4): the row's ⋯, a right-click on the row,
     // and Shift+F10 / the ContextMenu key on a focused row (both of which the
