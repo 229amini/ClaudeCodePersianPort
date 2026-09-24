@@ -13,8 +13,6 @@ window.FA = {
 
   stopped: "متوقف شد",
   removeAttachment: "حذف",
-  hintZwnj: "نیم‌فاصله: Shift+Space",
-  hintPosture: "سطح اجازه: Shift+Tab",
 
   thinking: "در حال فکر کردن",
 
@@ -54,7 +52,6 @@ window.FA = {
      (wiki/tui-strings.md §3, V2-PLAN §3.1). */
   toolResultLines: "{n} سطر",
   expandHint: "(ctrl+o برای باز کردن)",
-  hintExpand: "باز کردن نتیجه‌ها: Ctrl+O",
 
   /* The CLI compacted the conversation to make room. Its own banner string is
      «Conversation compacted»; the numbers come from compact_metadata
@@ -95,7 +92,6 @@ window.FA = {
 
   /* The `?` sheet: every key the window binds, in the TUI's own order of
      importance. One list, two readers — js/composer.js dispatches from it. */
-  hintKeys: "کلیدها: ?",
   keysTitle: "کلیدها",
   keysClose: "بستن",
   /* The TUI's own footer under the same table is «esc to close · esc again
@@ -266,6 +262,28 @@ window.FA = {
   // The composer's placeholder while no conversation is open at all: there is
   // nothing to send to, so the box says what to do instead of failing a send.
   composerBlank: "برای شروع، گفتگویی باز کنید",
+  // The prompt's placeholder by state (BRIDGEMIND-PORT.md §D10): the only key
+  // hint left under the prompt is the one a Persian writer needs every line.
+  phIdle: "پیام خود را بنویسید — نیم‌فاصله: Shift+Space",
+  phBusy: "در حال کار — پیام بعدی در صف می‌ماند · Esc برای توقف",
+  // The pane header and its menu (§D5).
+  paneMenu: "کارهای این قاب",
+  paneZoom: "تمام‌صفحه",
+  paneUnzoom: "خروج از تمام‌صفحه",
+  paneClose: "برداشتن از صفحه — گفتگو باز می‌ماند",
+  paneModel: "مدل: {name}",
+  paneEffort: "میزان تفکر…",
+  paneStyle: "لحن پاسخ…",
+  panePosture: "سطح اجازه…",
+  paneCost: "هزینهٔ این گفتگو: {cost}",
+  paneBranch: "شاخهٔ تازه از این گفتگو",
+  paneCloseChat: "بستن گفتگو",
+  // Empty states (§D5): a pane with nothing in it, and a window with nothing open.
+  paneEmpty: "این قاب خالی است.",
+  paneEmptyBtn: "باز کردن گفتگو اینجا",
+  homeLine: "یک گفتگو را از فهرست کنار باز کنید، یا گفتگویی تازه بسازید.",
+  homeBtn: "گفتگوی تازه",
+  sideQuota: "سهمیهٔ ۵ ساعته",
 
   removeProject: "حذف پروژه و گفتگوهایش",
   projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",

@@ -346,7 +346,11 @@ async function layoutCase(which) {
     home: r.classList.contains("home")}));
   // The digit badge is the cell's, not its conversation's: with nothing open
   // it is the ONLY thing saying which Alt+N reaches this blank column.
+  // The digit shows while Alt is held (BRIDGEMIND-PORT.md §D5), so that is
+  // the state it is measured in.
+  document.body.classList.add("alt-held");
   out.homeBadges = CELLS().map((r) => box(r.querySelector(".cell-badge")));
+  document.body.classList.remove("alt-held");
 
   /* --- four columns, one conversation each -------------------------------- */
   place4();
@@ -789,10 +793,14 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 say(f"the status stack of cell {at} is {sl['h']}px tall "
                     f"({sl['rows']} rows, cap {STATUS_CAP}) - a resumed session's "
                     "fields wrap and the transcript pays for every row")
-            elif sl["scroll"] <= sl["h"] + 2:
-                say(f"the status stack of cell {at} holds {sl['scroll']}px in "
-                    f"{sl['h']}px of box - it fits, so a field was dropped to "
-                    "make it fit rather than scrolled to")
+            # BRIDGEMIND-PORT.md §D5 reversed the 2026-09-08 "nothing hidden,
+            # the stack scrolls" rule on purpose: the status line is now the
+            # machine's own line plus ONE state line, and every fact that left
+            # it has a home in /status (asserted in test_shell.py). What stays
+            # a defect is that line wrapping - the column would pay for it.
+            elif sl["rows"] > 2:
+                say(f"the status line of cell {at} runs to {sl['rows']} rows - "
+                    "the state line wrapped instead of giving up characters")
 
         # 5b-iii. pcg-6nf.10: the slash popup is anchored by composer.js, not by
         #        positionMenu, and its 140px floor is more room than a short

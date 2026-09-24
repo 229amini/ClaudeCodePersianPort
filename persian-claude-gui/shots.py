@@ -95,6 +95,11 @@ def stub_script(now: float) -> str:
             "  const path = String(url).split('?')[0];"
             "  if (path === '/api/projects') return Promise.resolve(new Response("
             "    JSON.stringify(PROJECTS), {headers: {'Content-Type': 'application/json'}}));"
+            # The scene's own tabs: the real server has none, and its empty answer
+            # would take them back out of the sidebar and the pane headers.
+            "  if (path === '/api/tabs') return Promise.resolve(new Response("
+            "    JSON.stringify(window.__shotTabs || {tabs: [], active: ''}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
             "  return real(url, opts);"
             "};"
             "})();</script>")
@@ -119,6 +124,7 @@ const TABS = [
    session_id: "sess-6", busy: false},
 ];
 const ev = (tab, e) => APP.routeEvent({tab, ...e});
+const useTabs = (list, active) => { window.__shotTabs = {tabs: list, active}; };
 const say = (tab, blocks) => ev(tab, {type: "assistant", message: {content: blocks}});
 const toolResult = (tab, id, content) =>
   ev(tab, {type: "user", message: {content: [{type: "tool_result", tool_use_id: id, content}]}});
@@ -158,6 +164,7 @@ function turn(tab, n) {
 async function run() {
   if (SCENE === "home") return;
   if (SCENE === "conversation" || SCENE === "permission") {
+    useTabs([TABS[0]], "t1");
     APP.applyTabs({tabs: [TABS[0]], active: "t1"});
     await sleep(60);
     status("t1", TABS[0].cwd);
@@ -179,6 +186,7 @@ async function run() {
     return;
   }
   if (SCENE === "panes4") {
+    useTabs(TABS, "t1");
     APP.setSplit(4);
     APP.applyTabs({tabs: TABS, active: "t1"});
     for (let i = 1; i < 4; i++) { APP.focusCell(i); APP.applySwitch(TABS[i].tab); }

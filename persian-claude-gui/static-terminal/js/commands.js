@@ -146,6 +146,10 @@ function statusBlock(arg, cell) {
     [FA.slMode, postureText(s.posture ?? s.mode)],
     [FA.slEffort, s.effort && effortLabel(s.effort)],
     [FA.slStyle, s.style && styleLabel(s.style)],
+    // What left the status line for this block (BRIDGEMIND-PORT.md §D5).
+    [FA.slContext, typeof s.context === "number" && Math.round(s.context) + "%"],
+    [FA.slCost, typeof s.cost === "number" && "$" + s.cost.toFixed(4)],
+    [FA.slQuota, typeof s.quota === "number" && Math.round(s.quota) + "%"],
   ].filter(([, value]) => value);
   return cell.controls.openPicker("status", FA.statusTitle,
                                   rows.map(([name, value]) => ({ key: "", title: name,

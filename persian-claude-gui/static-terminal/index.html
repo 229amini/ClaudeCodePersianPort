@@ -89,6 +89,9 @@
       </svg>
       <span id="btn-help-label"></span>
     </a>
+    <!-- The five-hour quota is the ACCOUNT's, so it lives here once instead of
+         in every pane's status line (§D5). Painted by js/render.js setStatus. -->
+    <div id="side-quota" class="side-quota" hidden></div>
     <!-- Which build is running. server.py substitutes {{VERSION}} into every
          .html it serves, so this and the window title cannot disagree with the
          code that is actually answering. LTR by markup (spec rule 2). -->
@@ -131,6 +134,13 @@
     <span class="cell-dot" role="img" data-status="idle" hidden>●</span>
     <bdi class="topbar-title" dir="auto"></bdi>
     <bdi class="topbar-name"></bdi>
+    <!-- BRIDGEMIND-PORT.md §D5: the pane's own three controls, at its END.
+         Named from strings.fa.js by js/app.js (no text in the markup). -->
+    <span class="pane-actions">
+      <button type="button" class="pane-btn pane-menu"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+      <button type="button" class="pane-btn pane-zoom"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></button>
+      <button type="button" class="pane-btn pane-close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </span>
   </header>
 
   <main class="log" aria-live="polite" aria-label="گفتگو"></main>
@@ -161,6 +171,12 @@
            from one list, so the box cannot advertise a key the page does not
            bind (js/chrome.js). -->
       <ul class="wel-tips"></ul>
+    </div>
+    <!-- A pane with NO conversation in it (§D5): one line, one button - never
+         the welcome box again, and never a composer that can send nowhere. -->
+    <div class="empty-pane">
+      <p class="empty-line" dir="auto"></p>
+      <button type="button" class="empty-btn"></button>
     </div>
   </section>
 
@@ -308,7 +324,6 @@
         </button>
       </div>
     </div>
-    <div class="composer-hint meta"></div>
   </form>
 
   <footer class="statusline" aria-label="نوار وضعیت"></footer>
