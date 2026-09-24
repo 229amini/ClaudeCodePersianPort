@@ -97,6 +97,9 @@
     <!-- The five-hour quota is the ACCOUNT's, so it lives here once instead of
          in every pane's status line (§D5). Painted by js/render.js setStatus. -->
     <div id="side-quota" class="side-quota" hidden></div>
+    <!-- The app zoom level, only in prefs.js's CSS zoom mode and only when it
+         is not 100% (BRIDGEMIND-PORT.md §D13). -->
+    <div id="side-zoom" class="side-zoom" hidden></div>
     <!-- Which build is running. server.py substitutes {{VERSION}} into every
          .html it serves, so this and the window title cannot disagree with the
          code that is actually answering. LTR by markup (spec rule 2). -->

@@ -3222,6 +3222,10 @@ button.round {
 .side-quota progress[data-level="warn"]::-webkit-progress-value { background: var(--st-wait); }
 .side-quota progress[data-level="high"]::-webkit-progress-value { background: var(--st-err); }
 body.rail .side-quota { display: none; }
+/* §D13, CSS zoom mode only (prefs.js): the whole window scales by --zoom. */
+:root.css-zoom { zoom: var(--zoom, 1); }
+.side-zoom { padding: 2px 10px; color: var(--fg-faint); font-size: var(--fs-meta); }
+body.rail .side-zoom { display: none; }
 
 /* --- permission dialog -------------------------------------------------------- */
 /* The card (§D10): one step lighter than the pane, a stronger edge, so the

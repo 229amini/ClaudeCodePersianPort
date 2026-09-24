@@ -178,6 +178,8 @@ window.FA = {
   foldLess: "کمتر",
   /* §D11.3: a long history draws its last part; this brings back the rest. */
   historyEarlier: "نمایش پیام‌های قبلی ({n})",
+  /* §D13: the app zoom readout, only when the window zooms itself. */
+  sideZoom: "بزرگ‌نمایی {n}٪",
   /* The Changes panel (BRIDGEMIND-PORT.md §D12): what git sees different in
      this pane's folder. */
   paneChanges: "تغییرات این پوشه",
