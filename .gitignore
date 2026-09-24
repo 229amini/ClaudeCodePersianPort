@@ -30,6 +30,7 @@ desktop.ini
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.beads.gate.lock
 
 # probe_v21.py's machine-readable dump. Regenerated on every run and specific to
 # the machine and CLI build it ran on; the reviewed answers live in
