@@ -151,7 +151,9 @@ def main() -> int:
     edge = find_edge()
     bad: list[str] = []
     project = Path(tempfile.mkdtemp(prefix="pcg-reload-"))
-    folder = PROJECTS_DIR / str(project).replace(":", "-").replace("\\", "-")
+    # transcript_dir()'s own rule; without "/" a POSIX path stays absolute and
+    # `PROJECTS_DIR /` it drops PROJECTS_DIR entirely.
+    folder = PROJECTS_DIR / str(project).replace(":", "-").replace("\\", "-").replace("/", "-")
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{SESSION_ID}.jsonl").write_text(transcript_lines(project),
                                                 encoding="utf-8")
@@ -211,10 +213,16 @@ def main() -> int:
         # gate shows up in the window's sidebar as a "pcg-reload-…" project
         # forever (wiki/dev-environment.md). taskkill /T because a plain kill
         # orphans the claude child, and Windows will not delete a folder that is
-        # some process's cwd.
+        # some process's cwd. Off Windows (the Linux cloud container) the same
+        # tree is the server and its direct claude child.
         if proc is not None:
-            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                           capture_output=True)
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                               capture_output=True)
+            else:
+                subprocess.run(["pkill", "-KILL", "-P", str(proc.pid)],
+                               capture_output=True)
+                proc.kill()
             try:
                 proc.wait(timeout=10)
             except Exception:

@@ -293,7 +293,26 @@ numbers.** Measured on the HEAD of 2026-09-24, before any change, `test_split.py
 that pass on Edge: the `/` command list measures 0x0 in cell 4, Alt+3 leaves
 `document.activeElement` outside every cell (the headless window has no OS focus), and on the
 terminal edition every status stack measures 0 px. A change is judged by "the failure list did
-not grow", run with and without it (`git stash push -- static static-terminal`). `test_units.py`
-also stops at its `os.startfile` stub, which does not exist off Windows. Still Windows-only:
-`test_no_console.py`, `test_tui_vocab.py`, `smoke_test.py` (a real `claude` + a paid turn) and
-`setup.ps1`.
+not grow", run with and without it (`git stash push -- static static-terminal`).
+
+**Where that baseline comes from — one Blink bug, not our CSS** (measured 2026-09-24). The
+container's Chromium is **141**, older than the Edge the colleague runs. Once a cell leaves the
+home state (`.cell.home` → `.cell`, grid → flex on a `container-type: size` box), its
+`form.composer` keeps `display: block` and every ancestor is laid out, yet it measures **0×0 at
+(0,0)** and the status line sits flush against the transcript, as if the form were not in the
+flow. Writing any inline style on the composer, **even `contain: none`, which is already its
+computed value**, lays it out at full size on the spot. A same-value write that changes layout is
+a stale-layout invalidation bug; no stylesheet can produce it. Everything inside the composer
+follows: the `/` popup reads 0×0 with no cap, and Alt+3's `composer.focus()` is a no-op on a
+field with no box, so `activeElement` is outside every cell. The terminal edition's 0 px status
+stacks show the same symptom but were not traced to this bug. A nudge at the `.home` toggle
+(`chrome.js`) did **not** clear it, so no product-side workaround is kept.
+Every one of these checks passes on Edge on Windows.
+
+`test_units.py` and `test_reload.py` run here since the same day: `test_units` skips the 11
+checks that need `cmd.exe` or `D:\` path semantics (`check_win`, counted as skipped, never on
+Windows), and its MAX_TABS race runs on a deeper listen backlog, because Linux **resets** the
+overflow of a 5-deep accept queue where Windows queues it. `test_reload` kills with `pkill -P`
+off Windows and builds the transcript folder with `transcript_dir()`'s own `/` rule; this
+container has a real `claude` (2.1.281) and an idle `--resume` is free. Still Windows-only:
+`test_no_console.py`, `test_tui_vocab.py`, `smoke_test.py` (a paid turn) and `setup.ps1`.
