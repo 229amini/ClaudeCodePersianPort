@@ -48,7 +48,7 @@
 import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, state, resetTurn, clearPulse,
-  newRenderScope, withRenderTarget, initTranscript, applyChrome,
+  newRenderScope, withRenderTarget, inRenderTarget, initTranscript, applyChrome,
   setFocusedCell,
 } from "./render.js";
 import {
@@ -622,6 +622,13 @@ export function focusCell(index, opts = {}) {
   const next = Math.max(0, Math.min(index, cells.length - 1));
   if (next === focused) {
     if (opts.focusInput) focusedCell().composer.focus();
+    return;
+  }
+  // A render moved the keyboard (a dialog focusing itself): `state` is some
+  // other scope until withRenderTarget gives it back, so stashing now would
+  // file one conversation under another. After the render, not never.
+  if (inRenderTarget()) {
+    queueMicrotask(() => focusCell(index, opts));
     return;
   }
   stashFocusedScope();     // the column being left keeps what it was showing

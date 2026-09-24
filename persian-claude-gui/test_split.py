@@ -134,7 +134,7 @@ SH = SHELL[EDITION]
 # the acceptance bar the MA3 design set (>= 12). BOTH editions now have a visible
 # split control (TERMINAL-REDESIGN.md §3), so the two checks it brings with it are
 # no longer web-only.
-CHECKS = 21
+CHECKS = 24
 
 # MA5: what the two extra page loads at the foot of main() assert about the
 # layout coming back after a reload. Their own loads, not the size loop's: a
@@ -548,6 +548,39 @@ async function layoutCase(which) {
   await sleep(80);
   out.idleNoAgents = notices();
 
+  /* --- pcg-0o7: a dialog that pulls the keyboard in MID-RENDER --------------
+     The permission for column 2's conversation is rendered through
+     withRenderTarget, and showPermission() focuses the dialog it opens —
+     synchronously, so the focusin listener ran focusCell() while `state` was
+     still pointed at column 2's scope. The column being left was stashed with
+     the OTHER conversation's ledger, and the render's own restore then put
+     the old conversation back into `state` and `log` under the new focus: a
+     running turn read idle, and the next line for the focused conversation
+     was written into the column the keyboard had just left. */
+  APP.focusCell(0);
+  const runTab = APP.cells[0].tab, askTab = APP.cells[1].tab;
+  APP.routeEvent({type: "wrapper", subtype: "user_echo", tab: runTab,
+                  text: "\\u06a9\\u0627\\u0631", uuid: "u-0o7"});
+  await sleep(60);
+  APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: askTab,
+    request_id: "r0o7", tool_name: "Bash", tool_input: {command: "dir"}});
+  await sleep(150);
+  const rowOf = (t) => document.querySelector(`#open-tabs .tab-row[data-tab="${t}"]`);
+  const marker = "pcg-0o7-marker";
+  APP.routeEvent({type: "wrapper", subtype: "stderr", tab: askTab, line: marker});
+  await sleep(60);
+  out.midRender = {
+    focused: CELLS().findIndex((r) => r.classList.contains("focused")),
+    runStatus: rowOf(runTab)?.dataset.status ?? "",
+    markerIn: CELLS().map((r) => r.querySelector(".log")?.textContent.includes(marker)),
+  };
+  APP.cells[1].perm.dismiss("r0o7");
+  APP.routeEvent({type: "result", tab: runTab, subtype: "success", is_error: false});
+  APP.routeEvent({type: "command_lifecycle", tab: runTab, command_uuid: "u-0o7",
+                  state: "completed"});
+  APP.focusCell(0);
+  await sleep(80);
+
   /* --- shrinking parks, it never closes ------------------------------------ */
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t4",
     request_id: "r2", tool_name: "Bash", tool_input: {command: "dir"}});
@@ -841,6 +874,16 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
         say(f"the unplaced tab's permission opened in {m['permOpen']} (want the focused cell)")
     if not m["permSource"]["shown"] or not m["permSource"]["text"]:
         say(f"the «from another session» line did not show: {m['permSource']}")
+    # 6b. pcg-0o7: the dialog pulled the keyboard in mid-render; nothing else moves
+    mid = m["midRender"]
+    if mid["focused"] != 1:
+        say(f"the asking column's dialog left cell index {mid['focused']} focused, not 1")
+    if mid["runStatus"] != "running":
+        say(f"a running turn read {mid['runStatus']!r} once a dialog pulled focus "
+            "into another column (pcg-0o7)")
+    if mid["markerIn"] != [False, True, False, False]:
+        say(f"the focused conversation's next line landed in columns {mid['markerIn']}"
+            " - `log` was restored to the column the keyboard had left (pcg-0o7)")
     # 7. Alt+N
     if m["altFocused"] != 2:
         say(f"Alt+3 marked cell index {m['altFocused']} focused, not 2")
