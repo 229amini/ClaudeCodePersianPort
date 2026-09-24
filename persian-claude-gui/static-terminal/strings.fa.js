@@ -195,6 +195,7 @@ window.FA = {
 
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
+  sendFailedRestored: "ارسال نشد — متن به جعبهٔ پیام برگشت",
   // A1: this sentence is the whole refusal. Every reason the file could be
   // turned down — too big, not text, unreadable — is one silent null on the
   // CLI's side, so the rule itself has to be in the message.
@@ -335,6 +336,20 @@ window.FA = {
   permYes: "بله",
   permYesRemember: "بله، و دیگر برای {tool} نپرس",
   permNoFeedback: "نه، و بگو طور دیگری انجام دهد",
+  /* Option 4, the window's own (BRIDGEMIND-PORT.md §D10): refuse AND stop the
+     turn, for when the answer is "not this, and not anything else either".
+     The TUI has three options; wiki/tui-keys.md lists this as a deviation. */
+  permNoStop: "نه، و کار را متوقف کن",
+  /* The eyebrow over the permission card: what kind of action is asking,
+     before the English tool name (js/perm.js permKind). */
+  permKind: {
+    edit: "تغییر فایل",
+    shell: "اجرای فرمان",
+    outside: "دسترسی بیرونی",
+    read: "خواندن",
+    plan: "طرح",
+    tool: "ابزار",
+  },
   permFeedbackPlaceholder: "بنویسید به‌جای این چه کند…",
   permHint: "۱ تا ۳ یا ↑↓ و Enter · Tab برای نوشتن توضیح · shift+tab: تأیید همراه با همین توضیح",
   /* shift+tab approved the tool; the note had nowhere to ride along on that

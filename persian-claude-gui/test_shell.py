@@ -94,9 +94,14 @@ const PROJECTS = {
    not an edge case, it is the ONLY way a refused attachment can ever be seen
    (the CLI's own side of an `@path` read fails silently). */
 let attachStatus = 200;
+let messageStatus = 200;      // §D10: a send the server refuses
 window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
+  if (u.startsWith("/api/message") && messageStatus !== 200) {
+    await new Promise((r) => setTimeout(r, 60));   // time to type in between
+    return new Response("no", { status: messageStatus });
+  }
   if (u.startsWith("/api/attach/paste"))
     return attachStatus === 200
       ? json({ path: "C:/Users/ali reza/AppData/Local/Temp/paste-ab12cd34-note.txt" })
@@ -429,6 +434,43 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   applySwitch(stTab);
   await sleep(60);
   out.stUnreadAfterSwitch = stUnread();
+
+  /* §D10: a send that fails puts the box back, and says so. */
+  messageStatus = 500;
+  input.value = "matne ferestadeh nashode";
+  composer.requestSubmit();
+  await sleep(150);
+  out.failRestored = input.value;
+  out.failSaid = [...log.querySelectorAll(".msg.error")].at(-1)?.textContent ?? "";
+  out.faFailRestored = FA.sendFailedRestored;
+  // Something typed since stays first, and the lost text is appended whole.
+  input.value = "dovvomi";
+  composer.requestSubmit();
+  await sleep(15);
+  input.value = "jadid";
+  await sleep(150);
+  out.failAppended = input.value;
+  messageStatus = 200;
+  input.value = "";
+
+  /* §D10: the eyebrow names the kind of action above the English tool name. */
+  const kindOf = async (tool, inputObj) => {
+    routeEvent({ type: "wrapper", subtype: "permission_request", request_id: "kind-" + tool,
+                 tool_name: tool, tool_use_id: "kt-" + tool, tool_input: inputObj });
+    await sleep(30);
+    const text = document.querySelector(".perm .perm-kind")?.textContent ?? "";
+    document.querySelector(".perm .perm-opts .opts")?.dispatchEvent(new KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true, cancelable: true }));
+    await sleep(30);
+    return text;
+  };
+  out.kinds = [await kindOf("Edit", { file_path: "a.txt", old_string: "a", new_string: "b" }),
+               await kindOf("Bash", { command: "ls" }),
+               await kindOf("mcp__github__get_me", {}),
+               await kindOf("Grep", { pattern: "x" }),
+               await kindOf("TodoWrite", { todos: [] })].join("|");
+  out.faKinds = [FA.permKind.edit, FA.permKind.shell, FA.permKind.outside,
+                 FA.permKind.read, FA.permKind.tool].join("|");
   out.faRunning = FA.tabStatus.running;
   out.faRunningBadge = FA.tabsRunning.replace("{n}", "\u06f1");
   out.faWaitingBadge = FA.tabsWaiting.replace("{n}", "\u06f1");
@@ -656,6 +698,15 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('stError')} / unread «{m.get('stUnread')}» -> "
           f"«{m.get('stUnreadAfterSwitch')}»")
 
+    check("a failed send puts the text back in the box and says so",
+          m.get("failRestored") == "matne ferestadeh nashode"
+          and m.get("failSaid") == m.get("faFailRestored"),
+          f"box «{m.get('failRestored')}» / «{m.get('failSaid')}»")
+    check("...and text typed since stays first, the lost message appended whole",
+          m.get("failAppended") == "jadid\ndovvomi", repr(m.get("failAppended")))
+    check("the permission card names the kind of action above the tool",
+          m.get("kinds") == m.get("faKinds") and m.get("kinds", "").count("|") == 4,
+          f"{m.get('kinds')} vs {m.get('faKinds')}")
     return out
 
 

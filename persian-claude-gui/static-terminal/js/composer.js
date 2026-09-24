@@ -195,13 +195,15 @@ export function makeComposer(root, cell) {
   }
 
 
-  /* The box grows with what is in it, up to 40% of the window. Shared, because
+  /* The box grows with what is in it, up to 35% of its PANE (§D10) - of the
+     window, a 4-up pane's box could eat the whole transcript. Shared, because
      text also arrives here without a keystroke (restoreDraft below) and a box
      that does not grow for it hides the message it was just handed. */
   function autoGrow() {
     if (!input) return;
+    const room = cell.root?.clientHeight || window.innerHeight;
     input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px";
+    input.style.height = Math.min(input.scrollHeight, room * 0.35) + "px";
   }
 
   /* A message the CLI queued and then never ran comes back to the person who
@@ -222,6 +224,25 @@ export function makeComposer(root, cell) {
     if (!input || !text) return;
     input.value = input.value ? input.value + "\n" + text : text;
     autoGrow();
+  }
+
+  /* A failed send puts the box back as it was: the text with its paste chips,
+     and the attachments. If something was typed since, that stays and the
+     lost message is APPENDED in full instead (restoreDraft's rule) - its
+     placeholders could collide with the new ones, so it goes back expanded. */
+  function giveBack(snapshot, expanded) {
+    if (!input) return;
+    if (!input.value.trim() && !pastes.size) {
+      input.value = snapshot.raw;
+      pastes = snapshot.pastes;
+      paintPastes();
+      autoGrow();
+    } else {
+      restoreDraft(expanded);
+    }
+    setAttachments([...attachments, ...snapshot.attachments.filter(
+      (one) => !attachments.includes(one))]);
+    refreshBashMode();
   }
 
   /* No conversation is open at all (app.js blankView): every tab-less endpoint
@@ -1334,6 +1355,10 @@ export function makeComposer(root, cell) {
       // moment they exist: the CLI, the transcript and history.jsonl all get the
       // real text, exactly as the TUI sends it.
       const payload = { text: expandPastes(text), attachments: attachments.slice() };
+      // Everything the box held, for the catch below: a send that fails must
+      // not cost the person what they typed (§D10).
+      const snapshot = { raw: input.value, pastes: new Map(pastes),
+                         attachments: attachments.slice() };
       input.value = "";
       input.style.height = "auto";
       dropPastes();
@@ -1356,7 +1381,8 @@ export function makeComposer(root, cell) {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        bubble("error", FA.sendFailed);
+        giveBack(snapshot, payload.text);
+        bubble("error", FA.sendFailedRestored);
         setBusy(false);
       }
     });

@@ -3059,6 +3059,20 @@ button.round {
 body.rail .side-quota { display: none; }
 
 /* --- permission dialog -------------------------------------------------------- */
+/* The card (§D10): one step lighter than the pane, a stronger edge, so the
+   one thing waiting for you is the brightest surface in the column. */
+.perm {
+  background: var(--raise);
+  border-color: var(--border-strong);
+  border-radius: var(--r-card);
+  padding: var(--pad) calc(var(--pad) + 4px);
+}
+.perm .perm-kind {
+  margin: 0 0 2px;
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-ui);
+}
 .perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: var(--wt-title); }
 .perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
 
