@@ -36,3 +36,10 @@ desktop.ini
 # the machine and CLI build it ran on; the reviewed answers live in
 # wiki/cli-stream-json-findings.md, which IS committed.
 persian-claude-gui/probe_v21_findings.json
+
+# BridgeMind port (BRIDGEMIND-PORT.md §D14): shot sets and the reference
+# screenshots stay local - ref/ holds a commercial product's UI and this repo is public.
+persian-claude-gui/shots/
+ref/
+persian-claude-gui/static*/_shot_probe.html
+persian-claude-gui/static*/_probe_edge.html
