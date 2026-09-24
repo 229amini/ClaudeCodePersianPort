@@ -841,7 +841,11 @@ function notifyTurnEnd() {
       const note = new Notification(FA.notifyDone, {
         body: state.status.cwd || FA.appName, silent: true,
       });
-      note.addEventListener("click", () => window.focus());
+      // Jumps to the conversation that finished, not just to the window
+      // (§D9). An event, because this module cannot import app.js.
+      const tab = state.tab;
+      note.addEventListener("click", () =>
+        window.dispatchEvent(new CustomEvent("pcg:jump", { detail: { tab } })));
     } catch (err) {
       // Notifications are a nicety; a browser that refuses to construct one
       // (or a page that lost its permission mid-session) must not break the
