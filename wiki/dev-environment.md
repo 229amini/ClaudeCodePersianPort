@@ -272,3 +272,28 @@ under test:
 The stub has to run before the app's modules capture `EventSource`; `test_reload.py` injects it as
 a classic `<script>` at `<body>`, which is what was measured to work. The exact ordering rule
 against a deferred module was not tested — copy the working shape rather than reasoning about it.
+
+## Headless gates on Linux (the cloud container, 2026-09-24)
+
+A Claude Code cloud session runs this repo on Linux, with no Edge but a Playwright Chromium at
+`/opt/pw-browsers/chromium`. `find_edge()` in `test_layout.py` — the one lookup every headless
+gate now imports, `run_spec_test.py` included — tries `PCG_BROWSER` before the two Edge paths.
+The container runs as root, and Chromium refuses to start as root without `--no-sandbox`
+(the failure is a zygote error on stderr and an empty `--dump-dom`, which the gates report as
+"the probe never ran"). Keep that flag out of the repo — point `PCG_BROWSER` at a wrapper:
+
+```sh
+printf '#!/bin/sh\nexec /opt/pw-browsers/chromium --no-sandbox "$@"\n' > /tmp/chromium
+chmod +x /tmp/chromium
+PCG_BROWSER=/tmp/chromium PCG_UI=terminal python3 test_split.py
+```
+
+**Linux Chromium is not Edge on Windows: compare against a baseline, never against the Windows
+numbers.** Measured on the HEAD of 2026-09-24, before any change, `test_split.py` fails in ways
+that pass on Edge: the `/` command list measures 0x0 in cell 4, Alt+3 leaves
+`document.activeElement` outside every cell (the headless window has no OS focus), and on the
+terminal edition every status stack measures 0 px. A change is judged by "the failure list did
+not grow", run with and without it (`git stash push -- static static-terminal`). `test_units.py`
+also stops at its `os.startfile` stub, which does not exist off Windows. Still Windows-only:
+`test_no_console.py`, `test_tui_vocab.py`, `smoke_test.py` (a real `claude` + a paid turn) and
+`setup.ps1`.

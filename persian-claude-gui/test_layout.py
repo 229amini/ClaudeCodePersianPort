@@ -374,7 +374,9 @@ const SCROLLERS = new Set(%SCROLLERS%);
 
 
 def find_edge() -> str:
-    for path in EDGE_CANDIDATES:
+    # PCG_BROWSER: any other Chromium, for a machine with no Edge (the Linux
+    # cloud container - wiki/dev-environment.md "Headless gates on Linux").
+    for path in (os.environ.get("PCG_BROWSER", ""), *EDGE_CANDIDATES):
         if os.path.isfile(path):
             return path
     sys.exit("msedge.exe not found - this gate needs a Chromium engine.")
