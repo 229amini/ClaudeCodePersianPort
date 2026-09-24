@@ -234,7 +234,12 @@ window.FA = {
      «نشست» is the same word the statusline already uses for it. `tabFresh` is
      what a conversation is called before it has said anything: it has no title
      yet because the title is made from the first message. */
-  openSessions: "نشست‌های باز",
+  openSessions: "گفتگوهای باز",
+  // The open row's state in words (BRIDGEMIND-PORT.md §D4). Idle has none:
+  // silence is the idle state.
+  rowState: { running: "در حال کار", waiting: "منتظر شما", error: "خطا" },
+  projSessionCount: "{n} گفتگو",
+  justNow: "همین حالا",
   tabFresh: "گفتگوی تازه",
   closeSession: "بستن این نشست",
   sessionLive: "این گفتگو باز است",

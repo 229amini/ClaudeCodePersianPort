@@ -87,6 +87,15 @@ the rail existed, the right-edge and drawer-overlap assertions silently retarget
 assertion about the sidebar's *expanded* geometry must be captured before anything changes the
 split.
 
+### Cards on a ground (BridgeMind port P1, 2026-09-24)
+
+`body.app` carries `padding` and `gap` of `--gap` (8 px, 4 px at ≤ 820 px) on `--ground`, so the
+sidebar and every pane are cards one gutter in from the window edge. `test_layout.py` asserts
+`side.x + side.w == clientW − GUTTER` and `stage.x == GUTTER` — the same exact-position check,
+moved by one gutter; its `GUTTER` constant is the CSS value and must change with it. The stage is
+deliberately not a card (the panes are), and `#grid`'s old `gap: 1px` on a `--border` background
+(the gap *was* the divider) is gone. Design: `BRIDGEMIND-PORT.md` §D2–§D4.
+
 ## Rules
 
 - Nothing is removed from the web edition; CLI features are added in its own look.

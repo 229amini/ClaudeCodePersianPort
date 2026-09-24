@@ -287,15 +287,24 @@ Top to bottom, expanded (272 → 264 px):
    (one line, ellipsis), trailing **relative time** («۵ دقیقه پیش»,
    `Intl.RelativeTimeFormat("fa", {numeric: "auto", style: "narrow"})` over the timestamp
    `session_meta()` already returns, refreshed by the existing minute tick).
-6. **Hover-revealed actions** (`⋯` and «+» on a project, `⋯` on a session) at 60 % opacity →
-   100 % on row hover/`:focus-within`; never `display: none` (a non-technical user must be able
-   to find them by tabbing). **Context menu**: `contextmenu` on any row opens the same
+6. **Hover-revealed actions** (`⋯` and «+» on a project, `⋯` on a session) at **0 %** opacity
+   → 100 % on row hover/`:focus-within`; never `display: none`, which also took them out of the
+   tab order. *(Built in P1 as 0 %, not the 60 % first drawn here: at 60 % they were the same
+   two icons per row the pass exists to remove. They stay focusable, so the keyboard reaches
+   them, and the pointer always hovers before it clicks.)* **Context menu**: `contextmenu` on any row opens the same
    `kebabMenu()` at the pointer; Shift+F10 / the ContextMenu key on a focused row opens it at
    the row. One menu builder, three ways in.
 7. **Footer** — «راهنما», zoom readout (§D13, only when ≠ 100 %), version, and the account's
    **quota meter** (moved out of every pane — it is per account, not per conversation).
 
 Label style: `--fs-meta`, `--fg-faint`, `--wt-title`, 24 px tall, no rule lines.
+
+**Built in P1 (2026-09-24), and one surprise it explained.** Eleven chrome rules asked for
+`font-weight: 600`; only 400/500/700 are vendored, so the browser rendered every one of them at
+700 — that, not the prose, is the "everything is bold" of the analysis. All of them now take
+`--wt-title` (500); 700 is left to markdown headings and the diff marker. At ≤ 820 px the gutter
+halves to 4 px: three 8 px gutters beside a 200 px sidebar left the picker 234 px wide, under
+`test_layout.py`'s 240 px floor.
 
 ## D5. The pane (was "cell")
 

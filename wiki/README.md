@@ -11,6 +11,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   `PCG_UI`; which tests gate which edition; why the shortcut once said v1.1.0 on the wrong tree.
   Its sidebar section is now **right-edge** (moved back 2026-09-10) and carries the `--side-w`
   rule, the two-inset `[popover]` trap, and the gate that measured the wrong box for a commit.
+  Since 2026-09-24 (BridgeMind port P1) the sidebar and panes are cards on a ground, one
+  gutter in — and `test_layout.py`'s edge check moved with them.
 - [cli-stream-json-findings.md](cli-stream-json-findings.md) — **read first.** Measured CLI
   contract on 2.1.221: required flags, every event type seen on the wire, and the permission
   mechanism that actually works (it is not the one in the plan).

@@ -215,7 +215,8 @@ function paintOpenTabs() {
   ui.openTabs.hidden = !any;
   if (ui.tabsTitle) {
     ui.tabsTitle.hidden = !any;
-    ui.tabsTitle.replaceChildren(document.createTextNode(FA.openSessions));
+    ui.tabsTitle.replaceChildren(document.createTextNode(FA.openSessions),
+                                 countPill(openTabs.length));
     const badge = tabsBadge();
     if (badge) ui.tabsTitle.append(badge);
   }
@@ -268,6 +269,13 @@ function paintOpenTabs() {
       open.append(projectChip(entry.cwd));
     }
     if (entry.worktree) open.append(worktreeChip(entry.worktree));
+    // The state in words at the row's end (§D4). The dot already says it in
+    // shape and colour; the word is what a reader scanning the list takes in.
+    if (status !== "idle") {
+      const word = label(FA.rowState[status], "row-state");
+      word.dataset.status = status;
+      open.append(word);
+    }
     // «title · project», not the raw path: in the rail (TERMINAL-REDESIGN.md
     // §1) the name, the chip and the ✕ are all off the row and the dot is the
     // whole of it, so this tooltip is the only thing that says WHICH
@@ -325,7 +333,6 @@ function paintCells() {
 /* Static markup only — never user data — so innerHTML is safe here. */
 const SVG = {
   caret: '<svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>',
-  folder: '<svg class="folder" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   eye: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>',
   archive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4"/></svg>',
@@ -401,6 +408,34 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("fa-IR", {
 
 function whenLabel(epochSeconds) {
   return WHEN_FORMAT.format(new Date(epochSeconds * 1000));
+}
+
+/* «۵ دقیقه پیش» rather than a date (§D4): how long ago is the question a
+   history row answers; the exact date stays in the row's tooltip. Chrome, not
+   transcript - so reading the clock here is fine, and refreshWhen() below
+   re-reads it from app.js's existing minute tick. */
+const REL_FORMAT = new Intl.RelativeTimeFormat("fa", { numeric: "auto", style: "narrow" });
+const REL_UNITS = [["year", 31536000], ["month", 2592000], ["week", 604800],
+                   ["day", 86400], ["hour", 3600], ["minute", 60]];
+
+function relWhen(epochSeconds) {
+  const diff = epochSeconds - Date.now() / 1000;
+  for (const [unit, size] of REL_UNITS) {
+    if (Math.abs(diff) >= size) return REL_FORMAT.format(Math.round(diff / size), unit);
+  }
+  return FA.justNow;
+}
+
+export function refreshWhen() {
+  for (const el of document.querySelectorAll(".sess-when[data-t]")) {
+    el.textContent = relWhen(Number(el.dataset.t));
+  }
+}
+
+function countPill(n, title) {
+  const pill = label(n.toLocaleString("fa-IR"), "count-pill");
+  if (title) pill.title = title.replace("{n}", n.toLocaleString("fa-IR"));
+  return pill;
 }
 
 /* The window title is the session's own title (V2-PLAN §3.4, last-but-two
@@ -572,7 +607,22 @@ function renderProjects(projects) {
     !p.archived || p.path.toLowerCase() === currentCwd.toLowerCase());
   const archived = projects.filter((p) => !active.includes(p));
 
-  for (const proj of active) ui.projects.append(projEl(proj, projects));
+  // Sections, each with a count (§D4): pinned first, then everything else.
+  // The pin mark on every pinned row said the same thing once per row.
+  const section = (text, n) => {
+    const head = document.createElement("h3");
+    head.className = "side-title";
+    head.append(document.createTextNode(text), countPill(n));
+    ui.projects.append(head);
+  };
+  const pinned = active.filter((p) => p.pinned);
+  const rest = active.filter((p) => !p.pinned);
+  if (pinned.length) {
+    section(FA.pinnedProject, pinned.length);
+    for (const proj of pinned) ui.projects.append(projEl(proj, projects));
+  }
+  section(FA.projects, rest.length);
+  for (const proj of rest) ui.projects.append(projEl(proj, projects));
 
   if (archived.length) {
     const head = document.createElement("button");
@@ -688,7 +738,9 @@ function projEl(proj, projects) {
   head.type = "button";
   head.className = "proj-head";
   head.setAttribute("aria-expanded", String(expanded.has(key)));
-  head.innerHTML = SVG.caret + SVG.folder;
+  // No caret and no folder glyph (§D4): 34 icons at 17 projects that said
+  // nothing a row does not already say. The list appearing under the name is
+  // what "expanded" looks like, and aria-expanded is what it sounds like.
   const name = document.createElement("bdi");
   name.className = "proj-name";
   name.textContent = displayName(proj.path);
@@ -696,14 +748,9 @@ function projEl(proj, projects) {
   // only thing that tells two folders with the same name apart.
   name.title = proj.path;
   head.append(name);
-  // Why this project is at the top. Without it the sort looks like a bug the
-  // first time a pinned project outranks one used five minutes ago.
-  if (proj.pinned) {
-    const mark = label("", "proj-pin");
-    mark.innerHTML = SVG.pin;
-    mark.title = FA.pinnedProject;
-    head.append(mark);
-  }
+  // How many conversations it holds - the one fact the folder icon could have
+  // carried and did not. Why a project is at the top is now its section.
+  head.append(countPill((proj.sessions ?? []).length, FA.projSessionCount));
   head.addEventListener("click", () => {
     if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
     renderProjects(projects);
@@ -895,7 +942,10 @@ function sessionRow(sess, projPath, isCurrent) {
   // row lives under the repo, so the chip is the only thing that says the
   // conversation was not editing the repo's own checkout.
   if (sess.worktree) btn.append(worktreeChip(sess.worktree));
-  btn.append(label(whenLabel(sess.modified), "sess-when"));
+  const when = label(relWhen(sess.modified), "sess-when");
+  when.dataset.t = String(sess.modified);
+  when.title = whenLabel(sess.modified);
+  btn.append(when);
   btn.addEventListener("click", () => {
     if (liveTab) tabBridge?.switchTo(liveTab);
     else resumeSession(sess.session_id, projPath, sess.worktree);
@@ -1063,6 +1113,7 @@ function actionButton(svg, title) {
    `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
 export function kebabMenu(items) {
   const btn = actionButton(SVG.dots, FA.moreActions);
+  btn.classList.add("kebab-btn");   // the row's context menu opens THIS one
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
   menu.popover = "auto";
@@ -1352,13 +1403,29 @@ export function initChrome() {
     document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
     document.getElementById("split-label").textContent = FA.splitLabel;
-    document.getElementById("projects-title").textContent = FA.projects;
+    // The projects' own section title is drawn inside #projects now, after
+    // the pinned section (renderProjects); the static one stays for the rail's
+    // rules and the markup's shape, and is never shown.
+    document.getElementById("projects-title").hidden = true;
     document.getElementById("btn-help-label").textContent = FA.help;
     // The help page is served, so it needs the token like every other request.
     document.getElementById("btn-help").href =
       "/static/help.html?t=" + encodeURIComponent(token);
 
     ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
+
+    // One menu, three ways in (§D4): the row's ⋯, a right-click on the row,
+    // and Shift+F10 / the ContextMenu key on a focused row (both of which the
+    // browser delivers as this same event). A row with no menu keeps the
+    // browser's own.
+    document.getElementById("sidebar").addEventListener("contextmenu", (e) => {
+      const row = e.target instanceof Element
+        ? e.target.closest(".proj-top, .proj-sessions li") : null;
+      const btn = row?.querySelector(".kebab-btn");
+      if (!btn) return;
+      e.preventDefault();
+      btn.click();
+    });
 
     // `/resume` moves the keyboard here; these are the keys it then has.
     ui.projects.addEventListener("keydown", sessionKeys);
