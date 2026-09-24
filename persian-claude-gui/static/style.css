@@ -331,34 +331,49 @@ pre, code, .path, .diff, .tool-output, .mono {
 .tab-row .tab-close:hover { background: var(--surface-2); color: var(--fg); }
 
 /* --- per-conversation status (chrome.js tabStatus) ---------------------------
-   Four states, one dot. Written AFTER the [data-current] / [data-busy] rules
-   above and at the same specificity, so the DERIVED status is what the reader
-   sees; `data-busy` is the server's coarser answer and survives only as what
-   paints before this window has learned anything about a tab. */
-.tab-row[data-status="running"] .tab-dot {
-  background: var(--accent);
-  animation: ag-pulse 2s var(--ease) infinite;
-}
-/* Waiting on a person. It breathes too — the difference from «running» is the
-   colour, because the difference in meaning is who is holding it up. */
-.tab-row[data-status="waiting"] .tab-dot {
-  background: var(--warn);
-  animation: ag-pulse 2s var(--ease) infinite;
-}
-.tab-row[data-status="error"] .tab-dot { background: var(--danger); animation: none; }
-.tab-row[data-status="idle"] .tab-dot { background: var(--fg-muted); animation: none; }
+   FOUR STATES, ONE RULE — the sidebar row's `.tab-dot` and the history row's
+   `.sess-dot` for the same conversation. Written AFTER the [data-current] /
+   [data-busy] rules above and at the same specificity, so the DERIVED status
+   is what the reader sees; `data-busy` is the server's coarser answer and
+   survives only as what paints before this window has learned anything.
 
-/* The same four on the history row for the same conversation. */
-.sess-dot[data-status="running"] {
+   SHAPE, NOT ONLY HUE (pcg-973). At 7px a coral dot and an amber one are the
+   same dot to a colour-blind reader, so the shape carries the state and the
+   colour agrees with it — the terminal edition's ● ◉ ⊘ ○, drawn here with the
+   box because these dots are empty spans, not glyphs:
+
+     filled   running   the CLI is working
+     ringed   waiting   it is holding on a person (an outline around the disc)
+     slashed  error     the last turn failed (a hollow ring, one diagonal)
+     hollow   idle      nothing to say
+
+   `--dot-ring` is the stroke; `outline` follows border-radius, and an inset
+   box-shadow keeps the hollow shapes inside the dot's own 7px. */
+.tab-dot, .sess-dot { --dot-ring: 1.5px; }
+.tab-row[data-status="running"] .tab-dot, .sess-dot[data-status="running"] {
   background: var(--accent);
   animation: ag-pulse 2s var(--ease) infinite;
 }
-.sess-dot[data-status="waiting"] {
+/* Waiting on a person. It breathes too — what differs from «running» is who
+   is holding it up, so it differs in shape (a ring around the disc) and in
+   colour, not in whether it moves. */
+.tab-row[data-status="waiting"] .tab-dot, .sess-dot[data-status="waiting"] {
   background: var(--warn);
+  outline: var(--dot-ring) solid var(--warn);
+  outline-offset: var(--dot-ring);
   animation: ag-pulse 2s var(--ease) infinite;
 }
-.sess-dot[data-status="error"] { background: var(--danger); }
-.sess-dot[data-status="idle"] { background: var(--fg-muted); }
+.tab-row[data-status="error"] .tab-dot, .sess-dot[data-status="error"] {
+  background: linear-gradient(135deg, transparent calc(50% - var(--dot-ring) / 2),
+    var(--danger) 0 calc(50% + var(--dot-ring) / 2), transparent 0);
+  box-shadow: inset 0 0 0 var(--dot-ring) var(--danger);
+  animation: none;
+}
+.tab-row[data-status="idle"] .tab-dot, .sess-dot[data-status="idle"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 var(--dot-ring) var(--fg-muted);
+  animation: none;
+}
 
 /* Turns that finished while this conversation was parked. fa-IR digits in a
    pill, next to the dot — no `dir` of its own: Persian digits in an RTL row
