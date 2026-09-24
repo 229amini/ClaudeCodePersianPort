@@ -64,6 +64,7 @@ import { api, token } from "./api.js";
 import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
 import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 import { makeChanges } from "./changes.js";
+import { initZoom, readPref, writePref } from "./prefs.js";
 
 const FA = window.STRINGS;
 
@@ -1115,8 +1116,9 @@ async function loadTabs() {
 const LAYOUT_KEY = "pcg.layout";
 
 function saveLayout() {
-  try {
-    sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(
+  // Through prefs.js, whose PREFS_STORE says which store (§D13); it swallows
+  // a blocked or full store itself - no store, no memory of the layout.
+  writePref(LAYOUT_KEY,
       { v: 2, split: cells.length, cells: cells.map((one) => one.tab || ""),
         // The dividers' positions (§D6); a v1 record simply has none.
         rows: fractions?.rows, rowH: fractions?.rowH,
@@ -1124,10 +1126,7 @@ function saveLayout() {
         // the saved split is itself the record that the toggle was pressed, so
         // one field carries both facts and an older record simply reads as
         // "follow the split" (§1).
-        rail: document.body.classList.contains("rail") }));
-  } catch (err) {
-    // No store, no memory of the layout. Everything else still works.
-  }
+        rail: document.body.classList.contains("rail") });
 }
 
 /* ONCE per page load, and it says how many conversations it actually put back.
@@ -1139,12 +1138,8 @@ let layoutRestored = false;
 function restoreLayout(alive) {
   if (layoutRestored) return 0;
   layoutRestored = true;
-  let saved;
-  try {
-    saved = JSON.parse(sessionStorage.getItem(LAYOUT_KEY) || "null");
-  } catch (err) {
-    return 0;            // absent, or something else wrote over the key
-  }
+  // Absent, unreadable, or something else wrote over the key: all null.
+  const saved = readPref(LAYOUT_KEY);
   if (!saved || !Array.isArray(saved.cells)) return 0;
   // §9: the class goes on BEFORE setSplit, or a restored 4-up is laid out
   // twice — once against a 272px sidebar and again against 48. A stored value
@@ -1276,6 +1271,7 @@ initNewSession({
 });
 
 initChrome();
+initZoom();   // §D13: does nothing unless ZOOM_MODE (prefs.js) says "css"
 
 /* --- transport ------------------------------------------------------------ */
 

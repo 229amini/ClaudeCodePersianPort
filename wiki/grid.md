@@ -244,6 +244,17 @@ the final `\n` is not a context row (git's blank context line is `" "`), and a `
 a physical `margin-right: auto`. The state line's «N فایل تغییر کرد» comes from a `summary=1` call
 after each non-replayed `result` (`app.js countChanges`). Gate: `test_changes.py` (15, stubbed).
 
+## App zoom and the prefs store (BRIDGEMIND-PORT.md §D13, P9, 2026-09-24)
+
+`static-terminal/js/prefs.js` is a leaf holding the two values the Windows probe decides:
+`ZOOM_MODE` (`"native"` shipped — Edge's own Ctrl+= / Ctrl+- / Ctrl+0, nothing drawn — or
+`"css"`: `:root.css-zoom { zoom: var(--zoom) }` in steps 80–150 %, the three chords handled by
+`e.code`, a readout in the sidebar footer) and `PREFS_STORE` (`"session"` shipped, or `"local"`,
+which only helps with a stable port — not built, see §D13). The layout record (`pcg.layout`) now
+goes through `readPref`/`writePref`, so one value moves both. `<html data-zoom-mode="css">`
+overrides the constant; that is how `test_zoom.py` (7) proves both branches, and how
+`SHOT_ZOOM=1.25 python shots.py …` renders the 125 % set without editing the module.
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:

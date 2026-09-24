@@ -314,7 +314,14 @@ def write_probe(now: float) -> None:
     marker = '<body class="app">'
     if marker not in page:
         sys.exit("index.html no longer opens with " + marker)
-    page = page.replace(marker, marker + NO_SSE + stub_script(now), 1)
+    # SHOT_ZOOM=1.25 renders the set in prefs.js's CSS zoom mode at that level
+    # (BRIDGEMIND-PORT.md §D13 / M4): what the window would look like if the
+    # Windows measurement picks CSS zoom over Edge's own.
+    zoom = os.environ.get("SHOT_ZOOM", "")
+    zoom_js = (f'<script>document.documentElement.dataset.zoomMode = "css";'
+               f'try {{ sessionStorage.setItem("pcg.zoom", {float(zoom)!r}); }} catch (e) {{}}'
+               f'</script>') if zoom else ""
+    page = page.replace(marker, marker + NO_SSE + zoom_js + stub_script(now), 1)
     PROBE.write_text(page.replace("</body>", SCENE_JS + "\n</body>", 1), encoding="utf-8")
 
 
