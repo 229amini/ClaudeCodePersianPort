@@ -458,19 +458,21 @@ window.FA = {
      reader who will never type `/split` (TERMINAL-REDESIGN.md §3). Same two
      strings as the web edition's window bar, deliberately: it is the same
      control saying the same thing about the same window. */
-  splitLabel: "چند گفتگو کنار هم",
-  splitOptionTitle: "نمایش {n} گفتگو در یک پنجره",
+  // The grid that fits N (BRIDGEMIND-PORT.md §D6).
+  dividerLabel: "جداکنندهٔ قاب‌ها — بکشید، یا با پیکان جابه‌جا کنید؛ دوبار کلیک: هم‌اندازه",
+  paneEqualize: "هم‌اندازه کردن قاب‌ها",
+  openInNewPane: "باز کردن در قاب تازه",
+  noRoomForPane: "جا برای قاب دیگری نیست؛ گفتگو در همین قاب باز شد و قبلی در فهرست کنار است.",
   /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
      says is the ACTION it will take — not the state it is in: a control named
      after its own state is read as a label and pressed by accident. It follows
      the split on its own, so most readers never press it. */
   sidebarCollapse: "جمع کردن نوار کناری",
   sidebarExpand: "باز کردن نوار کناری",
-  cmdSplitUsage: "این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد",
-  cmdSplitDone: "چیدمان به {n} ستون تغییر کرد",
+  cmdSplitUsage: "این دستور عددی از ۱ تا ۶ می‌پذیرد",
+  cmdSplitDone: "چیدمان به {n} قاب تغییر کرد",
   /* ۴ is NOT four columns — it is a 2×2 grid, and the notice used to say
      «۴ ستون» over a layout with two of them (MA3-T4 defect 4). */
-  cmdSplitDoneGrid: "چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد",
   cellBadgeTitle: "ستون {n} — با Alt+{n} به اینجا بیایید",
 
   /* `/help` (V2-PLAN §3.3 «the TUI's help text, translated», §8.11A). The
