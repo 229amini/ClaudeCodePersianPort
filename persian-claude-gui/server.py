@@ -1741,6 +1741,130 @@ def run_shell(command: str, cwd: Path) -> dict:
             "stderr": _clip(done.stderr or "")}
 
 
+# The Changes panel (BRIDGEMIND-PORT.md §D12). Read-only git, in the
+# SESSION's folder (history_cwd: the worktree when it has one) -- the path to
+# look at never comes from the request, the same key-not-path rule as
+# open_known_file. `core.quotepath=off` is what keeps a Persian filename from
+# arriving as octal escapes, and -z is what keeps a name with a space whole.
+CHANGES_TIMEOUT = 10.0
+CHANGES_MAX_FILES = 500
+CHANGES_MAX_DIFF = 200 * 1024
+
+
+def _git(git: str, cwd: Path, *args: str) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(
+            [git, "-c", "core.quotepath=off", *args], cwd=str(cwd),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=CHANGES_TIMEOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _status_letter(xy: str) -> str:
+    if xy == "??":
+        return "?"
+    for letter in ("R", "C", "D", "A", "U"):
+        if letter in xy:
+            return letter
+    return "M"
+
+
+def _text_lines(path: Path) -> list[str] | None:
+    """An untracked file's lines, or None when it is not something a diff can
+    show (too big, binary, unreadable)."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if len(data) > MAX_TEXT_BYTES or b"\0" in data:
+        return None
+    return data.decode("utf-8", errors="replace").splitlines()
+
+
+def list_changes(cwd: Path) -> dict:
+    git = shutil.which("git")
+    if not git:
+        return {"state": "no-git"}
+    inside = _git(git, cwd, "rev-parse", "--is-inside-work-tree", "--show-toplevel")
+    lines = (inside.stdout.split("\n") if inside and inside.returncode == 0 else [])
+    if not lines or lines[0].strip() != "true":
+        return {"state": "no-repo"}
+    root = lines[1].strip() if len(lines) > 1 else str(cwd)
+    status = _git(git, cwd, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if status is None or status.returncode != 0:
+        return {"state": "no-repo"}
+    files: list[dict] = []
+    parts = status.stdout.split("\0")
+    i = 0
+    while i < len(parts) and len(files) < CHANGES_MAX_FILES:
+        entry = parts[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        xy, name = entry[:2], entry[3:]
+        letter = _status_letter(xy)
+        if letter in ("R", "C"):
+            i += 1                      # -z puts the ORIGINAL name next
+        files.append({"path": name, "status": letter, "add": 0, "del": 0})
+    by_path = {f["path"]: f for f in files}
+    # Counts against HEAD, so a staged change counts too; a repository with no
+    # commit yet has no HEAD, and the plain form counts the worktree instead.
+    numstat = _git(git, cwd, "diff", "--numstat", "-z", "HEAD")
+    if numstat is None or numstat.returncode != 0:
+        numstat = _git(git, cwd, "diff", "--numstat", "-z")
+    fields = (numstat.stdout.split("\0") if numstat and numstat.returncode == 0 else [])
+    j = 0
+    while j < len(fields):
+        head = fields[j].split("\t")
+        j += 1
+        if len(head) < 3:
+            continue
+        name = head[2]
+        if not name and j + 1 < len(fields):   # a rename: old, then new
+            name = fields[j + 1]
+            j += 2
+        hit = by_path.get(name)
+        if hit is not None and head[0].isdigit() and head[1].isdigit():
+            hit["add"], hit["del"] = int(head[0]), int(head[1])
+    root_path = Path(root)
+    for f in files:
+        if f["status"] == "?":
+            text = _text_lines(root_path / f["path"])
+            f["add"] = len(text) if text is not None else 0
+    return {"state": "ok", "root": root, "files": files,
+            "truncated": len(files) >= CHANGES_MAX_FILES}
+
+
+def file_changes(cwd: Path, name: str) -> tuple[int, dict]:
+    """One file's diff. `name` must be a path the listing above returned --
+    it is validated against that list and never used on its own."""
+    listing = list_changes(cwd)
+    if listing["state"] != "ok":
+        return 200, listing
+    entry = next((f for f in listing["files"] if f["path"] == name), None)
+    if entry is None:
+        return 400, {"state": "unknown-file"}
+    root = Path(listing["root"])
+    if entry["status"] == "?":
+        lines = _text_lines(root / name)
+        if lines is None:
+            return 200, {"state": "too-large", "lines": 0}
+        diff = (f"--- /dev/null\n+++ b/{name}\n@@ -0,0 +1,{len(lines)} @@\n"
+                + "".join("+" + line + "\n" for line in lines))
+    else:
+        git = shutil.which("git") or "git"
+        done = _git(git, root, "diff", "--no-color", "--no-ext-diff", "HEAD", "--", name)
+        if done is None or done.returncode != 0:
+            done = _git(git, root, "diff", "--no-color", "--no-ext-diff", "--", name)
+        diff = done.stdout if done is not None else ""
+    if len(diff.encode("utf-8")) > CHANGES_MAX_DIFF:
+        return 200, {"state": "too-large", "lines": diff.count("\n")}
+    return 200, {"state": "ok", "path": name, "status": entry["status"], "diff": diff}
+
+
 def bash_message(command: str, result: dict) -> str:
     """The TUI's own tagging, in the TUI's own order -- the transcript reader
     matches `<bash-input>` at the START of the message (§5.1)."""
@@ -3731,6 +3855,20 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 cwd = session.cwd
             self._send_json(HTTPStatus.OK, {"prompts": read_history(cwd)})
+        elif parsed.path == "/api/changes":
+            # The Changes panel (§D12). Only the terminal edition asks.
+            session = self._target(tab)
+            if session is None:
+                return
+            name = params.get("file", [""])[0]
+            if name:
+                status, payload = file_changes(session.history_cwd, name)
+                self._send_json(status, payload)
+                return
+            listing = list_changes(session.history_cwd)
+            if params.get("summary", [""])[0] == "1" and listing["state"] == "ok":
+                listing = {"state": "ok", "count": len(listing["files"])}
+            self._send_json(HTTPStatus.OK, listing)
         elif parsed.path == "/api/files":
             # `@` completion, through the CLI's own index (§5.11). The empty
             # query is not a request for everything -- the menu opens on `@`

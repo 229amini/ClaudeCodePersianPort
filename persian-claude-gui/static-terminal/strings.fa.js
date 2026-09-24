@@ -178,6 +178,32 @@ window.FA = {
   foldLess: "کمتر",
   /* §D11.3: a long history draws its last part; this brings back the rest. */
   historyEarlier: "نمایش پیام‌های قبلی ({n})",
+  /* The Changes panel (BRIDGEMIND-PORT.md §D12): what git sees different in
+     this pane's folder. */
+  paneChanges: "تغییرات این پوشه",
+  slChanges: "{n} فایل تغییر کرد",
+  chBack: "→ گفتگو",
+  chTitle: "تغییرات",
+  chTitleCount: "تغییرات · {n} فایل",
+  chRefresh: "تازه‌سازی",
+  chLoading: "در حال خواندن…",
+  chNone: "تغییری نیست",
+  chNoRepo: "این پوشه مخزن گیت نیست",
+  chNoGit: "گیت روی این رایانه نصب نیست",
+  chTooLarge: "برای نمایش بزرگ است ({n} خط)",
+  chFailed: "خوانده نشد",
+  chMine: "تغییرات این گفتگو",
+  chOther: "تغییرات دیگر در این پوشه",
+  chAll: "تغییرات این پوشه",
+  chStatus: {
+    M: "تغییر کرده",
+    A: "افزوده شده",
+    D: "حذف شده",
+    R: "نامش عوض شده",
+    C: "رونوشت",
+    U: "ناسازگاری ادغام",
+    "?": "تازه، هنوز در گیت نیست",
+  },
 
   /* Background agents. The CLI dispatches helpers that keep working after the
      turn ends; the strip above the composer is where they live. Nothing here
