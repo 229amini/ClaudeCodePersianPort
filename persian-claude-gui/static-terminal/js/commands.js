@@ -104,7 +104,8 @@ function copyLast(arg, cell) {
 function transcriptText(cell) {
   const out = [];
   for (const node of cell.log.children) {
-    if (node.hidden) continue;
+    // The «earlier messages» row of a long history is a control, not a turn.
+    if (node.hidden || node.classList.contains("history-earlier")) continue;
     const text = textOf(node);
     if (!text) continue;
     if (node.classList.contains("msg") && node.classList.contains("user")) {

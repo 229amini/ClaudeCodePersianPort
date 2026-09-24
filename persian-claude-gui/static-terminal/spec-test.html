@@ -120,7 +120,7 @@ import {
 /* The sidebar's open-conversations group: app.js hands chrome.js the list and
    the two verbs, so the harness can stand in for app.js and drive the group
    exactly as the real window does. */
-import { setOpenTabs, setTabBridge } from "/static/js/chrome.js";
+import { setOpenTabs, setTabBridge, renderInto } from "/static/js/chrome.js";
 /* The posture cycle's "nothing confirmed yet" branch: this is the only way to
    put the cell's controls back to a conversation that has not answered. The
    harness IS the cell (app.js builds it with `root = document`), so it reaches
@@ -1097,12 +1097,20 @@ window.renderEvent({
                          input: { file_path: "C:\\x\\a.txt" } }] },
 });
 const group = [...specLog.querySelectorAll("details.card.group")].at(-1);
-check("a run of tool calls collapses into one counted row",
+/* BRIDGEMIND-PORT.md §D11.2: the run is `.run` = the folded row with the
+   earlier steps, then the NEWEST step as itself. Every card still has to be
+   somewhere in it, and the newest has to be the one outside the fold. */
+const runOf = (g) => g?.parentElement?.matches(".run") ? g.parentElement : null;
+const latestOf = (g) => runOf(g)?.querySelector(":scope > details.card.tool:not(.group)");
+const earlierOf = (g) => g?.querySelectorAll(":scope > .card-body > details.card").length ?? 0;
+check("a run of tool calls collapses into one counted row, the newest step shown",
   group?.querySelector("summary .tool-verb")?.textContent === "۲ فرمان اجرا شد، ۱ فایل خوانده شد" &&
-  group?.querySelectorAll(":scope > .card-body > details.card").length === 3 &&
-  !group.open,
+  earlierOf(group) === 2 && latestOf(group)?.dataset.tool === "Read" &&
+  group.querySelector("summary .run-more")?.textContent === "+۲ مورد قبلی" &&
+  runOf(group)?.parentElement === specLog && !group.open,
   (group?.querySelector("summary .tool-verb")?.textContent ?? "no group") + " / " +
-  (group?.querySelectorAll(":scope > .card-body > details.card").length ?? 0) + " cards");
+  earlierOf(group) + " earlier + " + (latestOf(group)?.dataset.tool ?? "no latest") + " / «" +
+  (group?.querySelector("summary .run-more")?.textContent ?? "") + "»");
 
 // A sentence between two calls ends the run — that is what makes the group mean
 // "these happened together" rather than "these are the same tool".
@@ -1195,10 +1203,10 @@ const thGroup = [...specLog.querySelectorAll("details.card.group")].at(-1);
 const thVerb = thGroup?.querySelector(":scope > summary .tool-verb")?.textContent;
 check("thinking joins the run instead of shattering it into one group per call",
   thGroup !== groupMcp && thVerb === "۲ فرمان اجرا شد" &&
-  thGroup?.querySelectorAll(":scope > .card-body > details.card").length === 4 &&
+  earlierOf(thGroup) === 3 && !!latestOf(thGroup) &&
   specLog.querySelectorAll(":scope > details.card.thinking").length === 0,
   (thVerb ?? "no group") + " / " +
-  (thGroup?.querySelectorAll(":scope > .card-body > details.card").length ?? 0) + " inside / " +
+  earlierOf(thGroup) + " earlier + " + (latestOf(thGroup) ? 1 : 0) + " latest / " +
   specLog.querySelectorAll(":scope > details.card.thinking").length + " loose");
 
 // Shut, every thinking row carried the same word and nothing else. The opening
@@ -2100,6 +2108,69 @@ check("a delta follows a reader pinned to the bottom and leaves one who scrolled
   "pinned: " + (pinned ? "followed" : "fell behind") +
   ", scrolled up: at " + Math.round(specLog.scrollTop));
 
+/* --- BRIDGEMIND-PORT.md §D11: folding and progressive streaming --------------
+   Both are functions of the events alone, so a second render of the same
+   events must produce the same DOM: that is what makes a reload converge.
+   Here, while the frame is still driven by hand (see the first stream case). */
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "پایان." }] } });
+flushFrame();
+const FOLD_TEXT = Array.from({ length: 12 }, (_, i) => "خط شمارهٔ " + (i + 1)).join("\n");
+const userOnce = () => {
+  window.renderEvent({ type: "wrapper", subtype: "user_echo", text: FOLD_TEXT });
+  return [...specLog.querySelectorAll(".msg.user")].at(-1);
+};
+const foldA = userOnce();
+const foldB = userOnce();
+const foldToggle = foldA?.querySelector(":scope > .fold-toggle");
+const foldShut = foldA?.querySelector(".fold-body")?.getBoundingClientRect().height ?? 0;
+const labelShut = foldToggle?.dataset.label;
+foldToggle?.click();
+const foldOpen = foldA?.querySelector(".fold-body")?.getBoundingClientRect().height ?? 0;
+check("a long message of yours folds to six lines, and «بیشتر» opens it",
+  !!foldA?.classList.contains("fold") && labelShut === FA.foldMore &&
+  foldToggle.dataset.label === FA.foldLess && foldToggle.getAttribute("aria-expanded") === "true" &&
+  foldShut > 0 && foldOpen > foldShut * 1.5,
+  (foldA?.className ?? "no row") + " / " + Math.round(foldShut) + "px -> " + Math.round(foldOpen) + "px");
+check("the fold keeps the whole text, and its button's words stay out of it",
+  foldA?.textContent.includes("خط شمارهٔ 12") && !foldA.innerText.includes(FA.foldMore) &&
+  !foldA.innerText.includes(FA.foldLess),
+  (foldA?.innerText ?? "").slice(-30));
+foldToggle?.click();
+check("a replay folds the same message the same way",
+  !!foldB && foldA.outerHTML === foldB.outerHTML,
+  foldB ? foldA.className + " vs " + foldB.className : "no second row");
+window.renderEvent({ type: "wrapper", subtype: "user_echo", text: "کوتاه" });
+check("a short message does not fold",
+  ![...specLog.querySelectorAll(".msg.user")].at(-1)?.classList.contains("fold"));
+
+const PSRC = "## سرفصل\n\nپاراگراف اول با **Redis** است.\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nدر حال نوشتن";
+for (const chunk of PSRC.match(/[\s\S]{1,7}/g)) streamDelta(chunk);
+flushFrame();
+const progBubble = state.streamBubble;
+const progDone = progBubble?.querySelector(":scope > .stream-done");
+const progTail = progBubble?.querySelector(":scope > .stream-tail");
+check("a streaming answer renders its finished blocks as markdown, the rest as text",
+  !!progDone?.querySelector("h2") && progDone.querySelector("p strong")?.textContent === "Redis" &&
+  progDone.querySelectorAll("pre").length === 1 &&
+  progDone.querySelector("pre").textContent.includes("const b = 2;") &&
+  progTail?.textContent === "در حال نوشتن" && progTail.getAttribute("dir") === "rtl",
+  progDone ? progDone.children.length + " blocks, tail «" + (progTail?.textContent ?? "") + "»"
+           : "no finished blocks: " + (progBubble?.textContent.slice(0, 40) ?? "no bubble"));
+check("a blank line inside a code fence does not end a block",
+  progDone?.querySelectorAll("pre").length === 1 &&
+  !progDone.querySelector("pre").textContent.startsWith("const b"),
+  String(progDone?.querySelectorAll("pre").length));
+const PFINAL = PSRC + " تمام شد.";
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: PFINAL }] } });
+flushFrame();
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: PFINAL }] } });
+const progDirect = specLog.lastElementChild;
+const clean = (el) => (el?.innerHTML ?? "").replace(/ id="[^"]*"/g, "");
+check("the final render of a streamed answer is the same as rendering it directly",
+  !!progBubble && progBubble !== progDirect && !progBubble.querySelector(".stream-done") &&
+  clean(progBubble) === clean(progDirect),
+  clean(progBubble).length + " vs " + clean(progDirect).length + " chars");
+
 window.requestAnimationFrame = realRaf;
 
 /* --- the stop button that stopped nothing (bead pcg-kk9) --------------------
@@ -2923,6 +2994,44 @@ check("a turn the CLI closed itself may buy a recap; one idle_sync guessed at ma
   recapReal.recapEligible === true && recapBackstop.recapEligible === false,
   "lifecycle settle → " + recapReal.recapEligible +
   " / idle_sync settle → " + recapBackstop.recapEligible);
+
+/* --- BRIDGEMIND-PORT.md §D11.3: a long history renders its tail ------------
+   LAST on purpose: renderInto() replaces the column's contents. Each chunk
+   must start at a user turn, or a tool_result lands in a chunk whose card is
+   not there and its output is lost. */
+/* 13 events a turn (a prompt and six calls) so the plain cut, 300 back from
+   the end, lands ON A tool_result: only the snap to a turn keeps it with its
+   card. Three events a turn would divide 300 and never exercise the snap. */
+const HIST = [];
+for (let i = 0; i < 40; i++) {
+  HIST.push({ type: "user", message: { content: [{ type: "text", text: "پرسش " + i }] } });
+  for (let k = 0; k < 6; k++) {
+    HIST.push({ type: "assistant", message: { content: [{ type: "text", text: "گام " + k },
+      { type: "tool_use", id: "hist-" + i + "-" + k, name: "Bash", input: { command: "echo " + k } }] } });
+    HIST.push({ type: "user", message: { content: [{ type: "tool_result",
+      tool_use_id: "hist-" + i + "-" + k, content: "out " + k }] } });
+  }
+}
+setTabBridge({ renderIn: renderInTab });
+renderInto("", HIST);
+const histRow = specLog.firstElementChild;
+const histUsers = () => [...specLog.querySelectorAll(".msg.user")].map((u) => u.textContent.trim());
+const histTail = histUsers();
+const histCards = () => [...specLog.querySelectorAll("details.card.tool:not(.group)")];
+check("a long history draws its last turns, with a row for the rest",
+  histRow?.classList.contains("history-earlier") && histTail.length === 24 &&
+  histTail[0] === "پرسش 16" && histTail.at(-1) === "پرسش 39",
+  (histRow?.className ?? "no row") + " / " + histTail.length + " turns from «" + histTail[0] + "»");
+histRow?.click();
+const histAll = histUsers();
+check("the row brings the rest back above, in order, and goes when there is none",
+  !specLog.querySelector(".history-earlier") && histAll.length === 40 &&
+  histAll.every((t, i) => t === "پرسش " + i),
+  histAll.length + " turns, first «" + histAll[0] + "»");
+check("every chunk keeps each tool's output with its call",
+  histCards().length === 240 && histCards().every((c) => c.querySelector(".tool-branch")),
+  histCards().filter((c) => c.querySelector(".tool-branch")).length + " of " +
+  histCards().length + " cards have their output");
 
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);
