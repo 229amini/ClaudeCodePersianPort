@@ -1678,6 +1678,68 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 }
 .log > * { flex: none; }
 
+/* A RUN OF TOOL CALLS (BRIDGEMIND-PORT.md §D11.2): the folded row with the
+   earlier steps, then the newest step as itself. One log child, so the run is
+   one row to the scroll and to the cycle fold. */
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--log-gap);
+}
+.run > * { flex: none; }
+.run-more {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: .85em;
+}
+.run-more::before { content: "· "; }
+
+/* A LONG MESSAGE OF YOURS (§D11.1): six lines and a fade, then «بیشتر». The
+   text is all there; only the box is short. */
+.msg.user.fold:not(.unfolded) > .fold-body {
+  max-block-size: 6lh;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+}
+.fold-toggle {
+  display: block;
+  min-height: 0;
+  margin-block-start: 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: none;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-body);
+}
+.fold-toggle::before { content: attr(data-label); }
+.fold-toggle:hover { background: var(--surface); color: var(--fg); }
+.fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* §D11.3: the row at the top of a long history. Quiet, full width. */
+.history-earlier {
+  align-self: center;
+  min-height: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-row);
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-body);
+}
+.history-earlier:hover { background: var(--surface); color: var(--fg); }
+
+/* §D11.4, NOT switched on: `.log.cv` would let the browser skip laying out
+   rows that are off screen. It stays behind a class nothing sets until
+   stick-to-bottom, /export and find-in-page are shown to still work with it
+   on Windows Edge (wiki/grid.md). */
+.log.cv > * { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+
 .msg {
   max-width: 62ch;          /* readable measure; Persian counts the same */
   padding: 7px 14px;
@@ -2662,6 +2724,12 @@ button.round {
 .composer:has(.comp-box.bash) { border-color: var(--bash); }
 .comp-box.bash .comp-mark { color: var(--bash); }
 .comp-box.bash .input::placeholder { color: var(--bash); }
+/* An EMPTY box has no text for dir="auto" to measure, so Chromium lays it out
+   LTR - and the placeholder, Persian with a key name in it («… Shift+Space»),
+   drew its words in the wrong order at the wrong edge. While the placeholder
+   is what is shown, the box takes the placeholder's direction; the first
+   character typed hands the decision back to dir="auto". */
+.comp-box .input:placeholder-shown { direction: rtl; }
 
 .history-search {
   display: flex;

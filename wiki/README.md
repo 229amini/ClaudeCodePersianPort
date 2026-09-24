@@ -49,7 +49,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
   collision) that a screenshot cannot catch. Also **what breaks when the window is made small**,
-  and why the picker menus were sizing themselves off their own anchor.
+  and why the picker menus were sizing themselves off their own anchor. **2026-09-24:** an empty
+  `dir="auto"` box is LTR (the composer placeholder), and how progressive stream markdown works.
 - [sessions-and-history.md](sessions-and-history.md) — `--resume` semantics, where transcripts
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
@@ -80,7 +81,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   identity row — with the three accessibility traps collapsing a sidebar sets. **2026-09-24 (P4):**
   the new-session page — why its limit reads `/api/tabs` and not the debounced tab list, why
   `fits()` measures `#stage`, and the open/posture/message order it must keep. **P5:** the notification
-  centre — what counts as news, and why a notice's title is looked up when it is drawn.
+  centre — what counts as news, and why a notice's title is looked up when it is drawn. **P7:** the run, the
+  long-message fold and the history tail.
   **2026-09-24 (pcg-0o7):** why `focusCell()` defers itself while a `withRenderTarget` is open
   — a dialog focusing itself mid-render used to file one conversation's state under another.
   Same day, pcg-973: the web edition's status dots differ in shape as well as hue.

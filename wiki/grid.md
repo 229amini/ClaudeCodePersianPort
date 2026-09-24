@@ -206,6 +206,22 @@ conversation is placed in, or focused in, a pane, or the window comes back visib
   when the notification was made.
 - Gate: `test_notices.py` (17 checks, negative-tested against a missing replay guard).
 
+## Folding (BRIDGEMIND-PORT.md §D11, P7, 2026-09-24)
+
+- **A tool run is `.run`**: the folded `details.card.tool.group.run-earlier` (summary: the run's
+  counts plus «+N مورد قبلی») and then the NEWEST card as itself. `toolHome()` moves the previous
+  newest card into the fold as a node, so `state.toolCards` keeps routing into the same body.
+  A lone card still stays loose in the log, which is what the cycle fold's adjacency test needs.
+- **A long user message** (> 8 lines or > 600 characters, counted on the text) is `.msg.user.fold`:
+  the content in `.fold-body` at `6lh`, and a toggle whose words are drawn from `data-label`
+  (generated content), so `/export`, `/copy` and the loop fold never read «بیشتر».
+- **A long history** (> 400 events, `chrome.js renderInto`) draws its last ~300, snapped back to
+  a user turn, with a `.history-earlier` row that renders the previous chunk into a detached node
+  under a fresh scope and moves it in above, holding the scroll. The snap is load-bearing: the
+  spec fixture uses 13 events a turn precisely so an unsnapped cut lands on a `tool_result`.
+- **`.log.cv` (content-visibility) is written but not switched on.** It needs stick-to-bottom,
+  `/export` and find-in-page shown to work on Windows Edge first.
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:

@@ -206,7 +206,7 @@ function queueStreamText(el, target, text) {
       // a box that really holds it.
       const live = t.contains(node);
       const stick = live && t.scrollHeight - t.scrollTop - t.clientHeight < 80;
-      node.textContent = s;
+      paintStream(node, s);
       // `.msg` is unicode-bidi:plaintext, which re-decides direction from the
       // paragraph's own FIRST strong character and ignores `dir` — so a
       // majority-Persian answer opening with a Latin term streams left-to-right
@@ -228,6 +228,60 @@ function queueStreamText(el, target, text) {
   });
 }
 
+/* PROGRESSIVE MARKDOWN WHILE STREAMING (BRIDGEMIND-PORT.md §D11.5).
+   Text up to the last blank line OUTSIDE a code fence is a run of finished
+   blocks: each is rendered once through renderMarkdown() - so it gets
+   applyDirection and token isolation like any settled answer - and frozen.
+   Only the block still being written stays plain text. Until the first block
+   finishes the bubble is exactly what it always was, one text node.
+   The final `assistant` render still replaces the whole bubble: it is the
+   authority, and a construct that spans a blank line (a loose list) may
+   reflow once there. */
+const streamed = new WeakMap();   // bubble -> { done, frozen, tail }
+
+function lastBlockEnd(s, from) {
+  let at = from;
+  let fence = false;
+  let cut = from;
+  while (at < s.length) {
+    const nl = s.indexOf("\n", at);
+    if (nl < 0) break;                       // an unfinished line decides nothing
+    const line = s.slice(at, nl);
+    if (/^\s{0,3}(```|~~~)/.test(line)) fence = !fence;
+    else if (!fence && !line.trim() && at > from) cut = nl + 1;
+    at = nl + 1;
+  }
+  return cut;
+}
+
+function paintStream(node, s) {
+  let st = streamed.get(node);
+  if (st && (s.length < st.done || !node.contains(st.tail))) {
+    streamed.delete(node);                   // the text was replaced, not grown
+    st = null;
+  }
+  const cut = lastBlockEnd(s, st?.done ?? 0);
+  if (!st && !cut) {
+    node.textContent = s;
+    return;
+  }
+  if (!st) {
+    const frozen = document.createElement("div");
+    frozen.className = "stream-done";
+    const tail = document.createElement("div");
+    tail.className = "stream-tail";
+    node.replaceChildren(frozen, tail);
+    st = { done: 0, frozen, tail };
+    streamed.set(node, st);
+  }
+  if (cut > st.done) {
+    st.frozen.append(...renderMarkdown(s.slice(st.done, cut)).childNodes);
+    st.done = cut;
+  }
+  st.tail.textContent = s.slice(st.done);
+  autoDir(st.tail, STREAM_DIR_SAMPLE);
+}
+
 /* The queued paint is plain text and would land AFTER the markdown that
    replaces it, wiping a finished answer back to its own source. Both halves of
    ending a stream live here so neither can be forgotten: drop the pending
@@ -236,6 +290,7 @@ function queueStreamText(el, target, text) {
 function endStreamPaint(el) {
   if (!el) return;
   paintQueue.delete(el);
+  streamed.delete(el);
   el.classList.remove("streaming");
 }
 
@@ -291,7 +346,8 @@ function toolHome(el) {
     state.run = null;
     return log;
   }
-  const run = state.run ??= { first: null, group: null, counts: new Map() };
+  const run = state.run ??= { first: null, group: null, counts: new Map(), latest: null,
+                              earlier: 0 };
   const name = el.dataset.tool;
   if (name) run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
 
@@ -300,23 +356,38 @@ function toolHome(el) {
       run.first = el;
       return log;
     }
+    /* §D11.2: the run shows its NEWEST card as itself, and the earlier ones
+       behind one folded row - «۳ فرمان اجرا شد · +۲ مورد قبلی». A folded row
+       that hid the step being taken right now read as nothing happening. */
+    const wrap = document.createElement("div");
+    wrap.className = "run";
     const details = document.createElement("details");
-    details.className = "card tool group";
+    details.className = "card tool group run-earlier";
     const summary = document.createElement("summary");
-    summary.append(icon("run"), label("", "tool-verb"));
+    const more = label("", "run-more");
+    summary.append(icon("run"), label("", "tool-verb"), more);
     details.append(summary);
     const body = document.createElement("div");
     body.className = "card-body";
     details.append(body);
-    run.first.replaceWith(details);   // takes the first card's place in the log
+    run.first.replaceWith(wrap);      // takes the first card's place in the log
+    wrap.append(details);
     body.append(run.first);
-    run.group = { details, body, text: summary.lastChild };
+    run.earlier = 1;
+    run.group = { wrap, details, body, text: summary.querySelector(".tool-verb"), more };
+  } else if (run.latest) {
+    // The card that was newest joins the earlier ones, as a node: every map
+    // that routes into it (state.toolCards) keeps pointing at the same body.
+    run.group.body.append(run.latest);
+    run.earlier += 1;
   }
+  run.latest = el;
   // A run of nothing but thinking has no action to count; it still needs a row
   // that says something, so it names itself.
   run.group.text.textContent = run.counts.size
     ? groupSummaryText(run.counts) : FA.thinking;
-  return run.group.body;
+  run.group.more.textContent = FA.runEarlier.replace("{n}", faNum(run.earlier));
+  return run.group.wrap;
 }
 
 /* --- a polling loop is one pair, not sixteen rows ---------------------------
@@ -452,6 +523,40 @@ function markResult(body, text, isError) {
 function intoCard(body, el) {
   if (body) body.append(el);
   else append(el);
+  return el;
+}
+
+/* A user message is folded when it is long (§D11.1): more than 8 lines or 600
+   characters, COUNTED on the text rather than measured - a background pane has
+   no layout, and a reload must fold exactly what the live window folded. The
+   whole text stays in the DOM (copy, /export, find); the toggle's words are
+   drawn from `data-label`, so innerText and a loop comparison never read them. */
+const FOLD_LINES = 8;
+const FOLD_CHARS = 600;
+
+function userRow(text, images = 0) {
+  const el = bubble("user");
+  el.append(...renderMarkdown(text ?? "").childNodes);
+  if (images) el.append(label(`[${images} image]`, "meta"));
+  const t = text ?? "";
+  if (t.length > FOLD_CHARS || t.split("\n").length > FOLD_LINES) {
+    const body = document.createElement("div");
+    body.className = "fold-body";
+    body.append(...el.childNodes);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "fold-toggle";
+    const paint = (open) => {
+      el.classList.toggle("unfolded", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.dataset.label = open ? FA.foldLess : FA.foldMore;
+      toggle.setAttribute("aria-label", toggle.dataset.label);
+    };
+    toggle.addEventListener("click", () => paint(!el.classList.contains("unfolded")));
+    el.classList.add("fold");
+    el.append(body, toggle);
+    paint(false);
+  }
   return el;
 }
 
@@ -1023,9 +1128,7 @@ function promoteQueued(uuid) {
   state.queued.delete(uuid);
   paintQueued();
   resetTurn(true);
-  const el = bubble("user");
-  el.append(...renderMarkdown(entry.text ?? "").childNodes);
-  if (entry.images) el.append(label(`[${entry.images} image]`, "meta"));
+  userRow(entry.text, entry.images);
 }
 
 /* It will never run. The row goes, and the text goes back to the person who
@@ -2219,8 +2322,7 @@ export function renderEvent(ev) {
           // A user turn materializing mid-batch (the CLI injecting a queued
           // message) is a boundary INSIDE the batch: the status line survives.
           resetTurn(state.outstanding.size > 0);
-          const el = bubble("user");
-          el.append(...renderMarkdown(said).childNodes);
+          userRow(said);
           continue;
         }
         if (part.type !== "tool_result") continue;
@@ -2435,9 +2537,7 @@ export function renderEvent(ev) {
           queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0);
         } else {
           resetTurn(queued);
-          const el = bubble("user");
-          el.append(...renderMarkdown(ev.text ?? "").childNodes);
-          if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
+          userRow(ev.text, ev.images);
         }
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one. A batch

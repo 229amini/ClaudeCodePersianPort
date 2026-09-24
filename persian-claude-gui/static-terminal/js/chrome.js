@@ -18,6 +18,7 @@ import { api, token } from "./api.js";
    called from app.js once every module is live. */
 import {
   bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus,
+  withRenderTarget, newRenderScope,
 } from "./render.js";
 /* The dots on the open-conversations rows are painted from what the permission
    dialogs are asking. One arrow each way (perm.js reads the tab list back), and
@@ -1254,21 +1255,79 @@ async function replaySession(sessionId, projPath, worktree) {
    was closed while the fetch was out gets nothing at all (app.js renderInTab).
    Shared by replay and by a resumed session's backfill — the two differ only in
    whether the closing «گفتگو از سر گرفته شد» line is added. */
-function renderInto(tab, events, resumedNote = false) {
+export function renderInto(tab, events, resumedNote = false) {
+  const all = events ?? [];
+  // A long history renders its TAIL (BRIDGEMIND-PORT.md §D11.3): a
+  // two-thousand-event transcript is seconds of layout nobody asked for.
+  const from = all.length > HISTORY_TAIL_OVER ? chunkStart(all, all.length) : 0;
   tabBridge?.renderIn(tab, (node) => {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
+    if (from > 0) node.append(earlierRow(tab, all, from, node));
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
     // times, about a view that is not on screen yet. The answer is only needed
     // once, below.
     bulkAppend(() => {
-      for (const event of events ?? []) renderEvent(event);
+      for (let i = from; i < all.length; i++) renderEvent(all[i]);
       if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
     });
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message
   });
+}
+
+/* Over 400 events, the last ~300 are drawn and a row at the top brings the
+   rest back a chunk at a time. Every chunk starts AT A USER TURN, so a
+   tool_result is always in the same chunk as the tool_use it answers - the
+   card it routes into (state.toolCards) exists only within one render. Live
+   conversations are never cut: this is only the history fetch. */
+const HISTORY_TAIL_OVER = 400;
+const HISTORY_CHUNK = 300;
+
+function isTurnStart(ev) {
+  if (ev?.type !== "user") return false;
+  const content = ev.message?.content;
+  if (typeof content === "string") return true;
+  return Array.isArray(content) && content.some((p) => p?.type === "text")
+    && !content.some((p) => p?.type === "tool_result");
+}
+
+function chunkStart(events, end) {
+  let at = Math.max(0, end - HISTORY_CHUNK);
+  while (at > 0 && !isTurnStart(events[at])) at -= 1;
+  return at;
+}
+
+function earlierRow(tab, events, from, node) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "history-earlier";
+  row.setAttribute("dir", "auto");
+  let end = from;
+  const paint = () => {
+    row.textContent = FA.historyEarlier.replace("{n}", end.toLocaleString("fa-IR"));
+  };
+  paint();
+  row.addEventListener("click", () => {
+    const start = chunkStart(events, end);
+    // Rendered into a node of its own, through the same renderEvent, with a
+    // fresh scope - then moved in above what is on screen, holding the
+    // reader's place.
+    const into = document.createElement("div");
+    withRenderTarget(into, newRenderScope(true, null, tab), () => {
+      bulkAppend(() => {
+        for (let i = start; i < end; i++) renderEvent(events[i]);
+      });
+    });
+    const before = node.scrollHeight;
+    row.after(...into.childNodes);
+    node.scrollTop += node.scrollHeight - before;
+    end = start;
+    if (end > 0) paint();
+    else row.remove();
+  });
+  return row;
 }
 
 /* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT (pcg-1ug).

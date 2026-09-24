@@ -171,6 +171,13 @@ window.FA = {
      the transcript keeps one of them and says how many there were. Persian
      digits — this is prose chrome, not a technical value (spec rule 5). */
   cycleRepeat: "{n} بار",
+  /* §D11: a tool run shows its newest step; the earlier ones fold behind this. */
+  runEarlier: "+{n} مورد قبلی",
+  /* §D11: a long message of yours folds to six lines. */
+  foldMore: "بیشتر",
+  foldLess: "کمتر",
+  /* §D11.3: a long history draws its last part; this brings back the rest. */
+  historyEarlier: "نمایش پیام‌های قبلی ({n})",
 
   /* Background agents. The CLI dispatches helpers that keep working after the
      turn ends; the strip above the composer is where they live. Nothing here

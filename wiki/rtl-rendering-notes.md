@@ -626,3 +626,25 @@ on the right, so a right-pinned menu lands roughly where you expect), and no gat
 function. Same family as §"A `[hidden]` element has no `offsetParent`" and §"Nothing in the shell
 was responsive": **hand-written geometry on a top-layer element fails silently, and only a
 screenshot or a measured rect ever says so.**
+
+## An empty `dir="auto"` box is LTR, and so is its placeholder (2026-09-24)
+
+`dir="auto"` measures the element's TEXT; an empty textarea has none, so Chromium lays it out
+LTR — placeholder included. A pure Persian placeholder hid this (one RTL run reads the same at
+either edge); the BridgeMind port's «پیام خود را بنویسید — نیم‌فاصله: Shift+Space» did not: the
+key name went to the wrong end and the line sat at the left edge. The terminal edition's fix is
+`.comp-box .input:placeholder-shown { direction: rtl }` — the box takes the placeholder's
+direction only while the placeholder is what is shown, and the first typed character hands the
+decision back to `dir="auto"`. Not a manual direction toggle: it applies to chrome text the
+window wrote, never to anything the user typed.
+
+## Progressive markdown while streaming (BRIDGEMIND-PORT.md §D11.5, 2026-09-24)
+
+`render.js paintStream()` renders the finished blocks of a streaming answer (up to the last blank
+line outside a code fence) through `renderMarkdown()` once each, and keeps only the block still
+being written as plain text in `.stream-tail` (with its own `autoDir`). Until the first block
+finishes the bubble is one text node, as before — the spec's `headX()` streaming checks read
+`firstChild` as text and depend on that. The final `assistant` render still replaces the bubble;
+spec-test checks it is byte-identical to rendering the same text directly. Spec checks that
+stream must run while the harness drives rAF by hand: a paint queued on the real rAF pins
+`paintFrame` and every later stream write waits on it forever.
