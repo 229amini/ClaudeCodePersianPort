@@ -40,6 +40,8 @@ PROBE = STATIC / "_layout_probe.html"
 # window much smaller, and a --window-size=420 request comes back reporting
 # ~490px of viewport.
 SIZES = ((1280, 800), (760, 640), (500, 560))
+# The shell's one gutter (static-terminal/style.css `--gap`), terminal edition only.
+GUTTER = 8
 
 EDGE_CANDIDATES = (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -565,14 +567,17 @@ def main() -> int:
             # not a weaker assertion. Checked at the widest size only - the two
             # narrow breakpoints only change the track's width, and every
             # off-window assertion above already covers what they can break.
+            # BridgeMind port P1 (BRIDGEMIND-PORT.md §D3): both are cards on a
+            # ground now, so each sits one gutter (--gap, 8px) in from its edge -
+            # still an exact position, not a looser one.
             if EDITION == "terminal" and (width, height) == SIZES[0]:
                 side, stage = m["sidebar"], m["stage"]
-                if abs(side["x"] + side["w"] - m["clientW"]) > 1:
-                    failures.append(f"{where}: the sidebar is not on the right edge "
-                                    f"(x={side['x']} w={side['w']} of {m['clientW']})")
-                if abs(stage["x"]) > 1:
-                    failures.append(f"{where}: the stage does not start at the left edge "
-                                    f"(x={stage['x']})")
+                if abs(side["x"] + side["w"] - (m["clientW"] - GUTTER)) > 1:
+                    failures.append(f"{where}: the sidebar is not one gutter off the right "
+                                    f"edge (x={side['x']} w={side['w']} of {m['clientW']})")
+                if abs(stage["x"] - GUTTER) > 1:
+                    failures.append(f"{where}: the stage does not start one gutter off the "
+                                    f"left edge (x={stage['x']})")
                 # F5: the drawer's insets follow the sidebar's side, and one
                 # property alone never moves a [popover] - the opposite inset
                 # must be `auto` (wiki/editions.md).

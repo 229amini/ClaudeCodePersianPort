@@ -53,7 +53,7 @@ import {
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
-  setChrome, refreshProjects, backfillTab,
+  setChrome, refreshProjects, backfillTab, refreshWhen,
 } from "./chrome.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
 import { makeComposer } from "./composer.js";
@@ -1002,6 +1002,7 @@ for (const type of ["pointerdown", "focusin"]) {
    strip) and not before. */
 function tickIdle(now) {
   focusedCell()?.composer.checkIdle(now);
+  refreshWhen();   // the sidebar's «N دقیقه پیش» rides the same clock
 }
 setInterval(tickIdle, 60_000);
 document.addEventListener("visibilitychange", () => {
