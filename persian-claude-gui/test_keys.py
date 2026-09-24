@@ -96,6 +96,7 @@ SCENARIOS = {
     # alone, which is the phase's exit criterion (M8-acceptance.md §6).
     ("Confirmation", "1"): ("permOne", "1 approves this call and nothing more"),
     ("Confirmation", "3"): ("permThree", "3 refuses it"),
+    ("Confirmation", "4"): ("permFour", "4 refuses it and stops the turn (window-only)"),
     ("Confirmation", "Enter"): ("permEnter", "Enter answers the highlighted row"),
     ("Confirmation", "Esc"): ("permEsc", "Esc refuses — dismissing is never consent"),
     ("Confirmation", "↓"): ("permDown", "Down moves the highlight on"),
@@ -269,7 +270,7 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   await sleep(20);
   // Three numbered rows, the digit drawn as its own element (V2-PLAN §8.2) and
   // the `(esc)` on the refusal drawn as its own too (wiki/tui-strings.md §2).
-  out.permNumbered = perm.open && opts().length === 3
+  out.permNumbered = perm.open && opts().length === 4
     && opts()[0].querySelector(".opt-num")?.textContent === "\u06f1."
     && opts()[2].querySelector(".opt-num")?.textContent === "\u06f3."
     && !!opts()[2].querySelector(".opt-esc")
@@ -299,6 +300,16 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   await sleep(40);
   out.permThree = threeHandled && answered().decision === "deny"
     && answered().feedback === "\u0641\u0642\u0637 \u0641\u0647\u0631\u0633\u062a \u0631\u0627 \u0628\u06af\u06cc\u0631";
+
+  askPerm("k-four");
+  await sleep(20);
+  const markFour = calls.length;
+  const fourHandled = keyAt(optList(), "4");
+  await sleep(60);
+  const afterFour = calls.slice(markFour).map((c) => c.url.split("?")[0]);
+  out.permFour = fourHandled && answered().decision === "deny" && !perm.open
+    && afterFour.indexOf("/api/permission/respond") >= 0
+    && afterFour.indexOf("/api/interrupt") > afterFour.indexOf("/api/permission/respond");
 
   askPerm("k-enter");
   await sleep(20);
@@ -346,9 +357,11 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   // «۲» is simply not drawn and «۳» is still the refusal.
   askPerm("k-plan", "ExitPlanMode", { plan: "# \u0637\u0631\u062d\n\n- \u06cc\u06a9" });
   await sleep(20);
-  out.planNoRemember = perm.open && opts().length === 2
+  // Yes, the Esc refusal, and the window's own «stop» row (§D10) - no remember.
+  out.planNoRemember = perm.open && opts().length === 3
     && !!opts()[1].querySelector(".opt-esc")
-    && opts()[1].querySelector(".opt-num")?.textContent === "\u06f2.";
+    && opts()[1].querySelector(".opt-num")?.textContent === "\u06f2."
+    && opts()[2].querySelector(".opt-title")?.textContent === window.STRINGS.permNoStop;
   keyAt(optList(), "Escape");
   await sleep(40);
 

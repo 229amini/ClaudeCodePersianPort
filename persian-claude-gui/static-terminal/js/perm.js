@@ -128,6 +128,21 @@ export function dismissTabPermissions(tab) {
 
 /* --- one dialog ------------------------------------------------------------ */
 
+/* The eyebrow's category (BRIDGEMIND-PORT.md §D10). By tool name, because
+   that is all a `can_use_tool` request says about what it will do. */
+const KIND = {
+  Edit: "edit", Write: "edit", MultiEdit: "edit", NotebookEdit: "edit",
+  Bash: "shell", PowerShell: "shell", KillShell: "shell",
+  WebFetch: "outside", WebSearch: "outside",
+  Read: "read", Glob: "read", Grep: "read", LS: "read",
+  ExitPlanMode: "plan",
+};
+
+export function permKind(tool) {
+  if (KIND[tool]) return KIND[tool];
+  return String(tool ?? "").startsWith("mcp__") ? "outside" : "tool";
+}
+
 export function makePerm(root, cell) {
   // Cell-local elements (T0): `id` -> `class`, looked up inside this cell's own
   // root. spec-test.html passes `document` and keeps its ids as well.
@@ -176,6 +191,11 @@ export function makePerm(root, cell) {
     paintPermSource(perm.current.tab);
     perm.dialog.classList.toggle("asking", !!questions);
     const planning = perm.current.tool_name === PLAN_TOOL;
+    const kind = root.querySelector(".perm-kind");
+    if (kind) {
+      kind.textContent = questions ? "" : FA.permKind?.[permKind(perm.current.tool_name)] ?? "";
+      kind.hidden = !kind.textContent;
+    }
     if (perm.title) {
       perm.title.textContent = questions ? FA.askTitle
                              : planning ? FA.planTitle : FA.permTitle;
@@ -224,6 +244,9 @@ export function makePerm(root, cell) {
       rows.push({ key: "remember", title: FA.permYesRemember.replace("{tool}", tool) });
     }
     rows.push({ key: "deny", title: FA.permNoFeedback, esc: true });
+    // The window's fourth row (§D10): refuse, then stop the turn. After the
+    // Esc row, so the TUI's three keep their digits.
+    rows.push({ key: "stop", title: FA.permNoStop });
     return rows;
   }
 
@@ -247,7 +270,8 @@ export function makePerm(root, cell) {
     if (perm.hint) perm.hint.textContent = questions ? FA.askHint : FA.permHint;
     if (questions) return;           // ask mode answers with its own inputs
     perm.list = optionList(permOptions(perm.current), {
-      onPick: (key) => resolvePermission("allow", { remember: key === "remember" }),
+      onPick: (key) => (key === "stop" ? refuseAndStop()
+        : resolvePermission("allow", { remember: key === "remember" })),
       onCancel: () => resolvePermission("deny"),
       onKey: permListKey,
     });
@@ -283,6 +307,23 @@ export function makePerm(root, cell) {
     if (note) {
       cell.composer.restoreDraft(note);
       bubble("meta", FA.permFeedbackMoved);
+    }
+  }
+
+  /* «نه، و کار را متوقف کن»: the refusal goes first, so the CLI is not left
+     holding an open request while it is being interrupted; then the same
+     interrupt the stop button sends, to the conversation that ASKED. */
+  async function refuseAndStop() {
+    const tab = perm.current?.tab || cell.tab;
+    await resolvePermission("deny");
+    try {
+      await fetch("/api/interrupt?t=" + encodeURIComponent(token), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tab }),
+      });
+    } catch (err) {
+      console.error("interrupt failed", err);
     }
   }
 

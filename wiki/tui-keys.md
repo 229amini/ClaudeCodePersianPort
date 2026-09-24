@@ -101,6 +101,7 @@ they come from the select component, one digit per row.
 | `tab` | `confirm:nextField` | `Tab` | رفتن به بخش بعدی گفت‌وگو، وقتی بیش از یک بخش دارد |
 | `space` | `confirm:toggle` | `Space` | تغییر وضعیت ردیف انتخاب‌شده، در گفت‌وگوهای چندگزینه‌ای |
 | `shift+tab` | `confirm:cycleMode` | `shift+tab` | «تأیید با این بازخورد» (رشتهٔ TUI) |
+| — | `window:denyAndStop` | `4` | گزینهٔ چهارمِ خودِ پنجره: «نه، و کار را متوقف کن» — رد می‌کند و بعد همان قطعی را می‌فرستد که دکمهٔ توقف (انحراف ۶ در پایین) |
 
 ## Autocomplete — the `/` and `@` menus
 
@@ -232,6 +233,10 @@ These are choices, not oversights. `help.html` §«تفاوت با ترمینا�
    «(ctrl+o to expand)» — so `ctrl+o` is the key the user has already been told about.
 5. **Keys the browser owns stay with the browser:** `ctrl+w`, `ctrl+t`, `ctrl+n`, `ctrl+shift+i`.
    Edge `--app` intercepts them before the page sees them (V2-PLAN §3.6).
+6. **A fourth option on the permission card: «نه، و کار را متوقف کن»** (BRIDGEMIND-PORT.md
+   §D10). The TUI offers three; this one refuses the call and then interrupts the turn, for when
+   the answer is "not this, and nothing else either". It sits AFTER the Esc row, so the TUI's
+   three keep their digits, and it is bound to `4`. Not offered for `AskUserQuestion`.
 
 ## `~/.claude/keybindings.json`
 
