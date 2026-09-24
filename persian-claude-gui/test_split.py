@@ -833,12 +833,18 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 say(f"the status stack of cell {at} is {sl['h']}px tall "
                     f"({sl['rows']} rows, cap {STATUS_CAP}) - a resumed session's "
                     "fields wrap and the transcript pays for every row")
-            # BRIDGEMIND-PORT.md §D5 reversed the 2026-09-08 "nothing hidden,
-            # the stack scrolls" rule on purpose: the status line is now the
-            # machine's own line plus ONE state line, and every fact that left
-            # it has a home in /status (asserted in test_shell.py). What stays
-            # a defect is that line wrapping - the column would pay for it.
-            elif sl["rows"] > 2:
+            # The web edition keeps the 2026-09-08 rule: nothing hidden, the
+            # stack scrolls, so it must hold more than it shows.
+            elif EDITION == "web" and sl["scroll"] <= sl["h"] + 2:
+                say(f"the status stack of cell {at} holds {sl['scroll']}px in "
+                    f"{sl['h']}px of box - it fits, so a field was dropped to "
+                    "make it fit rather than scrolled to")
+            # BRIDGEMIND-PORT.md §D5 reversed that rule for the TERMINAL edition
+            # on purpose: its status line is the machine's own line plus ONE
+            # state line, and every fact that left it has a home in /status
+            # (asserted in test_shell.py). What stays a defect there is that
+            # line wrapping - the column would pay for it.
+            elif EDITION != "web" and sl["rows"] > 2:
                 say(f"the status line of cell {at} runs to {sl['rows']} rows - "
                     "the state line wrapped instead of giving up characters")
 

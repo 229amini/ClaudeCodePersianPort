@@ -667,6 +667,17 @@ opens it in Edge **app-mode** like the shortcut does, and shows a table on scree
 
 ## D14. Phased build plan
 
+> **Build status, 2026-09-24.** P0–P9 are built on `claude/sleepy-hypatia-gaj477` and P10's
+> docs are written (terminal edition 0.2.0). Every phase's shot set was taken in the Linux
+> container with the Chromium 141 workaround, **not yet on Windows Edge**. P0's measurements
+> (M1–M4, M6: run `probe_edge.py` on the target PC) are still open. They decide three swappable
+> values: the Alt chords in `PANE_KEYS`, and `ZOOM_MODE` and `PREFS_STORE` in `prefs.js`. M5 (the
+> worktree name race) was answered in code, by the server's name reservation.
+> Deviations from the table below: P5's checks live in a new `test_notices.py` rather than in
+> `test_shell.py`. P7's `content-visibility` is written behind `.log.cv` but not switched on,
+> because find-in-page cannot be proven headless. P9 built no stable port, since M2 has not said
+> one is needed.
+
 Every phase: branch commits, then **exit = the gates below + a shot set**. `shots.py` (P0)
 renders the terminal edition headlessly at 1852×1044, 1280×800 and 1052×711 from synthetic
 events (the `test_split.py` way) into `shots/<phase>/` (git-ignored). I compare them against the

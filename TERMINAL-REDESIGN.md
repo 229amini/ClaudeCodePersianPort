@@ -4,6 +4,8 @@
 > terminal edition (epic `pcg-bmp`). It replaces §2.4 (density and the "nothing hidden" status
 > stack), §3 (the «۱ | ۲ | ۴» control) and §5 (tokens). §1 (sidebar on the right, the rail) and
 > §4 (the status model) still stand. The rest is history: read it for the why, not the what.
+> **Built 2026-09-24** (P1–P9, terminal edition 0.2.0): the «۱ | ۲ | ۴» control this document
+> designed is gone, replaced by the pane-count model of `BRIDGEMIND-PORT.md` §D6.
 
 Bead `pcg-qdj`. Architect pass, 2026-09-10. Design only — no code. Skill: `ui-ux-pro-max`
 (stack: plain HTML/CSS, no framework) under the calm `emil-design-eng` direction;

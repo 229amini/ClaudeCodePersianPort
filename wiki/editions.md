@@ -55,8 +55,9 @@ The page is `<html dir="rtl">`, so grid column 1 is the right edge:
 **No `direction` flip anywhere** — that would re-order every inline child
 (`rtl-rendering-notes.md`).
 
-**`--side-w` is the only width knob, and that is load-bearing.** It is 272 px, and 48 px under
-`body.app.rail` (see `grid.md` §the rail). The two narrow-window `@media` blocks override the
+**`--side-w` is the only width knob, and that is load-bearing.** It is 264 px (272 until the
+BridgeMind port's P1), and 48 px under `body.app.rail` (see `grid.md` §the rail) — which since P3
+follows the PANE COUNT: more than one pane collapses it. The two narrow-window `@media` blocks override the
 custom property and never the `grid-template-columns` shorthand — a shorthand override would
 re-declare the collapsed track and silently reopen the tree at exactly the widths where the
 rail matters most. `body.app.rail` is (0,2,1) against `body.app`'s (0,1,1), so it wins by
@@ -95,6 +96,16 @@ sidebar and every pane are cards one gutter in from the window edge. `test_layou
 moved by one gutter; its `GUTTER` constant is the CSS value and must change with it. The stage is
 deliberately not a card (the panes are), and `#grid`'s old `gap: 1px` on a `--border` background
 (the gap *was* the divider) is gone. Design: `BRIDGEMIND-PORT.md` §D2–§D4.
+
+### The pane model (BridgeMind port P2–P9, 2026-09-24)
+
+The terminal edition's grid is no longer «۱ | ۲ | ۴»: the number of panes is the number of
+conversations on screen, 1 to 6, laid out by `layoutFor()` to fit the window, with draggable
+dividers, a pane header (`⋯ ⤢ ✕`), one state line per pane, and window keys in one `PANE_KEYS`
+table. Around it: the new-session page, the notification bell, the Changes panel (the one new
+server route) and app zoom as a swappable value. Every piece has its own section in `grid.md`;
+the design is `BRIDGEMIND-PORT.md` §D0–§D14. **The web edition is untouched by all of it** — no
+`static/` file changed, and its gates stayed at their baseline.
 
 ## Rules
 
