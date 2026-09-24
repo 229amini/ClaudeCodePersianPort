@@ -63,6 +63,7 @@ import { initAgents, applyAgents, refreshAgents, resetAgents } from "./agents.js
 import { api, token } from "./api.js";
 import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
 import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
+import { makeChanges } from "./changes.js";
 
 const FA = window.STRINGS;
 
@@ -161,6 +162,11 @@ function makeCell(root) {
   cell.perm = makePerm(root, cell);
   cell.composer = makeComposer(root, cell);
   cell.controls = makeControls(root, cell);
+  // The files THIS pane's conversation touched, read at call time: the scope
+  // behind a pane changes with every switch.
+  cell.changes = makeChanges(cell, {
+    touched: () => [...((cell === focusedCell() ? state : scopeOf(cell))?.touched ?? [])],
+  });
   cell.blankScope = newRenderScope(false, cell, "");
   initCellChrome(cell);
   initPaneHeader(cell);
@@ -207,6 +213,7 @@ function paneMenuItems(cell) {
   }
   if (cells.length > 1) items.push({ icon: "", text: FA.paneEqualize, run: () => equalize() });
   items.push(null,
+    { icon: "", text: FA.paneChanges, run: () => cell.changes.open() },
     { icon: "", text: FA.paneBranch, run: () => runWindowCommand("branch", "", cell) },
     null,
     { icon: "", text: FA.paneCloseChat, danger: true, run: () => closeTab(cell.tab) });
@@ -707,6 +714,9 @@ function noteTabEvent(ev, tab) {
       && ev.terminal_reason !== "aborted_streaming") {
     unread.set(tab, (unread.get(tab) ?? 0) + 1);
   }
+  // How many files git sees changed in this conversation's folder (§D12),
+  // asked after each turn; it is the state line's way into the Changes panel.
+  if (ev.type === "result" && !ev.replayed && wantsTransport) countChanges(tab);
   // The notification centre (§D9): the same "nobody saw it" rule, widened to
   // any pane but the one the keyboard is in, and to a permission request.
   if (!ev.replayed && !(tab === focusedTab() && !document.hidden)) {
@@ -729,6 +739,17 @@ function noteTabEvent(ev, tab) {
       || (ev.type === "wrapper" && TAB_NEWS.has(ev.subtype))) {
     refreshTabs();
   }
+}
+
+function countChanges(tab) {
+  api("/api/changes?summary=1&tab=" + encodeURIComponent(tab))
+    .then((data) => {
+      if (data.state !== "ok") return;
+      renderInTab(tab, () => setStatus({ changes: data.count }));
+      const cell = cellOf(tab);
+      if (cell?.changes.isOpen()) cell.changes.refresh();
+    })
+    .catch(() => {});   // a count is a nicety; the panel itself says why
 }
 
 function titleOf(tab) {
@@ -866,6 +887,7 @@ function blank(cell) {
    rather than drawn twice. */
 function placeIn(cell, tab) {
   const entry = tabEntry(tab);
+  if (cell.tab !== tab) cell.changes?.close();   // it was about the last one
   const holder = cellOf(tab);
   if (holder && holder !== cell) blank(holder);
   if (cell.tab && cell.tab !== tab) park(cell);

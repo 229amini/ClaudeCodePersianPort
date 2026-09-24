@@ -222,6 +222,28 @@ conversation is placed in, or focused in, a pane, or the window comes back visib
 - **`.log.cv` (content-visibility) is written but not switched on.** It needs stick-to-bottom,
   `/export` and find-in-page shown to work on Windows Edge first.
 
+## The Changes panel (BRIDGEMIND-PORT.md §D12, P8, 2026-09-24)
+
+One new route, `GET /api/changes?tab=[&file=][&summary=1]` (`server.py list_changes` /
+`file_changes`), read-only git in the **session's** `history_cwd` — never a path from the request.
+`&file=` must be a name the listing itself returned (anything else is a 400 `unknown-file`, so a
+traversal never reaches git), and it is passed after `--` as an argument list, no shell. Counts are
+against `HEAD`, with a fallback for a repository that has no commit yet; an untracked file comes
+back as an all-added diff built from its text; over 200 KiB of diff answers `too-large` with a line
+count. `-z` is what keeps a Persian name or a name with a space whole — `core.quotepath=off`
+only matters for the non-`-z` forms. Covered in `test_units.py` against a real temp repository.
+
+Client: `static-terminal/js/changes.js`, one per pane in the pane's own `.changes` section; while
+open, `.cell.changes-open > .log` is `display: none`. The files this conversation's own edit tools
+named come first — `render.js` keeps `state.touched` from `tool_use` inputs (absolute, any slash,
+any case) and `mineOf()` matches them against git's repo-relative paths via the listing's `root`.
+A row opens to `renderUnifiedDiff()`, which builds the SAME `.dl` rows as `renderDiff()` through
+one shared `diffLine()`, so spec rule 8 covers both. Two traps met here: an empty last line after
+the final `\n` is not a context row (git's blank context line is `" "`), and a `.diff-stat` is
+`direction: ltr`, so its own logical margins point the wrong way inside an RTL row — the panel uses
+a physical `margin-right: auto`. The state line's «N فایل تغییر کرد» comes from a `summary=1` call
+after each non-replayed `result` (`app.js countChanges`). Gate: `test_changes.py` (15, stubbed).
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:

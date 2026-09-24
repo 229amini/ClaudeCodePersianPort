@@ -53,7 +53,7 @@ OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
-          "newsession-pair", "bell")
+          "newsession-pair", "bell", "changes")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -215,6 +215,36 @@ async function run() {
     turn("t3", 1);
     ev("t3", {type: "result", subtype: "success", is_error: false, duration_ms: 8000});
     ev("t3", {type: "command_lifecycle", command_uuid: "u-t31", state: "completed"});
+    return;
+  }
+  if (SCENE === "changes") {
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    turn("t1", 1);
+    const real = window.fetch;
+    window.fetch = (url, opts) => {
+      const u = String(url);
+      if (!u.startsWith("/api/changes")) return real(url, opts);
+      const file = new URL(u, location.href).searchParams.get("file");
+      const body = file
+        ? {state: "ok", path: file, diff: "--- a/x\n+++ b/x\n@@ -12,3 +12,4 @@\n" +
+           "   phBusy: \"در حال کار\",\n-  hintZwnj: \"نیم‌فاصله: Shift+Space\",\n" +
+           "+  phIdle: \"پیام خود را بنویسید — نیم‌فاصله: Shift+Space\",\n" +
+           "+  sendFailedRestored: \"ارسال نشد — متن به جعبهٔ پیام برگشت\",\n" +
+           "   sendFailed: \"ارسال ناموفق بود\",\n"}
+        : {state: "ok", root: "D:/projects/ClaudeCodePersianPort", files: [
+            {path: "static-terminal/strings.fa.js", status: "M", add: 2, del: 1},
+            {path: "static-terminal/js/render.js", status: "M", add: 48, del: 12},
+            {path: "wiki/یادداشت‌های طراحی.md", status: "?", add: 31, del: 0},
+            {path: "static-terminal/style.css", status: "M", add: 120, del: 4}]};
+      return Promise.resolve(new Response(JSON.stringify(body),
+        {headers: {"Content-Type": "application/json"}}));
+    };
+    APP.cells[0].changes.open();
+    await sleep(120);
+    document.querySelector(".ch-file").open = true;
     return;
   }
   if (SCENE === "bell") {

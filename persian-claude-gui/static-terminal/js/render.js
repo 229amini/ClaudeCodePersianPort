@@ -644,6 +644,9 @@ export const state = {
   // rule that a backstop settle may never buy one.
   recapEligible: false,
   toolCards: new Map(),  // tool_use_id -> body element
+  // Files this conversation's own edit tools named (§D12): the Changes panel
+  // lists them first. Filled from tool_use inputs, so a replay fills it too.
+  touched: new Set(),
   run: null,             // the consecutive-tool-call group being filled
   cycle: null,           // the [sentence][call] pair being assembled
   repeat: null,          // the run of identical pairs being counted
@@ -1194,7 +1197,7 @@ export function newRenderScope(background = false,
            thinkingPeek: null, thinkingText: "", pulse: null, outstanding: new Set(),
            queued: new Map(), returned: [], error: false,
            recapWorthy: false, recapEligible: false, toolCards: new Map(),
-           run: null, cycle: null, repeat: null,
+           run: null, cycle: null, repeat: null, touched: new Set(),
            status: {}, background, cell, tab, chrome: {} };
 }
 
@@ -1506,29 +1509,67 @@ export function diffOf(name, input) {
   };
 }
 
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+/* One row of a diff box. Shared by renderDiff() and renderUnifiedDiff() so a
+   tool's diff and git's diff are the same rows, and spec rule 8 covers both. */
+function diffLine(type, oldNo, newNo, text) {
+  const line = document.createElement("div");
+  line.className = "dl " + type;
+  if (type === "gap") return line;
+  line.append(label(type === "add" ? "" : String(oldNo), "dn"),
+              label(type === "del" ? "" : String(newNo), "dn"),
+              label(type === "add" ? "+" : type === "del" ? "−" : " ", "dm"));
+  // Per LINE, not per box: an Edit whose content is Persian must read
+  // right-to-left inside an LTR diff (spec rule 8, same as tool output).
+  const dt = label(text, "dt");
+  dt.setAttribute("dir", "auto");
+  line.append(dt);
+  return line;
+}
+
 function renderDiff(diff) {
   const box = document.createElement("div");
   box.className = "diff";
   let oldNo = 0, newNo = 0;
   for (const row of diff.rows.slice(0, DIFF_MAX_ROWS)) {
-    const line = document.createElement("div");
-    line.className = "dl " + row.type;
-    if (row.type === "gap") { box.append(line); continue; }
+    if (row.type === "gap") { box.append(diffLine("gap")); continue; }
     if (row.type !== "add") oldNo++;
     if (row.type !== "del") newNo++;
-    line.append(label(row.type === "add" ? "" : String(oldNo), "dn"),
-                label(row.type === "del" ? "" : String(newNo), "dn"),
-                label(row.type === "add" ? "+" : row.type === "del" ? "−" : " ", "dm"));
-    // Per LINE, not per box: an Edit whose content is Persian must read
-    // right-to-left inside an LTR diff (spec rule 8, same as tool output).
-    const text = label(row.text, "dt");
-    text.setAttribute("dir", "auto");
-    line.append(text);
-    box.append(line);
+    box.append(diffLine(row.type, oldNo, newNo, row.text));
   }
   if (diff.rows.length > DIFF_MAX_ROWS) {
     box.append(label(FA.diffTruncated.replace("{n}", diff.rows.length - DIFF_MAX_ROWS),
                      "dl meta"));
+  }
+  return box;
+}
+
+/* git's unified diff as the same rows (§D12). Hunk headers set the line
+   numbers and become a gap between hunks; the file headers are dropped. */
+export function renderUnifiedDiff(text) {
+  const box = document.createElement("div");
+  box.className = "diff";
+  let oldNo = 0, newNo = 0, rows = 0, hunks = 0;
+  for (const raw of String(text ?? "").split("\n")) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    if (hunk) {
+      if (hunks++) box.append(diffLine("gap"));
+      oldNo = Number(hunk[1]) - 1;
+      newNo = Number(hunk[2]) - 1;
+      continue;
+    }
+    // Headers before the first hunk, git's "\ No newline", and the empty
+    // string after the last newline - a blank CONTEXT line is " ", never "".
+    if (!hunks || !raw || raw.startsWith("\\")) continue;
+    if (rows++ >= DIFF_MAX_ROWS) continue;
+    const type = raw[0] === "+" ? "add" : raw[0] === "-" ? "del" : "same";
+    if (type !== "add") oldNo++;
+    if (type !== "del") newNo++;
+    box.append(diffLine(type, oldNo, newNo, raw.slice(1)));
+  }
+  if (rows > DIFF_MAX_ROWS) {
+    box.append(label(FA.diffTruncated.replace("{n}", rows - DIFF_MAX_ROWS), "dl meta"));
   }
   return box;
 }
@@ -1903,6 +1944,17 @@ export function setStatus(patch) {
   // re-derived by test_tui_vocab.py §10. A warning, so it is a word in the
   // line rather than a fourth row.
   if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) add(label(FA.slQuotaWarn, "sl-warn"));
+  // Files changed in this folder (§D12), counted by git after each turn. A
+  // button: it is the way into the Changes panel.
+  if (s.changes > 0) {
+    const cell = state.cell;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sl-changes";
+    btn.textContent = FA.slChanges.replace("{n}", faNum(s.changes));
+    btn.addEventListener("click", () => cell.changes?.open());
+    add(btn);
+  }
   if (row.childElementCount) statusline.append(row);
 
   // The account's quota, painted once in the sidebar footer from whichever
@@ -2218,6 +2270,10 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
+            if (EDIT_TOOLS.has(part.name)) {
+              const file = part.input?.file_path ?? part.input?.notebook_path;
+              if (typeof file === "string" && file) state.touched.add(file);
+            }
             const { details, body } = card("tool", toolSummary(part.name, part.input),
                                            { tool: part.name });
             body.append(renderToolDetail(part.name, part.input));

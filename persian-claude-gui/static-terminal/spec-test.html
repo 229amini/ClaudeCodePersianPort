@@ -109,7 +109,7 @@
 /* The agents drawer's render seam has no window alias (nothing else needs one),
    so the harness imports it. Module scripts execute in document order, so
    js/app.js has already evaluated this module — the import reuses it. */
-import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
+import { withRenderTarget, newRenderScope, state, renderUnifiedDiff } from "/static/js/render.js";
 /* The tab registry and the synchronous half of a switch. Importing the ENTRY
    module is safe from here and only from here: nothing in the module tree may
    import app.js (its body runs last — see the load-order note there), but this
@@ -2994,6 +2994,30 @@ check("a turn the CLI closed itself may buy a recap; one idle_sync guessed at ma
   recapReal.recapEligible === true && recapBackstop.recapEligible === false,
   "lifecycle settle → " + recapReal.recapEligible +
   " / idle_sync settle → " + recapBackstop.recapEligible);
+
+/* --- BRIDGEMIND-PORT.md §D12: git's diff is the same rows as a tool's ------
+   The Changes panel renders `git diff` through renderUnifiedDiff(), which must
+   build the rows renderDiff() builds, so rule 8 holds for it too: an LTR box,
+   each line deciding its own direction, numbers from the hunk header. */
+const udBox = renderUnifiedDiff(
+  "diff --git a/x.txt b/x.txt\n--- a/x.txt\n+++ b/x.txt\n@@ -7,2 +7,3 @@\n" +
+  " const x = 1;\n-قدیمی\n+این خط فارسی است\n+const y = 2;\n\\ No newline at end of file\n");
+specLog.append(udBox);
+const udLines = [...udBox.querySelectorAll(".dl")];
+const udText = (i) => udLines[i]?.querySelector(".dt");
+check("rule 8: git's unified diff is an LTR box of per-line rows",
+  getComputedStyle(udBox).direction === "ltr" && udLines.length === 4 &&
+  udLines.map((l) => l.classList[1]).join() === "same,del,add,add",
+  getComputedStyle(udBox).direction + " / " + udLines.map((l) => l.classList[1]).join());
+check("rule 8: a Persian line in git's diff resolves RTL, a Latin one LTR",
+  getComputedStyle(udText(2)).direction === "rtl" && getComputedStyle(udText(3)).direction === "ltr",
+  getComputedStyle(udText(2)).direction + " / " + getComputedStyle(udText(3)).direction);
+check("the hunk header sets the line numbers; the file headers are not rows",
+  udLines[0].querySelectorAll(".dn")[0].textContent === "7" &&
+  udLines[2].querySelectorAll(".dn")[1].textContent === "8" &&
+  !udBox.textContent.includes("+++") && !udBox.textContent.includes("No newline"),
+  udLines.map((l) => [...l.querySelectorAll(".dn")].map((n) => n.textContent).join("/")).join(" "));
+udBox.remove();
 
 /* --- BRIDGEMIND-PORT.md §D11.3: a long history renders its tail ------------
    LAST on purpose: renderInto() replaces the column's contents. Each chunk

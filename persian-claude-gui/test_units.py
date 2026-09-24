@@ -2187,6 +2187,63 @@ check("side_question is whitelisted (V2-PLAN §3.5)",
 check("apply_flag_settings is still NOT — that is the whole point of a whitelist",
       "apply_flag_settings" not in server.CONTROL_ALLOWED)
 
+print("list_changes / file_changes: the Changes panel's git (BRIDGEMIND-PORT.md §D12)")
+with tempfile.TemporaryDirectory() as tmp:
+    plain = Path(tmp) / "plain"
+    plain.mkdir()
+    check("a folder that is not a repository says so",
+          server.list_changes(plain) == {"state": "no-repo"})
+    saved_which = server.shutil.which
+    server.shutil.which = lambda name: None
+    try:
+        check("no git on the machine says so", server.list_changes(plain) == {"state": "no-git"})
+    finally:
+        server.shutil.which = saved_which
+    if shutil.which("git"):
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        def git(*args):
+            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        (repo / "a.txt").write_text("one\ntwo\n", encoding="utf-8")
+        (repo / "big.txt").write_text("x\n", encoding="utf-8")
+        git("add", ".")
+        git("commit", "-q", "-m", "one")
+        (repo / "a.txt").write_text("one\nدو\nthree\n", encoding="utf-8")
+        (repo / "یادداشت.txt").write_text("سلام\n", encoding="utf-8")
+        (repo / "b c.txt").write_text("x\ny\n", encoding="utf-8")
+        listing = server.list_changes(repo)
+        by = {f["path"]: f for f in listing.get("files", [])}
+        check("a repository lists its changes", listing.get("state") == "ok")
+        check("a modified file carries its counts against HEAD",
+              by.get("a.txt", {}).get("status") == "M"
+              and (by["a.txt"]["add"], by["a.txt"]["del"]) == (2, 1))
+        check("a Persian filename arrives as itself, not as octal escapes",
+              by.get("یادداشت.txt", {}).get("status") == "?"
+              and by["یادداشت.txt"]["add"] == 1)
+        check("a name with a space stays whole", "b c.txt" in by)
+        status, one = server.file_changes(repo, "a.txt")
+        check("one file's diff is git's own unified diff",
+              status == 200 and one.get("state") == "ok" and "+دو" in one.get("diff", "")
+              and "-two" in one["diff"])
+        status, new = server.file_changes(repo, "یادداشت.txt")
+        check("an untracked file comes back as an all-added diff",
+              status == 200 and "@@ -0,0 +1,1 @@" in new.get("diff", "")
+              and "+سلام" in new["diff"])
+        for bad in ("../plain", "a.txt ", "big.txt", str(repo / "a.txt")):
+            status, refused = server.file_changes(repo, bad)
+            check(f"a path not in the listing is refused: {bad!r}",
+                  status == 400 and refused == {"state": "unknown-file"})
+        (repo / "big.txt").write_text("y" * 80 + "\n" + ("z" * 99 + "\n") * 3000,
+                                      encoding="utf-8")
+        status, big = server.file_changes(repo, "big.txt")
+        check("a diff over the cap says how big it is instead of sending it",
+              status == 200 and big.get("state") == "too-large" and big.get("lines", 0) > 3000)
+    else:
+        print("  skip  git is not installed here")
+
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks"
       + (f" ({len(skipped)} Windows-only skipped)" if skipped else ""))
 sys.exit(1 if fails else 0)
