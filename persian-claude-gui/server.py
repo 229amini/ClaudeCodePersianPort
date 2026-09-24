@@ -516,13 +516,27 @@ def split_worktree(path_str: str) -> tuple[str, str] | None:
     return (match.group("parent"), match.group("name")) if match else None
 
 
+# Names `worktree: "auto"` has handed out in this process, per repo. The CLI
+# creates the worktree folder only AFTER spawn, so checking the disk alone
+# gives two quick opens (the new-session page's «گروه» launches four back to
+# back) the same agent-<n> -- two conversations in one worktree, which is the
+# thing a worktree exists to prevent. BRIDGEMIND-PORT.md §D8 / M5.
+_WORKTREE_HANDED: set[tuple[str, str]] = set()
+_WORKTREE_LOCK = threading.Lock()
+
+
 def next_worktree_name(cwd: Path) -> str:
     """What `worktree: "auto"` means: the smallest agent-<n> this repo has not
-    got yet. No name prompt — the audience does not know what a worktree is."""
-    n = 1
-    while worktree_path(cwd, f"agent-{n}").exists():
-        n += 1
-    return f"agent-{n}"
+    got yet, on disk or handed out earlier in this process. No name prompt —
+    the audience does not know what a worktree is."""
+    repo = str(cwd).lower()
+    with _WORKTREE_LOCK:
+        n = 1
+        while (worktree_path(cwd, f"agent-{n}").exists()
+               or (repo, f"agent-{n}") in _WORKTREE_HANDED):
+            n += 1
+        _WORKTREE_HANDED.add((repo, f"agent-{n}"))
+        return f"agent-{n}"
 
 
 def resolve_worktree(cwd: Path, raw) -> tuple[str | None, str | None]:

@@ -2094,6 +2094,25 @@ with tempfile.TemporaryDirectory() as tmp:
     server.worktree_path(repo, "agent-2").mkdir(parents=True)
     check("and skips the ones that exist", server.resolve_worktree(repo, "auto")
           == ("agent-3", None))
+    # M5 (BRIDGEMIND-PORT.md §D8): the CLI makes the folder only after spawn,
+    # so a second quick "auto" must not get agent-3 again off the disk alone.
+    check("a name handed out is not handed out twice before its folder exists",
+          server.resolve_worktree(repo, "auto") == ("agent-4", None))
+    other = Path(tmp) / "other"
+    (other / ".git").mkdir(parents=True)
+    check("the reservation is per repo", server.resolve_worktree(other, "auto")
+          == ("agent-1", None))
+    picked, lock = [], threading.Lock()
+    def _grab():
+        name = server.next_worktree_name(other)
+        with lock:
+            picked.append(name)
+    workers = [threading.Thread(target=_grab) for _ in range(8)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    check("eight concurrent opens get eight names", len(set(picked)) == 8)
     check("worktree_path is the CLI's own layout",
           server.worktree_path(repo, "agent-1")
           == repo / ".claude" / "worktrees" / "agent-1")

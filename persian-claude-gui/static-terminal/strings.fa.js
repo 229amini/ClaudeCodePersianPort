@@ -463,6 +463,42 @@ window.FA = {
   paneEqualize: "هم‌اندازه کردن قاب‌ها",
   openInNewPane: "باز کردن در قاب تازه",
   noRoomForPane: "جا برای قاب دیگری نیست؛ گفتگو در همین قاب باز شد و قبلی در فهرست کنار است.",
+
+  /* The new-session page (BRIDGEMIND-PORT.md §D8). One action for "N at once":
+     which folder, how many, shared or a worktree each, an optional task.
+     «جفت» is a builder and a reviewer in the same folder; the reviewer is put
+     in plan posture, so the CLI itself refuses its edits, and its task opens
+     with `presetReviewerBrief`. */
+  nsTitle: "گفتگوی تازه",
+  nsPreset: "پیش‌تنظیم",
+  nsPresetSolo: "تنها",
+  nsPresetPair: "جفت",
+  nsPresetGroup: "گروه",
+  nsPresetCustom: "دلخواه",
+  nsFolder: "پوشه",
+  nsPickOther: "انتخاب پوشهٔ دیگر…",
+  nsCount: "چند گفتگو",
+  nsIsolation: "جداسازی",
+  nsIsoShared: "همه در یک پوشه",
+  nsIsoWorktree: "هر کدام در شاخهٔ جدای خودش",
+  nsNotGit: "این پوشه مخزن گیت نیست، پس شاخهٔ جدا ندارد",
+  nsPairShared: "در «جفت» بازبین باید فایل‌های سازنده را ببیند، پس هر دو در یک پوشه‌اند",
+  nsTask: "کار مشترک (اختیاری)",
+  nsTaskPlaceholder: "اگر بنویسید، برای همهٔ گفتگوها فرستاده می‌شود",
+  nsPreviewTitle: "راه‌اندازی می‌شود",
+  nsSlotWorktree: "شاخهٔ خودکار",
+  nsSlotShared: "همان پوشه",
+  nsRoleBuilder: "سازنده",
+  nsRoleReviewer: "بازبین (فقط می‌خواند)",
+  nsSlotTask: "و کار مشترک برای هر کدام فرستاده می‌شود",
+  nsCancel: "انصراف (Esc)",
+  nsLaunch: "شروع (Ctrl+Enter)",
+  nsLaunching: "در حال راه‌اندازی…",
+  nsTooMany: "با گفتگوهای باز فعلی، از شش گفتگو بیشتر می‌شود",
+  nsNoRoom: "این پنجره برای این تعداد قاب جا ندارد",
+  nsFailed: "راه‌اندازی نشد؛ هیچ گفتگویی باز نماند",
+  nsStepFailed: "گفتگو باز شد، ولی کار مشترک یا سطح اجازه‌اش فرستاده نشد",
+  presetReviewerBrief: "تو بازبین هستی: هیچ فایلی را تغییر نده. کار گفتگوی دیگر را در همین پوشه بخوان و گزارش بده.",
   /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
      says is the ACTION it will take — not the state it is in: a control named
      after its own state is read as a label and pressed by accident. It follows
