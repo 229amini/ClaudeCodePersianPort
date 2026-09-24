@@ -1091,6 +1091,18 @@ export function newRenderScope(background = false,
            status: {}, background, cell, tab, chrome: {} };
 }
 
+/* How many withRenderTargets are on the stack. The swap below is only sound
+   if nothing re-points `state`/`log` while fn() runs, and a render CAN move
+   focus: showPermission() focuses the dialog it opens, `focusin` fires
+   synchronously, and app.js focusCell() would stash and adopt scopes in the
+   middle of the swap - which the finally below then undoes under the new
+   focus (pcg-0o7). focusCell() reads this and waits until the swap is over. */
+let targetDepth = 0;
+
+export function inRenderTarget() {
+  return targetDepth > 0;
+}
+
 export function withRenderTarget(target, scope, fn) {
   const savedLog = log;
   const savedStatusline = statusline;
@@ -1101,9 +1113,11 @@ export function withRenderTarget(target, scope, fn) {
   // has a status line to paint — which is what setStatus() already checks.
   statusline = scope.cell?.statusline ?? null;
   Object.assign(state, scope);
+  targetDepth += 1;
   try {
     fn();
   } finally {
+    targetDepth -= 1;
     Object.assign(scope, state);   // what the replay built stays with the scope
     log = savedLog;
     statusline = savedStatusline;

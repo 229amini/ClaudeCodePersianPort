@@ -26,6 +26,35 @@ three document-level chords (shift+tab, Esc, ctrl+o/t) dispatch to the
 focused cell rather than binding per instance. `/split 1|2|4` is the only
 layout command; any other number is refused as text, never sent to the CLI.
 
+### A render may move focus; `focusCell()` waits for it (pcg-0o7, 2026-09-24)
+
+`state` mirrors the focused column's scope, and `withRenderTarget` points `state`, `log` and
+`statusline` at another scope for one synchronous render, then puts back what it saved. That
+swap is only sound if nothing re-points those three while `fn()` runs — and a render can:
+`permission_request` for a conversation in another column calls `showPermission()`, which opens
+**that column's** dialog and `.focus()`es it. `focusin` fires synchronously, so the capture
+listener ran `focusCell()` in the middle of the swap:
+
+1. `stashFocusedScope()` copied `state` — at that moment the *asking* conversation's scope —
+   over the scope of the column being left;
+2. `adoptFocusedScope()` re-pointed `state`, and `setFocusedCell()` re-pointed `log`;
+3. the render's `finally` then restored the **old** column's `state` and `log` under the new focus.
+
+So the left column's running turn read idle (its ledger now held the other conversation's
+`outstanding`), and — worse, and not in the original report — the newly focused conversation's
+next lines were written into the column the keyboard had just left. The sidebar dot and the
+per-cell dot were both wrong because `tabFacts()` reads the same corrupted scopes, which is why
+they agreed and why the bug was first filed against `tabFacts()`.
+
+The fix is at the choke point, not at the dialog: `render.js` counts nested
+`withRenderTarget`s (`inRenderTarget()`), and `focusCell()` re-queues itself with
+`queueMicrotask` while one is open. `fn()` is synchronous, so the microtask cannot run before the
+swap is over; the dialog still takes the keyboard, the bookkeeping just follows one tick later.
+Not "don't focus the dialog": that is a UX decision, and any other focus-moving render
+(`composer.restore`, a future dialog) would reopen the same hole. Both editions carried the
+identical code. Gated in `test_split.py` §6b — negative-tested: without the fix, both assertions
+fail at every size on both editions.
+
 ## Parking, not closing
 
 Shrinking the grid parks the removed cells' tabs — server session stays

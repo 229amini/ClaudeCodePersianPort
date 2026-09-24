@@ -34,6 +34,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   Also: how to point
   the Chrome extension at the running app (it works as of 2026-08-05 — hold an SSE connection or
   the watchdog kills the server first), and why headless screenshots are a dead end here.
+  **2026-09-24:** running the headless gates on Linux Chromium (`PCG_BROWSER` + a
+  `--no-sandbox` wrapper) and which failures are that environment's own baseline.
 - [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The
   seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched). Since v2.3 it also
@@ -73,6 +75,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   inside a cell, the perm dialog no longer modal). **2026-09-10:** the terminal edition got that
   control too, plus the 48 px rail that takes a 4-up cell from 378 px to 490 px, and the per-cell
   identity row — with the three accessibility traps collapsing a sidebar sets.
+  **2026-09-24 (pcg-0o7):** why `focusCell()` defers itself while a `withRenderTarget` is open
+  — a dialog focusing itself mid-render used to file one conversation's state under another.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered
