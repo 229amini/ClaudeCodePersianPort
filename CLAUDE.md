@@ -572,6 +572,14 @@ transcript folder uses `transcript_dir()`'s `/` rule). The remaining Linux-only 
 come from one Chromium 141 stale-layout bug on the composer after `.cell.home` is removed;
 `wiki/dev-environment.md` §"Headless gates on Linux" has the proof. **The bead list is empty.**
 
+**2026-09-24 — the BridgeMind port is designed, not built.** `BRIDGEMIND-PORT.md` §D0–§D14 is the
+terminal edition's next design (user decisions: groups 1–3 in full, plus the Changes panel and app
+zoom; no light theme; **terminal edition only**), epic `pcg-bmp` with one bead per phase P0–P10. It
+supersedes `TERMINAL-REDESIGN.md` §2.4/§3/§5. Two facts it corrects: the key cheat-sheet is
+`.composer-hint`, not the status line, and streaming never re-parsed markdown per frame. Every
+phase closes on gates **and** a shot set the user has seen; P0's Windows measurements (chords in
+app-mode, per-origin zoom/storage, a variable Vazirmatn) come before P3, P9 and the font choice.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is

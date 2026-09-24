@@ -1,5 +1,10 @@
 # TERMINAL-REDESIGN.md — the terminal edition, redrawn (design + phased build plan)
 
+> **Superseded in part, 2026-09-24.** `BRIDGEMIND-PORT.md` §D is the current design for the
+> terminal edition (epic `pcg-bmp`). It replaces §2.4 (density and the "nothing hidden" status
+> stack), §3 (the «۱ | ۲ | ۴» control) and §5 (tokens). §1 (sidebar on the right, the rail) and
+> §4 (the status model) still stand. The rest is history: read it for the why, not the what.
+
 Bead `pcg-qdj`. Architect pass, 2026-09-10. Design only — no code. Skill: `ui-ux-pro-max`
 (stack: plain HTML/CSS, no framework) under the calm `emil-design-eng` direction;
 `gpt-taste` / `high-end-visual-design` deliberately not used.
