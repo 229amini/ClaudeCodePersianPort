@@ -164,7 +164,8 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   out.slArrows = statusline.querySelectorAll(".sl-posture .sl-arrow").length;
   out.slPostureText = statusline.querySelector(".sl-posture-text")?.textContent ?? "";
   out.slHint = statusline.querySelector(".sl-posture .sl-hint")?.textContent ?? "";
-  out.slFacts = statusline.querySelector(".sl-facts")?.textContent ?? "";
+  out.slFacts = statusline.querySelector(".sl-state")?.textContent ?? "";
+  out.slModelTitle = statusline.querySelector(".sl-model")?.title ?? "";
   out.faAcceptEdits = FA.slPostureAcceptEdits;
   out.faAsk = FA.slPostureAsk;
   out.faHint = FA.slPostureHint;
@@ -461,8 +462,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
         out.append((name, bool(ok), detail))
 
     order = m.get("slOrder") or []
-    check("the status line is a stack: custom line, posture row, facts row",
-          len(order) == 3 and "sl-posture" in order[1] and "sl-facts" in order[2],
+    # BRIDGEMIND-PORT.md §D5: the facts row is gone - the machine's own line,
+    # then ONE state line that starts with the posture sentence.
+    check("the status line is the custom line, then one state line",
+          len(order) == 2 and "sl-posture" in order[1] and "sl-state" in order[1],
           " | ".join(order) or "empty")
 
     check("the machine's own statusLine output is the FIRST line",
@@ -484,11 +487,14 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('slPostureAfterWrapper')} / {m.get('slArrowsAfterWrapper')} arrow")
 
     facts = m.get("slFacts", "")
-    check("the facts row carries what the four chips used to say",
-          all(x and x in facts for x in (m.get("faModel"), m.get("faEffortLabel"),
-                                         m.get("faStyleLabel")))
-          and "claude-opus-5" in facts,
-          facts[:80] or "no facts row")
+    body = m.get("statusBody", "")
+    check("the state line names the model; effort and style moved to /status",
+          "Opus 5" in facts and m.get("slModelTitle") == "claude-opus-5"
+          and not any(x and x in facts for x in (m.get("faEffortLabel"),
+                                                 m.get("faStyleLabel")))
+          and all(x and x in body for x in (m.get("faEffortLabel"),
+                                            m.get("faStyleLabel"))),
+          facts[:80] or "no state line")
 
     check("a settle while the window is hidden raises ONE notification",
           m.get("notifiedLive") == 1 and m.get("notifyTitle") == m.get("faNotify"),

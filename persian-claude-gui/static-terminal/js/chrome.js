@@ -51,6 +51,7 @@ function cui(cell) {
       projChip: q("proj-chip"), projChipName: q("proj-chip-name"),
       home: q("home"), welTitle: q("wel-title"), welCwdLabel: q("wel-cwd-label"),
       welCwd: q("wel-cwd"), welTips: q("wel-tips"), banner: q("replay-banner"),
+      emptyLine: q("empty-line"), emptyBtn: q("empty-btn"),
     };
   }
   return cell.chromeUI;
@@ -327,6 +328,13 @@ function paintCells() {
     u.cellDot.dataset.status = status;
     u.cellDot.setAttribute("aria-label", FA.tabStatus[status]);
     u.cellDot.title = FA.tabStatus[status];
+    // An empty pane says one thing (§D5): with nothing open anywhere it is the
+    // window's home; with conversations open elsewhere it is a free slot.
+    if (u.emptyLine) {
+      const home = !openTabs.length;
+      u.emptyLine.textContent = home ? FA.homeLine : FA.paneEmpty;
+      u.emptyBtn.textContent = home ? FA.homeBtn : FA.paneEmptyBtn;
+    }
   }
 }
 
@@ -1111,15 +1119,21 @@ function actionButton(svg, title) {
    is newer than the Edge we are guaranteed on the target machine.
 
    `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
-export function kebabMenu(items) {
-  const btn = actionButton(SVG.dots, FA.moreActions);
+/* `items` is an array, or a function returning one: the pane menu (§D5) names
+   live values - the model, the cost - so it is rebuilt on every open. A row
+   menu passes a plain array and is built once, as before. `anchor` lets a
+   caller open the menu under a button of its own instead of the ⋯ made here. */
+export function kebabMenu(items, anchor = null) {
+  const btn = anchor ?? actionButton(SVG.dots, FA.moreActions);
   btn.classList.add("kebab-btn");   // the row's context menu opens THIS one
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
   menu.popover = "auto";
   const disarmers = [];
-
-  for (const item of items) {
+  const build = () => {
+  menu.replaceChildren();
+  disarmers.length = 0;
+  for (const item of (typeof items === "function" ? items() : items)) {
     if (!item) {
       menu.append(document.createElement("hr"));
       continue;
@@ -1167,10 +1181,13 @@ export function kebabMenu(items) {
     });
     menu.append(row);
   }
+  };
+  build();
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();   // the row underneath must not also activate
     const rect = btn.getBoundingClientRect();
+    if (typeof items === "function") build();
     for (const disarm of disarmers) disarm();
     menu.showPopover();
     // Measured only once it is in the top layer, so a menu near the bottom

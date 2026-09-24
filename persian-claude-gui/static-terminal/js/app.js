@@ -49,12 +49,13 @@ import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, state, resetTurn, clearPulse,
   newRenderScope, withRenderTarget, inRenderTarget, initTranscript, applyChrome,
-  setFocusedCell,
+  setFocusedCell, shortModel,
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
-  setChrome, refreshProjects, backfillTab, refreshWhen,
+  setChrome, refreshProjects, backfillTab, refreshWhen, kebabMenu,
 } from "./chrome.js";
+import { runWindowCommand } from "./commands.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
 import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
@@ -160,7 +161,84 @@ function makeCell(root) {
   cell.controls = makeControls(root, cell);
   cell.blankScope = newRenderScope(false, cell, "");
   initCellChrome(cell);
+  initPaneHeader(cell);
   return cell;
+}
+
+/* THE PANE HEADER'S THREE CONTROLS (BRIDGEMIND-PORT.md §D5): ⋯ the pane's
+   menu, ⤢ fullscreen, ✕ take it off screen. Wired here and not in chrome.js
+   because two of the three act on the grid, which this module owns. */
+function initPaneHeader(cell) {
+  const q = (cls) => cell.root.querySelector("." + cls);
+  const menuBtn = q("pane-menu");
+  if (!menuBtn) return;                 // spec-test.html: no pane header
+  const name = (el, text) => {
+    el.title = text;
+    el.setAttribute("aria-label", text);
+  };
+  name(menuBtn, FA.paneMenu);
+  name(q("pane-zoom"), FA.paneZoom);
+  name(q("pane-close"), FA.paneClose);
+  // The menu names live values (model, cost), so it is rebuilt on every open.
+  const [, menu] = kebabMenu(() => paneMenuItems(cell), menuBtn);
+  cell.root.append(menu);               // a popover: its parent only owns its lifetime
+  q("pane-zoom").addEventListener("click", () => toggleZoom(cell));
+  q("pane-close").addEventListener("click", () => takeOffScreen(cell));
+  // An empty pane's one button. The pointerdown above has already put the
+  // keyboard in this pane, so «گفتگوی جدید» lands here.
+  q("empty-btn")?.addEventListener("click", () => document.getElementById("btn-new")?.click());
+}
+
+function paneMenuItems(cell) {
+  const s = (cell === focusedCell() ? state : scopeOf(cell))?.status ?? {};
+  const items = [
+    { icon: "", text: FA.paneModel.replace("{name}", s.model ? shortModel(s.model) : "—"),
+      run: () => cell.controls.openModelPicker() },
+    { icon: "", text: FA.paneEffort, run: () => cell.controls.openEffortPicker() },
+    { icon: "", text: FA.paneStyle, run: () => cell.controls.openStylePicker() },
+    { icon: "", text: FA.panePosture, run: () => cell.controls.openPosturePicker() },
+  ];
+  if (typeof s.cost === "number") {
+    items.push({ note: FA.paneCost.replace("{cost}", "$" + s.cost.toFixed(2)) });
+  }
+  items.push(null,
+    { icon: "", text: FA.paneBranch, run: () => runWindowCommand("branch", "", cell) },
+    null,
+    { icon: "", text: FA.paneCloseChat, danger: true, run: () => closeTab(cell.tab) });
+  return items;
+}
+
+/* FULLSCREEN (§D5): one pane fills the stage; the others stay in the DOM and
+   keep receiving events (hidden, never parked). Leaving it is the same button,
+   or Esc - but only when Esc would otherwise do nothing (see the Esc handler
+   at the foot of this file): a stop always wins. */
+let zoomed = null;
+
+function toggleZoom(cell) {
+  const grid = document.getElementById("grid");
+  if (!grid) return;
+  const on = !!cell && zoomed !== cell && cells.length > 1;
+  zoomed = on ? cell : null;
+  for (const one of cells) {
+    one.root.classList.toggle("zoomed", one === zoomed);
+    const btn = one.root.querySelector(".pane-zoom");
+    if (btn) {
+      const text = one === zoomed ? FA.paneUnzoom : FA.paneZoom;
+      btn.title = text;
+      btn.setAttribute("aria-label", text);
+      btn.setAttribute("aria-pressed", String(one === zoomed));
+    }
+  }
+  if (on) grid.dataset.zoomed = "true";
+  else delete grid.dataset.zoomed;
+  if (on) focusCell(cells.indexOf(cell), { focusInput: true });
+}
+
+/* ✕ on a pane: the conversation leaves the screen and stays open (§D5) -
+   the sidebar still lists it, one click brings it back. */
+function takeOffScreen(cell) {
+  if (zoomed) toggleZoom(null);
+  blank(cell);
 }
 
 /* One more column, from the template index.html carries. Cell order is DOM
@@ -197,6 +275,7 @@ export function setSplit(n, keepRail) {
   // keepRail is restoreLayout's: the override it just read out of storage IS
   // the memory of a press, so this call must not expire it.
   if (!keepRail) railOverride = null;
+  if (zoomed) toggleZoom(null);   // a layout change ends fullscreen
   applyRail(want);
   while (cells.length > want) {
     const cell = cells[cells.length - 1];
@@ -917,6 +996,19 @@ initTranscript(focusedCell);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   const cell = focusedCell();
+  // Fullscreen exits on Esc only when Esc would otherwise do NOTHING (§D5):
+  // not while a turn runs (that Esc is a stop, the TUI's rule), not while a
+  // dialog, popup or the key sheet is open, and not with text in the prompt.
+  if (zoomed && cell && !cell.composer.isBusy()
+      && !document.querySelector(":popover-open")
+      && !document.getElementById("keys")?.open
+      && !cell.root.querySelector("dialog[open], .slash-popup:not([hidden]), "
+                                  + ".file-popup:not([hidden])")
+      && !cell.root.querySelector(".input")?.value) {
+    e.preventDefault();
+    toggleZoom(null);
+    return;
+  }
   if (!cell?.composer.isBusy()) return;
   if (document.querySelector(":popover-open")) return;
   if (document.getElementById("keys")?.open) return;
@@ -961,6 +1053,16 @@ document.addEventListener("keydown", (e) => {
   if (!cell.controls.cyclePosture()) return;
   e.preventDefault();   // or focus moves on the way past
 });
+
+/* While Alt is held, every pane shows its digit (§D5): the `[۱]` badges read
+   as debug labels at rest, and Alt is the moment their number is the answer. */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Alt") document.body.classList.add("alt-held");
+});
+document.addEventListener("keyup", (e) => {
+  if (e.key === "Alt") document.body.classList.remove("alt-held");
+});
+window.addEventListener("blur", () => document.body.classList.remove("alt-held"));
 
 /* Alt+1..4 moves the keyboard between columns. `e.code`, never `e.key`: a
    Persian keyboard layout puts «۱» in `e.key` and the chord would never match

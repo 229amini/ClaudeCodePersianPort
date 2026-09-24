@@ -861,6 +861,7 @@ body.rail #projects,
 body.rail .tab-proj,
 body.rail .wt-chip,
 body.rail .tab-row .tab-close,
+body.rail .row-state,
 body.rail .side-ver { display: none; }
 
 body.rail .side-head {
@@ -1128,7 +1129,9 @@ body.rail .rail-icon { transform: scaleX(-1); }
    Latin one still resolves LTR, and either is isolated from the chip beside it
    (spec rule 2). The one elastic part of the row. */
 .topbar-title {
-  flex: 1 1 auto;
+  /* Shrinks, never grows (§D5): the project chip belongs beside the title,
+     and the controls take the free space at the row's end. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1150,6 +1153,98 @@ body.rail .rail-icon { transform: scaleX(-1); }
   color: var(--fg-muted);
   font-size: .74em;
 }
+
+/* THE PANE HEADER'S CONTROLS (BRIDGEMIND-PORT.md §D5): ⋯ ⤢ ✕ at the row's
+   END. Quiet at rest, full on pane hover or when the keyboard is in the pane;
+   never display:none, so Tab still reaches them. */
+.pane-actions {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-inline-start: auto;
+  opacity: .55;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.cell:hover .pane-actions,
+.cell:focus-within .pane-actions,
+.cell.zoomed .pane-actions { opacity: 1; }
+.pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.pane-btn:hover { background: var(--surface-2); color: var(--fg); }
+.pane-btn:active { transform: scale(.97); }
+.pane-btn[aria-pressed="true"] { color: var(--fg); background: var(--surface-2); }
+/* Fullscreen needs a second pane to leave; at one pane there is nothing to fill. */
+#grid[data-split="1"] .pane-zoom { display: none; }
+
+/* The digit is Alt+N's name. It shows WHILE Alt is held (js/app.js), not at
+   rest - at rest it read as a debug label (analysis item 6). */
+.cell-badge { display: none; }
+body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
+
+/* FULLSCREEN (§D5): the zoomed pane fills the grid; the others stay in the
+   DOM, keep their logs and keep receiving events - only their box goes. */
+#grid[data-zoomed] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+#grid[data-zoomed] > .cell:not(.zoomed) { display: none; }
+
+/* A PANE WITH NO CONVERSATION (§D5): one line, one button. No header controls,
+   no welcome box, no prompt that can send nowhere and no status line. The
+   elements stay (the per-cell part counts in test_split.py hold) - only their
+   boxes go. */
+.empty-pane { display: none; }
+.cell.blank .empty-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  text-align: center;
+}
+.cell.blank .welcome,
+.cell.blank .pane-actions,
+.cell.blank .topbar-title,
+.cell.blank > .composer,
+.cell.blank > .statusline { display: none; }
+.empty-line { margin: 0; color: var(--fg-muted); font-size: var(--fs-ui); }
+.empty-btn {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-row);
+  background: var(--raise);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.empty-btn:hover { background: var(--surface-2); }
+/* With several panes the TUI's banner is enough; its tips are the `?` sheet. */
+#grid:not([data-split="1"]) .wel-tips { display: none; }
+
+/* The stop button, calm (§D5): a small outlined square in the failure colour
+   rather than a large coral disc - it is a control, not an alarm. */
+.comp-box .stop {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--st-err);
+}
+.comp-box .stop:hover { background: var(--danger-bg); }
 
 .replay-banner {
   display: flex;
@@ -2210,15 +2305,6 @@ button.round {
   font-family: inherit;     /* a folder name is a name, not code */
 }
 
-/* Under the prompt line and INSIDE the two rules, where the terminal keeps its
-   own footer hints. Start-aligned, not centred: with the box gone there is no
-   box to centre it in, and the line it belongs to starts at the mark. */
-.composer-hint {
-  font-size: .74em;
-  text-align: start;
-  padding-top: 5px;
-  min-height: 1.4em;
-}
 
 /* --- attachments ------------------------------------------------------------- */
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
@@ -2620,9 +2706,9 @@ button.round {
 .statusline {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
-  padding: 5px 16px 8px;
+  padding: 4px 14px 7px;
   color: var(--fg-muted);
   /* §2.4: .74em/1.6 -> .72em/1.45. Every row still ships — the clamp below is
      a HEIGHT, never a `display: none` (pcg-6nf.11) — they are simply set
@@ -2639,7 +2725,7 @@ button.round {
   flex-wrap: wrap;
   gap: 4px 14px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   max-width: 100%;
 }
 .statusline .sl-item { display: flex; gap: 6px; align-items: center; }
@@ -2710,6 +2796,50 @@ button.round {
   opacity: .95;
 }
 .statusline .sl-custom span:not(:empty) { padding-block: 1px; }
+
+/* THE STATE LINE (BRIDGEMIND-PORT.md §D5): one line that never wraps. The
+   posture sentence keeps its size; the tail - the TUI's "shift+tab" hint -
+   is the part that gives up characters when a quarter-window pane is narrow. */
+.statusline .sl-state {
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.statusline .sl-state > * { flex: none; }
+.statusline .sl-state .sl-hint {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.statusline .sl-sep { opacity: .45; }
+.statusline .sl-model { color: var(--fg-muted); }
+
+/* The account's five-hour quota, once, in the sidebar footer (§D5). */
+.side-quota {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 2px;
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
+}
+.side-quota progress {
+  appearance: none;
+  flex: 1;
+  block-size: 4px;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.side-quota progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--fg-muted) 25%, transparent);
+}
+.side-quota progress::-webkit-progress-value { background: var(--fg-muted); }
+.side-quota progress[data-level="warn"]::-webkit-progress-value { background: var(--st-wait); }
+.side-quota progress[data-level="high"]::-webkit-progress-value { background: var(--st-err); }
+body.rail .side-quota { display: none; }
 
 /* --- permission dialog -------------------------------------------------------- */
 .perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: var(--wt-title); }
@@ -3327,7 +3457,6 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      - the prompt's own growth: a message may still be several lines, it just
        may no longer eat the transcript to be so. */
 @container (max-height: 460px) {
-  .composer-hint { display: none; }
   /* THE STATUS STACK: clamped, not thinned (pcg-6nf.11, measured 2026-09-08).
      Every row but the posture line and the warning used to be `display: none`
      here, which is the one thing the web edition's own density fix refused to

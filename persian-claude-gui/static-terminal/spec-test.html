@@ -748,7 +748,9 @@ function ctxMeterValue() {
     .find(i => i.querySelector(".sl-label")?.textContent === window.STRINGS.slContext + ":")
     ?.querySelector("progress")?.value;
 }
-window.renderEvent({ type: "wrapper", subtype: "usage", context: 55 });
+// 65, not 55: since BRIDGEMIND-PORT.md §D5 the state line shows the context
+// only from 60%, and a meter that is not drawn cannot prove it kept its value.
+window.renderEvent({ type: "wrapper", subtype: "usage", context: 65 });
 check("context notice stays away at a real, moderate percentage", ctx.hidden);
 const ctxMeterBefore = ctxMeterValue();
 window.renderEvent({

@@ -139,12 +139,12 @@ Grouped by the phase that wrote them. Keys are `static/strings.fa.js`.
 
 | Group | Keys |
 |---|---|
-| v2.2 — the column | `toolResultLines` `expandHint` `hintExpand` `compacted` `compactedTokens` `pastePlaceholder` `pastePlaceholderShort` `pasteDrop` |
+| v2.2 — the column | `toolResultLines` `expandHint` `compacted` `compactedTokens` `pastePlaceholder` `pastePlaceholderShort` `pasteDrop` |
 | v2.3 — `!` shell rows | `shellExit` `shellNoOutput` `shellFailed` |
 | v2.3 — Ctrl+R history search | `searchLabel` `searchNone` `searchHint` |
 | v2.3 — Ctrl+G external editor | `editorWaiting` `editorFailed` |
 | v2.3 — the `@` menu | `fileNone` |
-| v2.3 — the `?` key sheet | `hintKeys` `keysTitle` `keysClose` `keySend` `keyNewline` `keyStop` `keyHistory` `keySearch` `keySlash` `keyFiles` `keyBash` `keyEditor` `keyClear` `keyExpand` `keyTodos` `keyThinking` `keyModel` `keyPosture` `keyZwnj` `keyPaste` `keyQueue` `keySheet` `keyDialogPick` |
+| v2.3 — the `?` key sheet | `keysTitle` `keysClose` `keySend` `keyNewline` `keyStop` `keyHistory` `keySearch` `keySlash` `keyFiles` `keyBash` `keyEditor` `keyClear` `keyExpand` `keyTodos` `keyThinking` `keyModel` `keyPosture` `keyZwnj` `keyPaste` `keyQueue` `keySheet` `keyDialogPick` |
 | v2.4 — the numbered dialogs | `permHint` `permFeedbackPlaceholder` `permFeedbackMoved` `askHint` `pickerHint` |
 | v2.5 — the welcome box | `welcomeTitle` `welcomeCwd` `welcomeNoProject` `welTipKeys` |
 | v2.5 — the status line | `slPostureAsk` `notifyDone` |

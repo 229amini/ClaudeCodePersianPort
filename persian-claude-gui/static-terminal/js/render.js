@@ -1654,6 +1654,9 @@ function renderRaw(event) {
    `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
    table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
 const QUOTA_WARN_AT = 95;
+// The context appears on the state line only from here on (§D5); the notice
+// above the prompt keeps its own, higher bar (composer.js WARN_AT).
+const CONTEXT_SHOW_AT = 60;
 
 function meter(pct) {
   const wrap = document.createElement("span");
@@ -1763,48 +1766,60 @@ export function setStatus(patch) {
     statusline.append(line);
   }
 
-  // SECOND LINE: the posture, in the TUI's words, where the pill used to be.
-  const posture = postureRow(s.posture ?? s.mode);
-  if (posture) statusline.append(posture);
-
-  /* THIRD LINE: everything the four chips used to say, plus what the bar
-     already carried. Muted, one line, wrapping (V2-PLAN §3.4 rows 3–4). The
-     `.sl-item` / `.sl-label` shape is unchanged — spec-test.html reads the
-     context meter through it. */
-  const items = [
-    [FA.slModel, s.model && label(s.model, "mono")],
-    [FA.slEffort, s.effort && label(effortLabel(s.effort))],
-    [FA.slStyle, s.style && label(styleLabel(s.style))],
-    [FA.slFolder, s.cwd && pathEl(s.cwd)],
-    [FA.slContext, s.context !== undefined && meter(s.context)],
-    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
-    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
-  ];
-
-  const facts = document.createElement("div");
-  facts.className = "sl-line sl-facts";
-  for (const [name, valueEl] of items) {
-    if (!valueEl) continue;
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(label(name + ":", "sl-label"), valueEl);
-    facts.append(wrap);
+  /* THE STATE LINE (BRIDGEMIND-PORT.md §D5): one line, state only. The
+     posture sentence first, word for word the TUI's, then only what has
+     something to say right now: the model, and the context once it is past
+     CONTEXT_SHOW_AT, and the quota warning. Everything the old facts row
+     carried has one home elsewhere - effort, style, folder, cost and session
+     id in `/status` and the pane menu, the account's quota meter once in the
+     sidebar footer - so this line never wraps and never scrolls. */
+  const row = postureRow(s.posture ?? s.mode) ?? document.createElement("div");
+  row.classList.add("sl-line", "sl-state");
+  const add = (el) => {
+    if (row.childElementCount) row.append(label("·", "sl-sep"));
+    row.append(el);
+  };
+  if (s.model) {
+    const model = label(shortModel(s.model), "sl-model");
+    model.title = s.model;
+    add(model);
   }
-  if (facts.childElementCount) statusline.append(facts);
-
-  /* FOURTH LINE, and only when there is something to warn about: the five-hour
-     window is nearly spent. The threshold is the binary's own default — `0.95`
-     in the bundle, re-derived by test_tui_vocab.py §10 — and not a number
-     chosen here. The two richer plans raise their own bar (0.99, 0.9975), but
-     which plan this account is on never reaches the wrapper, so the window
-     warns at the conservative one. */
-  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) {
-    const warn = document.createElement("div");
-    warn.className = "sl-line sl-warn";
-    warn.append(label(FA.slQuotaWarn));
-    statusline.append(warn);
+  // Context only once it is worth a glance. `.sl-item`/`.sl-label` is the
+  // shape spec-test.html reads the meter through, kept on purpose.
+  if (s.context !== undefined && s.context >= CONTEXT_SHOW_AT) {
+    const item = document.createElement("span");
+    item.className = "sl-item";
+    item.append(label(FA.slContext + ":", "sl-label"), meter(s.context));
+    add(item);
   }
+  // The five-hour window nearly spent - the binary's own 0.95 default,
+  // re-derived by test_tui_vocab.py §10. A warning, so it is a word in the
+  // line rather than a fourth row.
+  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) add(label(FA.slQuotaWarn, "sl-warn"));
+  if (row.childElementCount) statusline.append(row);
+
+  // The account's quota, painted once in the sidebar footer from whichever
+  // conversation the keyboard is in (it is the same account in every pane).
+  const quota = document.getElementById("side-quota");
+  if (quota && onFocused() && s.quota !== undefined) {
+    quota.replaceChildren(label(FA.sideQuota, "sl-label"), meter(s.quota));
+    quota.hidden = false;
+  }
+}
+
+/* «Opus 5.5» for `claude-opus-5-5`, the way the TUI names a model in its own
+   status line; the full id stays in the tooltip. A name that does not look like
+   a Claude model id is shown as it came. */
+export function shortModel(id) {
+  if (!/^claude-[a-z]+(-|$)/.test(String(id))) return String(id);
+  const bare = String(id).replace(/^claude-/, "");
+  const suffix = (bare.match(/\[[^\]]*\]$/) || [""])[0];
+  const parts = bare.replace(/\[[^\]]*\]$/, "").split("-").filter((x) => !/^\d{8}$/.test(x));
+  const family = parts.shift() || bare;
+  if (!/^[a-z]+$/.test(family)) return String(id);
+  const version = parts.filter((x) => /^\d+$/.test(x)).join(".");
+  return family[0].toUpperCase() + family.slice(1) + (version ? " " + version : "")
+    + (suffix ? " " + suffix : "");
 }
 
 /* --- ctrl+o: the TUI's transcript mode --------------------------------------
