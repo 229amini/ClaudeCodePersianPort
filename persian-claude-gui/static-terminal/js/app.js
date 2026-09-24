@@ -185,11 +185,19 @@ function addCell() {
    columns' tabs — the server tab stays open and the sidebar still lists it,
    because a layout key must never close a conversation — and hands any
    permission those columns were asking to a dialog that still exists. */
-export function setSplit(n) {
+export function setSplit(n, keepRail) {
   const grid = document.getElementById("grid");
   const tpl = document.getElementById("cell-tpl");
   if (!grid || !tpl) return false;      // spec-test.html: no grid, not our verb
   const want = n === 2 ? 2 : n === 4 ? 4 : 1;
+  // The sidebar's width follows the split, and a split change expires whatever
+  // the toggle last said (§1). BEFORE the columns are stamped, so the track
+  // and the column count change in one layout rather than two — the same
+  // ordering §9 flags for restoreLayout, applied at the source instead.
+  // keepRail is restoreLayout's: the override it just read out of storage IS
+  // the memory of a press, so this call must not expire it.
+  if (!keepRail) railOverride = null;
+  applyRail(want);
   while (cells.length > want) {
     const cell = cells[cells.length - 1];
     park(cell);                          // its transcript goes back to its buffer
@@ -204,9 +212,87 @@ export function setSplit(n) {
   }
   grid.dataset.split = String(want);
   saveLayout();
+  paintSplitControl(want);
   if (focused >= cells.length) focused = cells.length - 1;
   applyFocus({ focusInput: false });
   return true;
+}
+
+/* --- the sidebar's segmented control ----------------------------------------
+
+   Ported verbatim from the web edition (static/js/app.js paintSplitControl),
+   which is the point: it is the same control over the same window fact. The
+   terminal edition reached the grid through `/split` alone, and the user's
+   own read was that a non-technical reader cannot find a layout that has no
+   visible affordance (TERMINAL-REDESIGN.md §3). A declared departure from
+   V2-PLAN §2's "no chips": this is chrome about the WINDOW, not a mirror of a
+   CLI capability.
+
+   It POSTS NOTHING. How many conversations are on screen is a fact about this
+   window, not about the server -- the tabs it parks stay open exactly as they
+   were, and /api/tab/activate still follows the keyboard through applyFocus. */
+const SPLIT_OPTIONS = [1, 2, 4];
+
+function paintSplitControl(active) {
+  const seg = document.getElementById("split-seg");
+  if (!seg) return;
+  if (!seg.children.length) {
+    seg.setAttribute("aria-label", FA.splitLabel ?? "");
+    for (const n of SPLIT_OPTIONS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "seg";
+      b.dataset.split = String(n);
+      b.textContent = n.toLocaleString("fa-IR");
+      b.title = (FA.splitOptionTitle ?? "").replace("{n}", b.textContent);
+      b.addEventListener("click", () => setSplit(n));
+      seg.append(b);
+    }
+  }
+  for (const b of seg.children) {
+    b.setAttribute("aria-pressed", String(Number(b.dataset.split) === active));
+  }
+}
+
+/* --- the rail (TERMINAL-REDESIGN.md §1) --------------------------------------
+
+   The sidebar has two widths: the tree (272px) and a 48px rail carrying the
+   mark, «+», the split segments stacked, one status dot per open conversation
+   and the help link. At 4-up the tree was spending ~120px per column on empty
+   space — (1052-288)/2 = 382px a column, against (1052-48-1)/2 = 501px with
+   the rail, which is finally past the 496px wiki/grid.md records as the width
+   that first broke this shell.
+
+   So the width FOLLOWS THE SPLIT rather than being a preference the reader has
+   to find: `/split 2|4` collapses, `/split 1` opens. The toggle in the head is
+   the override, and it lasts until the next split change — the layout the user
+   just asked for wins over a press they made three layouts ago.
+
+   `null` means "no press to honour"; a boolean is the toggle's answer. It is
+   never read anywhere else: everything downstream reads `body.rail`, which is
+   also the only thing CSS can see. */
+let railOverride = null;
+
+function applyRail(split) {
+  const rail = railOverride ?? split !== 1;
+  document.body.classList.toggle("rail", rail);
+  const btn = document.getElementById("btn-rail");
+  if (!btn) return;                     // spec-test.html has no sidebar
+  // The button is named after WHAT IT DOES NEXT, not after the state it is in:
+  // a control labelled with its own state reads as a label and gets pressed by
+  // accident. `title` for the pointer, `aria-label` for the screen reader —
+  // there is no text inside it to name it, and this is a control surface for a
+  // reader who never opens a terminal.
+  const word = FA[rail ? "sidebarExpand" : "sidebarCollapse"] ?? "";
+  btn.title = word;
+  btn.setAttribute("aria-label", word);
+  btn.setAttribute("aria-expanded", String(!rail));
+}
+
+function toggleRail() {
+  railOverride = !document.body.classList.contains("rail");
+  applyRail(cells.length);
+  saveLayout();
 }
 
 export const tabs = new Map();   // tab -> {node, scope, chrome, cell}
@@ -652,7 +738,12 @@ const LAYOUT_KEY = "pcg.layout";
 function saveLayout() {
   try {
     sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(
-      { split: cells.length, cells: cells.map((one) => one.tab || "") }));
+      { split: cells.length, cells: cells.map((one) => one.tab || ""),
+        // The EFFECTIVE width, not the override: a boolean that disagrees with
+        // the saved split is itself the record that the toggle was pressed, so
+        // one field carries both facts and an older record simply reads as
+        // "follow the split" (§1).
+        rail: document.body.classList.contains("rail") }));
   } catch (err) {
     // No store, no memory of the layout. Everything else still works.
   }
@@ -674,7 +765,15 @@ function restoreLayout(alive) {
     return 0;            // absent, or something else wrote over the key
   }
   if (!saved || !Array.isArray(saved.cells)) return 0;
-  setSplit(saved.split);
+  // §9: the class goes on BEFORE setSplit, or a restored 4-up is laid out
+  // twice — once against a 272px sidebar and again against 48. A stored value
+  // that disagrees with the stored split is the toggle's press; one that
+  // agrees needs no override, so a record written before this existed (no
+  // `rail` key at all) restores as plain follow-the-split.
+  const rail = !!saved.rail;
+  if (rail !== (saved.split !== 1)) railOverride = rail;
+  document.body.classList.toggle("rail", rail);
+  setSplit(saved.split, true);
   let placed = 0;
   for (const [at, tab] of saved.cells.entries()) {
     // POSITIONAL: cell 2 gets what was in cell 2. A conversation the server no
@@ -769,8 +868,12 @@ if (events) events.onerror = () => setStatus({});
    run, after initChrome() and after every module is live. spec-test.html has no
    #grid and no template — the harness IS the cell, with `document.body` as its
    root (an ELEMENT, so `cell.root.classList` and `.querySelector` both work). */
-if (document.getElementById("grid")) addCell();
-else cells.push(makeCell(document.body));
+if (document.getElementById("grid")) {
+  addCell();
+  paintSplitControl(1);
+  document.getElementById("btn-rail")?.addEventListener("click", toggleRail);
+  applyRail(1);   // names the toggle before anything has changed the split
+} else cells.push(makeCell(document.body));
 
 setPermFocus(focusedCell);
 setFocusedCell(focusedCell());

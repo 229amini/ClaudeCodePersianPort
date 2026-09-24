@@ -907,7 +907,7 @@ function actionButton(svg, title) {
    is newer than the Edge we are guaranteed on the target machine.
 
    `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
-function kebabMenu(items) {
+export function kebabMenu(items) {
   const btn = actionButton(SVG.dots, FA.moreActions);
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
@@ -979,7 +979,14 @@ function kebabMenu(items) {
     // we write here. `right: auto` frees `left` to actually apply.
     menu.style.insetInlineStart = "";
     menu.style.right = "auto";
-    menu.style.left = Math.max(6, Math.min(rect.left, innerWidth - menu.offsetWidth - 6)) + "px";
+    // Anchored by its RIGHT edge to the button's right edge, not by its left
+    // to the button's left: a `⋯` is ~28px and a menu ~200, so left-anchoring
+    // threw the whole panel across the row and, near a window edge, the clamp
+    // below then pinned it to the window instead of to the control that
+    // opened it. Still clamped, so a menu wider than the room to its start
+    // side lands 8px in rather than off-screen.
+    menu.style.left = Math.max(8, Math.min(rect.right - menu.offsetWidth,
+                                           innerWidth - menu.offsetWidth - 8)) + "px";
   });
 
   return [btn, menu];

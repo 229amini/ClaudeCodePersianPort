@@ -9,6 +9,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
 - [editions.md](editions.md) — **two editions, one engine (2026-09-05).** Web «کلاد فارسی» in
   `static/`, terminal «کلاد فارسی — ترمینال» in `static-terminal/`, picked by `--ui` /
   `PCG_UI`; which tests gate which edition; why the shortcut once said v1.1.0 on the wrong tree.
+  Its sidebar section is now **right-edge** (moved back 2026-09-10) and carries the `--side-w`
+  rule, the two-inset `[popover]` trap, and the gate that measured the wrong box for a commit.
 - [cli-stream-json-findings.md](cli-stream-json-findings.md) — **read first.** Measured CLI
   contract on 2.1.221: required flags, every event type seen on the wire, and the permission
   mechanism that actually works (it is not the one in the plan).
@@ -68,7 +70,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   became `@container` on `.cell`. Also condenses what a cell reuses from MA1 (per-tab status)
   and MA2 (git worktrees), the two open items headless Edge could not settle, and what MA4
   changed for the web edition (the segmented `۱ | ۲ | ۴` control, `positionMenu` measuring
-  inside a cell, the perm dialog no longer modal).
+  inside a cell, the perm dialog no longer modal). **2026-09-10:** the terminal edition got that
+  control too, plus the 48 px rail that takes a 4-up cell from 378 px to 490 px, and the per-cell
+  identity row — with the three accessibility traps collapsing a sidebar sets.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

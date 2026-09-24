@@ -90,6 +90,46 @@ It moved in-flow as `.perm`, opened with `show()` (MA4-T0), with the
 Esc/backdrop behaviour `showModal()` used to give for free now hand-built
 in `perm.js`.
 
+## Terminal edition: the visible control, and the rail (2026-09-10)
+
+The grid worked in the terminal edition from MA3 and the user never found it: `/split` was the
+only way in, and `help.html` did not mention it. A feature a non-technical user cannot reach is
+not shipped. The web edition's segmented `۱ | ۲ | ۴` control is ported into the terminal
+sidebar on a labelled row (`paintSplitControl()`, called from `setSplit()` and at boot,
+`aria-pressed` tracking the active split). No window bar: it would cost ~36 px of height off
+every cell at once, and the sidebar head costs the grid nothing.
+
+**The rail is what makes 4-up usable.** A 272 px sidebar beside four columns is 27% of a
+1052 px window spent on chrome. `body.app.rail` collapses it to 48 px — mark, expand toggle,
+«+», the split control stacked, a waiting-count ring, one status dot per open conversation,
+help — and the 4-up cell goes **378 px → 490 px** at 1052x711, past the ~496 px this file
+records as where the shell first broke. The width FOLLOWS the split (2|4 collapses, 1 expands);
+the head toggle overrides that until the next split change; both ride the existing
+`sessionStorage` record `pcg.layout`, so a reload restores them and a relaunch forgets them,
+exactly like the split itself. Apply `body.rail` inside `restoreLayout()` **before**
+`setSplit()`, or a restored 4-up lays out twice.
+
+Three things that are not obvious from the CSS:
+
+- **Collapsing must not `display: none` a label.** A `display: none` label is not in the
+  accessibility tree, which would leave the rail's dots and its two icon buttons unnamed. The
+  four labels are clipped instead (`position: absolute; 1x1px; clip-path: inset(50%)`), which
+  keeps them.
+- **The rail dot's own `title` wins the hit test** over the row it belongs to.
+  `pointer-events: none` on the dot; its `role="img"` / `aria-label` stay.
+- **The waiting badge's text is a sentence, not a number** («۲ منتظر تأیید»). The ring draws
+  digits from `data-count` via `::before` — presentation only — while the sentence stays in the
+  DOM at `font-size: 0` so it remains the accessible name.
+
+Per-cell identity landed with it: `[۱] ● title project-chip`, the mono path moved out of the
+topbar into the chip's `title` and the status line. The dot is `tabStatus()` (`chrome.js`) and
+the CSS that already painted the sidebar rows — the only thing that had been missing was a
+per-cell paint site (`paintCells()` in `repaintTabs()`). No server change. Density work took the
+transcript from 58/59% of a 4-up cell to 64/65%, bought from padding and type scale, never by
+hiding a status field — `test_split.py`'s "holds more than it shows" assertion exists to make
+that non-negotiable, and `LOG_SHARE` is keyed by edition (`terminal: 60, web: 40`) because the
+two editions measure differently and one shared number red-gates the other.
+
 ## Open items
 
 - `/split 4` under roughly 1000px window width is unproven headlessly:

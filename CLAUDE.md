@@ -509,6 +509,46 @@ the same day as obsolete: no `.ps1` router is wired anywhere (`settings.json` in
 one, which never deletes the other side's flag), and the LANG_RULE now lives in the global
 CLAUDE.md rather than in a hook injection. **The bead list is empty.**
 
+**2026-09-10 — the terminal edition, redrawn against a commercial reference.** The user's read
+after living with it: it does not resemble the app they had shown me, «the terminal cannot open
+4 at once side by side», and the sidebar belongs on the right in a Persian window. The reference
+is **BridgeMind One** (`wiki/bridgemind-one.md`) — and measuring it settled the contradiction in
+the report: **it has no tiling grid at all**, its multi-agent surface is tabs with status dots.
+So the design takes its navigation model and density and keeps our tiles. Its app-shell CSS is
+Brotli-compressed inside the Tauri binary and is not recoverable; what is measurable is its
+structure (already in the wiki) plus the token language of its embedded auth pages — near-black
+ground, `rgba(255,255,255,.04)` surfaces on `.07` borders, 13.5px/1.5, −0.01em. Coral stays;
+its blue does not. Design and phased plan: **`TERMINAL-REDESIGN.md`** at the repo root, epic
+`pcg-qdj`.
+
+**«4 at once» was never missing — it was unreachable.** `test_split.py` passed 141/141 on the
+terminal edition the whole time; `/split` was the only way in and `help.html` never mentioned
+it. The web edition's segmented `۱ | ۲ | ۴` control is ported into the sidebar; no window bar,
+which would cost ~36 px of height off four cells at once. The sidebar moved to grid column 1
+(= right under RTL) with `--side-w` as the single width knob, and **collapses to a 48 px rail**
+that follows the split — a 4-up cell at 1052x711 goes **378 px → 490 px**, past the ~496 px
+`wiki/grid.md` records as where the shell first broke. Every cell gained an identity row
+`[۱] ● title project-chip` with a live status dot; the mono path left the topbar for the chip's
+tooltip. **No server change** — `tabStatus()` and its CSS already computed and painted exactly
+that model for sidebar rows, and only the per-cell paint site was missing. Density took the
+transcript from 58/59% of a 4-up cell to 64/65%, bought from padding and type scale; hiding a
+status field is forbidden by `test_split.py`'s own "holds more than it shows" assertion, and
+`LOG_SHARE` is keyed by edition now because one shared number red-gates the other.
+
+Read `wiki/editions.md` §"The terminal edition's sidebar" and `wiki/grid.md` §"Terminal edition:
+the visible control, and the rail" before touching either shell. Three things there cost real
+time: a `[popover]` does not move by changing one inset (the UA `inset: 0` over-constrains the
+box — set the opposite one to `auto`), a `display: none` label leaves a collapsed rail's buttons
+unnamed in the accessibility tree (clip, do not hide), and **`test_layout.py` was capturing its
+sidebar rect after the split-4 block**, so the moment the rail existed the right-edge and
+drawer-overlap assertions silently retargeted onto the 48 px rail and kept passing. Gates after
+the three built phases: terminal spec **179/179**, split **152/152**, layout 3 sizes, reload
+**9/9**, column 31, shell 39, keys 60, dialogs 31, strings 24, vocab 82, `test_no_console`; web
+unmoved at spec **212/212**, split 152/152, reload 8/8. Open: `pcg-0o7` — `tabFacts()` reads the
+focused tab's live state but every other tab's written-back copy, so an unfocused cell reports
+idle while it is working; the sidebar dot and the cell dot are wrong together, which is why they
+agree and no gate caught it.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is

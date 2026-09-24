@@ -62,7 +62,9 @@ SESSION_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 SAID = "پیامی که روی دیسک نوشته شده"
 ANSWERED = "پاسخی که باید پس از بارگذاری دوباره دیده شود"
 
-CHECKS = 2 + 2 * 3      # the setup pair, then three per page load
+# The setup pair, three per page load, and - terminal only - the rail on the
+# reload (TERMINAL-REDESIGN.md §1); the web edition has no rail to restore.
+CHECKS = 2 + 2 * 3 + (1 if EDITION == "terminal" else 0)
 
 
 def transcript_lines(cwd: Path) -> str:
@@ -94,6 +96,7 @@ const log = () => cell().querySelector(".log");
     for (let i = 0; i < 60 && !log().childElementCount; i++) await sleep(100);
     out.rows = log().childElementCount;
     out.home = cell().classList.contains("home");
+    out.rail = document.body.classList.contains("rail");
     out.text = log().textContent.replace(/\\s+/g, " ").trim().slice(0, 400);
   } catch (err) {
     out.error = String((err && err.stack) || err);
@@ -108,15 +111,25 @@ const log = () => cell().querySelector(".log");
 # deferred module, so app.js sees the stub rather than the real constructor.
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
+# Phase 3 (TERMINAL-REDESIGN.md §1): the sidebar's rail state rides in the same
+# `pcg.layout` record as the split, so it has to come back the same way. Each
+# load here is a fresh browser process and sessionStorage dies with the last
+# one, so the second load is handed the record the first one would have
+# written: `rail` true against `split` 1, which is only ever the toggle's own
+# press (the width follows the split otherwise) and is therefore also the case
+# that fails if restoreLayout drops the override and just re-derives it.
+RAIL_SEED = ('<script>try { sessionStorage.setItem("pcg.layout", JSON.stringify('
+             '{split: 1, cells: [""], rail: true})); } catch (e) {}</script>')
 
-def write_probe() -> None:
+
+def write_probe(seed: str = "") -> None:
     """The probe page IS index.html - anything else would drift away from it."""
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     page = page.replace("{{VERSION}}", "0.0.0").replace("{{TITLE}}", "probe")
     marker = '<body class="app">'
     if marker not in page:
         sys.exit("index.html no longer opens with " + marker)
-    page = page.replace(marker, marker + NO_SSE, 1)
+    page = page.replace(marker, marker + NO_SSE + seed, 1)
     PROBE.write_text(page.replace("</body>", PROBE_JS + "\n</body>", 1),
                      encoding="utf-8")
 
@@ -166,6 +179,9 @@ def main() -> int:
         # TWICE. The first load is the window the resume opened; the second is
         # the reload the bead is about, and it must be no different.
         for at in (1, 2):
+            # The reload is also the load that carries a saved layout.
+            if at == 2 and EDITION == "terminal":
+                write_probe(RAIL_SEED)
             try:
                 m = measure(edge, f"{base}/static/{PROBE.name}?t={token}", 1280, 800)
             except Exception as err:                  # noqa: BLE001
@@ -184,7 +200,10 @@ def main() -> int:
             if SAID not in m["text"] or ANSWERED not in m["text"]:
                 bad.append(f"{where}: the rows are not this session's "
                            f"({m['text'][:120]!r})")
-            print(f"  {where}: {m['rows']} rows, home={m['home']}")
+            if at == 2 and EDITION == "terminal" and not m.get("rail"):
+                bad.append(f"{where}: the sidebar came back as the tree - the "
+                           "rail state in pcg.layout did not survive the reload")
+            print(f"  {where}: {m['rows']} rows, home={m['home']}, rail={m.get('rail')}")
     finally:
         stop.set()
         # Leave no project behind: server.py lists every ~/.claude/projects entry

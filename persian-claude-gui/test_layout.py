@@ -127,6 +127,37 @@ SHELL = {
             '            squashed: rows4.filter((r) => r.scrollHeight > r.clientHeight + 1)'
             '                           .length,'
             '            clipped: clipped()};'
+            '}'),
+        # Phase 3 (TERMINAL-REDESIGN.md §1). The split4 block above has already
+        # collapsed the sidebar - that IS the rule, the width follows the split
+        # - so this seeds four conversations in four different states so there
+        # are dots to measure, reads the rail, then presses the toggle and
+        # reads it again. setOpenTabs() is chrome.js's own paint entry: no
+        # server, no tab machinery, exactly what /api/tabs would have driven.
+        rail_test=(
+            'if (split4) {'
+            '  const CH = await import("/static/js/chrome.js");'
+            '  CH.setOpenTabs([0, 1, 2, 3].map((i) => '
+            '      ({tab: "t" + i, session_id: null, cwd: "C:\\\\p" + i})), "t0",'
+            '    {t1: {running: true}, t2: {unread: 3}, t3: {error: true}});'
+            '  await sleep(150);'
+            '  const tg = document.getElementById("btn-rail");'
+            '  rail = {on: document.body.classList.contains("rail"),'
+            '          side: box(document.getElementById("sidebar")),'
+            '          dots: [...document.querySelectorAll("#open-tabs .tab-dot")].map(box),'
+            '          toggle: box(tg), name: tg.getAttribute("aria-label") || "",'
+            '          expanded: tg.getAttribute("aria-expanded"),'
+            '          clipped: clipped()};'
+            '  tg.click();'
+            '  await sleep(200);'
+            '  rail.opened = {on: document.body.classList.contains("rail"),'
+            '                 side: box(document.getElementById("sidebar")),'
+            '                 name: tg.getAttribute("aria-label") || "",'
+            '                 expanded: tg.getAttribute("aria-expanded")};'
+            # ...and back to what a 4-up actually ships with, so the boxes at
+            # the foot of the probe are not read against a hand-opened tree.
+            '  tg.click();'
+            '  await sleep(150);'
             '}')),
 }
 SH = SHELL[EDITION]
@@ -240,6 +271,46 @@ const SCROLLERS = new Set(%SCROLLERS%);
   let drawer = null;
   %DRAWERTEST%
 
+  // THE KEBAB (TERMINAL-REDESIGN.md §1, Phase 4). Both editions, one function.
+  // No gate in this repo had ever OPENED a kebab menu - test_layout opens the
+  // PICKER, which is a different function - and that is exactly how the
+  // 2026-09-09 defect (5a5b019: a [popover]'s UA `inset: 0` leaves left, right
+  // and width all definite, and `direction: rtl` then drops `left`, so every
+  // menu pinned itself to the window's right edge) survived on looking
+  // plausible for a month. kebabMenu() is exported so this can reach it.
+  //
+  // Two placements, because the position line has two halves: a button with
+  // room to its start side must get a menu anchored to ITS right edge, and a
+  // button hard against the start edge must still get one fully on screen.
+  const CHK = await import("/static/js/chrome.js");
+  const openKebab = async (place) => {
+    const host = document.createElement("div");
+    host.style.cssText = "position: fixed; " + place;
+    document.body.append(host);
+    const [btn, menu] = CHK.kebabMenu([
+      {icon: "", text: "یک", run: () => {}},
+      null,
+      {icon: "", text: "دو", danger: true, run: () => {}},
+    ]);
+    host.append(btn, menu);
+    // .sess-act is `display: none` until li:hover / li:focus-within, and a
+    // display:none element measures 0x0 - so a synthetic click would put the
+    // menu at the window corner and this would look like a positioning bug
+    // that is really a probe artifact (wiki/dev-environment.md).
+    btn.style.display = "inline-flex";
+    btn.click();
+    await sleep(80);
+    const out = {open: menu.matches(":popover-open"),
+                 btn: box(btn), menu: box(menu),
+                 items: menu.querySelectorAll(".kebab-item").length};
+    menu.hidePopover();
+    host.remove();
+    return out;
+  };
+  // Mid-window: nothing to clamp against on either side.
+  const kebab = {roomy: await openKebab("top: 140px; left: 300px;"),
+                 edge: await openKebab("top: 220px; left: 0;")};
+
   let overlap = 0;
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
@@ -254,6 +325,11 @@ const SCROLLERS = new Set(%SCROLLERS%);
   // page as the split4 block leaves it. That is how the picker started
   // reporting itself half its width in a window nothing had resized.
   const menuBox = box(menu);
+  // ...and the sidebar's, for the same reason: since Phase 3 the pane has TWO
+  // widths and the split4 block below collapses it to the rail, so a box read
+  // at the foot of this file measures the rail rather than the tree. The
+  // right-edge and drawer assertions are about the tree.
+  const sideBox = box(document.getElementById("sidebar"));
   const clippedAll = home.clipped.concat(clipped());
 
   // MA3-T2: the same window, split into four columns. Every box measured above
@@ -263,19 +339,26 @@ const SCROLLERS = new Set(%SCROLLERS%);
   let split4 = null;
   %SPLIT4%
 
+  // Phase 3 (TERMINAL-REDESIGN.md §1): the sidebar's width follows the split,
+  // so the block above already collapsed it. This measures what a 4-up
+  // actually ships with — the rail — and then presses the toggle, which is the
+  // override the same section promises.
+  let rail = null;
+  %RAILTEST%
+
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify({
     view: [innerWidth, innerHeight],
     // The layout viewport: innerWidth still counts a classic scrollbar, and
     // the shell is laid out inside what is left of it.
     clientW: document.documentElement.clientWidth,
-    sidebar: box(document.getElementById("sidebar")),
+    sidebar: sideBox,
     stage: box(document.getElementById("stage")),
     compBox: home.compBox,
     home: home.home,
     comp: compNow, chips,
     menu: menuBox,
     rows: rows.length,
-    drawer, split4,
+    drawer, kebab, split4, rail,
     overlap, squashed,
     clipped: clippedAll,
   }) + "ENDPROBE";
@@ -358,7 +441,8 @@ def write_probe() -> None:
               .replace("%MENUID%", SH["menu_id"])
               .replace("%ROWSEL%", SH["row_sel"])
               .replace("%DRAWERTEST%", SH["drawer_test"])
-              .replace("%SPLIT4%", SH["split4"]))
+              .replace("%SPLIT4%", SH["split4"])
+              .replace("%RAILTEST%", SH.get("rail_test", "")))
     PROBE.write_text(page.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
 
 
@@ -472,21 +556,24 @@ def main() -> int:
             # sidebar is not what the report was about.
             if m["menu"]["w"] < min(240, view - 40):
                 failures.append(f"{where}: the picker is only {m['menu']['w']}px wide")
-            # E2: the terminal edition puts the sidebar on the LEFT (VS Code
-            # placement) while the page stays dir="rtl", so the pane is pinned
-            # to grid column 2. Checked at the widest size only - the two
+            # TERMINAL-REDESIGN.md §1 (user decision 2026-09-10): the terminal
+            # edition puts the sidebar on the RIGHT - grid column 1, which is
+            # the right edge under dir="rtl". This REPLACES E2's left-hand
+            # placement; it is the same measurement taken at the other edge,
+            # not a weaker assertion. Checked at the widest size only - the two
             # narrow breakpoints only change the track's width, and every
             # off-window assertion above already covers what they can break.
             if EDITION == "terminal" and (width, height) == SIZES[0]:
                 side, stage = m["sidebar"], m["stage"]
-                if abs(side["x"]) > 1:
-                    failures.append(f"{where}: the sidebar is not on the left edge "
-                                    f"(x={side['x']})")
-                if abs(stage["x"] + stage["w"] - m["clientW"]) > 1:
-                    failures.append(f"{where}: the stage does not reach the right edge "
-                                    f"(x={stage['x']} w={stage['w']} of {m['clientW']})")
-                # F5: the drawer used to open with inset-inline-end, which is
-                # physical LEFT under dir=rtl - the same edge as the sidebar.
+                if abs(side["x"] + side["w"] - m["clientW"]) > 1:
+                    failures.append(f"{where}: the sidebar is not on the right edge "
+                                    f"(x={side['x']} w={side['w']} of {m['clientW']})")
+                if abs(stage["x"]) > 1:
+                    failures.append(f"{where}: the stage does not start at the left edge "
+                                    f"(x={stage['x']})")
+                # F5: the drawer's insets follow the sidebar's side, and one
+                # property alone never moves a [popover] - the opposite inset
+                # must be `auto` (wiki/editions.md).
                 drawer = m.get("drawer")
                 if not drawer:
                     failures.append(f"{where}: the agent drawer probe did not run")
@@ -494,6 +581,50 @@ def main() -> int:
                           or side["x"] + side["w"] <= drawer["x"]):
                     failures.append(f"{where}: the agent drawer overlaps the sidebar "
                                     f"(drawer={drawer} sidebar={side})")
+            # THE KEBAB (Phase 4), both editions - the function is shared and
+            # so is this. Until now nothing in the suite had ever opened one:
+            # test_layout opens the PICKER, a different function, which is
+            # precisely how 5a5b019's "every menu pins itself to the window's
+            # right edge" lived for a month behind code that read correctly.
+            kb = m.get("kebab")
+            if not kb:
+                failures.append(f"{where}: the kebab pass did not run")
+            else:
+                for case in ("roomy", "edge"):
+                    k = kb[case]
+                    if not k["open"] or k["menu"]["w"] <= 0 or k["items"] != 2:
+                        failures.append(f"{where} (kebab/{case}): the menu did not open "
+                                        f"({k})")
+                        continue
+                    # On screen, always - the clamp's whole job.
+                    if (k["menu"]["x"] < 0 or k["menu"]["y"] < 0
+                            or k["menu"]["x"] + k["menu"]["w"] > m["clientW"] + 1
+                            or k["menu"]["y"] + k["menu"]["h"] > m["view"][1] + 1):
+                        failures.append(f"{where} (kebab/{case}): the menu is off the "
+                                        f"window ({k['menu']} of {m['clientW']})")
+                    # ...and never START further along the row than the control
+                    # that opened it - which is what the window-pinned menu did.
+                    if k["menu"]["x"] > k["btn"]["x"] + k["btn"]["w"] + 1:
+                        failures.append(f"{where} (kebab/{case}): the menu opens past its "
+                                        f"button ({k['menu']} vs {k['btn']})")
+                    # It hangs BELOW its button (or above it, near the bottom).
+                    if abs(k["menu"]["y"] - (k["btn"]["y"] + k["btn"]["h"] + 4)) > 1 and \
+                       abs(k["menu"]["y"] + k["menu"]["h"] + 4 - k["btn"]["y"]) > 1:
+                        failures.append(f"{where} (kebab/{case}): the menu is not attached "
+                                        f"to its button vertically ({k['menu']} vs {k['btn']})")
+                # The fix itself: with room to its start side the menu's RIGHT
+                # edge is the button's right edge, not the window's.
+                roomy = kb["roomy"]
+                gap = (roomy["menu"]["x"] + roomy["menu"]["w"]) - \
+                      (roomy["btn"]["x"] + roomy["btn"]["w"])
+                if abs(gap) > 1:
+                    failures.append(f"{where} (kebab): the menu is not right-anchored to "
+                                    f"its button ({gap:+}px; menu={roomy['menu']} "
+                                    f"btn={roomy['btn']})")
+                print(f"  {where} (kebab): menu {roomy['menu']['w']}px, right edge "
+                      f"{gap:+}px off the button's, clamped case at x="
+                      f"{kb['edge']['menu']['x']}")
+
             # MA3-T2 / MA4-T2: and the same window with four columns in it. A
             # wide window is no longer one wide column, so the whole measurement
             # above runs again in a quarter of it - that quarter is ~484px,
@@ -529,6 +660,56 @@ def main() -> int:
                     print(f"  {where} (split 4): cell {s4['cell']['w']}x{s4['cell']['h']}, "
                           f"picker {s4['menu']['w']}x{s4['menu']['h']}, "
                           f"prompt {s4['comp']['w']}px")
+
+            # THE RAIL (TERMINAL-REDESIGN.md §1, Phase 3). A 4-up is what the
+            # rail exists for, so it is measured in the 4-up the block above
+            # just built: the pane collapses because the SPLIT changed, every
+            # affordance left on it still has a box inside the window, and the
+            # toggle - the promised override - opens it again.
+            if EDITION == "terminal" and (width, height) == SIZES[0]:
+                r = m.get("rail")
+                if not r:
+                    failures.append(f"{where}: the rail pass did not run")
+                else:
+                    if not r["on"]:
+                        failures.append(f"{where} (rail): /split 4 did not collapse the "
+                                        "sidebar - the width does not follow the split")
+                    if r["side"]["w"] > 56:
+                        failures.append(f"{where} (rail): the sidebar is {r['side']['w']}px "
+                                        "wide, not a rail")
+                    # Four conversations, four dots. A rail that drops them is a
+                    # narrower sidebar, not the thing this phase was for.
+                    if len(r["dots"]) != 4:
+                        failures.append(f"{where} (rail): {len(r['dots'])} status dots for "
+                                        "four open conversations")
+                    for at, rect in enumerate(r["dots"] + [r["toggle"]]):
+                        what = "the toggle" if at == len(r["dots"]) else f"dot {at + 1}"
+                        if rect["w"] <= 0 or rect["h"] <= 0:
+                            failures.append(f"{where} (rail): {what} has no box ({rect})")
+                        elif (rect["x"] < 0 or rect["y"] < 0
+                                or rect["x"] + rect["w"] > m["clientW"] + 1
+                                or rect["y"] + rect["h"] > m["view"][1] + 1):
+                            failures.append(f"{where} (rail): {what} is off the window "
+                                            f"({rect})")
+                    # It is an icon with no text in it: without a name it is a
+                    # control this audience cannot identify at all.
+                    if not r["name"]:
+                        failures.append(f"{where} (rail): the toggle has no accessible name")
+                    if r["expanded"] != "false":
+                        failures.append(f"{where} (rail): aria-expanded is {r['expanded']!r} "
+                                        "with the sidebar collapsed")
+                    if r["clipped"]:
+                        failures.append(f"{where} (rail): content wider than its box - "
+                                        f"{r['clipped'][:4]}")
+                    opened = r.get("opened") or {}
+                    if opened.get("on") is not False or opened.get("side", {}).get("w", 0) <= 56:
+                        failures.append(f"{where} (rail): the toggle did not open the "
+                                        f"sidebar again ({opened})")
+                    if opened.get("expanded") != "true" or opened.get("name") == r["name"]:
+                        failures.append(f"{where} (rail): the toggle still says "
+                                        f"{opened.get('name')!r} after it was pressed")
+                    print(f"  {where} (rail): sidebar {r['side']['w']}px -> "
+                          f"{opened.get('side', {}).get('w')}px, {len(r['dots'])} dots")
             print(f"  {where}: viewport {view}px, menu {m['menu']['w']}x{m['menu']['h']} "
                   f"at ({m['menu']['x']},{m['menu']['y']}), prompt {m['comp']['w']}px")
     finally:
