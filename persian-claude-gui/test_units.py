@@ -2011,6 +2011,7 @@ opened: list[str] = []
 _real_startfile = getattr(server.os, "startfile", None)
 server.os.startfile = lambda path: opened.append(str(path))
 _seed_home = Path(tempfile.mkdtemp(prefix="pcg-home-"))
+_seed_proj = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
 _real_home = server.Path.home
 server.Path.home = classmethod(lambda cls: _seed_home)
 try:
@@ -2024,7 +2025,7 @@ try:
           seed_err is None and seeded is not None
           and Path(seeded).read_text(encoding="utf-8") == "{}\n"
           and opened == [seeded])
-    project = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
+    project = _seed_proj
     memo, memo_err = server.open_known_file("project-memory", project)
     check("the project's own CLAUDE.md is the session's, not the home one",
           memo_err is None and Path(memo).parent == project)
@@ -2046,6 +2047,7 @@ finally:
         server.os.startfile = _real_startfile
     server.Path.home = _real_home
     shutil.rmtree(_seed_home, ignore_errors=True)
+    shutil.rmtree(_seed_proj, ignore_errors=True)
 
 print("spawn_args: --worktree is orthogonal to the resume flags")
 # Lifted out of start() so the argv can be asserted without a process. The one
