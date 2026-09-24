@@ -2017,6 +2017,31 @@ check("...and looking at that conversation clears the count",
 applySwitch(otherTab);
 routeEvent({ tab: stTab, type: "wrapper", subtype: "closed" });
 
+/* pcg-973: the four states are told apart by SHAPE, not only by hue. A dot is
+   an empty span, so its shape is its box: fill, outline, inset ring, and the
+   error's diagonal. The signature below reads only those and never a colour —
+   if two states collapse into one signature, colour is all that is left. */
+const dotShape = (host, status) => {
+  const row = document.createElement("div");
+  row.className = host === "tab" ? "tab-row" : "sess";
+  const dot = document.createElement("span");
+  dot.className = host === "tab" ? "tab-dot" : "sess-dot";
+  (host === "tab" ? row : dot).dataset.status = status;
+  row.append(dot);
+  document.body.append(row);
+  const cs = getComputedStyle(dot);
+  const sig = [cs.outlineStyle, cs.boxShadow !== "none",
+               cs.backgroundImage !== "none",
+               cs.backgroundColor === "rgba(0, 0, 0, 0)"].join("|");
+  row.remove();
+  return sig;
+};
+for (const host of ["tab", "sess"]) {
+  const sigs = ["running", "waiting", "error", "idle"].map((st) => dotShape(host, st));
+  check("the " + host + " dot's four states differ in shape, not only in colour (pcg-973)",
+    new Set(sigs).size === 4, sigs.join(" / "));
+}
+
 specLog.replaceChildren(...specKeep);   // the harness takes its own DOM back
 
 /* The sidebar's «نشست‌های باز» group, driven exactly as app.js drives it. Two

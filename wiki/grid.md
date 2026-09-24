@@ -87,6 +87,14 @@ sidebar's `.sess-dot` call the same function — one computation, two paint
 sites, plus each cell's own digit badge (`cellBadgeTitle`) for which
 `alt+N` reaches it.
 
+**Shape, not only hue, in both editions (pcg-973, 2026-09-24).** The terminal edition draws the
+state as a glyph (`● ◉ ⊘ ○`, one CSS rule in `static-terminal/style.css`). The web edition's dots
+are empty 7px spans, so the same four shapes are drawn with the box instead: filled `background`
+(running), an `outline` ring around the disc (waiting), an inset ring plus a 135° gradient band
+(error), an inset ring alone (idle). The web spec gate reads each state's outline style, box
+shadow, background image and fill (never a colour) and requires four different signatures, for
+`.tab-dot` and `.sess-dot` both. Negative-tested: the old CSS gives four identical signatures.
+
 ## MA2 worktree, reused per cell
 
 `--worktree <name>` at spawn (not `--name`, which echoes nowhere) puts the
