@@ -13,7 +13,7 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble, label, paintQueued, toggleThinking, state } from "./render.js";
+import { bubble, label, paintQueued, toggleThinking, state, runQueueNow } from "./render.js";
 import { openPlus, openUsage } from "./bar.js";
 import { runWindowCommand } from "./commands.js";
 import { newChatHere } from "./chrome.js";
@@ -905,6 +905,8 @@ export function makeComposer(root, cell) {
      arms on an empty selection, where cut would have done nothing anyway. */
   let prefixArmed = false;
   let prefixTimer = 0;
+  // Set by ctrl+x ctrl+s for the ONE submit it triggers; the submit reads and clears it.
+  let sendNowArmed = false;
   const PREFIX_WINDOW = 3000;
 
   function armPrefix() {
@@ -1296,6 +1298,15 @@ export function makeComposer(root, cell) {
         composer.requestSubmit();
         return;
       }
+      if (chord === "ctrl+s") {           // ctrl+x ctrl+s: chat:sendNow
+        // Mid-turn: queue it, then the queue row's «الان بفرست» (stop the turn;
+        // the queue it keeps runs at once). Idle: an ordinary send — there is
+        // no turn to stop, and stopping would cut off the one just started.
+        e.preventDefault();
+        sendNowArmed = busy;
+        composer.requestSubmit();
+        return;
+      }
       // Any other second stroke: the prefix is spent and the key means itself.
     }
     // Cut is what ctrl+x means with a selection, and that has to keep working;
@@ -1471,6 +1482,8 @@ export function makeComposer(root, cell) {
 
     composer.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const sendNow = sendNowArmed;
+      sendNowArmed = false;
       // Enter ALWAYS sends. The popup used to swallow it to accept a completion,
       // which meant Enter did different things depending on invisible state —
       // Tab, click and the arrow keys accept instead.
@@ -1526,6 +1539,8 @@ export function makeComposer(root, cell) {
           body: JSON.stringify({ ...payload, tab: cell.tab }),
         });
         if (!res.ok) throw new Error(await res.text());
+        // Queued behind the running turn; now stop that turn so it runs.
+        if (sendNow) await runQueueNow(cell.tab);
       } catch (err) {
         giveBack(snapshot, payload.text);
         bubble("error", FA.sendFailedRestored);
