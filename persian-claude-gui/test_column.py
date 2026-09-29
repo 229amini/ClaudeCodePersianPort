@@ -8,8 +8,8 @@ measures boxes at three window sizes. So this one drives the shipping
 `index.html` headlessly — the same trick, the same Edge, the same probe page
 built from the real file — and asks the questions v2.2 is answerable for:
 
-  - the ⏺ marks an assistant row and stands in the SAME gutter as a tool icon,
-    which is the whole "one rail" claim;
+  - (since CLAUDE-AI-PARITY.md P2) an assistant row carries no marker and no
+    gutter, and a step sits in a run whose one line says what happened;
   - a tool result puts the ⎿ branch and its line count on the row, and the row
     is still one line (the spec gate measures that for the repeat badge; this
     measures it for the branch);
@@ -24,10 +24,10 @@ built from the real file — and asks the questions v2.2 is answerable for:
   - `!` output replayed out of a transcript is the same shell card the live
     wrapper/shell event draws, not `<bash-input>` markup in the user's bubble
     (E4/F6);
-  - the user's own turn is the TUI's `>` prompt echo and not a chat bubble (T1):
-    no fill, dimmed, the composer's own mirrored prompt mark standing in the ⏺'s
-    gutter — measured live AND replayed, since the reload backfill re-renders
-    one on every reload.
+  - the user's own turn is the site's bubble (P2, which replaced T1's prompt
+    echo): a faint fill, 10px radius, 8x12 padding, on the right of the column
+    — measured live AND replayed, since the reload backfill re-renders one on
+    every reload.
 
 Free: no CLI turn, no login. The probe page is deleted again on the way out.
 
@@ -96,18 +96,15 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   await sleep(60);
 
   const bubbles = [...log.querySelectorAll(":scope > .msg.assistant")];
-  const card = log.querySelector("details.card.tool");
+  // Every step lives in a run (CLAUDE-AI-PARITY.md P2); open it so the step's
+  // row has a box to measure.
+  const run = log.querySelector(":scope > details.run");
+  if (run) run.open = true;
+  const card = run?.querySelector(":scope > .card-body > details.card.tool");
   const summary = card?.querySelector(":scope > summary");
   out.marks = bubbles.map((b) => before(b, "content"));
-  out.markX = bubbles.map(centre);
-  out.iconX = centre(summary.querySelector(".tool-icon"));
-  out.markCentres = bubbles.map((b) => {
-    // The pseudo-element has no box of its own to read, so measure the gutter
-    // it was given: the padding edge the ⏺ is pinned to.
-    const cs = getComputedStyle(b);
-    const r = b.getBoundingClientRect();
-    return Math.round(r.right - parseFloat(cs.paddingRight) / 2);
-  });
+  out.gutters = bubbles.map((b) => Math.round(parseFloat(getComputedStyle(b).paddingRight)));
+  out.runLine = run?.querySelector(":scope > summary .run-text")?.textContent ?? "";
 
   /* --- the ⎿ branch ------------------------------------------------------- */
   const branch = summary.querySelector(".tool-branch");
@@ -115,9 +112,13 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   out.branchTitle = branch?.title ?? "";
   out.branchGlyph = branch?.querySelector(".glyph")?.textContent ?? "";
   out.branchMirrored = flipped(branch?.querySelector(".glyph"));
-  out.rowHeight = Math.round(summary.getBoundingClientRect().height);
+  { const cs = getComputedStyle(summary);
+    out.rowHeight = Math.round(summary.getBoundingClientRect().height
+      - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)); }
   out.rowOverflow = summary.scrollWidth - summary.clientWidth;
   out.resultInBody = !!card.querySelector(".card-body > .tool-output");
+
+  if (run) run.open = false;   // measured; ctrl+o below starts from shut
 
   /* --- ctrl+o, the TUI's transcript mode ---------------------------------- */
   out.openBefore = [...log.querySelectorAll("details.card")].filter((c) => c.open).length;
@@ -252,17 +253,17 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
      gutter are all invisible to textContent (wiki/rtl-rendering-notes.md). */
   const rowShape = (el) => {
     const cs = getComputedStyle(el);
-    const pb = getComputedStyle(el, "::before");
     const r = el.getBoundingClientRect();
+    const col = log.getBoundingClientRect();
+    const lcs = getComputedStyle(log);
     return {
       bg: cs.backgroundColor, radius: cs.borderTopLeftRadius, color: cs.color,
       padBlock: Math.round(parseFloat(cs.paddingTop)),
       padInline: Math.round(parseFloat(cs.paddingLeft)),
-      markFill: pb.backgroundColor,
-      mask: pb.maskImage || pb.webkitMaskImage || "none",
-      // The pseudo-element has no box to query, so its centre is computed from
-      // the edge it is pinned to and its own width — geometry, not text.
-      markX: Math.round(r.right - parseFloat(pb.right) - parseFloat(pb.width) / 2),
+      mark: getComputedStyle(el, "::before").content,
+      // Distance from the column's right content edge: 0 is "on the right".
+      fromRight: Math.round(col.right - parseFloat(lcs.paddingRight) - r.right),
+      width: Math.round(r.width),
     };
   };
   const said = "\u0627\u06cc\u0646 \u0641\u0627\u06cc\u0644 \u0631\u0627 \u0628\u062e\u0648\u0627\u0646";
@@ -274,7 +275,6 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   const rows = [...log.querySelectorAll(".msg.user")].slice(-2);
   out.liveShape = rows[0] ? rowShape(rows[0]) : null;
   out.replayShape = rows[1] ? rowShape(rows[1]) : null;
-  out.assistantMarkX = rowShape(bubbles[0]).markX;
   out.assistantColor = getComputedStyle(bubbles[0]).color;
 
   // Guard, not a change: the queue strip is already dim and unfilled, and this
@@ -307,16 +307,6 @@ def write_probe() -> None:
     PROBE.write_text(page.replace("</body>", PROBE_JS + "\n</body>", 1), encoding="utf-8")
 
 
-def comp_mark_paths() -> list[str]:
-    """The two `d` values of the composer's `.comp-mark`, read out of the real
-    index.html. Tying the transcript row's mask to THIS is what turns «the
-    product's own mirrored prompt» into an assertion instead of a claim: swap
-    either shape for a glyph that merely looks right and the gate fails."""
-    page = (STATIC / "index.html").read_text(encoding="utf-8")
-    svg = re.search(r'<svg class="comp-mark".*?</svg>', page, re.S)
-    return re.findall(r'\bd="([^"]+)"', svg.group(0)) if svg else []
-
-
 def checks(m: dict) -> list[tuple[str, bool, str]]:
     """Every v2.2 acceptance item, as one assertion each."""
     out: list[tuple[str, bool, str]] = []
@@ -325,18 +315,19 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
         out.append((name, bool(ok), detail))
 
     marks = m.get("marks") or []
-    check("every assistant row carries the TUI's \u23fa",
-          len(marks) == 2 and all("\u23fa" in str(x) for x in marks),
-          " / ".join(map(str, marks)) or "no rows")
-
-    # The gutter claim: the mark's own column and the tool icon's column are the
-    # same one, whichever direction the paragraph resolved to.
-    gutters = m.get("markCentres") or []
-    icon = m.get("iconX")
-    check("the \u23fa stands in the tool icons' gutter, RTL and LTR alike",
-          len(gutters) == 2 and icon is not None
-          and all(abs(g - icon) <= 3 for g in gutters),
-          f"marks at {gutters}, icon at {icon}")
+    # CLAUDE-AI-PARITY.md P2: the site's answer is plain prose — no ⏺ and no
+    # gutter reserved for one (the coral dot far from an LTR paragraph was the
+    # "scattered" row the user reported).
+    marks = m.get("marks") or []
+    check("no assistant row wears a marker",
+          len(marks) == 2 and all(x in ("none", "normal", None) for x in marks),
+          str(marks))
+    check("and none keeps a gutter for one, RTL and LTR alike",
+          len(m.get("gutters") or []) == 2 and all(g <= 2 for g in m["gutters"]),
+          str(m.get("gutters")))
+    check("the step sits in a run whose one line names what happened",
+          m.get("runLine") == "note.md \u062e\u0648\u0627\u0646\u062f\u0647 \u0634\u062f",
+          m.get("runLine") or "no run")
 
     check("a tool result puts the \u23bf branch and its count on the row",
           m.get("branchGlyph") == "\u23bf"
@@ -429,51 +420,27 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"bubble \u00ab{m.get('replayBubble')}\u00bb"
           + (" / RAW TAGS IN THE COLUMN" if m.get("replayRawTags") else ""))
 
-    # T1 — the user row is the TUI's `>` echo (V2-PLAN §3.1 row 1). Computed
-    # style and geometry throughout: a fill, a colour and a gutter are all
-    # invisible to textContent, which is how this shipped as a pill for a month.
+    # CLAUDE-AI-PARITY.md P2: your message is the site's bubble, measured
+    # (wiki/claude-ai-code-reference.md §1): a faint fill, 10px radius, 8×12
+    # padding, on the RIGHT of the column. Computed style and geometry
+    # throughout — a fill and a side are invisible to textContent.
     live = m.get("liveShape") or {}
     replay = m.get("replayShape") or {}
     clear = ("rgba(0, 0, 0, 0)", "transparent")
 
-    check("the user row wears no pill — no fill, no radius, no bubble padding",
-          live.get("bg") in clear and live.get("radius") == "0px"
-          and live.get("padBlock", 99) <= 2 and live.get("padInline", 99) <= 2,
+    check("your message is a bubble: a fill, a 10px radius, 8x12 padding",
+          live.get("bg") not in clear and live.get("radius") == "10px"
+          and live.get("padBlock") == 8 and live.get("padInline") == 12,
           f"bg {live.get('bg')}, radius {live.get('radius')}, padding "
           f"{live.get('padBlock')}/{live.get('padInline')}")
 
-    check("and it is dimmed, unlike the answer under it",
-          bool(live.get("color")) and live.get("color") != m.get("assistantColor"),
-          f"{live.get('color')} vs assistant {m.get('assistantColor')}")
+    check("on the right of the column, and no wider than its text needs",
+          live.get("fromRight") is not None and abs(live["fromRight"]) <= 2
+          and 0 < live.get("width", 0) < 600,
+          f"{live.get('fromRight')}px from the right, {live.get('width')}px wide")
 
-    paths = comp_mark_paths()
-    flat = (live.get("mask") or "none").replace(" ", "").replace("%20", "")
-    same_mark = bool(paths) and all(d.replace(" ", "") in flat for d in paths)
-    check("its marker is the product's own mirrored prompt, not a new glyph",
-          same_mark,
-          f"{len(paths)} paths from .comp-mark; mask "
-          + ("carries them all" if same_mark else (live.get("mask") or "none")[:80]))
-
-    # Not a computed style, deliberately: on a modern Chromium the prefixed
-    # property is an alias of the unprefixed one, so both read back identically
-    # whichever was declared — the only place the fallback exists is the file.
-    # It matters because a dropped `mask` paints the whole box: a solid muted
-    # rectangle in every user row, on an old Edge and nowhere a gate can see.
-    css = (STATIC / "style.css").read_text(encoding="utf-8")
-    check("the mask keeps its -webkit- fallback for a pre-120 Chromium",
-          css.count("-webkit-mask: url(\"data:image/svg+xml") == 1,
-          "present" if "-webkit-mask: url(\"data:image/svg+xml" in css else "GONE")
-
-    check("and the marker takes the row's own colour, so the dimming reaches it",
-          live.get("markFill") is not None and live.get("markFill") == live.get("color"),
-          f"mark {live.get('markFill')} vs row {live.get('color')}")
-
-    check("the marker stands in the ⏺'s gutter",
-          live.get("markX") is not None and m.get("assistantMarkX") is not None
-          and abs(live["markX"] - m["assistantMarkX"]) <= 1
-          and abs(live["markX"] - m.get("iconX", -999)) <= 3,
-          f"user at {live.get('markX')}, ⏺ at {m.get('assistantMarkX')}, "
-          f"icon at {m.get('iconX')}")
+    check("with no prompt mark left over from the TUI echo",
+          live.get("mark") in ("none", "normal"), str(live.get("mark")))
 
     # The reload backfill re-renders a user row from /api/session on every
     # reload, and a replayed turn drifting from a live one is this project's
