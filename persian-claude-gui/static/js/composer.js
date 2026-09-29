@@ -6,6 +6,7 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, state } from "./render.js";
+import { openPlus, openUsage } from "./bar.js";
 /* An edge INTO the render↔chrome cycle, not a new cycle of its own: chrome.js
    imports render.js and api.js, neither of which imports this module back at
    evaluation time. `/branch` needs the one tab-switch path the sidebar already
@@ -1172,13 +1173,75 @@ export function makeComposer(root, cell) {
       }
     });
 
-    $("btn-attach")?.addEventListener("click", async () => {
+    const pickFiles = async () => {
       try {
         const { paths } = await api("/api/attach/pick", {});
         if (paths?.length) setAttachments([...attachments, ...paths]);
       } catch (err) {
         bubble("error", FA.sendFailed);
       }
+    };
+
+    /* --- the composer bar's «+» and ◔ (COMPOSER-BAR.md) -----------------------
+       «+» is what the paperclip was (the native file dialog, real paths), the
+       slash popup, and this machine's MCP servers with a switch each; Ctrl+U
+       opens the dialog, as in claude.ai/code. ◔ opens the context window by
+       category and the plan's limits: the last usage event paints at once, then
+       the panel asks the CLI again. «فشرده کردن» is `/compact` as text — it is
+       not a control subtype. */
+    const plusBtn = $("bar-plus-btn");
+    const ringBtn = $("bar-ring");
+    const openSlash = () => {
+      input.focus();
+      if (!input.value) {
+        input.value = "/";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    };
+    const mcpServers = async () => {
+      const res = await api("/api/control", { subtype: "mcp_status", tab: cell.tab });
+      return res?.response?.mcpServers ?? [];
+    };
+    if (plusBtn) {
+      plusBtn.title = FA.barPlus;
+      plusBtn.setAttribute("aria-label", FA.barPlus);
+      plusBtn.addEventListener("click", () => openPlus(plusBtn, {
+        onFiles: pickFiles, onSlash: openSlash, loadServers: mcpServers,
+        onToggle: async (name, enabled) => {
+          await api("/api/control", { subtype: "mcp_toggle", tab: cell.tab,
+                                      params: { serverName: name, enabled } });
+          return mcpServers();
+        },
+      }));
+    }
+    input.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyU") {
+        e.preventDefault();
+        pickFiles();
+      }
+    });
+    if (ringBtn) ringBtn.addEventListener("click", () => {
+      const s = state.status ?? {};
+      openUsage(ringBtn, {
+        data: { detail: s.contextDetail, context: s.context, limits: s.limits },
+        onCompact: () => api("/api/message", { tab: cell.tab, text: "/compact" }).catch(() => {}),
+        refresh: async (paint) => {
+          const tab = cell.tab;
+          const usage = await api("/api/control",
+            { subtype: "get_usage", params: { skip_behaviors: true }, tab }).catch(() => null);
+          if (usage?.ok && usage.response && "rate_limits" in usage.response) {
+            paint({ limits: usage.response.rate_limits });
+          }
+          const ctx = await api("/api/control", { subtype: "get_context_usage", tab }).catch(() => null);
+          const r = ctx?.ok ? ctx.response : null;
+          if (r && typeof r.percentage === "number") {
+            paint({ context: r.percentage, detail: {
+              total: r.totalTokens, max: r.maxTokens,
+              threshold: r.isAutoCompactEnabled ? r.autoCompactThreshold : null,
+              categories: r.categories ?? [] } });
+          }
+        },
+      });
     });
 
     input.addEventListener("input", refreshPopup);

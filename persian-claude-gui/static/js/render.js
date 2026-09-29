@@ -22,6 +22,7 @@ import {
 import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
+import { paintRing } from "./bar.js";
 /* Nothing is imported from controls.js any more: everything that PAINTS is per
    cell and is reached through `state.cell.controls` (the APPLY table below). */
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
@@ -1592,6 +1593,9 @@ export function setStatus(patch) {
   if (!state.cell || !statusline) return;
   statusline.replaceChildren();
   const s = state.status;
+  // The composer bar's ◔ (COMPOSER-BAR.md): the same figure, as a ring.
+  const ring = state.cell.root?.querySelector(".bar-ring");
+  if (ring) paintRing(ring, s.context);
 
   const items = [
     [FA.slModel, s.model && label(s.model, "mono")],

@@ -1483,22 +1483,20 @@ export function makeComposer(root, cell) {
 
     /* --- the composer bar's «+» and ◔ (COMPOSER-BAR.md) -----------------------
 
-       «+»: a file picker into the SAME attach route as paste and drop, the
-       slash popup, and this machine's MCP servers with a switch each. Ctrl+U
-       opens the picker, as it does in claude.ai/code. */
+       «+»: the native file dialog (/api/attach/pick, the web edition's
+       paperclip route: real paths, no base64 through the page), the slash
+       popup, and this machine's MCP servers with a switch each. Ctrl+U opens
+       the dialog, as it does in claude.ai/code. */
     const plusBtn = $("bar-plus-btn");
     const ringBtn = $("bar-ring");
-    const filePick = document.createElement("input");
-    filePick.type = "file";
-    filePick.multiple = true;
-    filePick.hidden = true;
-    filePick.addEventListener("change", async () => {
-      const files = [...(filePick.files ?? [])];
-      filePick.value = "";
-      if (files.length) await attachBytes(files);
-    });
-    root.append(filePick);
-    const pickFiles = () => filePick.click();
+    const pickFiles = async () => {
+      try {
+        const { paths } = await api("/api/attach/pick", {});
+        if (paths?.length) setAttachments([...attachments, ...paths]);
+      } catch (err) {
+        bubble("error", FA.pasteFailed);
+      }
+    };
     const openSlash = () => {
       input.focus();
       if (!input.value) {

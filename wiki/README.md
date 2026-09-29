@@ -59,7 +59,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
   injected envelopes, not the person.
-- [parity-chrome.md](parity-chrome.md) — **2026-09-29:** §"The statusLine payload" (the CLI's own
+- [parity-chrome.md](parity-chrome.md) — **2026-09-29:** §"The composer bar" (claude.ai/code's bar
+  in both editions: one `bar.js`, why the web edition kept its in-cell menu, `mcp_toggle` is
+  persistent, `skip_behaviors`), and §"The statusLine payload" (the CLI's own
   shape, field by field, and why a thin payload printed a thin bar) and the queue row's four
   actions. Also: the interrupt control message, slash commands, image
   blocks, statusLine passthrough, and the CLI features deliberately left unbuilt.

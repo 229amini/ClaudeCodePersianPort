@@ -341,6 +341,26 @@ The trigger lives in the window (`composer.js isAway()`, used by render.js at th
 window is hidden, or nothing has been typed/clicked for five minutes. Turn traffic deliberately
 does not count as input — a long answer arriving is exactly when the person walked off.
 
+## The composer bar (2026-09-29, pcg-d5q)
+
+claude.ai/code's bar, in both editions, by user decision: `COMPOSER-BAR.md` at the repo root holds
+the measured sources and the shape. What cost time or is not obvious:
+
+- **`js/bar.js` is one file in two places**, byte-identical (`test_bar.py` checks), a leaf that
+  imports nothing: each edition passes its own `toCss` (terminal `prefs.js cssPx`, web identity)
+  and its own state. The **web edition keeps its in-cell `.menu-popup`** for model/mode/style —
+  `test_layout.py` and `test_split.py` measure that popup staying inside its own cell at five
+  sizes, a guarantee a floating popover would give up — and only gained the title row, ✓ and
+  digit keys. The slider, the usage panel and «+» come from `bar.js` in both.
+- **`mcp_toggle` is persistent**: it writes `projects/<cwd>/disabledMcpServers` into
+  `~/.claude.json` (measured in a throwaway HOME), as the TUI's `/mcp` does. The menu says so.
+- **`get_usage` takes `skip_behaviors: true`**: without it the reply scans every transcript
+  touched in seven days for a `behaviors` section nothing here reads. `rate_limits` carries
+  `model_scoped[] {display_name, utilization, resets_at}` — the «Weekly · Fable» row.
+- The mode menu is the wrapper's four postures, **not** the CLI's `auto` (approval-postures.md).
+- «+ → پیوست فایل» is `/api/attach/pick` (native dialog, real paths) in both editions; the
+  browser file input the terminal got first would have base64'd every file through the page.
+
 ## The statusLine payload (2026-09-29, pcg-cds)
 
 The user's script printed `~/Desktop | [CAVEMAN]` here and a full bar in the TUI (model, effort,
