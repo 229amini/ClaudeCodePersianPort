@@ -341,6 +341,30 @@ The trigger lives in the window (`composer.js isAway()`, used by render.js at th
 window is hidden, or nothing has been typed/clicked for five minutes. Turn traffic deliberately
 does not count as input — a long answer arriving is exactly when the person walked off.
 
+## The statusLine payload (2026-09-29, pcg-cds)
+
+The user's script printed `~/Desktop | [CAVEMAN]` here and a full bar in the TUI (model, effort,
+context bar, cache ratio, 5h/7d). Not a rendering bug: `_publish_statusline` handed it six fields,
+and a statusLine script prints what it is given. `server.py statusline_payload()` now builds the
+CLI's own shape — `fKn` in the 2.1.284 bundle, read out of the binary — from what the wrapper
+already measures:
+
+| Field | Source |
+|---|---|
+| `model.id` / `display_name` | `self.model`, or before `system/init` the effective settings' `model` resolved through `initialize.models`; the name is the first half of the catalogue entry's `description` («Sonnet 5.5 · …») |
+| `context_window` | the last **main-thread** assistant `usage` (the CLI's `PEe`) against the window from `result.modelUsage[*].contextWindow` or `get_context_usage.maxTokens`; a resume reads the usage back from the transcript tail |
+| `cost` | `get_usage.session` — the CLI's own five keys |
+| `rate_limits` | `get_usage.rate_limits`; its `utilization` is already a percent |
+| `effort`, `output_style` | `get_settings.effective` (left out when unset, as the CLI omits `effort`) |
+| `prompt_cache` | counted off the stream per API request (one id, however many partial events): Σ cache reads / Σ all input, which is the CLI's `hitRatio` |
+| `worktree` | the tab's own worktree, branch `worktree-<name>` |
+
+Anything the wrapper cannot know is **left out, never invented**. It runs at **spawn** too (from
+`_fetch_init_info`, fresh or resumed), because the TUI draws its bar before the first message and a
+fresh conversation here had none; and right after `get_usage` rather than behind the slow
+`get_context_usage` (§9 of control-protocol.md), with a second run if that names a window.
+`thinking` and `vim` are not sent. Re-read `fKn` after a CLI upgrade: it is the contract.
+
 ## The queue strip (2026-08-24, the uuid-ledger rework)
 
 A message sent while the CLI is still answering used to render as a delivered user bubble the
@@ -356,6 +380,13 @@ with no `started` promotes it too, retroactively — a CLI with no lifecycle cha
 arbitrary ledger entry per result (`server.py _close_one_command`), and that is the only report
 such a row will ever get; `cancelled`/`discarded`/`refused` remove the row and hand its text back
 into the composer, because nothing typed into a queue the user never chose to see may be lost.
+**2026-09-29 (pcg-e11), after claude.ai/code:** a row now has four actions: ⧉ copy, ↺ back into
+the prompt (the old ✕ behaviour), ✕ delete, and «الان بفرست», which is `/api/interrupt`: since
+2026-08-31 an interrupt keeps the queue, so the running turn ends and the queue runs at once. A
+delete marks the row's **own** entry (`discard`), because the CLI's `cancelled` event can beat the
+HTTP reply and it hands the text back; `state` is the focused conversation and a click need not be
+in it. The paragraph below describes the cancel request both ↺ and ✕ use.
+
 Per-row cancellation is the ✕: `POST /api/queue/cancel {uuid}` calls `cancel_async_message` and
 only acts on a *true* answer — `false` is the CLI's documented "already dequeued for execution,"
 i.e. the row is about to `started`, so it must stay. `idle_sync` and `cli_exited` clear the whole

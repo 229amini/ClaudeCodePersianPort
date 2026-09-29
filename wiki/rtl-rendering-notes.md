@@ -648,3 +648,13 @@ finishes the bubble is one text node, as before — the spec's `headX()` streami
 spec-test checks it is byte-identical to rendering the same text directly. Spec checks that
 stream must run while the harness drives rAF by hand: a paint queued on the real rAF pins
 `paintFrame` and every later stream write waits on it forever.
+
+## A Latin name in an RTL list, and `text-align: match-parent` (2026-09-29, pcg-84j)
+
+A `<bdi>` folder name resolves LTR, so in a `flex: 1` box its `start` is the row's far left:
+«system32» sat against the count pill while every Persian name sat at the right. The fix is a box
+the size of its text (`flex: 0 1 auto`) at the row's start, still ellipsing when long; the item
+after it takes the auto margin. `text-align: match-parent` looks like the answer and is not:
+**Chromium computes it as `start` and resolves that against the element's OWN direction** —
+measured, still left. And not `right`: that is on the spec's trap list. Both editions.
+
