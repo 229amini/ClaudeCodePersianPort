@@ -17,8 +17,9 @@ what v2.5 is answerable for:
     `permissionMode`, because «محتاط» and «خودکار» are both `default` down the
     pipe and only the wrapper knows which one the user picked;
   - a turn that settles while the window is hidden asks the server for one
-    taskbar flash, naming the window by its title, and a REPLAYED settle asks
-    for none — a refresh must not announce history;
+    taskbar flash, naming the window by its title, and so does a permission
+    request; a REPLAYED settle or request asks for none — a refresh must not
+    announce history;
   - every window-local command of §3.5 is answered here, at the right route,
     with the right body: /copy /export /status /resume /cd /add-dir /branch
     /btw /bash /config /hooks /keybindings /memory /tasks;
@@ -192,6 +193,23 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   out.notifiedAfterReplay = flashes(flashMark).length;
   out.notifyTitle = flashes(flashMark)[0]?.body?.title ?? "";
   out.faNotify = document.title;
+
+  // A permission request is a turn blocked on the person: it flashes too,
+  // and a replayed one (the backlog after a reload) does not.
+  const askMark = calls.length;
+  const ask = (id, replayed) => {
+    window.renderEvent({ type: "wrapper", subtype: "permission_request", request_id: id,
+      tool_name: "Write", tool_input: { file_path: "C:/kar/a.txt", content: "x" },
+      tool_use_id: "tu-" + id, suggestions: [], ...(replayed ? { replayed: true } : {}) });
+    window.renderEvent({ type: "wrapper", subtype: "permission_resolved", request_id: id,
+      tool_use_id: "tu-" + id, decision: "deny", ...(replayed ? { replayed: true } : {}) });
+  };
+  ask("perm-live", false);
+  await sleep(60);
+  out.askFlashLive = flashes(askMark).length;
+  ask("perm-old", true);
+  await sleep(60);
+  out.askFlashReplayed = flashes(askMark).length;
 
   /* --- §3.5 /copy and /export --------------------------------------------- */
   await send("/copy");
@@ -541,6 +559,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     check("a REPLAYED settle asks for none",
           m.get("notifiedAfterReplay") == 1, str(m.get("notifiedAfterReplay")))
+
+    check("a permission request flashes too, and a replayed one does not",
+          m.get("askFlashLive") == 1 and m.get("askFlashReplayed") == 1,
+          f"live {m.get('askFlashLive')}, after replay {m.get('askFlashReplayed')}")
 
     check("/copy hands the last answer to the clipboard",
           "\u0622\u0645\u0627\u062f\u0647" in m.get("copied", "")
