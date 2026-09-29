@@ -64,7 +64,7 @@ import { api, token } from "./api.js";
 import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
 import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 import { makeChanges } from "./changes.js";
-import { initZoom, readPref, writePref } from "./prefs.js";
+import { initZoom, readPref, writePref, cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
 
@@ -294,9 +294,11 @@ function gapPx() {
   return parseFloat(getComputedStyle(document.body).getPropertyValue("--gap")) || 8;
 }
 
+/* In CSS px: layoutFor()'s minimums are CSS px, and at app zoom a rect is
+   not (prefs.js cssPx) - a 2K window zoomed to 125% has 2048 px of room. */
 function gridBox() {
   const r = document.getElementById("grid")?.getBoundingClientRect();
-  return { W: r?.width || innerWidth, H: r?.height || innerHeight };
+  return { W: cssPx(r?.width || innerWidth), H: cssPx(r?.height || innerHeight) };
 }
 
 function shapeNow() {
@@ -490,7 +492,7 @@ function addPane() {
   // Going from one pane to two collapses the sidebar to the rail (§1), so the
   // room the new layout will really have is the tree's width more.
   if (railOverride === null && !document.body.classList.contains("rail")) {
-    const side = document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0;
+    const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
     W += Math.max(0, side - 48);
   }
   if (!layoutFor(cells.length + 1, W, H, gapPx(), true)) return false;
@@ -1223,9 +1225,9 @@ setTabBridge({
 
 /* The new-session page's view of the grid (BRIDGEMIND-PORT.md §D8). Handed in,
    because newsession.js may not import this module. */
-function stageBox() {
+function stageBox() {       // CSS px, as gridBox()
   const r = document.getElementById("stage")?.getBoundingClientRect();
-  return { W: r?.width || innerWidth, H: r?.height || innerHeight };
+  return { W: cssPx(r?.width || innerWidth), H: cssPx(r?.height || innerHeight) };
 }
 
 initNotices({
@@ -1244,7 +1246,7 @@ initNewSession({
     if (n <= 1) return true;
     let { W, H } = stageBox();
     if (railOverride === null && !document.body.classList.contains("rail")) {
-      const side = document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0;
+      const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
       W += Math.max(0, side - 48);
     }
     return !!layoutFor(n, W, H, gapPx(), true);

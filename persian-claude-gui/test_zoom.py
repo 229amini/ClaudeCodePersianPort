@@ -35,8 +35,8 @@ STATIC = HERE / EDITIONS[EDITION][0]
 PROBE = STATIC / "_zoom_probe.html"
 
 # Before any module: initZoom() reads the attribute once, at boot.
-MODE_JS = ('<script>if (new URLSearchParams(location.search).get("mode") === "css")'
-           ' document.documentElement.dataset.zoomMode = "css";</script>')
+MODE_JS = ('<script>{ const m = new URLSearchParams(location.search).get("mode");'
+           ' if (m) document.documentElement.dataset.zoomMode = m; }</script>')
 
 PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
@@ -58,6 +58,24 @@ const readout = () => document.getElementById("side-zoom");
   out.plus2 = press("Equal"); out.z2 = zoom();
   out.read2 = readout()?.hidden ? "" : readout()?.textContent;
   out.faRead2 = FA.sideZoom.replace("{n}", (125).toLocaleString("fa-IR"));
+  if (out.cls) {
+    // M4, at 125%: a menu placed from a rect lands under the control that
+    // opened it. Without cssPx() it lands 1.25x as far from the corner.
+    const { kebabMenu } = await import("/static/js/chrome.js");
+    const btn = document.createElement("button");
+    btn.textContent = "⋯";
+    btn.style.cssText = "position:fixed; left:300px; top:200px; width:30px; height:24px";
+    const [, menu] = kebabMenu([{ text: "yek", run() {} }, { text: "do", run() {} }], btn);
+    document.body.append(btn, menu);
+    btn.click(); await sleep(50);
+    const b = btn.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    out.menuDx = Math.round(m.right - b.right);
+    out.menuDy = Math.round(m.top - b.bottom);
+    menu.hidePopover();
+    const { autoZoom } = await import("/static/js/prefs.js");
+    out.auto = [[1920, 1920], [2048, 2048], [2560, 2560], [2560, 1400], [2560, 1200],
+                [3840, 3840], [1366, 1366]].map(([w, r]) => autoZoom(w, r)).join();
+  }
   for (let i = 0; i < 6; i++) press("Equal");
   out.top = zoom();
   press("Digit0"); out.reset = zoom(); out.readReset = !!readout()?.hidden;
@@ -94,7 +112,7 @@ def checks(native: dict, css: dict) -> list[tuple[str, bool, str]]:
     def check(name: str, ok: bool, detail: str = "") -> None:
         out.append((name, bool(ok), detail))
 
-    check("native (shipped): the chords are left to Edge, nothing is drawn",
+    check("native: the chords are left to Edge, nothing is drawn",
           native.get("mode") == "native" and not native.get("cls")
           and native.get("plus1") is False and native.get("z1") == "",
           f"mode {native.get('mode')}, prevented {native.get('plus1')}, --zoom {native.get('z1')!r}")
@@ -107,6 +125,13 @@ def checks(native: dict, css: dict) -> list[tuple[str, bool, str]]:
     check("css: clamped at 150% and at 80%",
           css.get("top") == "1.5" and css.get("bottom") == "0.8",
           f"top {css.get('top')}, bottom {css.get('bottom')}")
+    check("css (shipped): a kebab menu at 125% opens under its button (M4)",
+          css.get("menuDx") is not None and abs(css["menuDx"]) <= 1
+          and abs(css.get("menuDy", 99) - 4) <= 1,
+          f"right edge off by {css.get('menuDx')}, top {css.get('menuDy')} below")
+    check("css: the automatic level reads a 2K screen like Full HD, capped by the window",
+          css.get("auto") == "1,1.1,1.25,1.25,1,1.5,1",
+          "1920,2048,2560,2560@1400,2560@1200,3840,1366 -> " + str(css.get("auto")))
     check("css: Ctrl+0 is 100%, and the readout goes",
           css.get("reset") == "1" and css.get("readReset"),
           f"{css.get('reset')} / hidden {css.get('readReset')}")
@@ -133,8 +158,8 @@ def main() -> int:
         threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
         url = f"{base}/static/_zoom_probe.html?t={token}"
         try:
-            native = measure(edge, url, 1280, 800)
-            css = measure(edge, url + "&mode=css", 1280, 800)
+            native = measure(edge, url + "&mode=native", 1280, 800)
+            css = measure(edge, url, 1280, 800)       # the shipped mode
         except Exception as err:                      # noqa: BLE001
             print(f"FAIL - {err}")
             return 1
