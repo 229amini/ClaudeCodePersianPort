@@ -300,6 +300,9 @@ const SCROLLERS = new Set(%SCROLLERS%);
     // menu at the window corner and this would look like a positioning bug
     // that is really a probe artifact (wiki/dev-environment.md).
     btn.style.display = "inline-flex";
+    // The terminal edition collapses it to zero WIDTH instead (a transparent
+    // 30px button held a hole at the end of every row); hover gives it back.
+    btn.style.width = "30px";
     btn.click();
     await sleep(80);
     const out = {open: menu.matches(":popover-open"),
@@ -332,6 +335,14 @@ const SCROLLERS = new Set(%SCROLLERS%);
   // at the foot of this file measures the rail rather than the tree. The
   // right-edge and drawer assertions are about the tree.
   const sideBox = box(document.getElementById("sidebar"));
+  // How far a project row's count sits from the row's END (its left edge,
+  // under RTL) while nothing hovers it. Two transparent 30px row buttons used
+  // to hold that much empty space there (user report 2026-09-29).
+  const projRow = document.querySelector("#sidebar .proj-top");
+  const projPill = projRow?.querySelector(".count-pill");
+  const rowGap = projRow && projPill
+    ? Math.round(projPill.getBoundingClientRect().left - projRow.getBoundingClientRect().left)
+    : null;
   const clippedAll = home.clipped.concat(clipped());
 
   // MA3-T2: the same window, split into four columns. Every box measured above
@@ -354,6 +365,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
     // the shell is laid out inside what is left of it.
     clientW: document.documentElement.clientWidth,
     sidebar: sideBox,
+    rowGap,
     stage: box(document.getElementById("stage")),
     compBox: home.compBox,
     home: home.home,
@@ -558,8 +570,17 @@ def main() -> int:
             # column it was given - measured against the window, because the
             # stage is what is left of the window after the sidebar and the
             # sidebar is not what the report was about.
-            if m["menu"]["w"] < min(240, view - 40):
-                failures.append(f"{where}: the picker is only {m['menu']['w']}px wide")
+            #
+            # The column, not a fixed 240: at 500px the sidebar is a fixed 200px
+            # and the picker already spans all that is left (246 of a 262px
+            # prompt on Linux Chromium). Edge on Windows lays the same column
+            # out 8px narrower (238 of 254 - font metrics), and a fixed floor
+            # read that as "squeezed" when the picker was full-width. The 201px
+            # report was a picker far narrower than its own prompt; this still
+            # catches exactly that.
+            if m["menu"]["w"] < min(240, view - 40, m["comp"]["w"] - 24):
+                failures.append(f"{where}: the picker is only {m['menu']['w']}px wide "
+                                f"under a {m['comp']['w']}px prompt")
             # TERMINAL-REDESIGN.md §1 (user decision 2026-09-10): the terminal
             # edition puts the sidebar on the RIGHT - grid column 1, which is
             # the right edge under dir="rtl". This REPLACES E2's left-hand
@@ -572,6 +593,13 @@ def main() -> int:
             # still an exact position, not a looser one.
             if EDITION == "terminal" and (width, height) == SIZES[0]:
                 side, stage = m["sidebar"], m["stage"]
+                # The count at the row's end, not 60px in from it: the row's own
+                # padding is the only space allowed there at rest.
+                if m.get("rowGap") is None:
+                    print(f"  {where}: no project row in the sidebar - count position not checked")
+                elif m["rowGap"] > 14:
+                    failures.append(f"{where}: a project row's count sits {m['rowGap']}px in "
+                                    "from the row's end - hidden row buttons are holding space")
                 if abs(side["x"] + side["w"] - (m["clientW"] - GUTTER)) > 1:
                     failures.append(f"{where}: the sidebar is not one gutter off the right "
                                     f"edge (x={side['x']} w={side['w']} of {m['clientW']})")

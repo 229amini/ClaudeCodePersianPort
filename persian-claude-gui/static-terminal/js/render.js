@@ -170,8 +170,29 @@ function append(el, { stick = true } = {}) {
   // consecutive calls, and asking would end that run every time a helper
   // reported a step of its own.
   (nest ?? toolHome(el)).append(el);
-  if (wasAtBottom) log.scrollTop = log.scrollHeight;
+  if (wasAtBottom) stickSoon(log);
   return el;
+}
+
+/* STAY PINNED TO WHAT THE ROW BECOMES, NOT TO WHAT IT WAS WHEN IT LANDED.
+   Most rows are appended EMPTY and filled right after -- bubble() then the
+   rendered markdown, userRow() then its text -- so a stick written at append
+   time scrolled to the bottom of a blank row. The row then grew under the
+   fold, the next append's atBottom() read "not at the bottom", and the
+   transcript stopped following for good: the user saw the answer run off
+   the bottom of the pane with the scrollbar already at its end. The write
+   is repeated once the synchronous render is over, on the same box (`log`
+   is swapped per render target, so it is captured, not re-read). */
+const sticking = new Set();
+
+function stickSoon(box) {
+  box.scrollTop = box.scrollHeight;
+  if (sticking.has(box)) return;
+  sticking.add(box);
+  queueMicrotask(() => {
+    sticking.delete(box);
+    box.scrollTop = box.scrollHeight;
+  });
 }
 
 /* ONE DOM WRITE PER FRAME for the streaming bubble.
@@ -1984,24 +2005,10 @@ function renderRaw(event) {
 
 /* --- statusline ----------------------------------------------------------- */
 
-/* A percentage the user has to act on (context left, quota burned) reads far
-   faster as a bar than as digits. <progress> is the native element for it:
-   it carries the value accessibly and needs no JS to stay in sync. */
 /* Percent of the five-hour window at which the CLI itself starts saying so.
    `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
    table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
 const QUOTA_WARN_AT = 95;
-
-function meter(pct) {
-  const wrap = document.createElement("span");
-  wrap.className = "sl-meter";
-  const bar = document.createElement("progress");
-  bar.max = 100;
-  bar.value = Math.max(0, Math.min(100, pct));
-  bar.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
-  wrap.append(bar, label(Math.round(pct) + "%", "mono"));
-  return wrap;
-}
 
 /* Everything in the statusline except the folder belongs to ONE conversation:
    the session id, what it cost, how full its context is, and the machine's own
@@ -2070,30 +2077,13 @@ export function setStatus(patch) {
     paintPinRail(log, sid);
   }
 
-  // FIRST LINE: the machine's own statusLine command output, inherited rather
-  // than reimplemented (plan §B-7, V2-PLAN §3.4 row 1 — «Keep, first line»).
-  // It is terminal text: keep it LTR-isolated, and keep its colours — the
-  // script uses them to mean something (which mode is on, how full the context
-  // is). server.py parsed the SGR codes into runs; building spans from data is
-  // also why none of this can inject markup.
-  if (s.custom?.length) {
-    const line = document.createElement("div");
-    line.className = "sl-line";
-    const bdi = pathEl("");
-    bdi.classList.add("sl-custom");
-    for (const seg of s.custom) {
-      const span = document.createElement("span");
-      span.textContent = seg.text;
-      if (seg.fg) span.style.color = seg.fg;
-      if (seg.bg) span.style.background = seg.bg;
-      if (seg.bold) span.style.fontWeight = "600";
-      if (seg.dim) span.style.opacity = ".65";
-      if (seg.italic) span.style.fontStyle = "italic";
-      bdi.append(span);
-    }
-    line.append(bdi);
-    statusline.append(line);
-  }
+  // NO line for the machine's own statusLine output any more (user decision,
+  // 2026-09-29). It was drawn first, as the TUI does (V2-PLAN §3.4 row 1), but
+  // in this window everything it said is already on screen, better drawn: the
+  // folder is the pane header, the model, effort and context are the composer
+  // bar, the quota is the bar's ◔ panel. A row repeating all of it in mono was
+  // the noise the user asked to be rid of. state.status.custom still records
+  // what the script printed; nothing paints it.
 
   /* THE STATE LINE, since CLAUDE-AI-PARITY.md P1: only what the composer bar
      cannot say. The posture, the model and the context used to open this line
@@ -2123,14 +2113,9 @@ export function setStatus(patch) {
     add(btn);
   }
   if (row.childElementCount) statusline.append(row);
-
-  // The account's quota, painted once in the sidebar footer from whichever
-  // conversation the keyboard is in (it is the same account in every pane).
-  const quota = document.getElementById("side-quota");
-  if (quota && onFocused() && s.quota !== undefined) {
-    quota.replaceChildren(label(FA.sideQuota, "sl-label"), meter(s.quota));
-    quota.hidden = false;
-  }
+  // The sidebar's own five-hour meter is gone too (same decision): the bar's
+  // ◔ panel shows the same limit with its reset time, and a third copy of one
+  // number is not information.
 }
 
 /* «Opus 5.5» for `claude-opus-5-5`, the way the TUI names a model in its own
