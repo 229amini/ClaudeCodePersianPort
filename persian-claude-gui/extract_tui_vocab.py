@@ -31,21 +31,44 @@ import sys
 TABLE_ANCHOR = re.compile(rb'\[\{context:"Global",bindings:\{')
 
 # Immediately before the table, the bundle resolves the two platform-dependent chords as
-# short variables, which the table then uses as computed keys (`[de]:`, `[q]:`):
-#   le = platform is windows or wsl;  de = le ? "alt+v" : "ctrl+v"      (chat:imagePaste)
-#   q  = ge ? "shift+tab" : "meta+m"                                    (chat:cycleMode)
-# `ge` is true on Windows with a modern Node, which is every machine this project ships to.
-# Both branches are captured so the report can say which one Windows takes and why.
+# short variables, which the table then uses as computed keys (`[xe]:`, `[ie]:`). 2.1.284:
+#   var I=O(), we=I==="windows"||I==="wsl", xe=we?"alt+v":"ctrl+v",      (chat:imagePaste)
+#       ve=I!=="windows"||(<bun/node version check>), ie=ve?"shift+tab":"meta+m"  (cycleMode)
+# Both predicates are true on Windows with a modern runtime, which is every machine this
+# project ships to, so the truthy branch is the Windows chord. Both branches are captured
+# so the report can say which one Windows takes and why.
 #
-# The variable NAMES are minifier output and they move: the mode-cycle chord was `V` on
-# 2.1.260 and `q` on 2.1.261. Nothing downstream may key on them — `computed_uses` below
-# reports which actions each one serves, so a caller can ask "what does chat:cycleMode
-# resolve to" without knowing what this build called the temporary.
-PLATFORM_CHORDS = re.compile(
-    rb'(?P<paste_var>\w+)\s*=\s*le\?"(?P<paste_win>[^"]+)":"(?P<paste_other>[^"]+)".{0,400}?'
-    rb'(?P<cycle_var>\w+)\s*=\s*ge\?"(?P<cycle_ok>[^"]+)":"(?P<cycle_fallback>[^"]+)"',
-    re.S,
+# EVERY name here is minifier output and moves between builds: the mode-cycle chord was
+# `V` on 2.1.260, `q` on 2.1.261, `ie` on 2.1.284, and the predicates went `le`/`ge` ->
+# `we`/`ve` on 2.1.284 (which is what broke a pattern that spelled the predicates out).
+# So nothing is matched by name: any `VAR=PRED?"chord":"chord"` in the head is a
+# candidate, a computed key in the table picks its own by name, and the ternary is only
+# trusted when PRED's own declaration tests `"windows"` — structural evidence that it is a
+# platform switch rather than some unrelated string ternary that happens to sit nearby.
+# `computed_uses` below reports which actions each var serves, so a caller asks "what does
+# chat:cycleMode resolve to" without knowing what this build called the temporary.
+_ID = rb'[A-Za-z_$][\w$]*'
+CHORD_TERNARY = re.compile(
+    rb'(?<![\w$.])(?P<var>' + _ID + rb')=(?P<pred>' + _ID + rb')\?'
+    rb'"(?P<yes>[^"]+)":"(?P<no>[^"]+)"'
 )
+
+
+def _platform_predicate(head: bytes, pred: bytes) -> bytes | None:
+    """The declaration of `pred` in `head` if it tests the platform, else None.
+
+    Takes the text from `pred=` up to the next top-level `,NAME=` / `;` — enough to see
+    whether it compares against `"windows"`.
+    """
+    m = None
+    for m in re.finditer(rb'(?<![\w$.])' + re.escape(pred) + rb'=(?!=)', head):
+        pass  # the last declaration before the table is the one in scope
+    if m is None:
+        return None
+    body = head[m.end():m.end() + 400]
+    stop = re.search(rb',' + _ID + rb'=(?!=)|;', body)
+    decl = body[:stop.start()] if stop else body
+    return decl if b'"windows"' in decl else None
 
 # `...B==="wsl"&&{"ctrl+v":"chat:imagePaste"}` — a spread the bundler left conditional.
 # These bindings are NOT active on the platform this project ships to, so they are pulled
@@ -173,21 +196,20 @@ def parse(data: bytes) -> dict:
 
     # Platform chords are declared in the ~1.5 KB preceding the table.
     head = data[max(0, anchor.start() - 2000):anchor.start()]
-    pc = PLATFORM_CHORDS.search(head)
-    # Keyed by the *variable name* the table uses, not by action: `V` resolves
+    # Keyed by the *variable name* the table uses, not by action: one var resolves
     # chat:cycleMode and confirm:cycleMode both, so keying by action loses one of them.
+    # Later declarations shadow earlier ones, as they would in scope.
     chords: dict[str, str] = {}
     chord_notes: dict[str, str] = {}
-    if pc:
-        chords[pc.group("paste_var").decode()] = pc.group("paste_win").decode()
-        chords[pc.group("cycle_var").decode()] = pc.group("cycle_ok").decode()
-        chord_notes[pc.group("paste_var").decode()] = (
-            f'windows/wsl: {pc.group("paste_win").decode()}; '
-            f'otherwise {pc.group("paste_other").decode()}'
-        )
-        chord_notes[pc.group("cycle_var").decode()] = (
-            f'modern node: {pc.group("cycle_ok").decode()}; '
-            f'otherwise {pc.group("cycle_fallback").decode()}'
+    for t in CHORD_TERNARY.finditer(head):
+        decl = _platform_predicate(head, t.group("pred"))
+        if decl is None:
+            continue
+        var = t.group("var").decode()
+        chords[var] = t.group("yes").decode()
+        chord_notes[var] = (
+            f'{t.group("pred").decode()} true on windows ({decl.decode("ascii", "replace")[:60]}):'
+            f' {t.group("yes").decode()}; otherwise {t.group("no").decode()}'
         )
 
     # The table ends at the `];` that closes the array literal.

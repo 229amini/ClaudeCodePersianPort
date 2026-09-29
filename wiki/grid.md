@@ -280,6 +280,34 @@ arithmetic in CSS px.** Keep `offset*` for an element's own size: a rect read du
 `scale(.96)` entry animation is short, which is what the first attempt at this fix got wrong
 (8 px off, caught by `test_zoom.py`). A divider drag is a ratio of two rects and needs nothing.
 
+### The Windows probe answered (pcg-8gk, 2026-09-29)
+
+`probe_edge.py` run on the `Lion` PC (Windows 11, Edge app mode, the user's default profile).
+All three swappable values stay as shipped:
+
+- **M1, chords:** the page saw **every** chord in `CHORDS` and `preventDefault()` held for each:
+  the window stayed open. That includes `ctrl+w`, `ctrl+t`, `ctrl+n`, `ctrl+tab`, `ctrl+pageup/down`,
+  `alt+←/→` (no Back/Forward), `ctrl+alt+arrows`, `ctrl+= / - / 0` and `f11`. Edge app mode owns
+  none of them once the page cancels the event, so `PANE_KEYS` needs no swap. An earlier run closed
+  with no key logged at all: that was the window's ✕ (or Alt+F4, which never reaches the page), not
+  a chord.
+- **M2, per-origin state:** `localStorage` survives a relaunch only on the same origin (port 8765:
+  count 1, then 2). A random port is a new origin every run (count 1 each time), and the app uses a
+  random port, so `PREFS_STORE` stays `"session"`: `"local"` would buy nothing without a stable
+  port. `devicePixelRatio` was 1.1 on every run, which is Windows display scaling, not Edge zoom.
+  **Notifications: `Notification.requestPermission()` showed no prompt at all** and resolved
+  `"default"` (user confirmed nothing appeared). So `render.js`'s turn-end OS notification
+  (it asks on `"default"`, fires only on `"granted"`) never fires on this PC. Open: whether that
+  is app mode, the per-run origin, or Edge's quiet-permission UI; the in-window bell is
+  unaffected.
+- **M3, font:** the three vendored static Vazirmatn weights read correctly at 13 and 15 px
+  (user confirmed by eye). No variable build was tried (`--font` not passed).
+- **M4, root CSS zoom:** the probe's naive `style.left = rect.left` menu landed at 1.25 × the anchor
+  (847→1059, 1065→1337), which is the rects-are-screen-px rule above, measured on the target
+  Edge. The shipped `cssPx()` fix stands.
+- **M6, Alt alone:** focus stays in the page (`document.hasFocus()` true, `activeElement` unchanged);
+  Alt does not move focus to an Edge menu in app mode.
+
 ## The layout control (pcg-7bi, 2026-09-29)
 
 The user asked to arrange the conversations that are ALREADY open. Since the new-session page
@@ -312,3 +340,16 @@ The rows are rebuilt on every paint, so the control that had the keyboard is re-
   status line) under any CSS — `test_split.py` marks that size `tight` and
   checks only that the column boxes stay inside the window, not that their
   content does.
+
+## A layout gate that failed only after 17:00 (2026-09-29)
+
+Web `test_split.py` passed in the afternoon and failed in the evening on the same code: at 760x480
+with four panes, two empty cells sat at `y = -3`. `greetingText()` (chrome.js) picks the home
+greeting by `new Date().getHours()`. The evening line «عصر بخیر! چه کاری انجام دهیم؟» is the
+longest of the four. In a 275 px cell it wrapped to a second line, and that line pushed the cell's
+content past its box.
+
+Measured by pinning the clock: `TZ=Etc/GMT-12` (05:00) and `TZ=Etc/GMT+3` (14:00) passed,
+and 17:00 UTC failed. The greeting now stays on one line and ellipsises. **Anything drawn from the
+clock is an input to the layout gates.** Run them under a second `TZ` before calling a failure
+flaky, or before calling one fixed.

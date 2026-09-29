@@ -62,6 +62,11 @@ LOAD_BEARING = [
     ("Chat", "alt+v", "chat:imagePaste"),
     ("Chat", "meta+p", "chat:modelPicker"),
     ("Chat", "ctrl+x enter", "chat:queueSubmit"),
+    ("Chat", "ctrl+x ctrl+s", "chat:sendNow"),
+    # The window binds ctrl+Enter to its OWN «بعداً بفرست» (tui-keys.md deviation 7).
+    # Asserted here only because that deviation is written against this meaning: if the
+    # TUI moves ctrl+enter, the deviation note is what goes stale.
+    ("Chat", "ctrl+enter", "chat:sendNow"),
     ("Global", "ctrl+r", "history:search"),
     ("Global", "ctrl+o", "app:toggleTranscript"),
     ("Global", "ctrl+t", "app:toggleTodos"),
@@ -141,6 +146,14 @@ def tables(doc: str) -> list[tuple[list[str], list[list[str]]]]:
 
 
 def main() -> int:
+    if EDITION != "terminal":
+        # §9/§10 read constants only the terminal edition carries (the paste chip,
+        # QUOTA_WARN_AT); on the web edition they fail as "drift" that is really a
+        # feature that edition never had. The binary-vs-wiki half is edition-free
+        # and runs in the terminal pass, which is this gate's default.
+        print(f"SKIP - test_tui_vocab is a terminal-only gate (PCG_UI={EDITION}); "
+              "run it with PCG_UI unset or PCG_UI=terminal")
+        return 0
     print("1. the extractor still finds the table in the installed binary")
     path = vocab.find_binary()
     data = Path(path).read_bytes()
@@ -264,16 +277,23 @@ def main() -> int:
                 and header[1] == "Bindings"):
             continue
         for row in rows:
-            name = row[0].strip("`").split(" / ")[0]
-            if name not in by_ctx:
-                continue
+            # A row may name several contexts (`A` / `B` / `C` | 13 / 6 / 6): each name is
+            # held to ITS count. Stripping the backticks per name matters — stripping only
+            # the cell's outer ones left "A`" and the whole row was silently skipped.
+            names = [n.strip().strip("`") for n in row[0].split(" / ")]
             claimed = [int(n) for n in re.findall(r"\d+", row[1])]
             if not claimed:
                 continue
-            seen += 1
-            actual = len(by_ctx[name]["bindings"])
-            if actual not in claimed:
-                wrong.append(f"{name}: doc says {row[1]}, binary has {actual}")
+            pairs = (list(zip(names, claimed)) if len(names) == len(claimed)
+                     else [(n, None) for n in names])
+            for name, want in pairs:
+                if name not in by_ctx:
+                    wrong.append(f"{name}: in the doc, not a context in this build")
+                    continue
+                seen += 1
+                actual = len(by_ctx[name]["bindings"])
+                if (actual != want) if want is not None else (actual not in claimed):
+                    wrong.append(f"{name}: doc says {row[1]}, binary has {actual}")
     check(seen > 5, f"the 'contexts v2 does not build' table was found ({seen} rows)")
     check(not wrong, "every claimed binding count matches the binary", "; ".join(wrong))
 
@@ -312,9 +332,17 @@ def main() -> int:
           "the newline count uses the binary's own CR/LF/CRLF regex")
 
     # `cue(e,t)`: two shapes, and the zero-newline one drops the ` +N lines` tail.
-    check(b"return`[Pasted text #${e}]`" in data
-          and b"return`[Pasted text #${e} +${t} lines]`" in data,
-          "cue() still mints two placeholder shapes")
+    # Matched by shape, not by the minifier's parameter names — they moved from `(e,t)` to
+    # `(e,n)` on 2.1.284 with the function body unchanged:
+    #   function tX(e,n){if(n===0)return`[Pasted text #${e}]`;return`[Pasted text #${e} +${n} lines]`}
+    # The backreferences hold the id and the line count to the SAME two parameters, and the
+    # short shape to the `===0` branch, so this is stricter than two loose substrings.
+    cue = re.search(
+        rb"function [A-Za-z_$][\w$]*\((?P<id>[A-Za-z_$][\w$]*),(?P<n>[A-Za-z_$][\w$]*)\)\{"
+        rb"if\((?P=n)===0\)return`\[Pasted text #\$\{(?P=id)\}\]`;"
+        rb"return`\[Pasted text #\$\{(?P=id)\} \+\$\{(?P=n)\} lines\]`\}", data)
+    check(cue is not None, "cue() still mints two placeholder shapes",
+          "the bundle's placeholder function changed shape; re-read it against composer.js")
     print("\n10. the five-hour warning fires where the binary's own does")
     # v2.6 gave the status line the TUI's «Approaching your 5-hour usage limit»
     # row. The threshold is the binary's default, not a number picked here:
