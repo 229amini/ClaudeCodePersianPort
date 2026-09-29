@@ -1242,12 +1242,21 @@ async function copyQueued(text, button) {
   }
 }
 
+/* «الان بفرست» without the button: stop the running turn, and the queue — which
+   an interrupt keeps — runs at once, in order. composer.js's ctrl+x ctrl+s
+   (the TUI's chat:sendNow) queues its draft and then calls this same thing. */
+export async function runQueueNow(tab = state.tab) {
+  try {
+    await api("/api/interrupt", { tab });
+  } catch (err) {
+    // The turn was already over; the queue runs on its own.
+  }
+}
+
 async function sendQueuedNow(button) {
   button.disabled = true;
   try {
-    await api("/api/interrupt", { tab: state.tab });
-  } catch (err) {
-    // The turn was already over; the queue runs on its own.
+    await runQueueNow();
   } finally {
     button.disabled = false;
   }

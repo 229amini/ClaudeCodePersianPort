@@ -280,6 +280,27 @@ arithmetic in CSS px.** Keep `offset*` for an element's own size: a rect read du
 `scale(.96)` entry animation is short, which is what the first attempt at this fix got wrong
 (8 px off, caught by `test_zoom.py`). A divider drag is a ratio of two rects and needs nothing.
 
+### The Windows probe answered (pcg-8gk, 2026-09-29)
+
+`probe_edge.py` run on the `Lion` PC (Windows 11, Edge app mode, the user's default profile).
+All three swappable values stay as shipped:
+
+- **M1, chords:** the page saw **every** chord in `CHORDS` and `preventDefault()` held for each:
+  the window stayed open. That includes `ctrl+w`, `ctrl+t`, `ctrl+n`, `ctrl+tab`, `ctrl+pageup/down`,
+  `alt+←/→` (no Back/Forward), `ctrl+alt+arrows`, `ctrl+= / - / 0` and `f11`. Edge app mode owns
+  none of them once the page cancels the event, so `PANE_KEYS` needs no swap. An earlier run closed
+  with no key logged at all: that was the window's ✕ (or Alt+F4, which never reaches the page), not
+  a chord.
+- **M2, per-origin state:** `localStorage` survives a relaunch only on the same origin (port 8765:
+  count 1, then 2). A random port is a new origin every run (count 1 each time), and the app uses a
+  random port, so `PREFS_STORE` stays `"session"`: `"local"` would buy nothing without a stable
+  port. `devicePixelRatio` was 1.1 on every run, which is Windows display scaling, not Edge zoom.
+- **M4, root CSS zoom:** the probe's naive `style.left = rect.left` menu landed at 1.25 × the anchor
+  (847→1059, 1065→1337), which is the rects-are-screen-px rule above, measured on the target
+  Edge. The shipped `cssPx()` fix stands.
+- **M6, Alt alone:** focus stays in the page (`document.hasFocus()` true, `activeElement` unchanged);
+  Alt does not move focus to an Edge menu in app mode.
+
 ## The layout control (pcg-7bi, 2026-09-29)
 
 The user asked to arrange the conversations that are ALREADY open. Since the new-session page

@@ -75,6 +75,12 @@ SCENARIOS = {
     ("Chat", "alt+t"): ("thinkingToggled", "alt+t shows and hides the thinking card"),
     ("Chat", "Enter"): ("submitted", "Enter sends"),
     ("Chat", "ctrl+x Enter"): ("queueSubmitted", "ctrl+x Enter sends to the queue"),
+    ("Chat", "ctrl+x ctrl+s"): ("sendNowInterrupted",
+                                "ctrl+x ctrl+s mid-turn queues the draft, then stops"
+                                " the turn so it runs now"),
+    ("Chat", "ctrl+Enter"): ("laterHeld",
+                             "ctrl+Enter mid-turn holds the draft for later"
+                             " (the window's meaning, not chat:sendNow)"),
     ("Chat", "shift+Enter"): ("shiftEnterFree",
                               "shift+Enter is left to the textarea's own newline"),
     ("Chat", "ctrl+j"): ("ctrlJNewline", "ctrl+j inserts a newline"),
@@ -233,6 +239,34 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   window.renderEvent({ type: "wrapper", subtype: "user_echo", uuid: "u1", text: "kar" });
   await sleep(30);
   out.escInterrupted = key("Escape") && called("/api/interrupt");
+
+  // ctrl+x ctrl+s, the TUI's chat:sendNow: mid-turn the draft is queued FIRST
+  // and the turn stopped AFTER, which is the queue row's «الان بفرست» — the
+  // interrupt keeps the queue, so the message runs at once.
+  type("hala");
+  const markNow = calls.length;
+  const nowPrefix = key("x", { ctrlKey: true });
+  const nowHandled = key("s", { ctrlKey: true });
+  await sleep(60);
+  const afterNow = calls.slice(markNow).map((c) => c.url.split("?")[0]);
+  out.sendNowInterrupted = nowPrefix && nowHandled
+    && lastCall("/api/message")?.body?.text === "hala"
+    && afterNow.indexOf("/api/message") >= 0
+    && afterNow.indexOf("/api/interrupt") > afterNow.indexOf("/api/message");
+
+  // ctrl+Enter mid-turn is the WINDOW's «بعداً بفرست» (deviation 7), not the
+  // TUI's chat:sendNow: nothing is posted, nothing is stopped, a held row shows.
+  type("badan");
+  const markLater = calls.length;
+  const laterHandled = key("Enter", { ctrlKey: true });
+  await sleep(40);
+  const afterLater = calls.slice(markLater).map((c) => c.url.split("?")[0]);
+  const heldRow = document.querySelector(".later-row");
+  out.laterHeld = laterHandled && input.value === "" && !!heldRow
+    && !afterLater.includes("/api/message") && !afterLater.includes("/api/interrupt");
+  // Take it back, so the turn ending below does not send it into later cases.
+  heldRow?.querySelector(".later-back")?.click();
+  type("");
   window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
   window.renderEvent({ type: "wrapper", subtype: "cli_exited", replayed: true });
   await sleep(30);

@@ -1,12 +1,13 @@
 # TUI keys — the default binding table, read out of the binary
 
-**Build:** `claude` **2.1.261**, author PC, 2026-09-05 (re-verified; was 2.1.260 on 2026-09-04).
+**Build:** `claude` **2.1.284**, author PC, 2026-09-29 (counts and computed chords re-verified;
+the per-context tables below were written against 2.1.261 — see "What 2.1.284 moved").
 **Source:** `persian-claude-gui/extract_tui_vocab.py` (free; reads `claude.exe`, spawns nothing).
 **Regenerate:** `C:\Python314\python.exe persian-claude-gui\extract_tui_vocab.py`
 **Gate:** `persian-claude-gui/test_tui_vocab.py` fails when this file and the binary disagree.
 
 V2-PLAN.md §3.6: *"Lift the defaults from the binary, not from memory."* This is that table.
-206 bindings across 25 contexts. The «کلید v2» column is what the window binds — empty means
+213 bindings across 26 contexts on 2.1.284 (206 / 25 on 2.1.261). The «کلید v2» column is what the window binds — empty means
 **out of scope for v2**, with the reason in the last column.
 
 > The binary updated itself from 2.1.259 to 2.1.260 overnight on 2026-09-04, between V2-PLAN.md
@@ -21,6 +22,29 @@ V2-PLAN.md §3.6: *"Lift the defaults from the binary, not from memory."* This i
 > been pinned by name and both reported drift that was not drift. The extractor now matches
 > their *shape* and reports computed chords by the **action** they serve, so a rename is
 > invisible and a real change is not.
+>
+> **What 2.1.284 moved** (2026-09-29; diffed against the 2.1.282 and 2.1.283 builds still in
+> `~/.local/share/claude/versions`): every load-bearing chord unchanged. Minifier output moved
+> again — the platform *predicates* went `le`/`ge` → `we`/`ve` (2.1.283), and the extractor
+> had spelled those two names out, so both computed chords came back unresolved. It now
+> matches any `VAR=PRED?"a":"b"` before the table and trusts it only when PRED's own
+> declaration tests `"windows"`. The paste chip's function went `cue(e,t)` → `(e,n)`, body
+> unchanged. Real key changes, 2.1.261 → 2.1.284:
+> - `MessageSelector` (15, the rewind picker) is gone from the table (2.1.283).
+> - `AbovePrompt` 9 → 13 (`up`/`down`/`pageup`/`pagedown`/`home`/`end` scroll a pane); new
+>   contexts `Pane` (15) and `PaneField` (1) — all plugin UI.
+> - `DiffDialog` 17 → 16: `enter` → `diff:viewDetails` removed (2.1.283).
+> - `Footer` 11 → 9: `backspace`/`delete` → `footer:dismiss` arrived in 2.1.283 and left in 2.1.284.
+> - `EffortSlider` 1 → 4: `left`/`right` step effort, `tab` → `effortSlider:toggleUltracode`,
+>   beside the old `s` → `effortSlider:thisSessionOnly` (2.1.284).
+> - `Settings` 16 → 18 (between 2.1.263 and 2.1.282; no binary from that range survives to
+>   diff, the current 18 are in the table below).
+> - `Chat` binds `ctrl+x ctrl+s` and `ctrl+enter` → `chat:sendNow`. The window adopts the
+>   first and keeps its own meaning for the second (deviation 7); both are rows in «Chat».
+> - `Confirmation` no longer binds `y` / `n` (its 7 are `enter escape up down tab space
+>   shift+tab`). The window never answered them — its digits come from the numbered list — so
+>   only the rows changed.
+> - `ModelPicker`'s 3 include `s` → `modelPicker:thisSessionOnly` (row below; no v2 key).
 
 ## How to read a chord
 
@@ -31,10 +55,10 @@ A chord with a space in it is a **two-stroke sequence**, not two keys at once:
 
 Two chords are platform-computed, resolved here for Windows:
 
-| Variable (2.1.261) | Windows | Other | Used by |
+| Variable (2.1.284) | Windows | Other | Used by |
 |---|---|---|---|
-| `de` | **`alt+v`** | `ctrl+v` | `chat:imagePaste` |
-| `q` (was `V` on 2.1.260) | **`shift+tab`** | `meta+m` | `chat:cycleMode`, `confirm:cycleMode` |
+| `xe` (was `de` on 2.1.261), predicate `we` = platform is windows or wsl | **`alt+v`** | `ctrl+v` | `chat:imagePaste` |
+| `ie` (was `q` on 2.1.261, `V` on 2.1.260), predicate `ve` = not windows, or a modern Bun/Node | **`shift+tab`** | `meta+m` | `chat:cycleMode`, `confirm:cycleMode` |
 
 The variable names are minifier output and change between builds. Nothing downstream keys on
 them: the extractor reports `computed_uses`, so a chord is looked up by the action it serves.
@@ -74,6 +98,9 @@ This is the context v2.3 implements. Everything else in this file is reference.
 | `meta+w` | `chat:workflowKeywordToggle` | — | کاوش‌نشده |
 | `enter` | `chat:submit` | `Enter` | همین حالا هست |
 | `ctrl+x enter` | `chat:queueSubmit` | `ctrl+x Enter` | فرستادن به صف؛ موتور صف را دارد |
+| `ctrl+x ctrl+s` | `chat:sendNow` | `ctrl+x ctrl+s` | همین حالا بفرست: وسط نوبت، پیام به صف می‌رود و کار فعلی متوقف می‌شود تا صف همان دم اجرا شود — همان «الان بفرست» ردیف صف؛ بیرون از نوبت، فرستادن عادی |
+| `ctrl+enter` | `chat:sendNow` | — | انحراف عمدی ۷؛ در پنجره `ctrl+Enter` یعنی «بعداً بفرست» (ردیف بعد) |
+| — | `window:sendLater` | `ctrl+Enter` | «بعداً بفرست»: وسط نوبت پیام را نگه می‌دارد تا نوبت تمام شود (همسان claude.ai/code)؛ بیرون از نوبت همان `Enter` است |
 | `ctrl+j` | `chat:newline` | `shift+Enter` و `ctrl+j` | `shift+Enter` عادت مرورگر است و می‌ماند |
 | `up` | `history:previous` | `↑` در سطر اول | V2-PLAN §3.2 |
 | `down` | `history:next` | `↓` در سطر آخر | V2-PLAN §3.2 |
@@ -93,8 +120,8 @@ they come from the select component, one digit per row.
 
 | Chord | Action | کلید v2 | وضعیت |
 |---|---|---|---|
-| `y` | `confirm:yes` | `1` | v2 شماره می‌دهد، چون گزینه‌ها فارسی‌اند و `y`/`n` سرنخ ندارند |
-| `n` | `confirm:no` | `3` | همان |
+| — | `confirm:yes` | `1` | ردیف اول فهرست شماره‌دار؛ باینری از 2.1.283 دیگر `y` را نمی‌بندد و پنجره هم هرگز نبست |
+| — | `confirm:no` | `3` | ردیف رد؛ `n` هم از 2.1.283 در جدول باینری نیست |
 | `enter` | `confirm:yes` | `Enter` | تأیید ردیف انتخاب‌شده |
 | `escape` | `confirm:no` | `Esc` | همین حالا هست |
 | `up` / `down` | `confirm:previous` / `confirm:next` | `↑` / `↓` | حرکت بین ردیف‌ها |
@@ -195,19 +222,19 @@ missed. Each is a screen the window replaces with something else, or a feature �
 
 | Context | Bindings | Why not |
 |---|---|---|
-| `Settings` | 16 | `/config` فایل واقعی را باز می‌کند (V2-PLAN §2) |
+| `Settings` | 18 | `/config` فایل واقعی را باز می‌کند (V2-PLAN §2)؛ ۱۸ کلید در 2.1.284: `escape` `up` `down` `k` `j` `ctrl+p` `ctrl+n` `home` `end` `space` `enter` (پیمایش و انتخاب)، `/` جست‌وجو، `r` تلاش دوباره، `d` / `w` بازهٔ روز / هفته، `t` مرتب‌سازی با توکن، `ctrl+u` / `ctrl+d` نیم‌صفحه |
 | `Tabs` | 4 | نوارِ تب‌های v1 با ماوس کار می‌کند و دست‌نخورده می‌ماند |
 | `ThemePicker` | 2 | `/theme` فقط روشن/تاریک است |
 | `Scroll` | 14 | پیمایش و انتخاب متن کار مرورگر است |
 | `Help` | 1 | `?` پوشش کلیدها را باز می‌کند؛ بستن با `Esc` |
 | `Attachments` | 6 | پیوست‌ها با ماوس مدیریت می‌شوند |
-| `Footer` | 11 | نوار پایین در v2 خواندنی است، نه کانونی |
-| `AbovePrompt` / `Input` / `Select` | 9 / 6 / 6 | صفحهٔ افزونه‌ها ساخته نمی‌شود (§4) |
-| `MessageSelector` | 15 | rewind؛ به کاوش ۶ در §5 گره خورده |
-| `DiffDialog` | 17 | پنل diff ساخته نمی‌شود |
+| `Footer` | 9 | نوار پایین در v2 خواندنی است، نه کانونی؛ `backspace` / `delete` → `footer:dismiss` در 2.1.283 آمد و در 2.1.284 رفت |
+| `AbovePrompt` / `AbovePromptInput` / `AbovePromptSelect` | 13 / 6 / 6 | صفحهٔ افزونه‌ها ساخته نمی‌شود (§4)؛ `AbovePrompt` حالا شش کلید پیمایش قاب (`pane:*`) هم دارد |
+| `Pane` / `PaneField` | 15 / 1 | قاب افزونه — همان؛ تازه در 2.1.282 یا پیش از آن |
+| `DiffDialog` | 16 | پنل diff ساخته نمی‌شود؛ `enter` → `diff:viewDetails` در 2.1.283 حذف شد |
 | `DiffPanel` | 1 | همان |
-| `ModelPicker` | 3 | `←`/`→` برای effort؛ v2 آن را فهرست جدا می‌کند |
-| `EffortSlider` | 1 | همان |
+| `ModelPicker` | 3 | `←`/`→` برای effort؛ v2 آن را فهرست جدا می‌کند. سومی `s` → `modelPicker:thisSessionOnly` (فقط همین جلسه) است؛ v2 کلیدی برایش ندارد |
+| `EffortSlider` | 4 | همان؛ در 2.1.284 از ۱ به ۴ رسید: `←` / `→` کم و زیاد کردن effort، `tab` → `effortSlider:toggleUltracode`، و `s` → `effortSlider:thisSessionOnly` |
 | `Select` | 12 | فهرست‌های v2 از `Confirmation` تبعیت می‌کنند |
 | `Plugin` | 3 | §4 |
 | `Agents` | 2 | نوار عامل‌های v1 دست‌نخورده می‌ماند |
@@ -239,8 +266,9 @@ These are choices, not oversights. `help.html` §«تفاوت با ترمینا�
    branch. In a browser `ctrl+v` is paste and nothing else will be pressed. Both are bound.
 2. **`shift+Enter` inserts a newline**, alongside the TUI's `ctrl+j`. Terminals cannot see
    `shift+Enter`; the DOM can, and every chat app the colleague has used binds it.
-3. **Digits pick a dialog option**, where the TUI uses `y`/`n`. Persian option text gives no
-   letter to hint at, and the TUI already numbers the rows on screen.
+3. **Digits pick a dialog option.** The TUI bound `y`/`n` as well until 2.1.283 and binds
+   neither now; the window never had them. Persian option text gives no letter to hint at,
+   and the TUI already numbers the rows on screen.
 4. **`ctrl+o` expands tool results**, where the TUI uses `ctrl+e` inside a transcript screen it
    opens with `ctrl+o`. The window has no second screen, and the TUI's own hint string says
    «(ctrl+o to expand)» — so `ctrl+o` is the key the user has already been told about.
@@ -250,6 +278,10 @@ These are choices, not oversights. `help.html` §«تفاوت با ترمینا�
    §D10). The TUI offers three; this one refuses the call and then interrupts the turn, for when
    the answer is "not this, and nothing else either". It sits AFTER the Esc row, so the TUI's
    three keep their digits, and it is bound to `4`. Not offered for `AskUserQuestion`.
+7. **`ctrl+Enter` holds the message for later** («بعداً بفرست»), where the TUI (2.1.284) binds
+   it to `chat:sendNow`. Decided 2026-09-29 for claude.ai/code parity: mid-turn it keeps the
+   draft above the box until the turn ends. The TUI's other `chat:sendNow` chord,
+   `ctrl+x ctrl+s`, IS bound, with the TUI's meaning (stop the turn, send now).
 
 ## `~/.claude/keybindings.json`
 
