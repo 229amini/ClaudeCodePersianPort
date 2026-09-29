@@ -633,8 +633,9 @@ shipped now" before positioning anything from a rect. (5) **A layout control** b
 blank). (6) **The queue row's four actions**, after claude.ai/code: copy, ↺, ✕ delete,
 «الان بفرست» (= interrupt, which keeps the queue). (7) **Calmer transcript type** and a working
 line that names the phase. New gate `test_arrange.py` 7; spec **196/196** terminal, newsession
-26, zoom 9. Open: `pcg-8gk` (Windows runs) and `pcg-l2i` (a timing weakness in `test_shell`'s
-image-drop check, seen once in four runs).
+26, zoom 9. Open: `pcg-8gk` (Windows runs). `pcg-l2i` closed the same day: `test_shell`'s drop
+polls waited on virtual time, which a `FileReader` does not stop; each poll is a real request now
+(2 of 5 failed under CPU load before, 8 of 8 passed after).
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
