@@ -23,6 +23,7 @@ import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { paintRing } from "./bar.js";
+import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel } from "./marks.js";
 /* Only the two label helpers are still module-level in controls.js; everything
    that PAINTS is per cell now and is reached through `state.cell.controls`
    (the APPLY table below). */
@@ -535,7 +536,10 @@ function intoCard(body, el) {
 const FOLD_LINES = 8;
 const FOLD_CHARS = 600;
 
-function userRow(text, images = 0) {
+function userRow(text, images = 0, meta = {}) {
+  // A new turn: the last one's edits become its card first (pcg-8ip). The
+  // same boundary live and in replay, so both draw the card in one place.
+  flushEdits();
   const el = bubble("user");
   el.append(...renderMarkdown(text ?? "").childNodes);
   if (images) el.append(label(`[${images} image]`, "meta"));
@@ -558,7 +562,82 @@ function userRow(text, images = 0) {
     el.append(body, toggle);
     paint(false);
   }
+  markMessage(el, meta.uuid, meta.ts, t);
   return el;
+}
+
+/* --- message marks (pcg-8ip, js/marks.js) -------------------------------------
+
+   Pins are keyed by the message's own uuid — the same id live and in replay
+   (server.py set_pin) — so they live here, per MESSAGE, rather than in a
+   render scope: an answer from the pins route can arrive after the scope that
+   asked has been swapped out. Each transcript is stamped with its session id
+   (setStatus), which is how a click finds its conversation. */
+const pinned = new Map();          // uuid -> label, every conversation loaded
+const railFor = new Map();         // session id -> [{uuid, label}]
+const marked = new Map();          // uuid -> the message element
+const pinsAsked = new Set();       // session ids already fetched
+
+function markMessage(el, uuid, ts, text) {
+  decorate(el, { uuid, ts, text, pinned: !!uuid && pinned.has(uuid),
+                 onPin: uuid ? (on) => togglePin(el, uuid, text, on) : null });
+  if (uuid) marked.set(uuid, el);
+}
+
+async function togglePin(el, uuid, text, on) {
+  const sid = el.closest(".log")?.dataset.sid;
+  if (!sid) return;
+  try {
+    const res = await api("/api/pins", { session: sid, uuid, label: pinLabel(text), pinned: on });
+    applyPins(sid, res.pins ?? []);
+  } catch (err) {
+    // The pin stays as it was; nothing on screen claims otherwise.
+  }
+}
+
+function applyPins(sid, list) {
+  for (const p of railFor.get(sid) ?? []) pinned.delete(p.uuid);
+  for (const p of list) pinned.set(p.uuid, p.label);
+  railFor.set(sid, list);
+  for (const [uuid, el] of marked) setPinned(el, pinned.has(uuid));
+  for (const logEl of document.querySelectorAll(".log")) {
+    if (logEl.dataset.sid === sid) paintPinRail(logEl, sid);
+  }
+}
+
+function paintPinRail(logEl, sid) {
+  paintRail(logEl, railFor.get(sid) ?? [], { onJump: (uuid) => jumpTo(logEl, uuid) });
+}
+
+function loadPins(sid) {
+  if (!sid || pinsAsked.has(sid)) return;
+  pinsAsked.add(sid);
+  api("/api/pins?session=" + encodeURIComponent(sid))
+    .then((res) => applyPins(sid, res.pins ?? []))
+    .catch(() => pinsAsked.delete(sid));
+}
+
+/* The turn's edits, summed per file from the tool calls themselves, as one
+   card: «N فایل ویرایش شد  +A −D» (claude.ai/code's end-of-turn card). A row
+   opens that file's last edit. */
+function flushEdits() {
+  if (!state.turnEdits?.size) return;
+  const files = [...state.turnEdits].map(([path, v]) => ({
+    path, added: v.added, removed: v.removed,
+    open: () => {
+      for (let p = v.card; p; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
+      v.card.scrollIntoView({ block: "center" });
+    },
+  }));
+  state.turnEdits = new Map();
+  append(changeCard(files));
+}
+
+/* The end of a replayed history: its last turn has no settle to flush it. */
+export function endReplayMarks() {
+  flushEdits();
+  // The render cleared the transcript, rail included.
+  if (log?.dataset.sid) paintPinRail(log, log.dataset.sid);
 }
 
 export function bubble(kind, text) {
@@ -925,6 +1004,7 @@ function settlePulse() {
   // so moving the call here (rather than before the settle above) changes
   // nothing else — it only stops the interval and clears state.pulse.
   clearPulse();
+  flushEdits();          // the turn's change card, after its closing line
   if (wasAtBottom) log.scrollTop = log.scrollHeight;
 }
 
@@ -1176,8 +1256,8 @@ export function paintQueued() {
   box.hidden = !state.queued.size;
 }
 
-function queueSend(uuid, text, images) {
-  state.queued.set(uuid, { text, images });
+function queueSend(uuid, text, images, ts) {
+  state.queued.set(uuid, { text, images, ts });
   paintQueued();
 }
 
@@ -1191,7 +1271,7 @@ function promoteQueued(uuid) {
   state.queued.delete(uuid);
   paintQueued();
   resetTurn(true);
-  userRow(entry.text, entry.images);
+  userRow(entry.text, entry.images, { uuid, ts: entry.ts });
 }
 
 /* It will never run. The row goes, and the text goes back to the person who
@@ -1258,6 +1338,7 @@ export function newRenderScope(background = false,
            queued: new Map(), returned: [], error: false,
            recapWorthy: false, recapEligible: false, toolCards: new Map(),
            run: null, cycle: null, repeat: null, touched: new Set(),
+           turnEdits: new Map(),
            status: {}, background, cell, tab, chrome: {} };
 }
 
@@ -1951,6 +2032,15 @@ export function setStatus(patch) {
   // The composer bar's ◔ (COMPOSER-BAR.md): the same figure, as a ring.
   const ring = state.cell.root?.querySelector(".bar-ring");
   if (ring) paintRing(ring, s.context);
+  // Which conversation this transcript is, for the pins (pcg-8ip). A cell's
+  // log shows one conversation after another (app.js placeIn), so the stamp
+  // follows whatever is in it now — a fresh one with no id yet included.
+  const sid = s.sessionId || "";
+  if (log && log.dataset.sid !== sid) {
+    log.dataset.sid = sid;
+    loadPins(sid);
+    paintPinRail(log, sid);
+  }
 
   // FIRST LINE: the machine's own statusLine command output, inherited rather
   // than reimplemented (plan §B-7, V2-PLAN §3.4 row 1 — «Keep, first line»).
@@ -2325,6 +2415,7 @@ export function renderEvent(ev) {
           // the SOURCE markdown — never the bubble's rendered text — that a
           // repeat is compared on.
           openCycle(settled, part.text ?? "");
+          if (!ev.parent_tool_use_id) markMessage(settled, ev.uuid, ev.timestamp, part.text ?? "");
         } else if (part.type === "tool_use") {
           if (part.name === "TodoWrite") {
             renderTodos(part.input?.todos);
@@ -2336,12 +2427,21 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
-            if (EDIT_TOOLS.has(part.name)) {
-              const file = part.input?.file_path ?? part.input?.notebook_path;
-              if (typeof file === "string" && file) state.touched.add(file);
-            }
+            const file = EDIT_TOOLS.has(part.name)
+              ? part.input?.file_path ?? part.input?.notebook_path : null;
+            if (typeof file === "string" && file) state.touched.add(file);
             const { details, body } = card("tool", toolSummary(part.name, part.input),
                                            { tool: part.name });
+            // The turn's change card (pcg-8ip): this conversation's own edits,
+            // not a helper's (those render inside its Agent card).
+            if (typeof file === "string" && file && !ev.parent_tool_use_id) {
+              const d = diffOf(part.name, part.input) ?? { added: 0, removed: 0 };
+              state.turnEdits ??= new Map();   // any scope shape, harness ones too
+              const was = state.turnEdits.get(file) ?? { added: 0, removed: 0 };
+              state.turnEdits.set(file, { added: was.added + (d.added || 0),
+                                          removed: was.removed + (d.removed || 0),
+                                          card: details });
+            }
             body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
             // The call half of a [sentence][call] pair. Read off the summary
@@ -2444,7 +2544,7 @@ export function renderEvent(ev) {
           // A user turn materializing mid-batch (the CLI injecting a queued
           // message) is a boundary INSIDE the batch: the status line survives.
           resetTurn(state.outstanding.size > 0);
-          userRow(said);
+          userRow(said, 0, { uuid: ev.uuid, ts: ev.timestamp });
           continue;
         }
         if (part.type !== "tool_result") continue;
@@ -2656,10 +2756,10 @@ export function renderEvent(ev) {
         // demonstrably working again.
         state.error = false;
         if (toQueue) {
-          queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0);
+          queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0, ev.timestamp);
         } else {
           resetTurn(queued);
-          userRow(ev.text, ev.images);
+          userRow(ev.text, ev.images, { uuid: ev.uuid, ts: ev.timestamp });
         }
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one. A batch
@@ -2781,6 +2881,7 @@ export function renderEvent(ev) {
         // of the protocol and the spec harness drives it: scoped to the tab it
         // names, it clears that conversation and nothing else.
         log.replaceChildren();
+        state.turnEdits = new Map();   // no card for a conversation that is gone
         resetTurn();
         resetStatus();
         state.outstanding.clear();

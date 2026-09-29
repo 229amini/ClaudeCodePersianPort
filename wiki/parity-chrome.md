@@ -447,3 +447,52 @@ Strip state (`state.queued`) lives in the same **render scope** as every other p
 per-conversation chrome, so a background tab records without painting and a fresh window rebuilds
 the same strip a live one had out of nothing but the SSE backlog — replay-deduped by uuid, the
 same key the ledger and the transcript both use.
+
+## Message marks: copy, pin, when, and the turn's change card (2026-09-29, pcg-8ip)
+
+After claude.ai/code, both editions. Under each message on hover: **⧉ copy** (the message's
+*source* text, markdown and all), **pin**, and **when** («۹ دقیقهٔ پیش», the exact moment in the
+`title`). Pinned messages list in a **rail** of dashes at the top of the transcript; hovering it
+opens «شروع گفتگو» plus one row per pin, and a click scrolls there and flashes the message. At the
+end of every turn that edited files, one **change card** «N فایل ویرایش شد  +A −D», one row per
+file, each opening that file's last edit card. Read-aloud was not built (user decision: Persian
+TTS is not good enough). `js/marks.js` is a leaf and byte-identical in both editions.
+
+**Every fact comes from the message, never from the render** (frontend-modules.md §"A reload
+RE-RENDERS every finished turn"). Measured with a free bogus-model probe (`total_cost_usd: 0`):
+
+- a **user** message is written to the transcript under the uuid `send_blocks()` minted, so the
+  live `user_echo` uuid and the replayed record's uuid are the same key. `user_echo` now also
+  carries a server-side `timestamp`;
+- a live **assistant** event carries its transcript record's `uuid` and `timestamp`, so the same
+  key works live and in replay. `_normalize_transcript_event` copies both onto replayed events
+  (`_marks_of`).
+
+The time is re-formatted on every hover, so it never freezes at render time and a replayed message
+is never «همین حالا». The card is summed from the Edit/Write/MultiEdit `tool_use` inputs (the same
+`diffOf()` the tool card draws), which both sources carry. Subagent text
+(`parent_tool_use_id`) is not marked.
+
+**Pins are the wrapper's, not the CLI's.** `pins.json` next to `server.py` (git-ignored, the same
+store as `pinned.json`), `{session_id: [{uuid, label}]}`, behind `GET/POST /api/pins`. Both ids
+pass `MARK_ID_RE`, and the label is capped at `PIN_LABEL_MAX`. A redeploy keeps it because the
+source tree has none to copy over.
+
+Three things cost time:
+
+- **The words are CSS, not text.** The copy glyph, the time and every rail label are
+  `::before { content: attr(data-…) }`. As text nodes they entered the message's `textContent`,
+  which `/export`, the loop fold and the spec cases all read. Three spec cases went red on «⧉»
+  and «پیش» before the switch.
+- **An async result must not hold `state`.** Render scopes are copied in and out of the shared
+  `state` by `withRenderTarget`, so a `/api/pins` answer that lands later would write into
+  whichever conversation is current by then. Pins live in module-level maps keyed by session id.
+  Every `.log` carries `dataset.sid` (stamped in `setStatus`), and a pin click reads its session
+  from `el.closest(".log")`.
+- **Every render scope needs `turnEdits`.** The harnesses build scopes by hand, so the tally
+  starts with `state.turnEdits ??= new Map()`. Without it the spec harness never ran.
+
+Gate: `test_marks.py`, **29** checks over both editions, route-stubbed. It includes a *measured*
+left-to-right check of every `+A −D`, because a `textContent` assertion is blind to BiDi.
+Negative-tested: dropping the settle flush, `setPinned`'s class toggle, or the stats' `dir=ltr`
+each fails it.

@@ -16,7 +16,7 @@ import { api, token } from "./api.js";
    two sources". Nothing below runs at module-evaluation time; initChrome() is
    called from app.js once every module is live. */
 import {
-  bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus,
+  bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus, endReplayMarks,
 } from "./render.js";
 /* The permission dialog moved out of this file at MA4-T1: it is per cell, and
    the sidebar is not. Same cycle rules — nothing crosses at evaluation time. */
@@ -1025,12 +1025,14 @@ function renderInto(tab, events, resumedNote = false) {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
+    state.turnEdits = new Map();   // this render's own turns only (pcg-8ip)
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
     // times, about a view that is not on screen yet. The answer is only needed
     // once, below.
     bulkAppend(() => {
       for (const event of events ?? []) renderEvent(event);
+      endReplayMarks();   // the last turn's change card: a replay has no settle
       if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
     });
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message

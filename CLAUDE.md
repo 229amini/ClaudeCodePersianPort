@@ -649,6 +649,18 @@ in-cell `.menu-popup` (which the layout gates measure) and gained the ✓, digit
 «+». Read `wiki/parity-chrome.md` §"The composer bar". New gate `test_bar.py` **35** (both
 editions, negative-tested).
 
+**2026-09-29 (same day) — message marks after claude.ai/code, both editions; web 1.5.0, terminal
+0.5.0.** Hovering a message shows ⧉ copy (the source text), a pin, and when it was said, with the
+exact time on hover. Pinned messages sit in a rail of dashes at the top of the transcript
+(«شروع گفتگو» plus each pin); a click jumps there. A turn that edited files ends in one card,
+«N فایل ویرایش شد +A −D», with a row per file that opens its edit. Read-aloud was skipped by user
+decision. Uuid and timestamp are the message's own, measured free: the transcript stores a user
+message under the uuid `send_blocks()` sent, and a live assistant event carries its record's uuid.
+Pins live in the wrapper's `pins.json` behind `GET/POST /api/pins`. The words are CSS `attr()`, so
+they stay out of `textContent`. Read `wiki/parity-chrome.md` §"Message marks" before touching
+`marks.js`, which is a leaf and byte-identical in both editions. New gate `test_marks.py` **29**
+(negative-tested). Every free gate re-run on both editions and green.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -838,6 +850,7 @@ Two checks exist:
 | New-session page (P4) | `python persian-claude-gui\test_newsession.py` | terminal edition: the page opens over a hidden grid (button, Alt+N), presets, disabled counts with their reason (the six-tab limit read from `/api/tabs`, and no room), all-or-nothing launch with rollback on a 409, the reviewer's plan posture before its first message, `/clear` still one fresh conversation, and (2026-09-29) a folder and a branch per row. **26 checks**, routes stubbed. Free. |
 | Layout control (2026-09-29) | `python persian-claude-gui\test_arrange.py` | terminal edition: the button beside «گفتگوی جدید» opens a panel with the open count; more panes are FILLED with the open conversations not on screen; fewer close nothing; a count with no room is disabled with the reason. **7 checks**, routes stubbed. Free. |
 | Composer bar (2026-09-29) | `python persian-claude-gui\test_bar.py` | BOTH editions: `bar.js` is one file in two places; the ◔ ring and the context/usage panel (categories, headroom, `/compact`, 5h/weekly/per-model limits, a login with none); the model and mode menus number their rows, check the current one and pick by digit; the effort slider posts a change; «+» opens the native file dialog, starts a slash command and toggles THAT MCP server. **35 checks**, routes stubbed. Free. |
+| Message marks (2026-09-29) | `python persian-claude-gui\test_marks.py` | BOTH editions: `marks.js` is one file in two places; a message says when it was said from its OWN timestamp, and none of that is in its `textContent`; pins load by session id, mark their message and fill the rail («شروع گفتگو» then each pin); a pin click posts THIS message in THIS conversation and the rail follows the answer; a rail click jumps and flashes; copy writes the source text; a settled turn ends in ONE change card summed per file, every `+A −D` measured left to right, a row opens its edit; a replayed user turn is marked by its uuid. **29 checks**, routes stubbed. Free. |
 | Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row, the OS notification's jump. **17 checks**. Free. |
 | Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
 | App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: native (forced by `<html data-zoom-mode>`) leaves Ctrl+= / - / 0 to Edge; css (shipped since 2026-09-29) steps 80–150 %, clamps, shows a readout, remembers the level, picks the automatic level from the screen and window, and opens a kebab menu under its button at 125 % (M4). **9 checks**, two page loads. Free. |
