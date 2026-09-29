@@ -158,6 +158,10 @@ CONTROL_ALLOWED = frozenset({
     # 2026-09-29: it writes projects/<cwd>/disabledMcpServers into
     # ~/.claude.json, exactly as the TUI's own /mcp does, and the menu says so.
     "mcp_status", "mcp_toggle",
+    # The Background tasks panel's stop square (CLAUDE-AI-PARITY.md P3):
+    # `{task_id}` stops one helper this session launched, the TUI's own
+    # kill in /tasks (wiki/cli-stream-json-findings.md §5.10).
+    "stop_task",
 })
 # `apply_flag_settings` is deliberately NOT in that list even though the effort
 # chip needs it. Its params are a free-form settings blob, so whitelisting the
