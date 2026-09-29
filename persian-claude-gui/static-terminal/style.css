@@ -3545,7 +3545,7 @@ body.rail .side-zoom { display: none; }
    explicitly, and the opt-out must be declared BEFORE the :hover of the same
    specificity or hover stops repainting it — the ⋯ menu learned this the hard
    way (wiki/rtl-rendering-notes.md). */
-.queued-x {
+.queued-act {
   flex: none;
   min-width: 22px;
   min-height: 22px;
@@ -3560,10 +3560,24 @@ body.rail .side-zoom { display: none; }
   font-size: 1.1em;
   line-height: 1;
 }
-.queued-x:hover, .queued-x:focus-visible {
+.queued-act:hover, .queued-act:focus-visible {
   background: var(--surface-2);
   color: var(--fg);
 }
+/* «الان بفرست»: words, not a glyph, because it is the one action here that
+   changes what the CLI is doing. Still quiet: no fill until hovered. */
+.queued-now {
+  flex: none;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .95em;
+}
+.queued-now:hover:not(:disabled), .queued-now:focus-visible { background: var(--surface-2); color: var(--fg); }
 
 /* --- background agents --------------------------------------------------------
    A slim strip in the composer's own column, above it, next to where the

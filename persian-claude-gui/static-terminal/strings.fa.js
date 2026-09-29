@@ -227,6 +227,11 @@ window.FA = {
      instead of drawing it as a message that has arrived. */
   queuedTag: "در صف",
   queuedCancel: "حذف از صف",
+  queuedCopy: "رونوشت متن پیام",
+  queuedCopied: "رونوشت شد",
+  queuedEdit: "برگرداندن به کادر نوشتن برای ویرایش",
+  queuedSendNow: "الان بفرست",
+  queuedSendNowTitle: "کار فعلی متوقف می‌شود و پیام‌های صف همین حالا به نوبت اجرا می‌شوند",
 
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
