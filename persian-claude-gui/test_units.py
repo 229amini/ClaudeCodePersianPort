@@ -918,6 +918,31 @@ with tempfile.TemporaryDirectory() as tmp:
         server.NAMES_FILE = old_names
         server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE = olds
 
+print("pins: a message pinned by its own uuid, per conversation (pcg-8ip)")
+with tempfile.TemporaryDirectory() as tmp:
+    old_pins = server.PINS_FILE
+    try:
+        server.PINS_FILE = Path(tmp) / "pins.json"
+        check("no pins yet is an empty list", server.load_pins("sess-aaaaaaaa") == [])
+        server.set_pin("sess-aaaaaaaa", "uuid-1111", "اول", True)
+        rows = server.set_pin("sess-aaaaaaaa", "uuid-2222", "x" * 200, True)
+        check("pins keep the order they were made in, labels capped",
+              [r["uuid"] for r in rows] == ["uuid-1111", "uuid-2222"] and len(rows[1]["label"]) == 80)
+        check("another conversation's pins are its own", server.load_pins("sess-bbbbbbbb") == [])
+        rows = server.set_pin("sess-aaaaaaaa", "uuid-1111", "", False)
+        check("unpinning drops that message only", [r["uuid"] for r in rows] == ["uuid-2222"])
+        server.set_pin("sess-aaaaaaaa", "uuid-2222", "", False)
+        check("the last unpin forgets the conversation",
+              "sess-aaaaaaaa" not in json.loads(server.PINS_FILE.read_text(encoding="utf-8")))
+        check("an id is a uuid, never a path", not server.MARK_ID_RE.match("../../etc")
+              and server.MARK_ID_RE.match("54f679f2-9318-41be-93b5-39ce9b8b629d"))
+    finally:
+        server.PINS_FILE = old_pins
+ev = server._normalize_transcript_event({"type": "assistant", "uuid": "dcc1f12b-6db3",
+    "timestamp": "2026-09-29T12:10:48.344Z", "message": {"content": [{"type": "text", "text": "x"}]}})
+check("history keeps each message's uuid and time for the marks",
+      ev.get("uuid") == "dcc1f12b-6db3" and ev.get("timestamp") == "2026-09-29T12:10:48.344Z")
+
 # --- resume prefill ----------------------------------------------------------
 # After /api/session/resume the bar stayed blank until the first turn: every
 # source that fills it (system/init, result, usage, statusline) waits for the

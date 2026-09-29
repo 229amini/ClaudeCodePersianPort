@@ -685,6 +685,19 @@ window.FA = {
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
   autoWhyPosture: "سطح اجازه: خودکار",
+  /* Message marks (js/marks.js, pcg-8ip — the same keys in both editions). */
+  markJustNow: "همین حالا",
+  markMinutesAgo: "{n} دقیقهٔ پیش",
+  markHoursAgo: "{n} ساعت پیش",
+  markYesterday: "دیروز",
+  markCopy: "رونوشت متن",
+  markCopied: "رونوشت شد",
+  markPin: "سنجاق کردن این پیام",
+  markUnpin: "برداشتن سنجاق",
+  markPinsTitle: "پیام‌های سنجاق‌شده",
+  markSessionStart: "شروع گفتگو",
+  markPinned: "پیام سنجاق‌شده",
+  markEdited: "{n} فایل ویرایش شد",
   /* The composer bar (COMPOSER-BAR.md, js/bar.js — the same keys in both
      editions). */
   barMode: "حالت",

@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.4.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.4.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.5.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.5.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -420,6 +420,9 @@ PINNED_FILE = HERE / "pinned.json"
 # project-rename route (rename_session is a SESSION thing), and the folder on
 # disk is never touched -- so it lives here beside the other three lists.
 NAMES_FILE = HERE / "names.json"
+# Pinned MESSAGES, {session_id: [{uuid, label}]} (the transcript's pin rail,
+# pcg-8ip). Wrapper-only state like names.json: the CLI has no such idea.
+PINS_FILE = HERE / "pins.json"
 MAX_RECENTS = 10
 
 
@@ -834,7 +837,8 @@ def _normalize_transcript_event(event: dict) -> dict | None:
         if (attachment.get("type") == "queued_command"
                 and attachment.get("commandMode") == "prompt"
                 and not event.get("isMeta") and not event.get("isSynthetic")):
-            return {"type": "user", "message": {"content": attachment.get("prompt") or []}}
+            return {"type": "user", "message": {"content": attachment.get("prompt") or []},
+                    **_marks_of(event)}
         return None
     if event.get("type") not in ("user", "assistant"):
         return None
@@ -864,7 +868,14 @@ def _normalize_transcript_event(event: dict) -> dict | None:
             if text is None:
                 return None
             message = {"content": [{"type": "text", "text": text}]}
-    return {"type": event["type"], "message": message}
+    return {"type": event["type"], "message": message, **_marks_of(event)}
+
+
+def _marks_of(event: dict) -> dict:
+    """The record's own id and time, for the window's message marks (pins and
+    «۹ دقیقهٔ پیش», pcg-8ip). The SAME uuid the live stream carries for the
+    message, so a pin made live finds its message again in a replay."""
+    return {k: event[k] for k in ("uuid", "timestamp") if isinstance(event.get(k), str)}
 
 
 def read_session(cwd: Path, session_id: str) -> list[dict]:
@@ -2234,6 +2245,53 @@ def _save_names(names: dict[str, str]) -> None:
                               encoding="utf-8")
     except OSError:
         pass
+
+
+# A message id as the CLI writes it (a uuid) — and nothing that could be a
+# path. Session ids use the same shape.
+MARK_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+PIN_LABEL_MAX = 80
+
+
+def load_pins(session_id: str) -> list[dict]:
+    """This conversation's pinned messages, oldest pin first."""
+    try:
+        data = json.loads(PINS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    rows = data.get(session_id) if isinstance(data, dict) else None
+    return [{"uuid": str(r["uuid"]), "label": str(r.get("label") or "")}
+            for r in (rows or []) if isinstance(r, dict) and isinstance(r.get("uuid"), str)]
+
+
+def set_pin(session_id: str, uuid: str, label: str, pinned: bool) -> list[dict]:
+    """Pin or unpin one message; returns the conversation's pins in force.
+
+    Keyed by the message's own uuid, which is the SAME id live and in replay:
+    measured 2026-09-29 (free, bogus-model probe), the transcript stores a
+    user message under the uuid send_blocks() minted, and a live assistant
+    event carries its transcript record's uuid."""
+    with _STORE_LOCK:
+        try:
+            data = json.loads(PINS_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        rows = [r for r in data.get(session_id) or []
+                if isinstance(r, dict) and r.get("uuid") != uuid]
+        if pinned:
+            rows.append({"uuid": uuid, "label": label.strip()[:PIN_LABEL_MAX]})
+        if rows:
+            data[session_id] = rows
+        else:
+            data.pop(session_id, None)
+        try:
+            PINS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                                 encoding="utf-8")
+        except OSError:
+            pass
+    return load_pins(session_id)
 
 
 def _names_lower() -> dict[str, str]:
@@ -3956,6 +4014,12 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         elif parsed.path == "/api/tabs":
             self._send_json(HTTPStatus.OK, self.tabs_payload())
+        elif parsed.path == "/api/pins":
+            sid = params.get("session", [""])[0]
+            if not MARK_ID_RE.match(sid):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad session"})
+                return
+            self._send_json(HTTPStatus.OK, {"pins": load_pins(sid)})
         elif parsed.path == "/api/sessions":
             session = self._target(tab)
             if session is None:
@@ -4206,6 +4270,10 @@ class Handler(BaseHTTPRequestHandler):
             session.hub.publish({
                 "type": "wrapper", "subtype": "user_echo",
                 "uuid": command_uuid,
+                # The transcript stamps this message too; the window shows
+                # the same moment live and after a reload (pcg-8ip).
+                "timestamp": datetime.datetime.now(datetime.timezone.utc)
+                                     .isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                 "text": echo_text,
                 "images": sum(1 for b in blocks if b["type"] == "image"),
             })
@@ -4507,6 +4575,16 @@ class Handler(BaseHTTPRequestHandler):
             flag = bool(body.get("archived"))
             toggle_in_list(ARCHIVED_FILE, raw, flag)
             self._send_json(HTTPStatus.OK, {"ok": True, "archived": flag})
+        elif parsed.path == "/api/pins":
+            # Pin or unpin one MESSAGE (the transcript's pin rail, pcg-8ip) —
+            # not to be confused with /api/project/pin below.
+            sid = str(body.get("session") or "")
+            uuid = str(body.get("uuid") or "")
+            if not MARK_ID_RE.match(sid) or not MARK_ID_RE.match(uuid):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad id"})
+                return
+            self._send_json(HTTPStatus.OK, {"pins": set_pin(
+                sid, uuid, str(body.get("label") or ""), bool(body.get("pinned")))})
         elif parsed.path == "/api/project/pin":
             # Sticks a project to the top of the sidebar. Same shape as archive
             # — a path list on disk — so the sort in list_projects() is the only
