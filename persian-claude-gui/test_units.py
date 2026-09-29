@@ -72,6 +72,73 @@ check_win("quoted exe path survives",
           server.run_statusline(quoted, {"cwd": "D:/x"}) == [{"text": '{"cwd": "D:/x"}'}])
 check("a failing command is None", server.run_statusline("exit 1", {}) is None)
 
+print("statusline_payload: the CLI's own shape (fKn, 2.1.284)")
+# A statusLine script prints what it is handed. With six fields it printed the
+# folder and the style and nothing else -- the user's report, 2026-09-29.
+CATALOGUE = [{"value": "default", "resolvedModel": "claude-sonnet-5-5",
+              "description": "Sonnet 5.5 · Efficient for routine tasks"},
+             {"value": "opus", "resolvedModel": "claude-opus-5-5",
+              "description": "Opus 5.5 · Most capable"}]
+check("display name is the catalogue's, not the id",
+      server.model_display_name("claude-opus-5-5", CATALOGUE) == "Opus 5.5")
+check("an unknown id falls back to itself",
+      server.model_display_name("claude-x", CATALOGUE) == "claude-x")
+check("no settings model resolves to the default entry",
+      server.resolve_model(None, CATALOGUE) == "claude-sonnet-5-5")
+check("an alias resolves through the catalogue",
+      server.resolve_model("opus", CATALOGUE) == "claude-opus-5-5")
+last = {"input_tokens": 10, "output_tokens": 500, "cache_creation_input_tokens": 1000,
+        "cache_read_input_tokens": 49_000}
+sl = server.statusline_payload({
+    "session_id": "s1", "cwd": "D:/p", "model_id": "claude-sonnet-5-5",
+    "model_name": "Sonnet 5.5", "version": "2.1.284", "output_style": "caveman",
+    "effort": "medium", "usage": last, "window": 1_000_000,
+    "cost": {"total_cost_usd": 0.5, "total_lines_added": 3, "model_usage": {}},
+    "rate_limits": {"five_hour": {"utilization": 28, "resets_at": 1}, "seven_day":
+                    {"utilization": 21.04, "resets_at": 2}},
+    "cache": {"requests": 2, "read": 54, "write": 36, "input": 10}})
+cw = sl["context_window"]
+check("context: input + cache creation + cache read",
+      cw["total_input_tokens"] == 50_010 and cw["context_window_size"] == 1_000_000)
+check("context: used/remaining rounded like nmn()",
+      (cw["used_percentage"], cw["remaining_percentage"]) == (5, 95))
+check("model, effort and style reach the script",
+      sl["model"] == {"id": "claude-sonnet-5-5", "display_name": "Sonnet 5.5"}
+      and sl["effort"] == {"level": "medium"} and sl["output_style"] == {"name": "caveman"})
+check("5h and 7d quotas as used_percentage",
+      sl["rate_limits"] == {"five_hour": {"used_percentage": 28, "resets_at": 1},
+                            "seven_day": {"used_percentage": 21, "resets_at": 2}})
+check("cache hit ratio is reads over all input",
+      sl["prompt_cache"]["hit_ratio"] == 0.54 and sl["prompt_cache"]["requests"] == 2)
+check("cost keeps the CLI's keys and drops the rest",
+      sl["cost"] == {"total_cost_usd": 0.5, "total_lines_added": 3})
+bare = server.statusline_payload({"cwd": "D:/p"})
+check("before any message: zeros and null percentages, like the CLI",
+      bare["context_window"]["total_input_tokens"] == 0
+      and bare["context_window"]["used_percentage"] is None)
+check("an unknown quota, effort or cache is left out, never invented",
+      not {"rate_limits", "effort", "prompt_cache"} & set(bare))
+
+print("last_main_usage / _note_usage: where the context figure comes from")
+with tempfile.TemporaryDirectory() as tmp:
+    tr = Path(tmp) / "t.jsonl"
+    tr.write_text("\n".join(json.dumps(r) for r in [
+        {"type": "assistant", "message": {"usage": {"input_tokens": 1}}},
+        {"type": "assistant", "isSidechain": True, "message": {"usage": {"input_tokens": 99}}},
+        {"type": "user", "message": {}},
+    ]) + "\nnot json\n", encoding="utf-8")
+    check("a resume reads the last MAIN-thread usage back from disk",
+          server.last_main_usage(tr) == {"input_tokens": 1})
+    check("no transcript, no usage", server.last_main_usage(Path(tmp) / "none") is None)
+noted = server.ClaudeSession(Path("D:/p"), None, "claude.exe")   # no hub: nothing publishes
+noted._sl = {"cache": {"requests": 0, "read": 0, "write": 0, "input": 0}}
+for _ in range(3):   # partial messages: one request, three events, one id
+    noted._note_usage({"id": "m1", "usage": {"input_tokens": 5, "cache_read_input_tokens": 7}})
+noted._note_usage({"id": "m2", "usage": {"input_tokens": 1}})
+check("one API request counts once however many events carry it",
+      noted._sl["cache"] == {"requests": 2, "read": 7, "write": 0, "input": 6}
+      and noted._sl["usage"] == {"input_tokens": 1})
+
 print("save_pasted_file: the image branch, unchanged by A1")
 png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
 path = server.save_pasted_file("image/png", png)
@@ -887,39 +954,57 @@ def _stub_session(hub):
 
 
 _old_statusline_command = server.statusline_command
+_old_run_statusline = server.run_statusline
 try:
     # The machine HAS a statusLine: echo the payload back so the JSON the
-    # script is handed can be read out of the published text.
-    server.statusline_command = lambda: (
-        f'"{sys.executable}" -c "import sys; sys.stdout.write(sys.stdin.read())"')
+    # script is handed can be read out of the published text. The runner is
+    # stubbed (its cmd.exe quoting has its own Windows check above), so what
+    # is asserted here -- the order and the payload -- runs on every platform.
+    server.statusline_command = lambda: "echo"
+    server.run_statusline = lambda command, payload: [{"text": json.dumps(payload)}]
 
     prefill_hub = _Hub()
     _stub_session(prefill_hub)._publish_resume_prefill(1)
-    kinds = [e.get("subtype") for e in prefill_hub.events]
+    check("the resumed event carries the session id and the cwd",
+          prefill_hub.events == [{"type": "wrapper", "subtype": "resumed",
+                                   "session_id": PREFILL_ID, "cwd": str(PREFILL_CWD)}])
+
+    # Usage and the statusline now run for EVERY spawn, from _fetch_init_info
+    # -- a fresh conversation showed no bar at all until its first answer.
+    spawn_hub = _Hub()
+    spawned = _stub_session(spawn_hub)
+    spawned.init_info = {"models": [
+        {"value": "default", "resolvedModel": "claude-sonnet-5-5",
+         "description": "Sonnet 5.5 · Efficient for routine tasks"},
+        {"value": "opus", "resolvedModel": "claude-opus-5-5",
+         "description": "Opus 5.5 · Most capable"}]}
+    spawned._publish_usage(1, True)
+    kinds = [e.get("subtype") for e in spawn_hub.events]
     # TWO usage events, cost before context: get_context_usage after a turn is
     # tens of seconds on a machine with a large ~/.claude, and one merged patch
     # meant the fast, always-available cost and quota numbers waited for it --
     # and were dropped entirely when it never came (wiki/control-protocol.md §9).
-    check_win("resumed is published first, then usage, then the statusline",
-              kinds == ["resumed", "usage", "usage", "statusline"])
+    # The statusline runs between them, on the fast half.
+    check("usage, then the statusline, then the slow context",
+              kinds == ["usage", "statusline", "usage"])
     check("cost does not wait on the slow context breakdown",
-          "cost" in prefill_hub.events[1] and "context" in prefill_hub.events[2])
-    check("the resumed event carries the session id and the cwd",
-          prefill_hub.events[0] == {"type": "wrapper", "subtype": "resumed",
-                                    "session_id": PREFILL_ID, "cwd": str(PREFILL_CWD)})
+          "cost" in spawn_hub.events[0] and "context" in spawn_hub.events[-1])
     usage = {}
-    for event in prefill_hub.events:
+    for event in spawn_hub.events:
         if event.get("subtype") == "usage":
             usage.update(event)   # merged the way the renderer merges them
     check("usage carries the CLI's own numbers, not client arithmetic",
           (usage.get("context"), usage.get("cost"), usage.get("quota")) == (12.5, 0.42, 7))
-    statusline = next((e for e in prefill_hub.events
+    statusline = next((e for e in spawn_hub.events
                        if e.get("subtype") == "statusline"), {})
     payload = json.loads(statusline.get("text") or "{}")
-    check_win("the statusline script is handed the resumed session's own id",
+    check("the statusline script is handed the session's own id",
               payload.get("session_id") == PREFILL_ID)
-    check("and no model — only system/init knows which one this session runs on",
-          payload.get("model", {}).get("id") is None)
+    check("and the model the settings resolve to, by its display name",
+              payload.get("model") == {"id": "claude-sonnet-5-5",
+                                       "display_name": "Sonnet 5.5"})
+    check("and the 5h window as used_percentage",
+              payload.get("rate_limits", {}).get("five_hour", {}).get("used_percentage") == 7)
 
     # A restart while this thread was still starting up: publishing anything
     # now writes the dead session's numbers into the live one's bar.
@@ -930,14 +1015,15 @@ try:
     check("a stale generation does not even ask the CLI", stale.asked == [])
 
     # statusline_command() returns None on a machine that configured none --
-    # the silent-skip path, which must not take the prefill down with it.
+    # the silent-skip path, which must not take usage down with it.
     server.statusline_command = lambda: None
     bare_hub = _Hub()
-    _stub_session(bare_hub)._publish_resume_prefill(1)
-    check("no statusLine configured still prefills id, cwd and usage",
-          [e.get("subtype") for e in bare_hub.events] == ["resumed", "usage", "usage"])
+    _stub_session(bare_hub)._publish_usage(1, True)
+    check("no statusLine configured still publishes usage",
+          [e.get("subtype") for e in bare_hub.events] == ["usage", "usage"])
 finally:
     server.statusline_command = _old_statusline_command
+    server.run_statusline = _old_run_statusline
 
 # --- concurrent tabs ---------------------------------------------------------
 # N conversations at once, each its own ClaudeSession + PermissionBroker,
@@ -1220,8 +1306,8 @@ print("ClaudeSession.busy: an in-flight COUNTER, not a boolean")
 counter = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
 seen_busy = []
 counter._write_line = lambda obj: seen_busy.append(counter.busy)
-counter._publish_usage = lambda generation: None
-counter._publish_statusline = lambda result, generation: None
+counter._publish_usage = lambda generation, statusline=False: None
+counter._publish_statusline = lambda generation: None
 GEN = counter._generation
 
 counter.send_blocks([{"type": "text", "text": "one"}])
@@ -1490,8 +1576,8 @@ print("_after_result: an older CLI closes one per result, the silence watchdog g
 # other way to clear itself except the silence backstop.
 legacy = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
 legacy._write_line = lambda obj: None
-legacy._publish_usage = lambda generation: None
-legacy._publish_statusline = lambda result, generation: None
+legacy._publish_usage = lambda generation, statusline=False: None
+legacy._publish_statusline = lambda generation: None
 legacy_first = legacy.send_blocks([{"type": "text", "text": "one"}])
 legacy_second = legacy.send_blocks([{"type": "text", "text": "two"}])
 LEGACY_GEN = legacy._generation
@@ -1511,8 +1597,8 @@ check("and the window is told about that one, by uuid",
 # batch in order does not: a set would have to guess 8! ways right.
 fifo = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
 fifo._write_line = lambda obj: None
-fifo._publish_usage = lambda generation: None
-fifo._publish_statusline = lambda result, generation: None
+fifo._publish_usage = lambda generation, statusline=False: None
+fifo._publish_statusline = lambda generation: None
 FIFO_GEN = fifo._generation
 fifo_sent = [fifo.send_blocks([{"type": "text", "text": str(n)}]) for n in range(8)]
 for _ in fifo_sent:
