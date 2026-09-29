@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.3.1"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.2.1"),
+    "web":      ("static",          "کلاد فارسی",            "1.3.2"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.3.0"),
 }
 
 HERE = Path(__file__).resolve().parent
