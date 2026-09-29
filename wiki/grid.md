@@ -220,13 +220,16 @@ flashes and stays highlighted until the window comes to the front.
   an RTL window title in U+202B…U+202C, and a browser may append its own name. The server does
   not hard-code the title: the page sends its own, so both editions and a renamed session all
   match.
-- **When:** a live, settled turn (never a replay) while the window is hidden **or** unfocused.
+- **When:** a live, settled turn, or a live `permission_request` (a turn blocked on the person,
+  added the same day at the user's request), never a replay, while the window is hidden **or**
+  unfocused. The not-looking check lives in `flashTaskbar()` itself, so both callers share it.
   The notification only covered hidden; another program in front of a visible window is the
-  common case.
+  common case. Only a real ask reaches the request path: an auto-approved or remembered tool
+  is published as `permission_resolved` and never as a request.
 - **No click-to-conversation.** A flash has no click of its own; the bell says which
   conversation finished. The `pcg:jump` listener lost its only producer and was removed.
-- Gates: `test_shell.py` counts the POST (one live, none replayed, carrying the title),
-  negative-tested against both guards; `test_units.py` covers the route and the off-Windows
+- Gates: `test_shell.py` counts the POST (one live, none replayed, carrying the title; the
+  same for a permission request), negative-tested against each guard; `test_units.py` covers the route and the off-Windows
   no-op. The Python half of the Win32 walk was exercised with a fake `user32`; **the flash
   itself is verified only on Windows.**
 
