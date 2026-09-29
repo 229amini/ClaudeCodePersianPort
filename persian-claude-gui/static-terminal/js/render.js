@@ -857,6 +857,19 @@ function pickVerb(seed) {
   return FA.pulseVerbs[h % FA.pulseVerbs.length];
 }
 
+/* WHAT the turn is doing, in place of the verb once there is an answer
+   (pcg-els, after claude.ai/code's «Running tools…»): thinking, writing,
+   running a tool, or waiting on the person. Called from the events that
+   mark each one; a change rewrites the line, which happens a few times a
+   turn, not twice a second. The SETTLED line keeps the verb: it is the
+   turn's record, and a reload must redraw it identically. */
+function pulsePhase(phase) {
+  const p = state.pulse;
+  if (!p || p.phase === phase) return;
+  p.phase = phase;
+  p.text.textContent = FA.pulsePhases[phase] ?? FA.pulseRunning.replace("{verb}", p.verb);
+}
+
 function startPulse(seed) {
   clearPulse();
   const el = document.createElement("div");
@@ -1066,15 +1079,52 @@ function queueRowEl(uuid, entry) {
   autoDir(text);
   row.append(text);
 
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.className = "queued-x";
-  cancel.textContent = "✕";
-  cancel.title = FA.queuedCancel;
-  cancel.setAttribute("aria-label", FA.queuedCancel);
-  cancel.addEventListener("click", () => cancelQueued(uuid, cancel));
-  row.append(cancel);
+  /* The four actions claude.ai/code puts under a queued message (pcg-e11):
+     copy it, take it back into the prompt to edit (↺ - what ✕ used to do
+     here), delete it, and send it now. «الان بفرست» is Stop: since
+     2026-08-31 an interrupt keeps the queue, so the running turn ends and
+     the queue runs at once, in order. */
+  const act = (cls, text, title, run) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.textContent = text;
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.addEventListener("click", () => run(b));
+    row.append(b);
+    return b;
+  };
+  act("queued-act queued-copy", "⧉", FA.queuedCopy, (b) => copyQueued(entry.text, b));
+  act("queued-act queued-edit", "↺", FA.queuedEdit, (b) => cancelQueued(uuid, b, entry, true));
+  act("queued-act queued-x", "✕", FA.queuedCancel, (b) => cancelQueued(uuid, b, entry, false));
+  act("queued-now", FA.queuedSendNow, FA.queuedSendNowTitle, sendQueuedNow);
   return row;
+}
+
+async function copyQueued(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.title = FA.queuedCopied;
+    button.setAttribute("aria-label", FA.queuedCopied);
+    setTimeout(() => {
+      button.title = FA.queuedCopy;
+      button.setAttribute("aria-label", FA.queuedCopy);
+    }, 1500);
+  } catch (err) {
+    // No clipboard (blocked, or no focus): the text is still in the row.
+  }
+}
+
+async function sendQueuedNow(button) {
+  button.disabled = true;
+  try {
+    await api("/api/interrupt", { tab: state.tab });
+  } catch (err) {
+    // The turn was already over; the queue runs on its own.
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /* The CLI is the only side that can answer "is it still in the queue?", and it
@@ -1082,7 +1132,12 @@ function queueRowEl(uuid, entry) {
    already dequeued for execution, and says `cancelled: false` for it. A false
    is therefore NOT a failure — that message is running, its `started` is on its
    way, and the row it would promote must stay where it is. */
-async function cancelQueued(uuid, button) {
+async function cancelQueued(uuid, button, entry, keepText = true) {
+  // A plain delete keeps the text OUT of the prompt, however the drop arrives:
+  // the CLI's own `cancelled` event may beat this reply, and it gives back.
+  // The row's OWN entry, not state.queued's: `state` is whichever
+  // conversation has focus, and a click need not be in it.
+  entry.discard = !keepText;
   button.disabled = true;
   try {
     const { cancelled } = await api("/api/queue/cancel", { uuid, tab: state.tab });
@@ -1091,9 +1146,13 @@ async function cancelQueued(uuid, button) {
     // row, and the second finds nothing to do. Acting on the answer as well as
     // on the event is what keeps the ✕ working if that publish is ever lost.
     if (cancelled) dropQueued(uuid);
-    else button.disabled = false;
+    else {
+      button.disabled = false;
+      entry.discard = false;   // it is running: nothing was deleted
+    }
   } catch (err) {
     button.disabled = false;
+    entry.discard = false;
   }
 }
 
@@ -1148,7 +1207,7 @@ function dropQueued(uuid, giveBack = true) {
   const entry = state.queued.get(uuid);
   if (!entry) return;
   state.queued.delete(uuid);
-  if (giveBack && entry.text) state.returned.push(entry.text);
+  if (giveBack && entry.text && !entry.discard) state.returned.push(entry.text);
   paintQueued();
 }
 
@@ -2186,6 +2245,7 @@ export function renderEvent(ev) {
         // Stream as plain text; markdown is rendered once the message closes,
         // so half-written fences never reach marked.
         if (!state.streamBubble) {
+          pulsePhase("writing");
           state.streamBubble = bubble("assistant", "");
           // Plain text under `.msg`'s unicode-bidi:plaintext ignores `dir`;
           // the class is what lets the measured direction apply while the
@@ -2198,6 +2258,7 @@ export function renderEvent(ev) {
         queueStreamText(state.streamBubble, log, state.streamText);
       } else if (typeof delta.thinking === "string") {
         if (!state.thinkingBody) {
+          pulsePhase("thinking");
           state.thinkingPeek = label("", "tool-target");
           // The thought is the model's own prose — usually English, sometimes
           // not. Never pathEl(): forcing LTR on prose is the spec's first trap.
@@ -2232,6 +2293,7 @@ export function renderEvent(ev) {
       // the Task tool_use they belong to. They render INSIDE that row's card.
       withParent(ev.parent_tool_use_id
                  && state.toolCards.get(ev.parent_tool_use_id), () => {
+      if ((ev.message?.content ?? []).some((part) => part.type === "tool_use")) pulsePhase("tools");
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
@@ -2605,12 +2667,14 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
+        pulsePhase("waiting");
         // NEVER gated: one modal queue serves every open tab, and a background
         // conversation waiting on an answer is exactly the case the dialog has
         // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
         // blocked until its timeout with nothing on screen.
         showPermission(ev);
       } else if (ev.subtype === "permission_resolved") {
+        pulsePhase("tools");
         dismissPermission(ev.request_id);
         const card = state.toolCards.get(ev.tool_use_id);
         // A question was answered, not "allowed" — same event, different act.

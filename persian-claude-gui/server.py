@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.3.1"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.2.1"),
+    "web":      ("static",          "کلاد فارسی",            "1.3.2"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.3.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -1381,6 +1381,148 @@ def run_statusline(command: str, payload: dict) -> list[dict] | None:
     return ansi_segments((done.stdout or "").strip()) or None
 
 
+# --- the statusLine payload --------------------------------------------------
+#
+# A statusLine script is written against what the TUI hands it on stdin, and it
+# prints only the fields it finds. We used to send six of them, so the user's
+# script printed its folder and its style and nothing else — no model, effort,
+# context bar, cache or 5h/7d quota. The shape below is the CLI's own builder
+# (`fKn` in the 2.1.284 bundle), filled from what this wrapper already
+# measures. A field we cannot know is LEFT OUT, the way the CLI itself omits
+# `effort`, `rate_limits` and `prompt_cache` when it has no value — never
+# invented, because a script prints whatever it is given.
+# wiki/parity-chrome.md §"The statusLine payload".
+
+def model_display_name(model_id: str | None, models: list | None) -> str | None:
+    """"Sonnet 5.5" for claude-sonnet-5-5: the first half of the catalogue
+    entry's description («Sonnet 5.5 · Efficient for …»), which is where the
+    CLI's own display name lives in `initialize.models`. The id otherwise."""
+    if not model_id:
+        return None
+    for entry in models or []:
+        if isinstance(entry, dict) and entry.get("resolvedModel") == model_id:
+            name = str(entry.get("description") or "").split(" · ")[0].strip()
+            if name:
+                return name
+    return model_id
+
+
+def resolve_model(alias: str | None, models: list | None) -> str | None:
+    """What a settings `model` value (an alias like "opus", or nothing) runs
+    as, per the same catalogue. None when the catalogue does not say."""
+    want = alias or "default"
+    for entry in models or []:
+        if isinstance(entry, dict) and want in (entry.get("value"), entry.get("resolvedModel")):
+            return entry.get("resolvedModel") or None
+    return alias or None
+
+
+def last_main_usage(transcript: Path | None, tail_bytes: int = 512 * 1024) -> dict | None:
+    """The `usage` of the last main-thread assistant message in a transcript.
+
+    The CLI's context figure is exactly this (`PEe`: the newest assistant
+    message's usage). A live process gives it to us on the stream; a resumed
+    one does not re-emit its history, so a resume reads it back from disk.
+    Only the tail is read — the answer is in the last records."""
+    if transcript is None:
+        return None
+    try:
+        with open(transcript, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - tail_bytes))
+            lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("type") != "assistant" or rec.get("isSidechain"):
+            continue
+        usage = (rec.get("message") or {}).get("usage")
+        if isinstance(usage, dict):
+            return usage
+    return None
+
+
+def _tokens(usage: dict, key: str) -> int:
+    value = usage.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def statusline_payload(f: dict) -> dict:
+    """The statusLine stdin, in the CLI's shape, from the facts in `f`."""
+    cwd = f.get("cwd") or ""
+    payload: dict = {
+        "session_id": f.get("session_id"),
+        "transcript_path": f.get("transcript_path"),
+        "cwd": cwd,
+        "model": {"id": f.get("model_id"), "display_name": f.get("model_name")},
+        "workspace": {"current_dir": cwd, "project_dir": f.get("project_dir") or cwd,
+                      "added_dirs": []},
+        "version": f.get("version"),
+        "output_style": {"name": f.get("output_style") or "default"},
+    }
+    cost = f.get("cost")
+    if isinstance(cost, dict):
+        payload["cost"] = {k: cost[k] for k in (
+            "total_cost_usd", "total_duration_ms", "total_api_duration_ms",
+            "total_lines_added", "total_lines_removed") if k in cost}
+
+    # `XTe`: totals and percentages from the LAST message's usage, against the
+    # model's window. No message yet -> zeros and null percentages, as the CLI.
+    usage = f.get("usage") if isinstance(f.get("usage"), dict) else None
+    window = f.get("window")
+    total_in = (_tokens(usage, "input_tokens") + _tokens(usage, "cache_creation_input_tokens")
+                + _tokens(usage, "cache_read_input_tokens")) if usage else 0
+    used = remaining = None
+    if usage and isinstance(window, int) and window > 0:
+        used = min(100, max(0, round(total_in / window * 100)))
+        remaining = 100 - used
+    payload["context_window"] = {
+        "total_input_tokens": total_in,
+        "total_output_tokens": _tokens(usage, "output_tokens") if usage else 0,
+        "context_window_size": window,
+        "current_usage": ({k: _tokens(usage, k) for k in (
+            "input_tokens", "output_tokens", "cache_creation_input_tokens",
+            "cache_read_input_tokens")} if usage else None),
+        "used_percentage": used,
+        "remaining_percentage": remaining,
+    }
+    payload["exceeds_200k_tokens"] = total_in > 200_000
+
+    # The CLI's prompt-cache tracker, reduced to what the stream can tell us:
+    # hit_ratio is Σ cache reads over Σ all input, per API request (`nn`).
+    cache = f.get("cache") or {}
+    if cache.get("requests"):
+        seen = cache["read"] + cache["write"] + cache["input"]
+        payload["prompt_cache"] = {
+            "requests": cache["requests"],
+            "caching_observed": cache["read"] + cache["write"] > 0,
+            "hit_ratio": cache["read"] / seen if seen else None,
+            "cache_write_tokens": cache["write"],
+        }
+    if f.get("effort"):
+        payload["effort"] = {"level": f["effort"]}
+
+    # get_usage reports utilization as a percent already; the CLI's own
+    # used_percentage is the same number to one decimal (`Vgt`).
+    limits: dict = {}
+    for key in ("five_hour", "seven_day"):
+        window_info = (f.get("rate_limits") or {}).get(key)
+        if isinstance(window_info, dict) and isinstance(window_info.get("utilization"), (int, float)):
+            limits[key] = {"used_percentage": round(window_info["utilization"] * 10) / 10,
+                           "resets_at": window_info.get("resets_at")}
+    if limits:
+        payload["rate_limits"] = limits
+    tree = f.get("worktree")
+    if isinstance(tree, dict):
+        payload["worktree"] = tree
+    return payload
+
+
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 IMAGE_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                      ".gif": "image/gif", ".webp": "image/webp"}
@@ -2468,6 +2610,12 @@ class ClaudeSession:
         # Fetched once per process at start(); everything the UI knows about
         # this CLI comes from here rather than being hardcoded.
         self.init_info: dict | None = None
+        # Facts for the statusLine payload (statusline_payload), kept as they
+        # arrive: the last main-thread usage and the cache counts off the
+        # stream, cost and quota off get_usage, the context window off
+        # result.modelUsage or get_context_usage. Reset per process in start().
+        self._sl: dict = {}
+        self._sl_seen: set = set()
         # First prompt of a brand-new session, kept until the first result
         # turns it into the session title (see _after_result).
         self._titled = True
@@ -2580,6 +2728,8 @@ class ClaudeSession:
         self.spawned_at = time.time()
         proc = self.proc
         self.init_info = None
+        self._sl = {"cache": {"requests": 0, "read": 0, "write": 0, "input": 0}}
+        self._sl_seen = set()
         # Only system/init knows which model a session runs on. Carrying the
         # previous one over would feed a stale name to the statusline payload
         # below, which now runs before the first turn on a resume.
@@ -2733,15 +2883,25 @@ class ClaudeSession:
                     with self._outstanding_lock:
                         self._outstanding.pop(event.get("command_uuid"), None)
 
+            if etype == "assistant" and not event.get("parent_tool_use_id"):
+                self._note_usage(event.get("message") or {})
+            if etype == "result":
+                # The window the CLI measures context against, per model.
+                for name, row in (event.get("modelUsage") or {}).items():
+                    size = (row or {}).get("contextWindow")
+                    if isinstance(size, int) and size > 0 and (
+                            name == self.model or "window" not in self._sl):
+                        self._sl["window"] = size
             if etype == "system" and event.get("subtype") == "init":
                 self.session_id = event.get("session_id")
                 self.model = event.get("model")
+                self._sl["version"] = event.get("claude_code_version")
                 # The CLI shows its statusline from the moment it starts, not
                 # from the first answer. Publishing only on `result` left the
                 # bar empty for the whole first turn. Off-thread for the same
                 # reason `_after_result` is: it runs someone else's script.
                 threading.Thread(target=self._publish_statusline,
-                                 args=(event, generation), daemon=True).start()
+                                 args=(generation,), daemon=True).start()
             # The CLI's own echo of the mode in force. It moves without being
             # asked -- approving a plan leaves `plan` -- so the pill follows it.
             if etype == "system" and isinstance(event.get("permissionMode"), str):
@@ -2771,10 +2931,9 @@ class ClaudeSession:
             self._close_one_command()
         try:
             self._title_session(generation)
-            self._publish_usage(generation)
         except RuntimeError:
-            pass   # the process went away mid-turn; there is nothing to ask
-        self._publish_statusline(result, generation)
+            return   # the process went away mid-turn; there is nothing to ask
+        self._publish_usage(generation, True)
 
     def _close_one_command(self) -> None:
         """Close the OLDEST ledger entry ourselves, on the CLI's behalf.
@@ -2810,13 +2969,22 @@ class ClaudeSession:
         if title:
             self.control("rename_session", title=title)
 
-    def _publish_usage(self, generation: int) -> None:
+    def _publish_usage(self, generation: int, statusline: bool = False) -> None:
         """Real context/cost numbers from the CLI instead of client arithmetic.
 
         Both requests are free and answer on an idle process. If either is
         missing on an older build the client keeps its own estimate — hence
-        every key here is optional.
+        every key here is optional. With `statusline`, the machine's own
+        statusLine runs as soon as the FAST half has answered (cost, quota),
+        and again once the slow half names a context window it lacked.
         """
+        try:
+            self._publish_usage_inner(generation, statusline)
+        except RuntimeError:
+            if statusline:     # the process went away; say what we know
+                self._publish_statusline(generation)
+
+    def _publish_usage_inner(self, generation: int, statusline: bool) -> None:
         def publish(patch: dict) -> None:
             if patch and generation == self._generation:
                 self.hub.publish({"type": "wrapper", "subtype": "usage", **patch})
@@ -2839,6 +3007,12 @@ class ClaudeSession:
             if isinstance(five.get("utilization"), (int, float)):
                 patch["quota"] = five["utilization"]
             publish(patch)
+            if isinstance(body.get("session"), dict):
+                self._sl["cost"] = body["session"]
+            if isinstance(body.get("rate_limits"), dict):
+                self._sl["rate_limits"] = body["rate_limits"]
+        if statusline:
+            self._publish_statusline(generation)
 
         # Last, and with a budget of its own: nothing waits on it now.
         context = self.control("get_context_usage", timeout=CONTEXT_USAGE_TIMEOUT)
@@ -2846,23 +3020,71 @@ class ClaudeSession:
             body = context.get("response") or {}
             if isinstance(body.get("percentage"), (int, float)):
                 publish({"context": body["percentage"]})
+            size = body.get("maxTokens")
+            if statusline and "window" not in self._sl and isinstance(size, int) and size > 0:
+                self._sl["window"] = size
+                self._publish_statusline(generation)
 
-    def _publish_statusline(self, result: dict, generation: int) -> None:
-        command = statusline_command()
-        if not command:
+    def _note_usage(self, message: dict) -> None:
+        """One main-thread assistant message: its usage is the context figure,
+        and each API request counts once toward the cache ratio. With partial
+        messages on, one request arrives as several `assistant` events that
+        share an id, so the id is what is counted."""
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
             return
-        segments = run_statusline(command, {
+        self._sl["usage"] = usage
+        mid = message.get("id")
+        if not mid or mid in self._sl_seen:
+            return
+        self._sl_seen.add(mid)
+        cache = self._sl.setdefault("cache", {"requests": 0, "read": 0, "write": 0, "input": 0})
+        cache["requests"] += 1
+        cache["read"] += _tokens(usage, "cache_read_input_tokens")
+        cache["write"] += _tokens(usage, "cache_creation_input_tokens")
+        cache["input"] += _tokens(usage, "input_tokens")
+
+    def _statusline_facts(self) -> dict:
+        """Everything statusline_payload() reads, as known right now."""
+        info = self.init_info or {}
+        models = info.get("models")
+        settings: dict = {}
+        try:
+            reply = self.control("get_settings", timeout=10.0)
+            if reply.get("subtype") == "success":
+                settings = (reply.get("response") or {}).get("effective") or {}
+        except RuntimeError:
+            pass
+        # Before system/init names it, the model is what the settings resolve
+        # to — the one the CLI will run the first turn on.
+        model = self.model or resolve_model(settings.get("model"), models)
+        here = self.history_cwd
+        transcript = transcript_path(here, self.session_id) if self.session_id else None
+        facts = {
             "session_id": self.session_id,
-            "cwd": str(self.cwd),
-            "model": {"id": self.model, "display_name": self.model},
-            "workspace": {"current_dir": str(self.cwd), "project_dir": str(self.cwd)},
-            "version": result.get("claude_code_version"),
-            "output_style": {"name": "default"},
-            "cost": {
-                "total_cost_usd": result.get("total_cost_usd"),
-                "total_duration_ms": result.get("duration_ms"),
-            },
-        })
+            "transcript_path": str(transcript) if transcript else None,
+            "cwd": str(here),
+            "project_dir": str(self.cwd),
+            "model_id": model,
+            "model_name": model_display_name(model, models),
+            "version": self._sl.get("version"),
+            "output_style": settings.get("outputStyle") or info.get("output_style"),
+            "effort": settings.get("effortLevel"),
+            **{k: self._sl.get(k) for k in ("cost", "window", "rate_limits", "cache")},
+            # A resumed process does not re-emit its history: read it back.
+            "usage": self._sl.get("usage") or last_main_usage(transcript),
+        }
+        if self.worktree:
+            facts["worktree"] = {"name": self.worktree, "path": str(self.worktree_cwd),
+                                 "branch": f"worktree-{self.worktree}",
+                                 "original_cwd": str(self.cwd)}
+        return facts
+
+    def _publish_statusline(self, generation: int) -> None:
+        command = statusline_command()
+        if not command or generation != self._generation:
+            return
+        segments = run_statusline(command, statusline_payload(self._statusline_facts()))
         if segments and generation == self._generation:
             self.hub.publish({"type": "wrapper", "subtype": "statusline",
                               "segments": segments,
@@ -2875,23 +3097,21 @@ class ClaudeSession:
         statusline — only arrives once the CLI has processed a message, so a
         resumed session showed a blank bar until the user typed. By now we
         already know the two facts that identify it: session_id (it IS the
-        resume id, set in start()) and cwd. The rest is free — both usage
-        control requests answer on an idle process (wiki/control-protocol.md
-        §6) and the statusline runs off-thread with its own timeout.
+        resume id, set in start()) and cwd. Usage and the statusline come
+        from _fetch_init_info, as for every spawn.
 
-        The model stays unknown until system/init names it. init_info's
-        `models` is the catalogue of what this account CAN use, not what this
-        session is on — reading it here would print a confident wrong answer.
+        The state line's model stays unknown until system/init names it.
+        init_info's `models` is the catalogue of what this account CAN use,
+        not what this session is on. Only the statusLine SCRIPT gets a model
+        before that, resolved from the effective settings the way the CLI
+        picks its first turn's model (_statusline_facts).
         """
         if generation != self._generation:
             return
         self.hub.publish({"type": "wrapper", "subtype": "resumed",
                           "session_id": self.session_id, "cwd": str(self.cwd)})
-        try:
-            self._publish_usage(generation)
-        except RuntimeError:
-            pass   # the process went away; there is nothing to ask
-        self._publish_statusline({}, generation)
+        # Usage and the statusline follow from _fetch_init_info, for every
+        # spawn: the bar needs the model catalogue, which only arrives there.
 
     def _read_stderr(self, proc: subprocess.Popen, generation: int) -> None:
         for line in proc.stderr:
@@ -3306,6 +3526,11 @@ class ClaudeSession:
             return
         self.init_info = info
         self.hub.publish({"type": "wrapper", "subtype": "init_info", "info": info})
+        # The TUI draws its statusline from the moment it starts, not after
+        # the first answer — so the bar runs here, for a fresh session too,
+        # now that the model catalogue it resolves names from is in hand.
+        threading.Thread(target=self._publish_usage, args=(generation, True),
+                         daemon=True).start()
         # Publish the (reset) posture on the same path, so a window that opens
         # or reconnects later gets it out of Hub history instead of guessing.
         if self.broker:
@@ -4216,7 +4441,11 @@ class Handler(BaseHTTPRequestHandler):
                             {"ok": ok})
         elif parsed.path == "/api/project/pick":
             chosen = pick_folder(Path(sys.executable))
-            self._send_json(HTTPStatus.OK, {"path": chosen})
+            # `git` too: the new-session page offers a branch of its own only
+            # in a repo, and a folder picked here was always taken for none.
+            # Same test as list_projects (a worktree's .git is a FILE).
+            self._send_json(HTTPStatus.OK, {
+                "path": chosen, "git": bool(chosen) and (Path(chosen) / ".git").exists()})
         elif parsed.path == "/api/project/open":
             # SPAWNS a tab. Every other open conversation keeps running -- this
             # endpoint used to kill the one session the server had, which is

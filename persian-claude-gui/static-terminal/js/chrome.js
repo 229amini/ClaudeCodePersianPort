@@ -24,6 +24,7 @@ import {
    dialogs are asking. One arrow each way (perm.js reads the tab list back), and
    nothing crosses either at module-evaluation time. */
 import { permAsking, permSeenTab } from "./perm.js";
+import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
 
@@ -1090,18 +1091,21 @@ function showPreview(row, sess, items) {
   // a measured rect, and the sidebar sits on the RIGHT edge of the window
   // (TERMINAL-REDESIGN.md §1), so the card opens inward — leftward — clamped so
   // a row near the bottom or the start edge never opens offscreen.
+  // All in CSS px: rects and innerWidth are SCREEN px under app zoom, so they
+  // are converted on the way in (prefs.js cssPx); offset* never needed it and
+  // ignore transforms, which a rect read mid-animation does not.
   const anchor = row.getBoundingClientRect();
-  const top = Math.min(Math.max(anchor.top - 6, 8),
-                       window.innerHeight - card.offsetHeight - 8);
+  const top = Math.min(Math.max(cssPx(anchor.top) - 6, 8),
+                       cssPx(window.innerHeight) - card.offsetHeight - 8);
   card.style.top = Math.max(top, 8) + "px";
   // Horizontally the anchor is the whole SIDEBAR, not the row: a session row
   // stops short of the pane edge (the view/delete actions sit beside it), so
   // anchoring on the row leaves the card half-overlapping the list it explains.
   const pane = document.getElementById("sidebar")?.getBoundingClientRect();
-  const edge = Math.min(anchor.left, pane ? pane.left : anchor.left);
+  const edge = cssPx(Math.min(anchor.left, pane ? pane.left : anchor.left));
   card.style.left =
     Math.max(Math.min(edge - card.offsetWidth - 10,
-                      window.innerWidth - card.offsetWidth - 8), 8) + "px";
+                      cssPx(window.innerWidth) - card.offsetWidth - 8), 8) + "px";
 }
 
 function block(cls, text) {
@@ -1205,9 +1209,13 @@ export function kebabMenu(items, anchor = null) {
     menu.showPopover();
     // Measured only once it is in the top layer, so a menu near the bottom
     // of a long sidebar flips above its button instead of off-screen.
+    // CSS px throughout: the rect converted on the way in (prefs.js cssPx),
+    // the menu's own size from offset*, which ignores its scale-in animation.
     const height = menu.offsetHeight;
-    const below = rect.bottom + 4;
-    menu.style.top = (below + height > innerHeight ? rect.top - height - 4 : below) + "px";
+    const width = menu.offsetWidth;
+    const below = cssPx(rect.bottom) + 4;
+    menu.style.top = (below + height > cssPx(innerHeight)
+      ? cssPx(rect.top) - height - 4 : below) + "px";
     // The UA [popover] sheet sets inset:0, so left+right+width are all
     // definite — over-constrained — and under dir="rtl" the browser drops
     // `left`, pinning every menu to the window's right edge no matter what
@@ -1220,8 +1228,8 @@ export function kebabMenu(items, anchor = null) {
     // below then pinned it to the window instead of to the control that
     // opened it. Still clamped, so a menu wider than the room to its start
     // side lands 8px in rather than off-screen.
-    menu.style.left = Math.max(8, Math.min(rect.right - menu.offsetWidth,
-                                           innerWidth - menu.offsetWidth - 8)) + "px";
+    menu.style.left = Math.max(8, Math.min(cssPx(rect.right) - width,
+                                           cssPx(innerWidth) - width - 8)) + "px";
   });
 
   return [btn, menu];
