@@ -496,3 +496,74 @@ Gate: `test_marks.py`, **29** checks over both editions, route-stubbed. It inclu
 left-to-right check of every `+A −D`, because a `textContent` assertion is blind to BiDi.
 Negative-tested: dropping the settle flush, `setPinned`'s class toggle, or the stats' `dir=ltr`
 each fails it.
+
+## claude.ai/code parity: the transcript, the tasks panel, the send button (2026-09-29, pcg-368)
+
+The references were the user's screenshots of this project's own claude.ai/code session and a
+full measured pass of that page from a session on the user's PC (`claude-ai-code-reference.md`),
+plus the CLI's rules read out of the 2.1.284 binary (`tui-transcript.md`). Plan and phases are
+in `CLAUDE-AI-PARITY.md`. Both editions unless noted.
+
+**A run is one line.** Every step between two sentences joins one shut `details.run` (classes
+`card tool group run`, built by hand in `openRun()`, because `card()` would route it back
+through `toolHome()`). Its line is `activity()`, which uses the site's vocabulary:
+
+- one part per kind, in the order each kind was first used, past tense;
+- one file is named (a `<bdi>`, from the card's `data-target`) and several are counted;
+- `+A −D` when the run edited (`data-added`/`data-removed`);
+- «(N ناموفق)» when a step failed (`noteRunError`, marking `data-failed`);
+- «از N ابزار استفاده شد» for anything unnamed, MCP included;
+- a lone shell step shows its own `description`, the site's «Committed P1».
+
+A background task's notice (`.agent-note`) joins the run as «کار پس‌زمینه تمام شد». The
+polling-loop fold now pairs [sentence][run holding exactly one step].
+
+**Thinking draws nothing until it has text.** 620 of 755 thinking blocks in a real session
+were signature-only; each used to be a «در حال فکر کردن» card. A thought with text is an
+uncounted step. A replayed `thinking` part now renders too, so live and replay agree: before
+this, live drew the empty cards and replay drew none.
+
+**The working line is live only.** It shows the spark, `time · tokens`, the «N کار در حال اجرا»
+chip (`setRunningTasks`, fed by `agents.js`), then the phase. It is **removed** when the turn
+ends. The CLI keeps a `✻ Worked for …` record there; the site does not, and the user read it
+as noise. The reload defects it used to have (a re-rolled verb, a «۰ ثانیه» clock) are gone
+with it. «Esc برای توقف» (`spinnerInterrupt`) is its tooltip now.
+
+**The Background tasks panel** (`#tasks-panel`, a `[popover]` at the stage side, with the
+same inset rules as `#agent-drawer`):
+
+- Running cards show the title, «عامل · ۲ دقیقه», the model, tokens, tool uses and the
+  current step. The numbers are `system/task_progress` (`usage.total_tokens`, `tool_uses`,
+  `last_tool_name`), which nothing read before; `noteTaskProgress()` keeps them per task id.
+- «دیدن گزارش» opens the per-agent drawer.
+- The stop square sends `stop_task {task_id}`, which is now on `CONTROL_ALLOWED`.
+- «پایان‌یافته N» is folded, and the trash wipes that list client-side.
+- The strip above the composer is only the chip, and only while helpers run after the turn.
+- `/tasks` opens the panel.
+
+**Terminal edition only — the button at the end of the box.**
+
+- It is send ↵, or stop ⊙ while a turn runs and the box is empty.
+- Mid-turn, hovering send offers «بفرست» (now, into the running turn, which is what the CLI
+  does with a mid-turn message) and «بعداً بفرست» (Ctrl+Enter).
+- A held message waits client-side in `.later-strip`. One is posted per finished turn, and its
+  row's × puts the text back.
+- The web edition keeps its own composer buttons.
+
+**The bar (P1).**
+
+- The state line no longer repeats the mode or the model.
+- The mode chip falls back to the CLI's `permissionMode`.
+- The audit count is the mode menu's footer. The CLI has no auto-approval counter at all.
+- Models are shown as the newest of each family, with «مدل‌های دیگر ›» opening the rest in a
+  flyout. The flyout is a `position: fixed` child *inside* the menu popover, so it neither
+  light-dismisses the menu nor is clipped by it.
+- The menu check is the site's blue.
+
+Gates:
+
+- spec: terminal 202, web 220;
+- `test_bar`: 45 across both editions (the button's six checks are terminal-only);
+- `test_column`: 29;
+- negative-tested: an empty-thinking card, a leftover working line, a missing `task_progress`
+  route and a missing Ctrl+Enter branch each fail a gate.

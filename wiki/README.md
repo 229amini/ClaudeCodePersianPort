@@ -59,7 +59,10 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
   injected envelopes, not the person.
-- [parity-chrome.md](parity-chrome.md) — **2026-09-29:** §"Message marks" (copy / pin / when under
+- [parity-chrome.md](parity-chrome.md) — **2026-09-29:** §"claude.ai/code parity" (one line per
+  tool run, no empty thinking, the working line removed at the end of a turn, the Background
+  tasks panel fed by `system/task_progress` with `stop_task`, the send/stop button and
+  «بعداً بفرست»), §"Message marks" (copy / pin / when under
   each message, the pin rail, the per-turn change card; the uuid and timestamp are the message's
   own, the words are CSS `attr()` so they stay out of `textContent`), §"The composer bar" (claude.ai/code's bar
   in both editions: one `bar.js`, why the web edition kept its in-cell menu, `mcp_toggle` is
@@ -76,6 +79,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   `extract_tui_vocab.py`, with a «کلید v2» column that `test_keys.py` reads its cases from. The
   binary self-updates overnight, so a hand-written key table would already be stale — regenerate,
   never transcribe.
+- [claude-ai-code-reference.md](claude-ai-code-reference.md) — **2026-09-29:** claude.ai/code
+  measured in the user's Chrome: type sizes and colours, the user bubble, the tool-line
+  vocabulary, the expanded run, the file card, the menus. The site half of `CLAUDE-AI-PARITY.md`.
 - [tui-transcript.md](tui-transcript.md) — **2026-09-29:** how the 2.1.284 TUI draws a transcript,
   read out of the binary with byte offsets: empty thinking draws nothing, read/search calls fold
   into one dim sentence, there is no auto-approval counter, and todos have no transcript row. The

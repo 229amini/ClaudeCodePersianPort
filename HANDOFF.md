@@ -1,3 +1,8 @@
+> **Superseded 2026-09-29 (end of day):** Steps 1–3 are done. The visual pass is in
+> `wiki/claude-ai-code-reference.md`. P1–P4 and the composer button are built and merged. See
+> `CLAUDE-AI-PARITY.md` §Status for what is left to settle with the user. The rest of this file
+> is the history of how it was planned.
+
 # HANDOFF — 2026-09-29, claude.ai/code parity (epic `pcg-368`), paused after P1
 
 ## What the user wants

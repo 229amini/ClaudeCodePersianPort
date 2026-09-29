@@ -47,3 +47,23 @@ observed). Settled by measurement: user bubble at the inline-end (right), 8x12 p
 `Ran N commands ›` line, expand = bordered step list without icons, step expands to command +
 output; turn-end file-edit card; menu check is blue. P2 plan stands with these targets; P3
 (Background tasks panel) and the stop/send button wait for a live capture.
+
+## Status (2026-09-29, end of day) — built
+
+P1–P4 and the composer button (`pcg-368.6`) are built and gated. Web 1.6.0, terminal 0.6.0.
+The live-only items that the idle measured pass could not observe were built from the user's
+screenshots:
+
+- the working line with the running-task chip;
+- the Background tasks panel;
+- stop ⊙ ↔ send ↵ with «Send / Queue for later».
+
+Details are in `wiki/parity-chrome.md` §"claude.ai/code parity".
+
+Still to settle with the user, from the measured list:
+
+- the action row under a turn's last message, which the site draws **always**; ours is on
+  hover;
+- the right-hand diff panel that a file-card row opens;
+- image thumbnails above the user bubble;
+- «Show more» at about 15 lines.
