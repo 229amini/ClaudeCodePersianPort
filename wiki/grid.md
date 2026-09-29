@@ -380,3 +380,27 @@ Measured by pinning the clock: `TZ=Etc/GMT-12` (05:00) and `TZ=Etc/GMT+3` (14:00
 and 17:00 UTC failed. The greeting now stays on one line and ellipsises. **Anything drawn from the
 clock is an input to the layout gates.** Run them under a second `TZ` before calling a failure
 flaky, or before calling one fixed.
+
+## What the user's v0.5.0 screenshot still found (2026-09-29, terminal 0.6.3)
+
+The report was made on 0.5.0. Two items were already gone in 0.6.0: the empty
+«در حال فکر کردن» card, and the state line that repeated the mode and model. Four were not:
+
+- **A hole at the end of every sidebar row.** `.sess-act` (＋, ⋯) was `opacity: 0` at rest but
+  still 30 px wide, so a project row's count and a session row's «۵ دقیقه پیش» sat about 60 px in
+  from the row's end. The buttons are now **zero width** at rest and 30 px on hover,
+  focus-within or an open menu; they stay focusable. `test_layout.py` measures the count's
+  distance from the row's end (≤ 14 px; 74 px with the old rule). Its kebab probe gives its
+  detached button the hover width, as a real click would have.
+- **The machine's statusLine row is not painted any more** (user decision). It repeated the
+  folder (pane header) and the model, effort and usage (composer bar). `state.status.custom` still
+  records it. The server still runs the script, and the web edition still draws it.
+- **The sidebar's five-hour meter is gone.** The bar's ◔ panel shows the same limit with its
+  reset time. With the statusLine row it made three places for one number.
+- **The transcript stopped following.** See `frontend-modules.md` §"Stick to what a row becomes".
+
+Also from the same day's Edge run (`pcg-dc4`): `test_layout.py`'s picker floor was a fixed 240 px.
+At 500×560 the terminal picker already fills its column. That was 246 of a 262 px prompt on Linux
+Chromium, and 238 of 254 on Edge, whose column comes out 8 px narrower (font metrics). The floor
+is now `min(240, view − 40, prompt − 24)`. A picker squeezed to 200 px still fails at all three
+sizes (negative-tested).

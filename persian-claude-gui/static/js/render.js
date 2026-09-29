@@ -149,8 +149,29 @@ export function bulkAppend(fn) {
 function append(el, { stick = true } = {}) {
   const wasAtBottom = stick && !bulk && atBottom();
   toolHome(el).append(el);
-  if (wasAtBottom) log.scrollTop = log.scrollHeight;
+  if (wasAtBottom) stickSoon(log);
   return el;
+}
+
+/* STAY PINNED TO WHAT THE ROW BECOMES, NOT TO WHAT IT WAS WHEN IT LANDED.
+   Most rows are appended EMPTY and filled right after -- bubble() then the
+   rendered markdown, userRow() then its text -- so a stick written at append
+   time scrolled to the bottom of a blank row. The row then grew under the
+   fold, the next append's atBottom() read "not at the bottom", and the
+   transcript stopped following for good: the user saw the answer run off
+   the bottom of the pane with the scrollbar already at its end. The write
+   is repeated once the synchronous render is over, on the same box (`log`
+   is swapped per render target, so it is captured, not re-read). */
+const sticking = new Set();
+
+function stickSoon(box) {
+  box.scrollTop = box.scrollHeight;
+  if (sticking.has(box)) return;
+  sticking.add(box);
+  queueMicrotask(() => {
+    sticking.delete(box);
+    box.scrollTop = box.scrollHeight;
+  });
 }
 
 /* ONE DOM WRITE PER FRAME for the streaming bubble.

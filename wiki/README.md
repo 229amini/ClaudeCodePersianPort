@@ -48,7 +48,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   carries **the composer's key dispatcher rules** — capture order is the priority list, and every
   keydown listener after it must check `defaultPrevented` — and, since v2.4, **why the dialogs are
   rows in the column** rather than modals, and the four things that had to change together for
-  that to hold.
+  that to hold. **2026-09-29:** why
+  `append()` sticks twice — a row appended empty and filled after it landed stopped the
+  transcript following.
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — **2026-09-29:** a Latin name in an RTL list,
   and why `text-align: match-parent` does not fix it in Chromium. Also: how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
@@ -112,6 +114,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   layout control for conversations already open; per-conversation folders and branches on the
   new-session page. Same day: the turn-end signal is a taskbar flash done by the server
   (`FlashWindowEx` via ctypes), because Edge app mode never grants a Notification.
+  Later the same day: what a v0.5.0 screenshot still found (the sidebar row hole, the
+  statusLine row and sidebar quota removed, the transcript that stopped following) and the
+  picker floor Edge failed by 2 px.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered
