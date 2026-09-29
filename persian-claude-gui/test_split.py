@@ -134,7 +134,8 @@ SH = SHELL[EDITION]
 # the acceptance bar the MA3 design set (>= 12). BOTH editions now have a visible
 # split control (TERMINAL-REDESIGN.md §3), so the two checks it brings with it are
 # no longer web-only.
-CHECKS = 21
+# Terminal: the two split-control checks became three grid checks (§D6).
+CHECKS = 24 if EDITION == "web" else 25
 
 # MA5: what the two extra page loads at the foot of main() assert about the
 # layout coming back after a reload. Their own loads, not the size loop's: a
@@ -173,7 +174,9 @@ window.fetch = async (url, opts) => {
     {ok: true, projects: [], agents: [], recents: [], tabs: [], active: ""})};
 };
 
-const CELLS = () => [...document.querySelectorAll("#grid > .cell")];
+// `#grid .cell`, not `> .cell`: the terminal edition draws rows of panes
+// (BRIDGEMIND-PORT.md §D6), so a pane is a grandchild of #grid there.
+const CELLS = () => [...document.querySelectorAll("#grid .cell")];
 const PARTS = %PARTS%;
 %OPENMENU%
 const TABS = ["t1", "t2", "t3", "t4"].map((tab, i) => ({
@@ -282,6 +285,7 @@ function shot() {
   return {split: document.getElementById("grid").dataset.split,
           cells: APP.cells.map((c) => c.tab),
           blank: APP.cells.map((c) => !!c.root.querySelector("textarea.input")?.disabled),
+          widths: APP.cells.map((c) => Math.round(c.root.getBoundingClientRect().width)),
           seg: [...(document.getElementById("split-seg")?.children ?? [])]
                  .filter((b) => b.getAttribute("aria-pressed") === "true")
                  .map((b) => b.dataset.split)};
@@ -292,8 +296,10 @@ async function layoutCase(which) {
     // Four columns, three conversations in them, one of which the server does
     // not list any more - and none of them in the column today's auto-pick
     // would have used.
+    // `rows`/`rowH` are the terminal edition's divider positions (§D6): the
+    // first row split 3:1. The web edition's grid ignores both keys.
     sessionStorage.setItem("pcg.layout", JSON.stringify(
-      {split: 4, cells: ["t2", "t-gone", "t4", "t1"]}));
+      {split: 4, cells: ["t2", "t-gone", "t4", "t1"], rows: [[3, 1], [1, 1]], rowH: [1, 1]}));
     APP.applyTabs({tabs: TABS, active: "t1"});
     await sleep(300);
     return {restored: shot()};
@@ -346,7 +352,11 @@ async function layoutCase(which) {
     home: r.classList.contains("home")}));
   // The digit badge is the cell's, not its conversation's: with nothing open
   // it is the ONLY thing saying which Alt+N reaches this blank column.
+  // The digit shows while Alt is held (BRIDGEMIND-PORT.md §D5), so that is
+  // the state it is measured in.
+  document.body.classList.add("alt-held");
   out.homeBadges = CELLS().map((r) => box(r.querySelector(".cell-badge")));
+  document.body.classList.remove("alt-held");
 
   /* --- four columns, one conversation each -------------------------------- */
   place4();
@@ -548,6 +558,39 @@ async function layoutCase(which) {
   await sleep(80);
   out.idleNoAgents = notices();
 
+  /* --- pcg-0o7: a dialog that pulls the keyboard in MID-RENDER --------------
+     The permission for column 2's conversation is rendered through
+     withRenderTarget, and showPermission() focuses the dialog it opens —
+     synchronously, so the focusin listener ran focusCell() while `state` was
+     still pointed at column 2's scope. The column being left was stashed with
+     the OTHER conversation's ledger, and the render's own restore then put
+     the old conversation back into `state` and `log` under the new focus: a
+     running turn read idle, and the next line for the focused conversation
+     was written into the column the keyboard had just left. */
+  APP.focusCell(0);
+  const runTab = APP.cells[0].tab, askTab = APP.cells[1].tab;
+  APP.routeEvent({type: "wrapper", subtype: "user_echo", tab: runTab,
+                  text: "\\u06a9\\u0627\\u0631", uuid: "u-0o7"});
+  await sleep(60);
+  APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: askTab,
+    request_id: "r0o7", tool_name: "Bash", tool_input: {command: "dir"}});
+  await sleep(150);
+  const rowOf = (t) => document.querySelector(`#open-tabs .tab-row[data-tab="${t}"]`);
+  const marker = "pcg-0o7-marker";
+  APP.routeEvent({type: "wrapper", subtype: "stderr", tab: askTab, line: marker});
+  await sleep(60);
+  out.midRender = {
+    focused: CELLS().findIndex((r) => r.classList.contains("focused")),
+    runStatus: rowOf(runTab)?.dataset.status ?? "",
+    markerIn: CELLS().map((r) => r.querySelector(".log")?.textContent.includes(marker)),
+  };
+  APP.cells[1].perm.dismiss("r0o7");
+  APP.routeEvent({type: "result", tab: runTab, subtype: "success", is_error: false});
+  APP.routeEvent({type: "command_lifecycle", tab: runTab, command_uuid: "u-0o7",
+                  state: "completed"});
+  APP.focusCell(0);
+  await sleep(80);
+
   /* --- shrinking parks, it never closes ------------------------------------ */
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t4",
     request_id: "r2", tool_name: "Bash", tool_input: {command: "dir"}});
@@ -614,6 +657,40 @@ WEB_ONLY_JS = """
 """
 
 
+GRID_JS = """
+  /* --- BRIDGEMIND-PORT.md §D6: the grid that fits N (terminal edition) -----
+     Three panes are two on top and one full-width below; Alt+arrow moves by
+     GEOMETRY (the pane past this one's edge, nearest first); a divider drag
+     moves exactly the two panes it sits between. */
+  APP.setSplit(3);
+  await sleep(250);
+  out.panes = {rows3: [...document.querySelectorAll("#grid > .grid-row")]
+                .map((r) => r.querySelectorAll(":scope > .cell").length),
+              boxes3: CELLS().map(box)};
+  APP.focusCell(0);
+  await sleep(60);
+  key(document.body, {key: "ArrowLeft", code: "ArrowLeft", altKey: true});
+  await sleep(80);
+  out.panes.left = CELLS().findIndex((r) => r.classList.contains("focused"));
+  key(document.body, {key: "ArrowDown", code: "ArrowDown", altKey: true});
+  await sleep(80);
+  out.panes.down = CELLS().findIndex((r) => r.classList.contains("focused"));
+  const dv = document.querySelector("#grid .divider.v");
+  const wide = () => CELLS().slice(0, 2).map((r) => r.getBoundingClientRect().width);
+  const dragBefore = wide();
+  if (dv) {
+    const r = dv.getBoundingClientRect();
+    const at = {clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+                pointerId: 1, bubbles: true};
+    dv.dispatchEvent(new PointerEvent("pointerdown", at));
+    dv.dispatchEvent(new PointerEvent("pointermove", {...at, clientX: at.clientX + 80}));
+    dv.dispatchEvent(new PointerEvent("pointerup", {...at, clientX: at.clientX + 80}));
+  }
+  await sleep(80);
+  out.panes.drag = {before: dragBefore, after: wide()};
+"""
+
+
 SEG_JS = """
   /* --- the sidebar's segmented control (both editions) ---------------------
      How many conversations are on screen is a fact about this WINDOW. The
@@ -654,7 +731,7 @@ def write_probe() -> None:
               .replace("%PARTS%", json.dumps(SH["parts"]))
               .replace("%OPENMENU%", SH["open_menu"])
               .replace("%WEBONLY%",
-                       (WEB_ONLY_JS if EDITION == "web" else "") + SEG_JS))
+                       (WEB_ONLY_JS + SEG_JS) if EDITION == "web" else GRID_JS))
     PROBE.write_text(page.replace("</body>", script + "\n</body>", 1), encoding="utf-8")
 
 
@@ -756,10 +833,20 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 say(f"the status stack of cell {at} is {sl['h']}px tall "
                     f"({sl['rows']} rows, cap {STATUS_CAP}) - a resumed session's "
                     "fields wrap and the transcript pays for every row")
-            elif sl["scroll"] <= sl["h"] + 2:
+            # The web edition keeps the 2026-09-08 rule: nothing hidden, the
+            # stack scrolls, so it must hold more than it shows.
+            elif EDITION == "web" and sl["scroll"] <= sl["h"] + 2:
                 say(f"the status stack of cell {at} holds {sl['scroll']}px in "
                     f"{sl['h']}px of box - it fits, so a field was dropped to "
                     "make it fit rather than scrolled to")
+            # BRIDGEMIND-PORT.md §D5 reversed that rule for the TERMINAL edition
+            # on purpose: its status line is the machine's own line plus ONE
+            # state line, and every fact that left it has a home in /status
+            # (asserted in test_shell.py). What stays a defect there is that
+            # line wrapping - the column would pay for it.
+            elif EDITION != "web" and sl["rows"] > 2:
+                say(f"the status line of cell {at} runs to {sl['rows']} rows - "
+                    "the state line wrapped instead of giving up characters")
 
         # 5b-iii. pcg-6nf.10: the slash popup is anchored by composer.js, not by
         #        positionMenu, and its 140px floor is more room than a short
@@ -814,7 +901,7 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
     #     nothing about it. The terminal edition reached the grid through
     #     `/split` alone until 2026-09-10, which is a layout a reader who never
     #     types a command could not find.
-    if not tight:
+    if not tight and EDITION == "web":
         seg = m["seg"]
         if seg["labels"] != ["\u06f1", "\u06f2", "\u06f4"]:
             say(f"the split control reads {seg['labels']}, not the three "
@@ -836,11 +923,50 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             say(f"the split control sent the server {stray[:3]} - the grid is "
                 "this window's business and the server has no concept of it")
 
+    # 5e. BRIDGEMIND-PORT.md §D6, terminal edition: the segmented control is
+    #     gone; the grid fits N and is driven by geometry and dividers.
+    if EDITION == "terminal":
+        g = m["panes"]
+        # Two shapes are right for three panes, and layoutFor() picks by the
+        # window: 2 + 1 (the third full-width) where there is height, one row
+        # of three where the window is wide and short (1242x622 scores them
+        # 255 against 256). Anything else is wrong, and each shape has its own
+        # consequence to check.
+        b = g["boxes3"]
+        if g["rows3"] == [2, 1]:
+            if not b[2]["w"] > 1.8 * b[0]["w"]:
+                say(f"the third pane is {b[2]['w']}px wide against {b[0]['w']}px - "
+                    "the last row should take the full width")
+        elif g["rows3"] == [3]:
+            if max(x["w"] for x in b) - min(x["w"] for x in b) > 2:
+                say(f"one row of three panes is not three equal widths: {[x['w'] for x in b]}")
+        else:
+            say(f"/split 3 drew rows {g['rows3']}, neither 2+1 nor one row of three")
+        want_down = 2 if g["rows3"] == [2, 1] else 1
+        if g["left"] != 1 or g["down"] != want_down:
+            say(f"Alt+Left from pane 1 reached {g['left']} and Alt+Down then reached "
+                f"{g['down']} (want 1, then {want_down}) - nearest-pane goes by geometry")
+        d = g["drag"]
+        if (abs((d["after"][1] - d["before"][1]) - 80) > 6
+                or abs((d["before"][0] - d["after"][0]) - 80) > 6):
+            say(f"dragging the divider 80px right moved the panes {d['before']} -> "
+                f"{d['after']} - the left pane should grow by 80 and the right shrink")
+
     # 6. a request for a conversation nobody is watching
     if m["permOpen"] != [True, False, False, False]:
         say(f"the unplaced tab's permission opened in {m['permOpen']} (want the focused cell)")
     if not m["permSource"]["shown"] or not m["permSource"]["text"]:
         say(f"the «from another session» line did not show: {m['permSource']}")
+    # 6b. pcg-0o7: the dialog pulled the keyboard in mid-render; nothing else moves
+    mid = m["midRender"]
+    if mid["focused"] != 1:
+        say(f"the asking column's dialog left cell index {mid['focused']} focused, not 1")
+    if mid["runStatus"] != "running":
+        say(f"a running turn read {mid['runStatus']!r} once a dialog pulled focus "
+            "into another column (pcg-0o7)")
+    if mid["markerIn"] != [False, True, False, False]:
+        say(f"the focused conversation's next line landed in columns {mid['markerIn']}"
+            " - `log` was restored to the column the keyboard had left (pcg-0o7)")
     # 7. Alt+N
     if m["altFocused"] != 2:
         say(f"Alt+3 marked cell index {m['altFocused']} focused, not 2")
@@ -897,9 +1023,15 @@ def check_layout(restore: dict, fresh: dict, bad: list[str]) -> None:
     if got["blank"] != [False, True, False, False]:
         say(f"the message box of each restored column is disabled={got['blank']} "
             "- the column left blank by a dead tab has nothing to send to")
-    if got["seg"] != ["4"]:
+    if EDITION == "web" and got["seg"] != ["4"]:
         say(f"the split control reads {got['seg']} after a restore, not «4» - "
             "paintSplitControl runs inside setSplit and should need no line")
+    if EDITION == "terminal":
+        w = got["widths"]
+        share = w[0] / max(1, w[0] + w[1])
+        if abs(share - 0.75) > 0.05:
+            say(f"the first row came back {w[0]}:{w[1]} ({share:.2f}), not the saved "
+                "3:1 - the dividers' positions did not survive the reload")
 
     if fresh["fresh"]["split"] != "1" or fresh["fresh"]["cells"] != ["t1"]:
         say(f"with nothing saved the window booted to split "

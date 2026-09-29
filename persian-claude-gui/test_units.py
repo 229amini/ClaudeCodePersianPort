@@ -33,6 +33,20 @@ def check(name, cond):
         fails.append(name)
 
 
+# The app is Windows-only (cmd.exe for `!` and the statusLine, `D:\` paths from
+# the CLI). Off Windows these checks cannot mean anything, so they are counted
+# as skipped rather than failed -- and never skipped on the machine that ships.
+skipped = []
+
+
+def check_win(name, cond):
+    if os.name == "nt":
+        check(name, cond)
+    else:
+        print("  SKIP " + name + " (Windows-only)")
+        skipped.append(name)
+
+
 print("ansi_segments")
 segs = server.ansi_segments("\x1b[1;34mD:/p\x1b[0m \x1b[2m|\x1b[0m \x1b[38;5;172mX\x1b[0m")
 check("bold+basic fg on one run", segs[0] == {"text": "D:/p", "bold": True, "fg": "#3b8eea"})
@@ -54,8 +68,8 @@ print("run_statusline: cmd.exe quote stripping")
 # which is every statusLine running node/python out of "C:\Program Files\...".
 # shell=True fed that to `cmd /c` and cmd ate the outer quotes.
 quoted = f'"{sys.executable}" -c "import sys; sys.stdout.write(sys.stdin.read())"'
-check("quoted exe path survives",
-      server.run_statusline(quoted, {"cwd": "D:/x"}) == [{"text": '{"cwd": "D:/x"}'}])
+check_win("quoted exe path survives",
+          server.run_statusline(quoted, {"cwd": "D:/x"}) == [{"text": '{"cwd": "D:/x"}'}])
 check("a failing command is None", server.run_statusline("exit 1", {}) is None)
 
 print("save_pasted_file: the image branch, unchanged by A1")
@@ -815,8 +829,8 @@ with tempfile.TemporaryDirectory() as tmp:
         check("a name longer than NAME_MAX is capped",
               len(server.set_project_name(r"D:\Work\App", "ب" * 200)) == server.NAME_MAX)
 
-        check("an empty name reports the folder's own name",
-              server.set_project_name(r"D:\Work\App", "   ") == "App")
+        check_win("an empty name reports the folder's own name",
+                  server.set_project_name(r"D:\Work\App", "   ") == "App")
         check("and deletes the override entirely", server._load_names() == {})
 
         server.NAMES_FILE.write_text("{ not json", encoding="utf-8")
@@ -886,8 +900,8 @@ try:
     # tens of seconds on a machine with a large ~/.claude, and one merged patch
     # meant the fast, always-available cost and quota numbers waited for it --
     # and were dropped entirely when it never came (wiki/control-protocol.md §9).
-    check("resumed is published first, then usage, then the statusline",
-          kinds == ["resumed", "usage", "usage", "statusline"])
+    check_win("resumed is published first, then usage, then the statusline",
+              kinds == ["resumed", "usage", "usage", "statusline"])
     check("cost does not wait on the slow context breakdown",
           "cost" in prefill_hub.events[1] and "context" in prefill_hub.events[2])
     check("the resumed event carries the session id and the cwd",
@@ -902,8 +916,8 @@ try:
     statusline = next((e for e in prefill_hub.events
                        if e.get("subtype") == "statusline"), {})
     payload = json.loads(statusline.get("text") or "{}")
-    check("the statusline script is handed the resumed session's own id",
-          payload.get("session_id") == PREFILL_ID)
+    check_win("the statusline script is handed the resumed session's own id",
+              payload.get("session_id") == PREFILL_ID)
     check("and no model — only system/init knows which one this session runs on",
           payload.get("model", {}).get("id") is None)
 
@@ -1632,7 +1646,15 @@ with tempfile.TemporaryDirectory() as tmp:
         server.Handler.sessions = {}
         server.Handler.active = ""
         server.Handler.claude_bin = "claude.exe"
-        httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        # The listen backlog is socketserver's default of 5, and this test
+        # connects MAX_TABS * 3 sockets at once on purpose. Windows queues the
+        # overflow; Linux resets it (ConnectionResetError), which reads as a
+        # missing 409 when the cap held fine. A browser never opens more than
+        # six connections per origin, so only this test needs the deeper queue.
+        class _Httpd(server.ThreadingHTTPServer):
+            request_queue_size = server.MAX_TABS * 3
+
+        httpd = _Httpd(("127.0.0.1", 0), server.Handler)
         httpd.daemon_threads = True
         httpd.verbose = False
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -1776,10 +1798,10 @@ try:
     server.HISTORY_FILE.write_text(
         "\n".join(json.dumps(x, ensure_ascii=False) for x in lines) + "\nnot json\n",
         encoding="utf-8")
-    check("history is filtered to the project, case and separators aside",
-          server.read_history(project) == ["aval", "sevom"])
-    check("another project's prompts are not this project's",
-          server.read_history(other) == ["dovom"])
+    check_win("history is filtered to the project, case and separators aside",
+              server.read_history(project) == ["aval", "sevom"])
+    check_win("another project's prompts are not this project's",
+              server.read_history(other) == ["dovom"])
     check("a line the prune left half-written is skipped, not fatal",
           server.read_history(Path("D:/nope")) == [])
 
@@ -1854,8 +1876,8 @@ try:
     files, source = server.suggest_files(warm, "nested")
     check("a warm index answers, and the window asks it by the right subtype",
           source == "cli" and warm.asked == [("file_suggestions", "nested")])
-    check("absolute suggestions are dropped: an @mention has to be relative",
-          files == ["src\\nested_module.py"])
+    check_win("absolute suggestions are dropped: an @mention has to be relative",
+              files == ["src\\nested_module.py"])
 
     cold = _IndexSession({"subtype": "success", "response": {"suggestions": []}})
     files, source = server.suggest_files(cold, "nested")
@@ -1876,17 +1898,17 @@ print("`!` bash mode: run it here, tag it the way the TUI tags it")
 shell_dir = Path(tempfile.mkdtemp(prefix="pcg-shell-"))
 try:
     ran = server.run_shell("echo pcg-hello", shell_dir)
-    check("the command runs in the session's own folder and reports its code",
-          ran["code"] == 0 and "pcg-hello" in ran["stdout"])
-    check("a failure is a result, not an exception",
-          server.run_shell("exit 3", shell_dir)["code"] == 3)
+    check_win("the command runs in the session's own folder and reports its code",
+              ran["code"] == 0 and "pcg-hello" in ran["stdout"])
+    check_win("a failure is a result, not an exception",
+              server.run_shell("exit 3", shell_dir)["code"] == 3)
     tagged = server.bash_message("echo pcg-hello", ran)
     check("the message opens with <bash-input>, which is what the reader matches",
           tagged.startswith("<bash-input>echo pcg-hello</bash-input>"))
-    check("and carries stdout in the TUI's own tag",
-          "<bash-stdout>" in tagged and "pcg-hello" in tagged)
-    check("no stderr, no empty <bash-stderr>",
-          "<bash-stderr>" not in tagged)
+    check_win("and carries stdout in the TUI's own tag",
+              "<bash-stdout>" in tagged and "pcg-hello" in tagged)
+    check_win("no stderr, no empty <bash-stderr>",
+              "<bash-stderr>" not in tagged)
     check("stderr gets its own tag when there is any",
           "<bash-stderr>boom</bash-stderr>" in server.bash_message(
               "x", {"code": 1, "stdout": "", "stderr": "boom"}))
@@ -1984,9 +2006,12 @@ print("open_known_file: a KEY into a fixed map, never a path off the request")
 # itself by demanding an existing FOLDER; a file has no such check, so the only
 # defence that holds is that the page cannot name the string at all.
 opened: list[str] = []
-_real_startfile = server.os.startfile
+# getattr: `os.startfile` exists only on Windows, and the stub is the whole
+# point here, so the check runs anywhere and the attribute is put back as found.
+_real_startfile = getattr(server.os, "startfile", None)
 server.os.startfile = lambda path: opened.append(str(path))
 _seed_home = Path(tempfile.mkdtemp(prefix="pcg-home-"))
+_seed_proj = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
 _real_home = server.Path.home
 server.Path.home = classmethod(lambda cls: _seed_home)
 try:
@@ -2000,7 +2025,7 @@ try:
           seed_err is None and seeded is not None
           and Path(seeded).read_text(encoding="utf-8") == "{}\n"
           and opened == [seeded])
-    project = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
+    project = _seed_proj
     memo, memo_err = server.open_known_file("project-memory", project)
     check("the project's own CLAUDE.md is the session's, not the home one",
           memo_err is None and Path(memo).parent == project)
@@ -2016,9 +2041,13 @@ try:
     check("and it is handed to the shell, not polled like a draft",
           opened == [out_path])
 finally:
-    server.os.startfile = _real_startfile
+    if _real_startfile is None:
+        del server.os.startfile
+    else:
+        server.os.startfile = _real_startfile
     server.Path.home = _real_home
     shutil.rmtree(_seed_home, ignore_errors=True)
+    shutil.rmtree(_seed_proj, ignore_errors=True)
 
 print("spawn_args: --worktree is orthogonal to the resume flags")
 # Lifted out of start() so the argv can be asserted without a process. The one
@@ -2065,6 +2094,25 @@ with tempfile.TemporaryDirectory() as tmp:
     server.worktree_path(repo, "agent-2").mkdir(parents=True)
     check("and skips the ones that exist", server.resolve_worktree(repo, "auto")
           == ("agent-3", None))
+    # M5 (BRIDGEMIND-PORT.md §D8): the CLI makes the folder only after spawn,
+    # so a second quick "auto" must not get agent-3 again off the disk alone.
+    check("a name handed out is not handed out twice before its folder exists",
+          server.resolve_worktree(repo, "auto") == ("agent-4", None))
+    other = Path(tmp) / "other"
+    (other / ".git").mkdir(parents=True)
+    check("the reservation is per repo", server.resolve_worktree(other, "auto")
+          == ("agent-1", None))
+    picked, lock = [], threading.Lock()
+    def _grab():
+        name = server.next_worktree_name(other)
+        with lock:
+            picked.append(name)
+    workers = [threading.Thread(target=_grab) for _ in range(8)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    check("eight concurrent opens get eight names", len(set(picked)) == 8)
     check("worktree_path is the CLI's own layout",
           server.worktree_path(repo, "agent-1")
           == repo / ".claude" / "worktrees" / "agent-1")
@@ -2139,5 +2187,63 @@ check("side_question is whitelisted (V2-PLAN §3.5)",
 check("apply_flag_settings is still NOT — that is the whole point of a whitelist",
       "apply_flag_settings" not in server.CONTROL_ALLOWED)
 
-print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks")
+print("list_changes / file_changes: the Changes panel's git (BRIDGEMIND-PORT.md §D12)")
+with tempfile.TemporaryDirectory() as tmp:
+    plain = Path(tmp) / "plain"
+    plain.mkdir()
+    check("a folder that is not a repository says so",
+          server.list_changes(plain) == {"state": "no-repo"})
+    saved_which = server.shutil.which
+    server.shutil.which = lambda name: None
+    try:
+        check("no git on the machine says so", server.list_changes(plain) == {"state": "no-git"})
+    finally:
+        server.shutil.which = saved_which
+    if shutil.which("git"):
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        def git(*args):
+            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        (repo / "a.txt").write_text("one\ntwo\n", encoding="utf-8")
+        (repo / "big.txt").write_text("x\n", encoding="utf-8")
+        git("add", ".")
+        git("commit", "-q", "-m", "one")
+        (repo / "a.txt").write_text("one\nدو\nthree\n", encoding="utf-8")
+        (repo / "یادداشت.txt").write_text("سلام\n", encoding="utf-8")
+        (repo / "b c.txt").write_text("x\ny\n", encoding="utf-8")
+        listing = server.list_changes(repo)
+        by = {f["path"]: f for f in listing.get("files", [])}
+        check("a repository lists its changes", listing.get("state") == "ok")
+        check("a modified file carries its counts against HEAD",
+              by.get("a.txt", {}).get("status") == "M"
+              and (by["a.txt"]["add"], by["a.txt"]["del"]) == (2, 1))
+        check("a Persian filename arrives as itself, not as octal escapes",
+              by.get("یادداشت.txt", {}).get("status") == "?"
+              and by["یادداشت.txt"]["add"] == 1)
+        check("a name with a space stays whole", "b c.txt" in by)
+        status, one = server.file_changes(repo, "a.txt")
+        check("one file's diff is git's own unified diff",
+              status == 200 and one.get("state") == "ok" and "+دو" in one.get("diff", "")
+              and "-two" in one["diff"])
+        status, new = server.file_changes(repo, "یادداشت.txt")
+        check("an untracked file comes back as an all-added diff",
+              status == 200 and "@@ -0,0 +1,1 @@" in new.get("diff", "")
+              and "+سلام" in new["diff"])
+        for bad in ("../plain", "a.txt ", "big.txt", str(repo / "a.txt")):
+            status, refused = server.file_changes(repo, bad)
+            check(f"a path not in the listing is refused: {bad!r}",
+                  status == 400 and refused == {"state": "unknown-file"})
+        (repo / "big.txt").write_text("y" * 80 + "\n" + ("z" * 99 + "\n") * 3000,
+                                      encoding="utf-8")
+        status, big = server.file_changes(repo, "big.txt")
+        check("a diff over the cap says how big it is instead of sending it",
+              status == 200 and big.get("state") == "too-large" and big.get("lines", 0) > 3000)
+    else:
+        print("  skip  git is not installed here")
+
+print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks"
+      + (f" ({len(skipped)} Windows-only skipped)" if skipped else ""))
 sys.exit(1 if fails else 0)

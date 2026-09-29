@@ -206,7 +206,7 @@ function queueStreamText(el, target, text) {
       // a box that really holds it.
       const live = t.contains(node);
       const stick = live && t.scrollHeight - t.scrollTop - t.clientHeight < 80;
-      node.textContent = s;
+      paintStream(node, s);
       // `.msg` is unicode-bidi:plaintext, which re-decides direction from the
       // paragraph's own FIRST strong character and ignores `dir` — so a
       // majority-Persian answer opening with a Latin term streams left-to-right
@@ -228,6 +228,60 @@ function queueStreamText(el, target, text) {
   });
 }
 
+/* PROGRESSIVE MARKDOWN WHILE STREAMING (BRIDGEMIND-PORT.md §D11.5).
+   Text up to the last blank line OUTSIDE a code fence is a run of finished
+   blocks: each is rendered once through renderMarkdown() - so it gets
+   applyDirection and token isolation like any settled answer - and frozen.
+   Only the block still being written stays plain text. Until the first block
+   finishes the bubble is exactly what it always was, one text node.
+   The final `assistant` render still replaces the whole bubble: it is the
+   authority, and a construct that spans a blank line (a loose list) may
+   reflow once there. */
+const streamed = new WeakMap();   // bubble -> { done, frozen, tail }
+
+function lastBlockEnd(s, from) {
+  let at = from;
+  let fence = false;
+  let cut = from;
+  while (at < s.length) {
+    const nl = s.indexOf("\n", at);
+    if (nl < 0) break;                       // an unfinished line decides nothing
+    const line = s.slice(at, nl);
+    if (/^\s{0,3}(```|~~~)/.test(line)) fence = !fence;
+    else if (!fence && !line.trim() && at > from) cut = nl + 1;
+    at = nl + 1;
+  }
+  return cut;
+}
+
+function paintStream(node, s) {
+  let st = streamed.get(node);
+  if (st && (s.length < st.done || !node.contains(st.tail))) {
+    streamed.delete(node);                   // the text was replaced, not grown
+    st = null;
+  }
+  const cut = lastBlockEnd(s, st?.done ?? 0);
+  if (!st && !cut) {
+    node.textContent = s;
+    return;
+  }
+  if (!st) {
+    const frozen = document.createElement("div");
+    frozen.className = "stream-done";
+    const tail = document.createElement("div");
+    tail.className = "stream-tail";
+    node.replaceChildren(frozen, tail);
+    st = { done: 0, frozen, tail };
+    streamed.set(node, st);
+  }
+  if (cut > st.done) {
+    st.frozen.append(...renderMarkdown(s.slice(st.done, cut)).childNodes);
+    st.done = cut;
+  }
+  st.tail.textContent = s.slice(st.done);
+  autoDir(st.tail, STREAM_DIR_SAMPLE);
+}
+
 /* The queued paint is plain text and would land AFTER the markdown that
    replaces it, wiping a finished answer back to its own source. Both halves of
    ending a stream live here so neither can be forgotten: drop the pending
@@ -236,6 +290,7 @@ function queueStreamText(el, target, text) {
 function endStreamPaint(el) {
   if (!el) return;
   paintQueue.delete(el);
+  streamed.delete(el);
   el.classList.remove("streaming");
 }
 
@@ -291,7 +346,8 @@ function toolHome(el) {
     state.run = null;
     return log;
   }
-  const run = state.run ??= { first: null, group: null, counts: new Map() };
+  const run = state.run ??= { first: null, group: null, counts: new Map(), latest: null,
+                              earlier: 0 };
   const name = el.dataset.tool;
   if (name) run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
 
@@ -300,23 +356,38 @@ function toolHome(el) {
       run.first = el;
       return log;
     }
+    /* §D11.2: the run shows its NEWEST card as itself, and the earlier ones
+       behind one folded row - «۳ فرمان اجرا شد · +۲ مورد قبلی». A folded row
+       that hid the step being taken right now read as nothing happening. */
+    const wrap = document.createElement("div");
+    wrap.className = "run";
     const details = document.createElement("details");
-    details.className = "card tool group";
+    details.className = "card tool group run-earlier";
     const summary = document.createElement("summary");
-    summary.append(icon("run"), label("", "tool-verb"));
+    const more = label("", "run-more");
+    summary.append(icon("run"), label("", "tool-verb"), more);
     details.append(summary);
     const body = document.createElement("div");
     body.className = "card-body";
     details.append(body);
-    run.first.replaceWith(details);   // takes the first card's place in the log
+    run.first.replaceWith(wrap);      // takes the first card's place in the log
+    wrap.append(details);
     body.append(run.first);
-    run.group = { details, body, text: summary.lastChild };
+    run.earlier = 1;
+    run.group = { wrap, details, body, text: summary.querySelector(".tool-verb"), more };
+  } else if (run.latest) {
+    // The card that was newest joins the earlier ones, as a node: every map
+    // that routes into it (state.toolCards) keeps pointing at the same body.
+    run.group.body.append(run.latest);
+    run.earlier += 1;
   }
+  run.latest = el;
   // A run of nothing but thinking has no action to count; it still needs a row
   // that says something, so it names itself.
   run.group.text.textContent = run.counts.size
     ? groupSummaryText(run.counts) : FA.thinking;
-  return run.group.body;
+  run.group.more.textContent = FA.runEarlier.replace("{n}", faNum(run.earlier));
+  return run.group.wrap;
 }
 
 /* --- a polling loop is one pair, not sixteen rows ---------------------------
@@ -455,6 +526,40 @@ function intoCard(body, el) {
   return el;
 }
 
+/* A user message is folded when it is long (§D11.1): more than 8 lines or 600
+   characters, COUNTED on the text rather than measured - a background pane has
+   no layout, and a reload must fold exactly what the live window folded. The
+   whole text stays in the DOM (copy, /export, find); the toggle's words are
+   drawn from `data-label`, so innerText and a loop comparison never read them. */
+const FOLD_LINES = 8;
+const FOLD_CHARS = 600;
+
+function userRow(text, images = 0) {
+  const el = bubble("user");
+  el.append(...renderMarkdown(text ?? "").childNodes);
+  if (images) el.append(label(`[${images} image]`, "meta"));
+  const t = text ?? "";
+  if (t.length > FOLD_CHARS || t.split("\n").length > FOLD_LINES) {
+    const body = document.createElement("div");
+    body.className = "fold-body";
+    body.append(...el.childNodes);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "fold-toggle";
+    const paint = (open) => {
+      el.classList.toggle("unfolded", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.dataset.label = open ? FA.foldLess : FA.foldMore;
+      toggle.setAttribute("aria-label", toggle.dataset.label);
+    };
+    toggle.addEventListener("click", () => paint(!el.classList.contains("unfolded")));
+    el.classList.add("fold");
+    el.append(body, toggle);
+    paint(false);
+  }
+  return el;
+}
+
 export function bubble(kind, text) {
   const el = document.createElement("div");
   el.className = "msg " + kind;
@@ -539,6 +644,9 @@ export const state = {
   // rule that a backstop settle may never buy one.
   recapEligible: false,
   toolCards: new Map(),  // tool_use_id -> body element
+  // Files this conversation's own edit tools named (§D12): the Changes panel
+  // lists them first. Filled from tool_use inputs, so a replay fills it too.
+  touched: new Set(),
   run: null,             // the consecutive-tool-call group being filled
   cycle: null,           // the [sentence][call] pair being assembled
   repeat: null,          // the run of identical pairs being counted
@@ -841,7 +949,11 @@ function notifyTurnEnd() {
       const note = new Notification(FA.notifyDone, {
         body: state.status.cwd || FA.appName, silent: true,
       });
-      note.addEventListener("click", () => window.focus());
+      // Jumps to the conversation that finished, not just to the window
+      // (§D9). An event, because this module cannot import app.js.
+      const tab = state.tab;
+      note.addEventListener("click", () =>
+        window.dispatchEvent(new CustomEvent("pcg:jump", { detail: { tab } })));
     } catch (err) {
       // Notifications are a nicety; a browser that refuses to construct one
       // (or a page that lost its permission mid-session) must not break the
@@ -1019,9 +1131,7 @@ function promoteQueued(uuid) {
   state.queued.delete(uuid);
   paintQueued();
   resetTurn(true);
-  const el = bubble("user");
-  el.append(...renderMarkdown(entry.text ?? "").childNodes);
-  if (entry.images) el.append(label(`[${entry.images} image]`, "meta"));
+  userRow(entry.text, entry.images);
 }
 
 /* It will never run. The row goes, and the text goes back to the person who
@@ -1087,8 +1197,20 @@ export function newRenderScope(background = false,
            thinkingPeek: null, thinkingText: "", pulse: null, outstanding: new Set(),
            queued: new Map(), returned: [], error: false,
            recapWorthy: false, recapEligible: false, toolCards: new Map(),
-           run: null, cycle: null, repeat: null,
+           run: null, cycle: null, repeat: null, touched: new Set(),
            status: {}, background, cell, tab, chrome: {} };
+}
+
+/* How many withRenderTargets are on the stack. The swap below is only sound
+   if nothing re-points `state`/`log` while fn() runs, and a render CAN move
+   focus: showPermission() focuses the dialog it opens, `focusin` fires
+   synchronously, and app.js focusCell() would stash and adopt scopes in the
+   middle of the swap - which the finally below then undoes under the new
+   focus (pcg-0o7). focusCell() reads this and waits until the swap is over. */
+let targetDepth = 0;
+
+export function inRenderTarget() {
+  return targetDepth > 0;
 }
 
 export function withRenderTarget(target, scope, fn) {
@@ -1101,9 +1223,11 @@ export function withRenderTarget(target, scope, fn) {
   // has a status line to paint — which is what setStatus() already checks.
   statusline = scope.cell?.statusline ?? null;
   Object.assign(state, scope);
+  targetDepth += 1;
   try {
     fn();
   } finally {
+    targetDepth -= 1;
     Object.assign(scope, state);   // what the replay built stays with the scope
     log = savedLog;
     statusline = savedStatusline;
@@ -1385,29 +1509,67 @@ export function diffOf(name, input) {
   };
 }
 
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+/* One row of a diff box. Shared by renderDiff() and renderUnifiedDiff() so a
+   tool's diff and git's diff are the same rows, and spec rule 8 covers both. */
+function diffLine(type, oldNo, newNo, text) {
+  const line = document.createElement("div");
+  line.className = "dl " + type;
+  if (type === "gap") return line;
+  line.append(label(type === "add" ? "" : String(oldNo), "dn"),
+              label(type === "del" ? "" : String(newNo), "dn"),
+              label(type === "add" ? "+" : type === "del" ? "−" : " ", "dm"));
+  // Per LINE, not per box: an Edit whose content is Persian must read
+  // right-to-left inside an LTR diff (spec rule 8, same as tool output).
+  const dt = label(text, "dt");
+  dt.setAttribute("dir", "auto");
+  line.append(dt);
+  return line;
+}
+
 function renderDiff(diff) {
   const box = document.createElement("div");
   box.className = "diff";
   let oldNo = 0, newNo = 0;
   for (const row of diff.rows.slice(0, DIFF_MAX_ROWS)) {
-    const line = document.createElement("div");
-    line.className = "dl " + row.type;
-    if (row.type === "gap") { box.append(line); continue; }
+    if (row.type === "gap") { box.append(diffLine("gap")); continue; }
     if (row.type !== "add") oldNo++;
     if (row.type !== "del") newNo++;
-    line.append(label(row.type === "add" ? "" : String(oldNo), "dn"),
-                label(row.type === "del" ? "" : String(newNo), "dn"),
-                label(row.type === "add" ? "+" : row.type === "del" ? "−" : " ", "dm"));
-    // Per LINE, not per box: an Edit whose content is Persian must read
-    // right-to-left inside an LTR diff (spec rule 8, same as tool output).
-    const text = label(row.text, "dt");
-    text.setAttribute("dir", "auto");
-    line.append(text);
-    box.append(line);
+    box.append(diffLine(row.type, oldNo, newNo, row.text));
   }
   if (diff.rows.length > DIFF_MAX_ROWS) {
     box.append(label(FA.diffTruncated.replace("{n}", diff.rows.length - DIFF_MAX_ROWS),
                      "dl meta"));
+  }
+  return box;
+}
+
+/* git's unified diff as the same rows (§D12). Hunk headers set the line
+   numbers and become a gap between hunks; the file headers are dropped. */
+export function renderUnifiedDiff(text) {
+  const box = document.createElement("div");
+  box.className = "diff";
+  let oldNo = 0, newNo = 0, rows = 0, hunks = 0;
+  for (const raw of String(text ?? "").split("\n")) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    if (hunk) {
+      if (hunks++) box.append(diffLine("gap"));
+      oldNo = Number(hunk[1]) - 1;
+      newNo = Number(hunk[2]) - 1;
+      continue;
+    }
+    // Headers before the first hunk, git's "\ No newline", and the empty
+    // string after the last newline - a blank CONTEXT line is " ", never "".
+    if (!hunks || !raw || raw.startsWith("\\")) continue;
+    if (rows++ >= DIFF_MAX_ROWS) continue;
+    const type = raw[0] === "+" ? "add" : raw[0] === "-" ? "del" : "same";
+    if (type !== "add") oldNo++;
+    if (type !== "del") newNo++;
+    box.append(diffLine(type, oldNo, newNo, raw.slice(1)));
+  }
+  if (rows > DIFF_MAX_ROWS) {
+    box.append(label(FA.diffTruncated.replace("{n}", rows - DIFF_MAX_ROWS), "dl meta"));
   }
   return box;
 }
@@ -1640,6 +1802,9 @@ function renderRaw(event) {
    `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
    table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
 const QUOTA_WARN_AT = 95;
+// The context appears on the state line only from here on (§D5); the notice
+// above the prompt keeps its own, higher bar (composer.js WARN_AT).
+const CONTEXT_SHOW_AT = 60;
 
 function meter(pct) {
   const wrap = document.createElement("span");
@@ -1749,48 +1914,71 @@ export function setStatus(patch) {
     statusline.append(line);
   }
 
-  // SECOND LINE: the posture, in the TUI's words, where the pill used to be.
-  const posture = postureRow(s.posture ?? s.mode);
-  if (posture) statusline.append(posture);
-
-  /* THIRD LINE: everything the four chips used to say, plus what the bar
-     already carried. Muted, one line, wrapping (V2-PLAN §3.4 rows 3–4). The
-     `.sl-item` / `.sl-label` shape is unchanged — spec-test.html reads the
-     context meter through it. */
-  const items = [
-    [FA.slModel, s.model && label(s.model, "mono")],
-    [FA.slEffort, s.effort && label(effortLabel(s.effort))],
-    [FA.slStyle, s.style && label(styleLabel(s.style))],
-    [FA.slFolder, s.cwd && pathEl(s.cwd)],
-    [FA.slContext, s.context !== undefined && meter(s.context)],
-    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
-    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
-  ];
-
-  const facts = document.createElement("div");
-  facts.className = "sl-line sl-facts";
-  for (const [name, valueEl] of items) {
-    if (!valueEl) continue;
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(label(name + ":", "sl-label"), valueEl);
-    facts.append(wrap);
+  /* THE STATE LINE (BRIDGEMIND-PORT.md §D5): one line, state only. The
+     posture sentence first, word for word the TUI's, then only what has
+     something to say right now: the model, and the context once it is past
+     CONTEXT_SHOW_AT, and the quota warning. Everything the old facts row
+     carried has one home elsewhere - effort, style, folder, cost and session
+     id in `/status` and the pane menu, the account's quota meter once in the
+     sidebar footer - so this line never wraps and never scrolls. */
+  const row = postureRow(s.posture ?? s.mode) ?? document.createElement("div");
+  row.classList.add("sl-line", "sl-state");
+  const add = (el) => {
+    if (row.childElementCount) row.append(label("·", "sl-sep"));
+    row.append(el);
+  };
+  if (s.model) {
+    const model = label(shortModel(s.model), "sl-model");
+    model.title = s.model;
+    add(model);
   }
-  if (facts.childElementCount) statusline.append(facts);
-
-  /* FOURTH LINE, and only when there is something to warn about: the five-hour
-     window is nearly spent. The threshold is the binary's own default — `0.95`
-     in the bundle, re-derived by test_tui_vocab.py §10 — and not a number
-     chosen here. The two richer plans raise their own bar (0.99, 0.9975), but
-     which plan this account is on never reaches the wrapper, so the window
-     warns at the conservative one. */
-  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) {
-    const warn = document.createElement("div");
-    warn.className = "sl-line sl-warn";
-    warn.append(label(FA.slQuotaWarn));
-    statusline.append(warn);
+  // Context only once it is worth a glance. `.sl-item`/`.sl-label` is the
+  // shape spec-test.html reads the meter through, kept on purpose.
+  if (s.context !== undefined && s.context >= CONTEXT_SHOW_AT) {
+    const item = document.createElement("span");
+    item.className = "sl-item";
+    item.append(label(FA.slContext + ":", "sl-label"), meter(s.context));
+    add(item);
   }
+  // The five-hour window nearly spent - the binary's own 0.95 default,
+  // re-derived by test_tui_vocab.py §10. A warning, so it is a word in the
+  // line rather than a fourth row.
+  if (s.quota !== undefined && s.quota >= QUOTA_WARN_AT) add(label(FA.slQuotaWarn, "sl-warn"));
+  // Files changed in this folder (§D12), counted by git after each turn. A
+  // button: it is the way into the Changes panel.
+  if (s.changes > 0) {
+    const cell = state.cell;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sl-changes";
+    btn.textContent = FA.slChanges.replace("{n}", faNum(s.changes));
+    btn.addEventListener("click", () => cell.changes?.open());
+    add(btn);
+  }
+  if (row.childElementCount) statusline.append(row);
+
+  // The account's quota, painted once in the sidebar footer from whichever
+  // conversation the keyboard is in (it is the same account in every pane).
+  const quota = document.getElementById("side-quota");
+  if (quota && onFocused() && s.quota !== undefined) {
+    quota.replaceChildren(label(FA.sideQuota, "sl-label"), meter(s.quota));
+    quota.hidden = false;
+  }
+}
+
+/* «Opus 5.5» for `claude-opus-5-5`, the way the TUI names a model in its own
+   status line; the full id stays in the tooltip. A name that does not look like
+   a Claude model id is shown as it came. */
+export function shortModel(id) {
+  if (!/^claude-[a-z]+(-|$)/.test(String(id))) return String(id);
+  const bare = String(id).replace(/^claude-/, "");
+  const suffix = (bare.match(/\[[^\]]*\]$/) || [""])[0];
+  const parts = bare.replace(/\[[^\]]*\]$/, "").split("-").filter((x) => !/^\d{8}$/.test(x));
+  const family = parts.shift() || bare;
+  if (!/^[a-z]+$/.test(family)) return String(id);
+  const version = parts.filter((x) => /^\d+$/.test(x)).join(".");
+  return family[0].toUpperCase() + family.slice(1) + (version ? " " + version : "")
+    + (suffix ? " " + suffix : "");
 }
 
 /* --- ctrl+o: the TUI's transcript mode --------------------------------------
@@ -2082,6 +2270,10 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
+            if (EDIT_TOOLS.has(part.name)) {
+              const file = part.input?.file_path ?? part.input?.notebook_path;
+              if (typeof file === "string" && file) state.touched.add(file);
+            }
             const { details, body } = card("tool", toolSummary(part.name, part.input),
                                            { tool: part.name });
             body.append(renderToolDetail(part.name, part.input));
@@ -2186,8 +2378,7 @@ export function renderEvent(ev) {
           // A user turn materializing mid-batch (the CLI injecting a queued
           // message) is a boundary INSIDE the batch: the status line survives.
           resetTurn(state.outstanding.size > 0);
-          const el = bubble("user");
-          el.append(...renderMarkdown(said).childNodes);
+          userRow(said);
           continue;
         }
         if (part.type !== "tool_result") continue;
@@ -2402,9 +2593,7 @@ export function renderEvent(ev) {
           queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0);
         } else {
           resetTurn(queued);
-          const el = bubble("user");
-          el.append(...renderMarkdown(ev.text ?? "").childNodes);
-          if (ev.images) el.append(label(`[${ev.images} image]`, "meta"));
+          userRow(ev.text, ev.images);
         }
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one. A batch

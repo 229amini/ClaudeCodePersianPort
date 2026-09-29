@@ -18,6 +18,7 @@ import { api, token } from "./api.js";
    called from app.js once every module is live. */
 import {
   bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus,
+  withRenderTarget, newRenderScope,
 } from "./render.js";
 /* The dots on the open-conversations rows are painted from what the permission
    dialogs are asking. One arrow each way (perm.js reads the tab list back), and
@@ -51,6 +52,7 @@ function cui(cell) {
       projChip: q("proj-chip"), projChipName: q("proj-chip-name"),
       home: q("home"), welTitle: q("wel-title"), welCwdLabel: q("wel-cwd-label"),
       welCwd: q("wel-cwd"), welTips: q("wel-tips"), banner: q("replay-banner"),
+      emptyLine: q("empty-line"), emptyBtn: q("empty-btn"),
     };
   }
   return cell.chromeUI;
@@ -215,7 +217,8 @@ function paintOpenTabs() {
   ui.openTabs.hidden = !any;
   if (ui.tabsTitle) {
     ui.tabsTitle.hidden = !any;
-    ui.tabsTitle.replaceChildren(document.createTextNode(FA.openSessions));
+    ui.tabsTitle.replaceChildren(document.createTextNode(FA.openSessions),
+                                 countPill(openTabs.length));
     const badge = tabsBadge();
     if (badge) ui.tabsTitle.append(badge);
   }
@@ -268,6 +271,13 @@ function paintOpenTabs() {
       open.append(projectChip(entry.cwd));
     }
     if (entry.worktree) open.append(worktreeChip(entry.worktree));
+    // The state in words at the row's end (§D4). The dot already says it in
+    // shape and colour; the word is what a reader scanning the list takes in.
+    if (status !== "idle") {
+      const word = label(FA.rowState[status], "row-state");
+      word.dataset.status = status;
+      open.append(word);
+    }
     // «title · project», not the raw path: in the rail (TERMINAL-REDESIGN.md
     // §1) the name, the chip and the ✕ are all off the row and the dot is the
     // whole of it, so this tooltip is the only thing that says WHICH
@@ -319,13 +329,19 @@ function paintCells() {
     u.cellDot.dataset.status = status;
     u.cellDot.setAttribute("aria-label", FA.tabStatus[status]);
     u.cellDot.title = FA.tabStatus[status];
+    // An empty pane says one thing (§D5): with nothing open anywhere it is the
+    // window's home; with conversations open elsewhere it is a free slot.
+    if (u.emptyLine) {
+      const home = !openTabs.length;
+      u.emptyLine.textContent = home ? FA.homeLine : FA.paneEmpty;
+      u.emptyBtn.textContent = home ? FA.homeBtn : FA.paneEmptyBtn;
+    }
   }
 }
 
 /* Static markup only — never user data — so innerHTML is safe here. */
 const SVG = {
   caret: '<svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>',
-  folder: '<svg class="folder" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   eye: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>',
   archive: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4"/></svg>',
@@ -401,6 +417,34 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("fa-IR", {
 
 function whenLabel(epochSeconds) {
   return WHEN_FORMAT.format(new Date(epochSeconds * 1000));
+}
+
+/* «۵ دقیقه پیش» rather than a date (§D4): how long ago is the question a
+   history row answers; the exact date stays in the row's tooltip. Chrome, not
+   transcript - so reading the clock here is fine, and refreshWhen() below
+   re-reads it from app.js's existing minute tick. */
+const REL_FORMAT = new Intl.RelativeTimeFormat("fa", { numeric: "auto", style: "narrow" });
+const REL_UNITS = [["year", 31536000], ["month", 2592000], ["week", 604800],
+                   ["day", 86400], ["hour", 3600], ["minute", 60]];
+
+export function relWhen(epochSeconds) {
+  const diff = epochSeconds - Date.now() / 1000;
+  for (const [unit, size] of REL_UNITS) {
+    if (Math.abs(diff) >= size) return REL_FORMAT.format(Math.round(diff / size), unit);
+  }
+  return FA.justNow;
+}
+
+export function refreshWhen() {
+  for (const el of document.querySelectorAll(".sess-when[data-t]")) {
+    el.textContent = relWhen(Number(el.dataset.t));
+  }
+}
+
+function countPill(n, title) {
+  const pill = label(n.toLocaleString("fa-IR"), "count-pill");
+  if (title) pill.title = title.replace("{n}", n.toLocaleString("fa-IR"));
+  return pill;
 }
 
 /* The window title is the session's own title (V2-PLAN §3.4, last-but-two
@@ -572,7 +616,22 @@ function renderProjects(projects) {
     !p.archived || p.path.toLowerCase() === currentCwd.toLowerCase());
   const archived = projects.filter((p) => !active.includes(p));
 
-  for (const proj of active) ui.projects.append(projEl(proj, projects));
+  // Sections, each with a count (§D4): pinned first, then everything else.
+  // The pin mark on every pinned row said the same thing once per row.
+  const section = (text, n) => {
+    const head = document.createElement("h3");
+    head.className = "side-title";
+    head.append(document.createTextNode(text), countPill(n));
+    ui.projects.append(head);
+  };
+  const pinned = active.filter((p) => p.pinned);
+  const rest = active.filter((p) => !p.pinned);
+  if (pinned.length) {
+    section(FA.pinnedProject, pinned.length);
+    for (const proj of pinned) ui.projects.append(projEl(proj, projects));
+  }
+  section(FA.projects, rest.length);
+  for (const proj of rest) ui.projects.append(projEl(proj, projects));
 
   if (archived.length) {
     const head = document.createElement("button");
@@ -688,7 +747,9 @@ function projEl(proj, projects) {
   head.type = "button";
   head.className = "proj-head";
   head.setAttribute("aria-expanded", String(expanded.has(key)));
-  head.innerHTML = SVG.caret + SVG.folder;
+  // No caret and no folder glyph (§D4): 34 icons at 17 projects that said
+  // nothing a row does not already say. The list appearing under the name is
+  // what "expanded" looks like, and aria-expanded is what it sounds like.
   const name = document.createElement("bdi");
   name.className = "proj-name";
   name.textContent = displayName(proj.path);
@@ -696,14 +757,9 @@ function projEl(proj, projects) {
   // only thing that tells two folders with the same name apart.
   name.title = proj.path;
   head.append(name);
-  // Why this project is at the top. Without it the sort looks like a bug the
-  // first time a pinned project outranks one used five minutes ago.
-  if (proj.pinned) {
-    const mark = label("", "proj-pin");
-    mark.innerHTML = SVG.pin;
-    mark.title = FA.pinnedProject;
-    head.append(mark);
-  }
+  // How many conversations it holds - the one fact the folder icon could have
+  // carried and did not. Why a project is at the top is now its section.
+  head.append(countPill((proj.sessions ?? []).length, FA.projSessionCount));
   head.addEventListener("click", () => {
     if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
     renderProjects(projects);
@@ -895,7 +951,10 @@ function sessionRow(sess, projPath, isCurrent) {
   // row lives under the repo, so the chip is the only thing that says the
   // conversation was not editing the repo's own checkout.
   if (sess.worktree) btn.append(worktreeChip(sess.worktree));
-  btn.append(label(whenLabel(sess.modified), "sess-when"));
+  const when = label(relWhen(sess.modified), "sess-when");
+  when.dataset.t = String(sess.modified);
+  when.title = whenLabel(sess.modified);
+  btn.append(when);
   btn.addEventListener("click", () => {
     if (liveTab) tabBridge?.switchTo(liveTab);
     else resumeSession(sess.session_id, projPath, sess.worktree);
@@ -910,6 +969,18 @@ function sessionRow(sess, projPath, isCurrent) {
   // The live process keeps writing its own transcript, so the current session
   // cannot be deleted; the server refuses it too.
   li.append(btn, ...kebabMenu([
+    {
+      // §D6: a pane of its own when the window has room; otherwise the focused
+      // pane, and the reader is told - a conversation is never dropped silently.
+      icon: SVG.plus,
+      text: FA.openInNewPane,
+      run: () => {
+        const added = tabBridge?.addPane?.();
+        if (liveTab) tabBridge?.switchTo(liveTab);
+        else resumeSession(sess.session_id, projPath, sess.worktree);
+        if (added === false) bubble("error", FA.noRoomForPane);
+      },
+    },
     {
       icon: SVG.eye,
       text: FA.viewSession,
@@ -1061,14 +1132,21 @@ function actionButton(svg, title) {
    is newer than the Edge we are guaranteed on the target machine.
 
    `items` is `[{icon, text, danger?, run}]`; a `null` entry is a separator. */
-export function kebabMenu(items) {
-  const btn = actionButton(SVG.dots, FA.moreActions);
+/* `items` is an array, or a function returning one: the pane menu (§D5) names
+   live values - the model, the cost - so it is rebuilt on every open. A row
+   menu passes a plain array and is built once, as before. `anchor` lets a
+   caller open the menu under a button of its own instead of the ⋯ made here. */
+export function kebabMenu(items, anchor = null) {
+  const btn = anchor ?? actionButton(SVG.dots, FA.moreActions);
+  btn.classList.add("kebab-btn");   // the row's context menu opens THIS one
   const menu = document.createElement("div");
   menu.className = "kebab-menu";
   menu.popover = "auto";
   const disarmers = [];
-
-  for (const item of items) {
+  const build = () => {
+  menu.replaceChildren();
+  disarmers.length = 0;
+  for (const item of (typeof items === "function" ? items() : items)) {
     if (!item) {
       menu.append(document.createElement("hr"));
       continue;
@@ -1116,10 +1194,13 @@ export function kebabMenu(items) {
     });
     menu.append(row);
   }
+  };
+  build();
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();   // the row underneath must not also activate
     const rect = btn.getBoundingClientRect();
+    if (typeof items === "function") build();
     for (const disarm of disarmers) disarm();
     menu.showPopover();
     // Measured only once it is in the top layer, so a menu near the bottom
@@ -1174,21 +1255,79 @@ async function replaySession(sessionId, projPath, worktree) {
    was closed while the fetch was out gets nothing at all (app.js renderInTab).
    Shared by replay and by a resumed session's backfill — the two differ only in
    whether the closing «گفتگو از سر گرفته شد» line is added. */
-function renderInto(tab, events, resumedNote = false) {
+export function renderInto(tab, events, resumedNote = false) {
+  const all = events ?? [];
+  // A long history renders its TAIL (BRIDGEMIND-PORT.md §D11.3): a
+  // two-thousand-event transcript is seconds of layout nobody asked for.
+  const from = all.length > HISTORY_TAIL_OVER ? chunkStart(all, all.length) : 0;
   tabBridge?.renderIn(tab, (node) => {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
+    if (from > 0) node.append(earlierRow(tab, all, from, node));
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
     // times, about a view that is not on screen yet. The answer is only needed
     // once, below.
     bulkAppend(() => {
-      for (const event of events ?? []) renderEvent(event);
+      for (let i = from; i < all.length; i++) renderEvent(all[i]);
       if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
     });
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message
   });
+}
+
+/* Over 400 events, the last ~300 are drawn and a row at the top brings the
+   rest back a chunk at a time. Every chunk starts AT A USER TURN, so a
+   tool_result is always in the same chunk as the tool_use it answers - the
+   card it routes into (state.toolCards) exists only within one render. Live
+   conversations are never cut: this is only the history fetch. */
+const HISTORY_TAIL_OVER = 400;
+const HISTORY_CHUNK = 300;
+
+function isTurnStart(ev) {
+  if (ev?.type !== "user") return false;
+  const content = ev.message?.content;
+  if (typeof content === "string") return true;
+  return Array.isArray(content) && content.some((p) => p?.type === "text")
+    && !content.some((p) => p?.type === "tool_result");
+}
+
+function chunkStart(events, end) {
+  let at = Math.max(0, end - HISTORY_CHUNK);
+  while (at > 0 && !isTurnStart(events[at])) at -= 1;
+  return at;
+}
+
+function earlierRow(tab, events, from, node) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "history-earlier";
+  row.setAttribute("dir", "auto");
+  let end = from;
+  const paint = () => {
+    row.textContent = FA.historyEarlier.replace("{n}", end.toLocaleString("fa-IR"));
+  };
+  paint();
+  row.addEventListener("click", () => {
+    const start = chunkStart(events, end);
+    // Rendered into a node of its own, through the same renderEvent, with a
+    // fresh scope - then moved in above what is on screen, holding the
+    // reader's place.
+    const into = document.createElement("div");
+    withRenderTarget(into, newRenderScope(true, null, tab), () => {
+      bulkAppend(() => {
+        for (let i = start; i < end; i++) renderEvent(events[i]);
+      });
+    });
+    const before = node.scrollHeight;
+    row.after(...into.childNodes);
+    node.scrollTop += node.scrollHeight - before;
+    end = start;
+    if (end > 0) paint();
+    else row.remove();
+  });
+  return row;
 }
 
 /* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT (pcg-1ug).
@@ -1332,6 +1471,14 @@ async function switchProject(folder, worktree) {
   }
 }
 
+/* One more conversation in the folder the keyboard is in, no page: `/clear`
+   and the context notice's «گفتگوی تازه» (js/composer.js). */
+export function newChatHere() {
+  if (!currentCwd) return false;
+  switchProject(currentCwd);
+  return true;
+}
+
 /* The one failure a user can actually cause here: six conversations already
    open. The server answers 409 with `max_tabs`; api() throws with the status in
    its message, which is the same shape agents.js reads a 404 out of. */
@@ -1351,14 +1498,32 @@ export function initChrome() {
   if (ui.projects) {
     document.getElementById("brand").textContent = FA.appName;
     document.getElementById("btn-new-label").textContent = FA.newChat;
-    document.getElementById("split-label").textContent = FA.splitLabel;
-    document.getElementById("projects-title").textContent = FA.projects;
+    // The projects' own section title is drawn inside #projects now, after
+    // the pinned section (renderProjects); the static one stays for the rail's
+    // rules and the markup's shape, and is never shown.
+    document.getElementById("projects-title").hidden = true;
     document.getElementById("btn-help-label").textContent = FA.help;
     // The help page is served, so it needs the token like every other request.
     document.getElementById("btn-help").href =
       "/static/help.html?t=" + encodeURIComponent(token);
 
-    ui.btnNew.addEventListener("click", () => switchProject(currentCwd));
+    // «+ گفتگوی تازه» opens the new-session page (BRIDGEMIND-PORT.md §D8);
+    // the project row's «+» stays the one-click path, and `/clear` is
+    // newChatHere() below.
+    ui.btnNew.addEventListener("click", () => tabBridge?.newSession?.());
+
+    // One menu, three ways in (§D4): the row's ⋯, a right-click on the row,
+    // and Shift+F10 / the ContextMenu key on a focused row (both of which the
+    // browser delivers as this same event). A row with no menu keeps the
+    // browser's own.
+    document.getElementById("sidebar").addEventListener("contextmenu", (e) => {
+      const row = e.target instanceof Element
+        ? e.target.closest(".proj-top, .proj-sessions li") : null;
+      const btn = row?.querySelector(".kebab-btn");
+      if (!btn) return;
+      e.preventDefault();
+      btn.click();
+    });
 
     // `/resume` moves the keyboard here; these are the keys it then has.
     ui.projects.addEventListener("keydown", sessionKeys);
