@@ -61,6 +61,7 @@
     </button>
   </div>
 
+  <div class="side-actions">
   <button type="button" id="btn-new" class="new-chat">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -68,12 +69,21 @@
     </svg>
     <span id="btn-new-label"></span>
   </button>
+  <!-- THE LAYOUT (pcg-7bi): how many of the OPEN conversations sit side by
+       side, and making them the same size again. Since the new-session page
+       replaced «۱ | ۲ | ۴» (P4) only `/split` and Alt keys reached this, and
+       that page opens NEW conversations — so the two sit together here. Not in
+       the head: the name there has ~104px left beside three icons and wraps.
+       Its panel is built by js/app.js; its name comes from strings.fa.js. -->
+  <button type="button" id="btn-layout" class="layout-btn" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+         stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="14" rx="2"/>
+      <path d="M12 5v14M4 12h8"/>
+    </svg>
+  </button>
+  </div>
 
-  <!-- HOW MANY CONVERSATIONS ARE ON SCREEN. `/split 1|2|4` was the only way in
-       and a reader who will never type a command could not find it at all
-       (TERMINAL-REDESIGN.md §3). The three buttons are built in js/app.js, not
-       here, for the reason every other Persian label in this shell is: the
-       digits are formatted fa-IR and the titles come from strings.fa.js. -->
   <div class="side-scroll">
     <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
          /api/tabs by js/chrome.js; hidden until there is one. -->

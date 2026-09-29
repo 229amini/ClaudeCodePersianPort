@@ -289,6 +289,29 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-head .mark { color: var(--accent); flex: none; }
 .brand { font-weight: var(--wt-title); font-size: .95rem; }
 
+/* «گفتگوی جدید» and the layout button share a row (pcg-7bi); the row carries
+   the margins the new-chat button used to. */
+.side-actions { display: flex; gap: 6px; margin: 2px 10px 10px; }
+.side-actions .new-chat { flex: 1; margin: 0; }
+.layout-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-row);
+  background: var(--raise);     /* the new-chat button's own face */
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.layout-btn:hover, .layout-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.layout-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+body.rail .side-actions { flex-direction: column; margin: 2px 6px 10px; }
+body.rail .side-actions .new-chat { margin: 0; }
+body.rail .layout-btn { inline-size: auto; }
+
 .new-chat {
   display: flex;
   align-items: center;
@@ -330,6 +353,30 @@ pre, code, .path, .diff, .tool-output, .mono {
 .bell-btn:hover, .bell-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
 .bell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .bell-btn + .rail-toggle { margin-inline-start: 0; }
+
+/* The layout panel (pcg-7bi) wears the bell panel's box; inside, the counts
+   are the new-session page's own segmented buttons. */
+.layout-panel { padding: 10px 12px 12px; }
+.layout-panel h2 { margin: 0 0 2px; font-size: var(--fs-ui); font-weight: var(--wt-title); }
+.layout-panel .layout-open { margin: 0 0 8px; color: var(--fg-muted); font-size: var(--fs-meta); }
+.layout-panel .ns-seg { margin-block-end: 10px; }
+.layout-panel .layout-equal {
+  display: block;
+  inline-size: 100%;
+  min-height: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-chip);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: start;
+}
+.layout-panel .layout-equal:hover:not(:disabled) { background: var(--surface); }
+.layout-panel .layout-equal:disabled { color: var(--fg-faint); cursor: not-allowed; }
+.layout-panel .layout-equal:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.layout-panel .layout-equal kbd { font: inherit; font-size: var(--fs-meta); color: var(--fg-muted); unicode-bidi: isolate; }
+.layout-panel .layout-hint { margin: 8px 0 0; color: var(--fg-faint); font-size: var(--fs-meta); }
 .bell-count {
   position: absolute;
   inset-block-start: -2px;
