@@ -13,7 +13,8 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
-import { bubble, label, paintQueued, toggleThinking } from "./render.js";
+import { bubble, label, paintQueued, toggleThinking, state } from "./render.js";
+import { openPlus, openUsage } from "./bar.js";
 import { runWindowCommand } from "./commands.js";
 import { newChatHere } from "./chrome.js";
 import { cssPx } from "./prefs.js";
@@ -1478,6 +1479,84 @@ export function makeComposer(root, cell) {
       if (!hasFiles(e.dataTransfer)) return;
       e.preventDefault();
       await attachBytes([...(e.dataTransfer?.files ?? [])]);
+    });
+
+    /* --- the composer bar's «+» and ◔ (COMPOSER-BAR.md) -----------------------
+
+       «+»: a file picker into the SAME attach route as paste and drop, the
+       slash popup, and this machine's MCP servers with a switch each. Ctrl+U
+       opens the picker, as it does in claude.ai/code. */
+    const plusBtn = $("bar-plus-btn");
+    const ringBtn = $("bar-ring");
+    const filePick = document.createElement("input");
+    filePick.type = "file";
+    filePick.multiple = true;
+    filePick.hidden = true;
+    filePick.addEventListener("change", async () => {
+      const files = [...(filePick.files ?? [])];
+      filePick.value = "";
+      if (files.length) await attachBytes(files);
+    });
+    root.append(filePick);
+    const pickFiles = () => filePick.click();
+    const openSlash = () => {
+      input.focus();
+      if (!input.value) {
+        input.value = "/";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    };
+    const mcpServers = async () => {
+      const res = await api("/api/control", { subtype: "mcp_status", tab: cell.tab });
+      return res?.response?.mcpServers ?? [];
+    };
+    if (plusBtn) {
+      plusBtn.title = FA.barPlus;
+      plusBtn.setAttribute("aria-label", FA.barPlus);
+      plusBtn.addEventListener("click", () => openPlus(plusBtn, {
+        toCss: cssPx, onFiles: pickFiles, onSlash: openSlash, loadServers: mcpServers,
+        onToggle: async (name, enabled) => {
+          await api("/api/control", { subtype: "mcp_toggle", tab: cell.tab,
+                                      params: { serverName: name, enabled } });
+          return mcpServers();
+        },
+      }));
+    }
+    input.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyU") {
+        e.preventDefault();
+        pickFiles();
+      }
+    });
+
+    /* ◔: the context window by category and the plan's limits. What the last
+       usage event said paints at once; the panel then asks the CLI again and
+       repaints (the context half can take seconds after a turn —
+       control-protocol.md §9). «فشرده کردن» is `/compact` as text: it is not
+       a control subtype. */
+    if (ringBtn) ringBtn.addEventListener("click", () => {
+      const s = state.status ?? {};
+      openUsage(ringBtn, {
+        toCss: cssPx,
+        data: { detail: s.contextDetail, context: s.context, limits: s.limits },
+        onCompact: () => api("/api/message", { tab: cell.tab, text: "/compact" }).catch(() => {}),
+        refresh: async (paint) => {
+          const tab = cell.tab;
+          const usage = await api("/api/control",
+            { subtype: "get_usage", params: { skip_behaviors: true }, tab }).catch(() => null);
+          if (usage?.ok && usage.response && "rate_limits" in usage.response) {
+            paint({ limits: usage.response.rate_limits });
+          }
+          const ctx = await api("/api/control", { subtype: "get_context_usage", tab }).catch(() => null);
+          const r = ctx?.ok ? ctx.response : null;
+          if (r && typeof r.percentage === "number") {
+            paint({ context: r.percentage, detail: {
+              total: r.totalTokens, max: r.maxTokens,
+              threshold: r.isAutoCompactEnabled ? r.autoCompactThreshold : null,
+              categories: r.categories ?? [] } });
+          }
+        },
+      });
     });
 
     input.addEventListener("input", refreshSlash);

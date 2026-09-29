@@ -137,9 +137,13 @@ def main() -> int:
                if v not in body]
     check(not missing, "/model, /effort, /output-style and /permissions open the pickers",
           f"unmapped: {missing}")
+    # 2026-09-29 (COMPOSER-BAR.md): the chips are back as a claude.ai-style bar,
+    # user decision, and their popovers are placed by js/bar.js — one place,
+    # zoom-correct. What must stay gone is controls.js positioning a menu by
+    # hand itself: a DEFINITION of any of these, not a call into bar.js.
     dead = [n for n in ("positionMenu", "openMenu", "closeMenu", "toggleMenu")
-            if n in strip_comments(controls)]
-    check(not dead, "and the popup's hand-positioning is gone with the popup",
+            if re.search(r"function\s+" + n + r"\b", strip_comments(controls))]
+    check(not dead, "and controls.js positions no popup by hand (bar.js does)",
           f"still there: {dead}")
     for name in ("openModelPicker", "openEffortPicker", "openStylePicker",
                  "openPosturePicker", "openAuditList"):

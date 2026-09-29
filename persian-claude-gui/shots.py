@@ -54,7 +54,8 @@ OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
-          "newsession-pair", "bell", "changes", "layout", "queue")
+          "newsession-pair", "bell", "changes", "layout", "queue",
+          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -102,6 +103,11 @@ def stub_script(now: float) -> str:
             "  if (path === '/api/tabs') return Promise.resolve(new Response("
             "    JSON.stringify(window.__shotTabs || {tabs: [], active: ''}),"
             "    {headers: {'Content-Type': 'application/json'}}));"
+            # The composer bar's «+» asks for this machine's MCP servers.
+            "  if (path === '/api/control' && String(opts && opts.body).includes('mcp_status'))"
+            "    return Promise.resolve(new Response(JSON.stringify({ok: true, response: {mcpServers: ["
+            "      {name: 'github', status: 'connected'}, {name: 'playwright', status: 'disabled'}]}}),"
+            "      {headers: {'Content-Type': 'application/json'}}));"
             "  return real(url, opts);"
             "};"
             "})();</script>")
@@ -138,7 +144,31 @@ function status(tab, cwd) {
            slash_commands: ["clear", "compact", "model", "status", "help"]});
   ev(tab, {type: "wrapper", subtype: "posture", posture: "acceptEdits", auto_count: 0});
   ev(tab, {type: "wrapper", subtype: "effort", effort: "high"});
-  ev(tab, {type: "wrapper", subtype: "usage", context: 42, cost: 0.4213, quota: 31});
+  ev(tab, {type: "wrapper", subtype: "init_info", info: {models: [
+    {value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus",
+     description: "Opus 5.5 · Best for everyday, complex tasks", supportsEffort: true,
+     supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"]},
+    {value: "claude-fable-5-1", resolvedModel: "claude-fable-5-1", displayName: "Fable",
+     description: "Fable 5.1 · Most capable for your hardest tasks", supportsEffort: true,
+     supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"]},
+    {value: "sonnet", resolvedModel: "claude-sonnet-5-5", displayName: "Sonnet",
+     description: "Sonnet 5.5 · Efficient for routine tasks", supportsEffort: true,
+     supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"]},
+    {value: "haiku", resolvedModel: "claude-haiku-4-5", displayName: "Haiku",
+     description: "Haiku 4.5 · Fastest for quick answers"}],
+    output_style: "default", available_output_styles: ["default"]}});
+  ev(tab, {type: "wrapper", subtype: "usage", context: 42, cost: 0.4213, quota: 31,
+           limits: {five_hour: {utilization: 31, resets_at: new Date(Date.now() + 16380e3).toISOString()},
+                    seven_day: {utilization: 21, resets_at: new Date(Date.now() + 4 * 864e5).toISOString()},
+                    model_scoped: [{display_name: "Fable", utilization: 7,
+                                    resets_at: new Date(Date.now() + 4 * 864e5).toISOString()}]},
+           context_detail: {total: 420000, max: 1000000, threshold: 967000, categories: [
+             {name: "System prompt", tokens: 1500, color: "promptBorder", kind: "used"},
+             {name: "System tools", tokens: 18500, color: "inactive", kind: "used"},
+             {name: "Memory files", tokens: 31900, color: "claude", kind: "used"},
+             {name: "Skills", tokens: 5100, color: "warning", kind: "used"},
+             {name: "Messages", tokens: 363000, color: "purple_FOR_SUBAGENTS_ONLY", kind: "used"},
+             {name: "Free space", tokens: 547000, color: "promptBorder", kind: "free"}]}});
 }
 
 function turn(tab, n) {
@@ -246,6 +276,21 @@ async function run() {
     APP.cells[0].changes.open();
     await sleep(120);
     document.querySelector(".ch-file").open = true;
+    return;
+  }
+  if (SCENE.startsWith("bar-")) {
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    turn("t1", 1);
+    ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000});
+    ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    await sleep(120);
+    const cls = {"bar-model": "model-chip", "bar-effort": "effort-chip", "bar-mode": "posture-chip",
+                 "bar-usage": "bar-ring", "bar-plus": "bar-plus-btn"}[SCENE];
+    document.querySelector("#grid .cell ." + cls)?.click();
+    await sleep(200);
     return;
   }
   if (SCENE === "queue") {
