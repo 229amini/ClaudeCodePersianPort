@@ -549,6 +549,75 @@ focused tab's live state but every other tab's written-back copy, so an unfocuse
 idle while it is working; the sidebar dot and the cell dot are wrong together, which is why they
 agree and no gate caught it.
 
+**2026-09-24 — pcg-0o7 fixed, and it was not `tabFacts()`.** A `permission_request` for another
+column's conversation is rendered inside `withRenderTarget`, `showPermission()` focuses the
+dialog it opens, and `focusin` is synchronous — so `focusCell()` stashed and adopted scopes in
+the middle of the swap, and the swap's `finally` then restored the old column's `state` **and
+`log`** under the new focus. A running turn read idle, and the newly focused conversation's next
+lines were drawn in the column the keyboard had left. Both editions had it. `focusCell()` now
+re-queues itself (`queueMicrotask`) while `inRenderTarget()`; read `wiki/grid.md` §"A render
+may move focus" before adding anything that focuses from inside a render. Gated in
+`test_split.py` §6b, negative-tested on both editions. This was the first session in the Linux
+cloud container: the headless gates run there on Chromium via `PCG_BROWSER`
+(`wiki/dev-environment.md` §"Headless gates on Linux") but carry an environment baseline of
+their own, so judge a change by the failure list not growing.
+
+**2026-09-24 (same session) — pcg-973, and the gates made portable.** The web edition's status
+dots now differ in **shape** as well as hue (filled / ringed / slashed / hollow, drawn with the
+box because they are empty spans — `wiki/grid.md` §"MA1 status"); web spec **214/214**,
+negative-tested. `test_units.py` runs off Windows (11 `cmd.exe`/`D:\` checks counted as
+skipped via `check_win`, never on Windows; the MAX_TABS race gets a deeper listen backlog because
+Linux resets accept-queue overflow) and `test_reload.py` runs on Linux (`pkill -P`, and the
+transcript folder uses `transcript_dir()`'s `/` rule). The remaining Linux-only headless failures
+come from one Chromium 141 stale-layout bug on the composer after `.cell.home` is removed;
+`wiki/dev-environment.md` §"Headless gates on Linux" has the proof. **The bead list is empty.**
+
+**2026-09-24 — the BridgeMind port is designed, not built.** `BRIDGEMIND-PORT.md` §D0–§D14 is the
+terminal edition's next design (user decisions: groups 1–3 in full, plus the Changes panel and app
+zoom; no light theme; **terminal edition only**), epic `pcg-bmp` with one bead per phase P0–P10. It
+supersedes `TERMINAL-REDESIGN.md` §2.4/§3/§5. Two facts it corrects: the key cheat-sheet is
+`.composer-hint`, not the status line, and streaming never re-parsed markdown per frame. Every
+phase closes on gates **and** a shot set the user has seen; P0's Windows measurements (chords in
+app-mode, per-origin zoom/storage, a variable Vazirmatn) come before P3, P9 and the font choice.
+
+**2026-09-24 (same session) — the BridgeMind port is built, P1–P9, terminal edition 0.2.0.**
+Terminal edition only; no `static/` file changed. The grid is now a **pane-count model**: panes =
+conversations on screen, 1–6, laid out by `layoutFor()` with draggable dividers and window keys in
+one `PANE_KEYS` table (`/split 1..6`, Alt+1..6 / arrows / `[` `]` / Enter / `=` / N / B). Around
+it: a pane header (`⋯ ⤢ ✕`), one state line, a **new-session page** (presets «تنها / جفت / گروه»,
+all-or-nothing launch, the «جفت» reviewer in plan posture before its first message; the server's
+`worktree: "auto"` now reserves names it handed out, since the CLI creates the folder after
+spawn), a **notification bell**, a fourth permission option «نه، و کار را متوقف کن» (deviation 6
+in `wiki/tui-keys.md`), failed-send restore, tool runs that show their newest step, long-message
+folding, a long-history tail, **progressive streaming markdown**, a **Changes panel** (the one new
+route, `GET /api/changes`, read-only git in the session's own folder, a file only by a name the
+listing returned) and app zoom as a swappable value in `prefs.js`. Each has a section in
+`wiki/grid.md`. Two defects fell out of looking at the shots: the composer placeholder was laid
+out LTR (an empty `dir="auto"` box has no text to measure — `wiki/rtl-rendering-notes.md`), and a
+`.diff-stat`'s logical margins point the wrong way inside an RTL row. New free gates:
+`test_newsession.py` 21, `test_notices.py` 17, `test_changes.py` 15, `test_zoom.py` 7, each
+negative-tested. Terminal spec **192/192**, keys 61, shell 42, column 31, dialogs 31, strings 24,
+reload 9, units (+ a real temp git repo). `test_layout`/`test_split` failed 3 and 13 here, which
+was filed as a Linux baseline and was in fact the vanishing-prompt bug (next entry). **Not run anywhere yet:** every
+headless gate on Windows Edge, `test_no_console`, `test_tui_vocab`, `smoke_test`, `setup.ps1`, and
+`probe_edge.py` (M1–M4, M6), whose answers may swap `PANE_KEYS` chords, `ZOOM_MODE` and
+`PREFS_STORE`. The tag `terminal-v0.2.0` is not created.
+
+**2026-09-29 — the prompt vanished at the first message, in BOTH editions; web 1.3.1,
+terminal 0.2.1.** User report from Windows. `.cell.home` was `display: grid`, so leaving the
+home state switched the pane grid -> flex on a `container-type: size` box, and after that the
+composer had no layout box. The transcript took its room. This is the failure the headless
+gates had been reporting since 2026-09-24 as a "Linux Chromium 141 baseline". The baseline was
+wrong, and so was `shots.py`'s "workaround" that hid it. Fixed by keeping the pane flex in both
+states. `.cell.home` must say `display: flex` itself, because `.home { display: none }` matches
+the pane too. With the prompt really on screen, a second defect showed up: `.pane-btn` inherited
+the global `button { min-height: 44px }`, so every terminal pane header was 47px instead of
+about 25px. Now **everything passes here**: layout both editions, split **167/167** web and
+**172/172** terminal, spec 214 / 192, and the rest unchanged. Read `wiki/dev-environment.md`
+§"Headless gates on Linux" (corrected). Rule: a headless failure is a bug until the target
+browser proves otherwise. The BridgeMind work is still terminal-only, and the web edition's
+only change is this fix.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -727,14 +796,18 @@ Two checks exist:
 |---|---|---|
 | Transport (M2) + capability mirror | `python persian-claude-gui\smoke_test.py` | boots the server, drives one real CLI turn, expects the CLI to **answer** it (`PONG` in the `result` body — a bare `result` event is what a not-logged-in CLI returns, cheerfully, as `success`) and a 403 on a bad token. **Also asserts the Phase-4 claims whose acks lie**: `initialize` data, posture round-trip + `system/status` echo, `set_model` proven by the next turn's `system/init.model`, CLI-reported usage, the session title read back out of the transcript, and that `/api/effort` reports what is **in force** rather than what was asked (plus that it never writes the user's own `settings.json`), and that the CLI accepts `plan` mode, and that the output style applied before the turn is the one `system/init.output_style` reports for it (plus that an unadvertised style is refused — nothing downstream validates it). **Also asserts the uuid ledger (2026-08-24)**: the `command_uuid` the turn's send returns comes back on `command_lifecycle` events and reaches a terminal state by the time the result settles — zero extra turns, read off the one send this file already pays for. 16 checks, still one subscription turn. |
 | Queue/lifecycle contract | `python persian-claude-gui\probe_queue.py` | free re-probe for the next CLI upgrade: boots the real CLI, checks `initialize`/`system/init` advertise `msg_lifecycle_v1`/`interrupt_receipt_v1`/`interrupt_cancel_queued_v1`, that a top-level `uuid` on the user frame produces `command_lifecycle` events reaching a terminal state, that the same frame with no `uuid` produces none, and that `cancel_async_message` on a never-enqueued uuid answers `cancelled: false`. 8 checks. Free because its payload is `/recap` on an empty session, which refuses locally — `total_cost_usd` must print `0`. |
-| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown by later passes; the gate is `PASS — 212/212` for the web edition (`PCG_UI` unset) and `PASS — 179/179` for the terminal edition (`PCG_UI=terminal`) — run both when a change touches shared code. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
+| Rendering (M3) | `python persian-claude-gui\run_spec_test.py` | the 12 spec cases through the shipping renderer, headless — grown by later passes; the gate is `PASS — 214/214` for the web edition (`PCG_UI` unset) and `PASS — 192/192` for the terminal edition (`PCG_UI=terminal`) — run both when a change touches shared code. Exit 0 = pass. Free. Holds an SSE connection so the idle watchdog cannot kill the run; treats an empty verdict as FAIL, because a module that fails to load looks identical to silence |
 | Narrow windows | `python persian-claude-gui\test_layout.py` | the shipping `index.html` (not a copy — the probe page is generated from it and deleted again) measured headlessly at 1280×800, 760×640 and 500×560: nothing drawn off the window, nothing wider than its own box, and the posture menu open — full width, on screen, rows at their natural height. Free. This is the class the spec gate is structurally blind to: it runs at one size and asserts message content |
 | Permissions (M4) | run the server, ask for a `Write` | dialog appears; allow creates the file, deny does not, "remember" skips the next prompt. Approvals now arrive in-band as `can_use_tool` control requests, so a missing dialog means the spawn lost `--permission-prompt-tool stdio` — not a hook problem. `--hook-log` is gone. |
 | Sessions (M5) | drive `/api/sessions`, `/api/session`, `/api/session/resume`, `/api/project/open` | list/preview/order, replay filtered to user+assistant, traversal guard, resume adopts the session id, project switch rejects a bad folder. **Hold an SSE connection open** or the idle watchdog kills the server mid-run. |
 | Transcript guard | `python persian-claude-gui\test_transcript_path.py` | `transcript_path()` resolves real ids and rejects traversal — the one choke point `read_session` and session delete both route through. No server, no CLI, no cost. |
 | TUI vocabulary (v2.0) | `python persian-claude-gui\test_tui_vocab.py` | `wiki/tui-keys.md` and `wiki/tui-strings.md` still agree with the installed `claude` binary: the binding table parses (206 bindings / 25 contexts on 2.1.261), the ~20 chords v2 actually commits to are the ones the binary has, the two platform-computed chords resolve to their Windows branch (`alt+v`, `shift+tab`), every English string and glyph the docs quote is present, every table row carries a Persian column, the per-context counts printed in the docs are real, and (added v2.6, §10) the five-hour usage-warning threshold and its two per-plan siblings are re-derived from the bundle. **82 checks.** Free, login-independent, spawns nothing — it reads `claude.exe` as a file. Regenerate the underlying data with `extract_tui_vocab.py`. This exists because the binary self-updates overnight (most recently 2.1.260 → 2.1.261 on 2026-09-05) and silently invalidates any hand-written key table. |
 | Reload (2026-09-09) | `python persian-claude-gui\test_reload.py` | the one class every other gate here is blind to: a SECOND page load. Writes a transcript into a throwaway project, boots the server, resumes the session, then loads the real `index.html` again and asserts the transcript is still there and the greeting is off — the `pcg-1ug` bug, where a resumed session's rows are fetched client-side and never published, so nothing repainted them. **8 checks**, both editions (`PCG_UI`). Free. Stubs `window.EventSource` only, because a page holding a live SSE request never settles under `--dump-dom` (`wiki/dev-environment.md` §9). |
-| Split/grid (MA3-T2) | `python persian-claude-gui\test_split.py` | the 1/2/4 grid measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **152 checks** web, **141** terminal. Free. |
+| Split/grid (MA3-T2) | `python persian-claude-gui\test_split.py` | the grid (1/2/4 on the web edition; 1–6 panes with dividers and pane keys on the terminal edition since the BridgeMind port) measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **167 checks** web, **172** terminal, all passing on Linux Chromium since 2026-09-29. Free. |
+| New-session page (P4) | `python persian-claude-gui\test_newsession.py` | terminal edition: the page opens over a hidden grid (button, Alt+N), presets, disabled counts with their reason (the six-tab limit read from `/api/tabs`, and no room), all-or-nothing launch with rollback on a 409, the reviewer's plan posture before its first message, `/clear` still one fresh conversation. **21 checks**, routes stubbed. Free. |
+| Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row, the OS notification's jump. **17 checks**. Free. |
+| Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
+| App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: `prefs.js` `ZOOM_MODE` native leaves Ctrl+= / - / 0 to Edge; css (forced by `<html data-zoom-mode>`) steps 80–150 %, clamps, shows a readout and remembers the level. **7 checks**, two page loads. Free. |
 | Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |
 | Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: the `⏺` marker shares one gutter with a tool icon, a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text, and the user row is the dimmed prompt echo (no pill) whose mark is re-read out of the shipping `index.html`. **31 checks.** Free, no CLI process, no login. |
 | Keys (v2.3) | `python persian-claude-gui\test_keys.py` | every chord the «کلید v2» column of `wiki/tui-keys.md` binds, across the five contexts the prompt owns (Global, Chat, Confirmation, Autocomplete, HistorySearch), dispatched at the real composer in the real `index.html` with the new routes stubbed in, plus `!`, `@`, `\`+Enter and `?` as characters rather than chords. Fails in both directions: a table chord with nothing behind it, or a scenario here for a chord the table never bound. **40 checks** at v2.3, grown to **60** at v2.4 with the whole `Confirmation` context (permission/plan/question Esc and shift+Tab semantics). Free, no CLI process, no login. |

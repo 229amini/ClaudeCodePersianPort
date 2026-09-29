@@ -101,6 +101,7 @@ they come from the select component, one digit per row.
 | `tab` | `confirm:nextField` | `Tab` | رفتن به بخش بعدی گفت‌وگو، وقتی بیش از یک بخش دارد |
 | `space` | `confirm:toggle` | `Space` | تغییر وضعیت ردیف انتخاب‌شده، در گفت‌وگوهای چندگزینه‌ای |
 | `shift+tab` | `confirm:cycleMode` | `shift+tab` | «تأیید با این بازخورد» (رشتهٔ TUI) |
+| — | `window:denyAndStop` | `4` | گزینهٔ چهارمِ خودِ پنجره: «نه، و کار را متوقف کن» — رد می‌کند و بعد همان قطعی را می‌فرستد که دکمهٔ توقف (انحراف ۶ در پایین) |
 
 ## Autocomplete — the `/` and `@` menus
 
@@ -159,12 +160,25 @@ either.
 
 | Key / command | Action | وضعیت |
 |---|---|---|
-| `/split 1` `/split 2` `/split 4` | `grid:split` | چیدمان تعداد گفتگوهای هم‌زمان روی صفحه؛ عددی جز این سه به‌عنوان متن رد می‌شود و هرگز به مدل فرستاده نمی‌شود (`commands.js splitGrid`) |
-| `alt+1` .. `alt+4` | `grid:focusN` | تمرکز کیبورد را به همان ستون می‌برد؛ با `e.code`ی `DigitN`، نه `e.key` — چیدمان فارسی «۱» را در `e.key` می‌گذارد، همان تله‌ای که `choice.js` برای گفت‌وگوهای شماره‌دار دارد |
+| `/split 1` .. `/split 6` | `grid:split` | تعداد قاب‌ها (BRIDGEMIND-PORT.md §D6؛ پیش از آن فقط ۱، ۲ و ۴)؛ عدد دیگر به‌عنوان متن رد می‌شود و هرگز به مدل فرستاده نمی‌شود (`commands.js`) |
+| `alt+1` .. `alt+6` | `grid:focusN` | تمرکز کیبورد را به همان قاب می‌برد؛ با `e.code`ی `DigitN`، نه `e.key` — چیدمان فارسی «۱» را در `e.key` می‌گذارد، همان تله‌ای که `choice.js` برای گفت‌وگوهای شماره‌دار دارد |
+| `alt+←` `alt+→` `alt+↑` `alt+↓` | `grid:nearest` | نزدیک‌ترین قاب در آن جهت، از روی مستطیل‌ها (پس RTL حالت خاص ندارد) |
+| `alt+]` / `alt+[` | `grid:next` / `grid:previous` | قاب بعدی / قبلی، چرخشی |
+| `alt+enter` | `grid:zoom` | تمام‌صفحه کردن قاب و برگرداندن |
+| `alt+=` | `grid:equalize` | هم‌اندازه کردن قاب‌ها |
+| `alt+n` | `window:newSession` | صفحهٔ «گفتگوی تازه» (§D8)؛ با یک قاب هم کار می‌کند |
+| `alt+b` | `window:notifications` | باز و بسته کردن اعلان‌ها (§D9)؛ با یک قاب هم کار می‌کند |
+| `ctrl+=` `ctrl+-` `ctrl+0` | `window:zoom` | فقط وقتی `ZOOM_MODE` در `prefs.js` برابر `"css"` باشد (§D13)؛ در حالت پیش‌فرض `"native"` این سه مال خودِ Edge هستند و صفحه دستشان نمی‌زند |
 
-Cell order is DOM order, so under `dir=rtl` column «۱» is the top-**right**
-one, not top-left (`wiki/editions.md`) — each cell's own digit badge
-(`cellBadgeTitle`) says so on hover.
+All of these live in ONE table, `PANE_KEYS` in `app.js` (plus `DIGIT_CODES`), so a chord the
+Windows measurement rules out (`probe_edge.py` M1: Edge maps Alt+←/→ to Back/Forward and may
+claim Alt+Enter) is one line there and one row here. Every one is in capture phase and
+swallowed, so the prompt's own arrow handling never sees an Alt+arrow; the TUI binds none of
+them (re-checked against 2.1.263's 206 bindings).
+
+Pane order is DOM order, so under `dir=rtl` pane «۱» is the top-**right**
+one, not top-left (`wiki/editions.md`) — each pane's digit badge shows while
+Alt is held.
 
 This table is 3 columns on purpose, not the Chord|Action|کلید v2|وضعیت shape
 above: there is no TUI action to name and no per-chord `test_keys.py`
@@ -232,6 +246,10 @@ These are choices, not oversights. `help.html` §«تفاوت با ترمینا�
    «(ctrl+o to expand)» — so `ctrl+o` is the key the user has already been told about.
 5. **Keys the browser owns stay with the browser:** `ctrl+w`, `ctrl+t`, `ctrl+n`, `ctrl+shift+i`.
    Edge `--app` intercepts them before the page sees them (V2-PLAN §3.6).
+6. **A fourth option on the permission card: «نه، و کار را متوقف کن»** (BRIDGEMIND-PORT.md
+   §D10). The TUI offers three; this one refuses the call and then interrupts the turn, for when
+   the answer is "not this, and nothing else either". It sits AFTER the Esc row, so the TUI's
+   three keep their digits, and it is bound to `4`. Not offered for `AskUserQuestion`.
 
 ## `~/.claude/keybindings.json`
 

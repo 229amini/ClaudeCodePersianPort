@@ -11,6 +11,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   `PCG_UI`; which tests gate which edition; why the shortcut once said v1.1.0 on the wrong tree.
   Its sidebar section is now **right-edge** (moved back 2026-09-10) and carries the `--side-w`
   rule, the two-inset `[popover]` trap, and the gate that measured the wrong box for a commit.
+  Since 2026-09-24 (BridgeMind port P1) the sidebar and panes are cards on a ground, one
+  gutter in — and `test_layout.py`'s edge check moved with them.
 - [cli-stream-json-findings.md](cli-stream-json-findings.md) — **read first.** Measured CLI
   contract on 2.1.221: required flags, every event type seen on the wire, and the permission
   mechanism that actually works (it is not the one in the plan).
@@ -34,6 +36,12 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   Also: how to point
   the Chrome extension at the running app (it works as of 2026-08-05 — hold an SSE connection or
   the watchdog kills the server first), and why headless screenshots are a dead end here.
+  **2026-09-24:** running the headless gates on Linux Chromium (`PCG_BROWSER` + a
+  `--no-sandbox` wrapper), and the Chromium 141 stale-layout bug that explains the failures only
+  that environment has.
+  **2026-09-29:** the "Linux Chromium baseline" was a real bug that hid the prompt on Edge too.
+  See the correction in §"Headless gates on Linux" before filing any headless failure as
+  environmental.
 - [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The
   seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched). Since v2.3 it also
@@ -44,7 +52,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
 - [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
   collision) that a screenshot cannot catch. Also **what breaks when the window is made small**,
-  and why the picker menus were sizing themselves off their own anchor.
+  and why the picker menus were sizing themselves off their own anchor. **2026-09-24:** an empty
+  `dir="auto"` box is LTR (the composer placeholder), and how progressive stream markdown works.
 - [sessions-and-history.md](sessions-and-history.md) — `--resume` semantics, where transcripts
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
@@ -72,7 +81,15 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   changed for the web edition (the segmented `۱ | ۲ | ۴` control, `positionMenu` measuring
   inside a cell, the perm dialog no longer modal). **2026-09-10:** the terminal edition got that
   control too, plus the 48 px rail that takes a 4-up cell from 378 px to 490 px, and the per-cell
-  identity row — with the three accessibility traps collapsing a sidebar sets.
+  identity row — with the three accessibility traps collapsing a sidebar sets. **2026-09-24 (P4):**
+  the new-session page — why its limit reads `/api/tabs` and not the debounced tab list, why
+  `fits()` measures `#stage`, and the open/posture/message order it must keep. **P5:** the notification
+  centre — what counts as news, and why a notice's title is looked up when it is drawn. **P7:** the run, the
+  long-message fold and the history tail. **P8:** the Changes panel and its one route. **P9:** app
+  zoom and the prefs store, as swappable values.
+  **2026-09-24 (pcg-0o7):** why `focusCell()` defers itself while a `withRenderTarget` is open
+  — a dialog focusing itself mid-render used to file one conversation's state under another.
+  Same day, pcg-973: the web edition's status dots differ in shape as well as hue.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

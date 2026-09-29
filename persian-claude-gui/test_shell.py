@@ -94,9 +94,14 @@ const PROJECTS = {
    not an edge case, it is the ONLY way a refused attachment can ever be seen
    (the CLI's own side of an `@path` read fails silently). */
 let attachStatus = 200;
+let messageStatus = 200;      // §D10: a send the server refuses
 window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
+  if (u.startsWith("/api/message") && messageStatus !== 200) {
+    await new Promise((r) => setTimeout(r, 60));   // time to type in between
+    return new Response("no", { status: messageStatus });
+  }
   if (u.startsWith("/api/attach/paste"))
     return attachStatus === 200
       ? json({ path: "C:/Users/ali reza/AppData/Local/Temp/paste-ab12cd34-note.txt" })
@@ -164,7 +169,8 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   out.slArrows = statusline.querySelectorAll(".sl-posture .sl-arrow").length;
   out.slPostureText = statusline.querySelector(".sl-posture-text")?.textContent ?? "";
   out.slHint = statusline.querySelector(".sl-posture .sl-hint")?.textContent ?? "";
-  out.slFacts = statusline.querySelector(".sl-facts")?.textContent ?? "";
+  out.slFacts = statusline.querySelector(".sl-state")?.textContent ?? "";
+  out.slModelTitle = statusline.querySelector(".sl-model")?.title ?? "";
   out.faAcceptEdits = FA.slPostureAcceptEdits;
   out.faAsk = FA.slPostureAsk;
   out.faHint = FA.slPostureHint;
@@ -428,6 +434,43 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   applySwitch(stTab);
   await sleep(60);
   out.stUnreadAfterSwitch = stUnread();
+
+  /* §D10: a send that fails puts the box back, and says so. */
+  messageStatus = 500;
+  input.value = "matne ferestadeh nashode";
+  composer.requestSubmit();
+  await sleep(150);
+  out.failRestored = input.value;
+  out.failSaid = [...log.querySelectorAll(".msg.error")].at(-1)?.textContent ?? "";
+  out.faFailRestored = FA.sendFailedRestored;
+  // Something typed since stays first, and the lost text is appended whole.
+  input.value = "dovvomi";
+  composer.requestSubmit();
+  await sleep(15);
+  input.value = "jadid";
+  await sleep(150);
+  out.failAppended = input.value;
+  messageStatus = 200;
+  input.value = "";
+
+  /* §D10: the eyebrow names the kind of action above the English tool name. */
+  const kindOf = async (tool, inputObj) => {
+    routeEvent({ type: "wrapper", subtype: "permission_request", request_id: "kind-" + tool,
+                 tool_name: tool, tool_use_id: "kt-" + tool, tool_input: inputObj });
+    await sleep(30);
+    const text = document.querySelector(".perm .perm-kind")?.textContent ?? "";
+    document.querySelector(".perm .perm-opts .opts")?.dispatchEvent(new KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true, cancelable: true }));
+    await sleep(30);
+    return text;
+  };
+  out.kinds = [await kindOf("Edit", { file_path: "a.txt", old_string: "a", new_string: "b" }),
+               await kindOf("Bash", { command: "ls" }),
+               await kindOf("mcp__github__get_me", {}),
+               await kindOf("Grep", { pattern: "x" }),
+               await kindOf("TodoWrite", { todos: [] })].join("|");
+  out.faKinds = [FA.permKind.edit, FA.permKind.shell, FA.permKind.outside,
+                 FA.permKind.read, FA.permKind.tool].join("|");
   out.faRunning = FA.tabStatus.running;
   out.faRunningBadge = FA.tabsRunning.replace("{n}", "\u06f1");
   out.faWaitingBadge = FA.tabsWaiting.replace("{n}", "\u06f1");
@@ -461,8 +504,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
         out.append((name, bool(ok), detail))
 
     order = m.get("slOrder") or []
-    check("the status line is a stack: custom line, posture row, facts row",
-          len(order) == 3 and "sl-posture" in order[1] and "sl-facts" in order[2],
+    # BRIDGEMIND-PORT.md §D5: the facts row is gone - the machine's own line,
+    # then ONE state line that starts with the posture sentence.
+    check("the status line is the custom line, then one state line",
+          len(order) == 2 and "sl-posture" in order[1] and "sl-state" in order[1],
           " | ".join(order) or "empty")
 
     check("the machine's own statusLine output is the FIRST line",
@@ -484,11 +529,14 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('slPostureAfterWrapper')} / {m.get('slArrowsAfterWrapper')} arrow")
 
     facts = m.get("slFacts", "")
-    check("the facts row carries what the four chips used to say",
-          all(x and x in facts for x in (m.get("faModel"), m.get("faEffortLabel"),
-                                         m.get("faStyleLabel")))
-          and "claude-opus-5" in facts,
-          facts[:80] or "no facts row")
+    body = m.get("statusBody", "")
+    check("the state line names the model; effort and style moved to /status",
+          "Opus 5" in facts and m.get("slModelTitle") == "claude-opus-5"
+          and not any(x and x in facts for x in (m.get("faEffortLabel"),
+                                                 m.get("faStyleLabel")))
+          and all(x and x in body for x in (m.get("faEffortLabel"),
+                                            m.get("faStyleLabel"))),
+          facts[:80] or "no state line")
 
     check("a settle while the window is hidden raises ONE notification",
           m.get("notifiedLive") == 1 and m.get("notifyTitle") == m.get("faNotify"),
@@ -650,6 +698,15 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('stError')} / unread «{m.get('stUnread')}» -> "
           f"«{m.get('stUnreadAfterSwitch')}»")
 
+    check("a failed send puts the text back in the box and says so",
+          m.get("failRestored") == "matne ferestadeh nashode"
+          and m.get("failSaid") == m.get("faFailRestored"),
+          f"box «{m.get('failRestored')}» / «{m.get('failSaid')}»")
+    check("...and text typed since stays first, the lost message appended whole",
+          m.get("failAppended") == "jadid\ndovvomi", repr(m.get("failAppended")))
+    check("the permission card names the kind of action above the tool",
+          m.get("kinds") == m.get("faKinds") and m.get("kinds", "").count("|") == 4,
+          f"{m.get('kinds')} vs {m.get('faKinds')}")
     return out
 
 

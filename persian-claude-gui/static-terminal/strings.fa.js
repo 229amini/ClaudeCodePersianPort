@@ -13,8 +13,6 @@ window.FA = {
 
   stopped: "متوقف شد",
   removeAttachment: "حذف",
-  hintZwnj: "نیم‌فاصله: Shift+Space",
-  hintPosture: "سطح اجازه: Shift+Tab",
 
   thinking: "در حال فکر کردن",
 
@@ -54,7 +52,6 @@ window.FA = {
      (wiki/tui-strings.md §3, V2-PLAN §3.1). */
   toolResultLines: "{n} سطر",
   expandHint: "(ctrl+o برای باز کردن)",
-  hintExpand: "باز کردن نتیجه‌ها: Ctrl+O",
 
   /* The CLI compacted the conversation to make room. Its own banner string is
      «Conversation compacted»; the numbers come from compact_metadata
@@ -95,7 +92,6 @@ window.FA = {
 
   /* The `?` sheet: every key the window binds, in the TUI's own order of
      importance. One list, two readers — js/composer.js dispatches from it. */
-  hintKeys: "کلیدها: ?",
   keysTitle: "کلیدها",
   keysClose: "بستن",
   /* The TUI's own footer under the same table is «esc to close · esc again
@@ -175,6 +171,41 @@ window.FA = {
      the transcript keeps one of them and says how many there were. Persian
      digits — this is prose chrome, not a technical value (spec rule 5). */
   cycleRepeat: "{n} بار",
+  /* §D11: a tool run shows its newest step; the earlier ones fold behind this. */
+  runEarlier: "+{n} مورد قبلی",
+  /* §D11: a long message of yours folds to six lines. */
+  foldMore: "بیشتر",
+  foldLess: "کمتر",
+  /* §D11.3: a long history draws its last part; this brings back the rest. */
+  historyEarlier: "نمایش پیام‌های قبلی ({n})",
+  /* §D13: the app zoom readout, only when the window zooms itself. */
+  sideZoom: "بزرگ‌نمایی {n}٪",
+  /* The Changes panel (BRIDGEMIND-PORT.md §D12): what git sees different in
+     this pane's folder. */
+  paneChanges: "تغییرات این پوشه",
+  slChanges: "{n} فایل تغییر کرد",
+  chBack: "→ گفتگو",
+  chTitle: "تغییرات",
+  chTitleCount: "تغییرات · {n} فایل",
+  chRefresh: "تازه‌سازی",
+  chLoading: "در حال خواندن…",
+  chNone: "تغییری نیست",
+  chNoRepo: "این پوشه مخزن گیت نیست",
+  chNoGit: "گیت روی این رایانه نصب نیست",
+  chTooLarge: "برای نمایش بزرگ است ({n} خط)",
+  chFailed: "خوانده نشد",
+  chMine: "تغییرات این گفتگو",
+  chOther: "تغییرات دیگر در این پوشه",
+  chAll: "تغییرات این پوشه",
+  chStatus: {
+    M: "تغییر کرده",
+    A: "افزوده شده",
+    D: "حذف شده",
+    R: "نامش عوض شده",
+    C: "رونوشت",
+    U: "ناسازگاری ادغام",
+    "?": "تازه، هنوز در گیت نیست",
+  },
 
   /* Background agents. The CLI dispatches helpers that keep working after the
      turn ends; the strip above the composer is where they live. Nothing here
@@ -199,6 +230,7 @@ window.FA = {
 
   disconnected: "اتصال قطع شد",
   sendFailed: "ارسال ناموفق بود",
+  sendFailedRestored: "ارسال نشد — متن به جعبهٔ پیام برگشت",
   // A1: this sentence is the whole refusal. Every reason the file could be
   // turned down — too big, not text, unreadable — is one silent null on the
   // CLI's side, so the rule itself has to be in the message.
@@ -234,7 +266,12 @@ window.FA = {
      «نشست» is the same word the statusline already uses for it. `tabFresh` is
      what a conversation is called before it has said anything: it has no title
      yet because the title is made from the first message. */
-  openSessions: "نشست‌های باز",
+  openSessions: "گفتگوهای باز",
+  // The open row's state in words (BRIDGEMIND-PORT.md §D4). Idle has none:
+  // silence is the idle state.
+  rowState: { running: "در حال کار", waiting: "منتظر شما", error: "خطا" },
+  projSessionCount: "{n} گفتگو",
+  justNow: "همین حالا",
   tabFresh: "گفتگوی تازه",
   closeSession: "بستن این نشست",
   sessionLive: "این گفتگو باز است",
@@ -261,6 +298,28 @@ window.FA = {
   // The composer's placeholder while no conversation is open at all: there is
   // nothing to send to, so the box says what to do instead of failing a send.
   composerBlank: "برای شروع، گفتگویی باز کنید",
+  // The prompt's placeholder by state (BRIDGEMIND-PORT.md §D10): the only key
+  // hint left under the prompt is the one a Persian writer needs every line.
+  phIdle: "پیام خود را بنویسید — نیم‌فاصله: Shift+Space",
+  phBusy: "در حال کار — پیام بعدی در صف می‌ماند · Esc برای توقف",
+  // The pane header and its menu (§D5).
+  paneMenu: "کارهای این قاب",
+  paneZoom: "تمام‌صفحه",
+  paneUnzoom: "خروج از تمام‌صفحه",
+  paneClose: "برداشتن از صفحه — گفتگو باز می‌ماند",
+  paneModel: "مدل: {name}",
+  paneEffort: "میزان تفکر…",
+  paneStyle: "لحن پاسخ…",
+  panePosture: "سطح اجازه…",
+  paneCost: "هزینهٔ این گفتگو: {cost}",
+  paneBranch: "شاخهٔ تازه از این گفتگو",
+  paneCloseChat: "بستن گفتگو",
+  // Empty states (§D5): a pane with nothing in it, and a window with nothing open.
+  paneEmpty: "این قاب خالی است.",
+  paneEmptyBtn: "باز کردن گفتگو اینجا",
+  homeLine: "یک گفتگو را از فهرست کنار باز کنید، یا گفتگویی تازه بسازید.",
+  homeBtn: "گفتگوی تازه",
+  sideQuota: "سهمیهٔ ۵ ساعته",
 
   removeProject: "حذف پروژه و گفتگوهایش",
   projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",
@@ -312,6 +371,20 @@ window.FA = {
   permYes: "بله",
   permYesRemember: "بله، و دیگر برای {tool} نپرس",
   permNoFeedback: "نه، و بگو طور دیگری انجام دهد",
+  /* Option 4, the window's own (BRIDGEMIND-PORT.md §D10): refuse AND stop the
+     turn, for when the answer is "not this, and not anything else either".
+     The TUI has three options; wiki/tui-keys.md lists this as a deviation. */
+  permNoStop: "نه، و کار را متوقف کن",
+  /* The eyebrow over the permission card: what kind of action is asking,
+     before the English tool name (js/perm.js permKind). */
+  permKind: {
+    edit: "تغییر فایل",
+    shell: "اجرای فرمان",
+    outside: "دسترسی بیرونی",
+    read: "خواندن",
+    plan: "طرح",
+    tool: "ابزار",
+  },
   permFeedbackPlaceholder: "بنویسید به‌جای این چه کند…",
   permHint: "۱ تا ۳ یا ↑↓ و Enter · Tab برای نوشتن توضیح · shift+tab: تأیید همراه با همین توضیح",
   /* shift+tab approved the tool; the note had nowhere to ride along on that
@@ -435,19 +508,70 @@ window.FA = {
      reader who will never type `/split` (TERMINAL-REDESIGN.md §3). Same two
      strings as the web edition's window bar, deliberately: it is the same
      control saying the same thing about the same window. */
-  splitLabel: "چند گفتگو کنار هم",
-  splitOptionTitle: "نمایش {n} گفتگو در یک پنجره",
+  // The grid that fits N (BRIDGEMIND-PORT.md §D6).
+  dividerLabel: "جداکنندهٔ قاب‌ها — بکشید، یا با پیکان جابه‌جا کنید؛ دوبار کلیک: هم‌اندازه",
+  paneEqualize: "هم‌اندازه کردن قاب‌ها",
+  openInNewPane: "باز کردن در قاب تازه",
+  noRoomForPane: "جا برای قاب دیگری نیست؛ گفتگو در همین قاب باز شد و قبلی در فهرست کنار است.",
+
+  /* The new-session page (BRIDGEMIND-PORT.md §D8). One action for "N at once":
+     which folder, how many, shared or a worktree each, an optional task.
+     «جفت» is a builder and a reviewer in the same folder; the reviewer is put
+     in plan posture, so the CLI itself refuses its edits, and its task opens
+     with `presetReviewerBrief`. */
+  nsTitle: "گفتگوی تازه",
+  nsPreset: "پیش‌تنظیم",
+  nsPresetSolo: "تنها",
+  nsPresetPair: "جفت",
+  nsPresetGroup: "گروه",
+  nsPresetCustom: "دلخواه",
+  nsFolder: "پوشه",
+  nsPickOther: "انتخاب پوشهٔ دیگر…",
+  nsCount: "چند گفتگو",
+  nsIsolation: "جداسازی",
+  nsIsoShared: "همه در یک پوشه",
+  nsIsoWorktree: "هر کدام در شاخهٔ جدای خودش",
+  nsNotGit: "این پوشه مخزن گیت نیست، پس شاخهٔ جدا ندارد",
+  nsPairShared: "در «جفت» بازبین باید فایل‌های سازنده را ببیند، پس هر دو در یک پوشه‌اند",
+  nsTask: "کار مشترک (اختیاری)",
+  nsTaskPlaceholder: "اگر بنویسید، برای همهٔ گفتگوها فرستاده می‌شود",
+  nsPreviewTitle: "راه‌اندازی می‌شود",
+  nsSlotWorktree: "شاخهٔ خودکار",
+  nsSlotShared: "همان پوشه",
+  nsRoleBuilder: "سازنده",
+  nsRoleReviewer: "بازبین (فقط می‌خواند)",
+  nsSlotTask: "و کار مشترک برای هر کدام فرستاده می‌شود",
+  nsCancel: "انصراف (Esc)",
+  nsLaunch: "شروع (Ctrl+Enter)",
+  nsLaunching: "در حال راه‌اندازی…",
+  nsTooMany: "با گفتگوهای باز فعلی، از شش گفتگو بیشتر می‌شود",
+  nsNoRoom: "این پنجره برای این تعداد قاب جا ندارد",
+  nsFailed: "راه‌اندازی نشد؛ هیچ گفتگویی باز نماند",
+  nsStepFailed: "گفتگو باز شد، ولی کار مشترک یا سطح اجازه‌اش فرستاده نشد",
+  presetReviewerBrief: "تو بازبین هستی: هیچ فایلی را تغییر نده. کار گفتگوی دیگر را در همین پوشه بخوان و گزارش بده.",
+
+  /* The notification centre (BRIDGEMIND-PORT.md §D9): what happened in a
+     conversation you were not looking at. */
+  bellTitle: "اعلان‌ها",
+  bellUnread: "اعلان‌ها — {n} خوانده‌نشده",
+  noticesAllRead: "همه خوانده شد",
+  noticesEmpty: "اعلانی نیست",
+  noticeKind: {
+    done: "پاسخ داد",
+    needs: "منتظر شماست",
+    failed: "خطا داد",
+  },
+  noticeClosed: "این گفتگو بسته شده است",
   /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
      says is the ACTION it will take — not the state it is in: a control named
      after its own state is read as a label and pressed by accident. It follows
      the split on its own, so most readers never press it. */
   sidebarCollapse: "جمع کردن نوار کناری",
   sidebarExpand: "باز کردن نوار کناری",
-  cmdSplitUsage: "این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد",
-  cmdSplitDone: "چیدمان به {n} ستون تغییر کرد",
+  cmdSplitUsage: "این دستور عددی از ۱ تا ۶ می‌پذیرد",
+  cmdSplitDone: "چیدمان به {n} قاب تغییر کرد",
   /* ۴ is NOT four columns — it is a 2×2 grid, and the notice used to say
      «۴ ستون» over a layout with two of them (MA3-T4 defect 4). */
-  cmdSplitDoneGrid: "چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد",
   cellBadgeTitle: "ستون {n} — با Alt+{n} به اینجا بیایید",
 
   /* `/help` (V2-PLAN §3.3 «the TUI's help text, translated», §8.11A). The

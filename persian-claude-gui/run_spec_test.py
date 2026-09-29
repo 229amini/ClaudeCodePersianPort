@@ -35,24 +35,12 @@ HERE = Path(__file__).resolve().parent
 
 sys.path.insert(0, str(HERE))
 from server import EDITIONS  # noqa: E402
-from test_layout import boot_server  # noqa: E402
+from test_layout import boot_server, find_edge  # noqa: E402
 
 # The edition decides which UI folder this gate reads. PCG_UI picks it;
 # the table itself lives in server.py and is never duplicated.
 EDITION = os.environ.get("PCG_UI", "web")
 STATIC = HERE / EDITIONS[EDITION][0]
-
-EDGE_CANDIDATES = (
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-)
-
-
-def find_edge() -> str:
-    for path in EDGE_CANDIDATES:
-        if os.path.isfile(path):
-            return path
-    sys.exit("msedge.exe not found — the spec gate needs a Chromium engine.")
 
 
 def hold_sse(base: str, token: str, stop: threading.Event) -> None:

@@ -15,6 +15,7 @@ import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking } from "./render.js";
 import { runWindowCommand } from "./commands.js";
+import { newChatHere } from "./chrome.js";
 
 const FA = window.STRINGS;
 
@@ -110,12 +111,9 @@ const LIFECYCLE_VERBS = {
   effort: (cell) => cell.controls.openEffortPicker(),
   "output-style": (cell) => cell.controls.openStylePicker(),
   permissions: (cell) => cell.controls.openPosturePicker(),
-  clear: () => {
-    const button = document.getElementById("btn-new");
-    if (!button || button.hidden) return false;
-    button.click();
-    return true;
-  },
+  // A fresh conversation in this folder, as the TUI's /clear gives - not the
+  // new-session page «+ گفتگوی تازه» opens.
+  clear: () => newChatHere(),
 };
 
 /* The window-local commands that TAKE an argument, and are this module's own:
@@ -150,9 +148,13 @@ export function makeComposer(root, cell) {
   const composer = $("composer");
   const sendBtn = $("send");
   const stopBtn = $("stop");
-  /* The invitation to type, as index.html writes it — restored when a
-     conversation comes back (setBlank below borrows the line). */
-  const askPlaceholder = input?.placeholder ?? "";
+  /* The invitation to type, by state (BRIDGEMIND-PORT.md §D10): idle it
+     carries the one key a Persian writer needs every line (Shift+Space), and
+     while a turn runs it says what a send will do now - queue - and how to
+     stop. The rest of the old hint row lives behind `?`. */
+  let blankNow = false;
+  const placeholderNow = () =>
+    blankNow ? FA.composerBlank : busy ? FA.phBusy : FA.phIdle;
   const attachRow = $("attachments");
   const slashPopup = $("slash-popup");
 
@@ -188,17 +190,20 @@ export function makeComposer(root, cell) {
     // written — agents.js and the idle hint read it — but it now mirrors the
     // FOCUSED column only, and app.js is what decides which that is.
     cell.root.classList?.toggle("busy", busy);
+    if (input && !input.disabled) input.placeholder = placeholderNow();
     cell.onBusy?.();
   }
 
 
-  /* The box grows with what is in it, up to 40% of the window. Shared, because
+  /* The box grows with what is in it, up to 35% of its PANE (§D10) - of the
+     window, a 4-up pane's box could eat the whole transcript. Shared, because
      text also arrives here without a keystroke (restoreDraft below) and a box
      that does not grow for it hides the message it was just handed. */
   function autoGrow() {
     if (!input) return;
+    const room = cell.root?.clientHeight || window.innerHeight;
     input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px";
+    input.style.height = Math.min(input.scrollHeight, room * 0.35) + "px";
   }
 
   /* A message the CLI queued and then never ran comes back to the person who
@@ -221,6 +226,25 @@ export function makeComposer(root, cell) {
     autoGrow();
   }
 
+  /* A failed send puts the box back as it was: the text with its paste chips,
+     and the attachments. If something was typed since, that stays and the
+     lost message is APPENDED in full instead (restoreDraft's rule) - its
+     placeholders could collide with the new ones, so it goes back expanded. */
+  function giveBack(snapshot, expanded) {
+    if (!input) return;
+    if (!input.value.trim() && !pastes.size) {
+      input.value = snapshot.raw;
+      pastes = snapshot.pastes;
+      paintPastes();
+      autoGrow();
+    } else {
+      restoreDraft(expanded);
+    }
+    setAttachments([...attachments, ...snapshot.attachments.filter(
+      (one) => !attachments.includes(one))]);
+    refreshBashMode();
+  }
+
   /* No conversation is open at all (app.js blankView): every tab-less endpoint
      routes by the server's active tab, so a send lands on a 404 and the user gets
      the generic «ارسال ناموفق بود» — which reads as "your message failed" when
@@ -228,8 +252,12 @@ export function makeComposer(root, cell) {
      so instead; applySwitch() opens it again the moment a tab is on screen. */
   function setBlank(blank) {
     if (!input) return;
-    input.disabled = !!blank;
-    input.placeholder = blank ? FA.composerBlank : askPlaceholder;
+    blankNow = !!blank;
+    input.disabled = blankNow;
+    input.placeholder = placeholderNow();
+    // An empty pane shows one line and one button instead of a prompt that
+    // can send nowhere (§D5); style.css keys that on this class.
+    cell.root.classList?.toggle("blank", blankNow);
     if (sendBtn) sendBtn.disabled = !!blank;
   }
 
@@ -336,7 +364,7 @@ export function makeComposer(root, cell) {
       }));
     }
     row.append(ctxButton(FA.ctxClear, FA.ctxClearNote, compact ? "" : "primary", () =>
-      document.getElementById("btn-new")?.click()));
+      newChatHere()));
     if (!urgent) {
       row.append(ctxButton(FA.ctxDismiss, "", "ghost", () => {
         dismissedAt = lastContext;
@@ -1327,6 +1355,10 @@ export function makeComposer(root, cell) {
       // moment they exist: the CLI, the transcript and history.jsonl all get the
       // real text, exactly as the TUI sends it.
       const payload = { text: expandPastes(text), attachments: attachments.slice() };
+      // Everything the box held, for the catch below: a send that fails must
+      // not cost the person what they typed (§D10).
+      const snapshot = { raw: input.value, pastes: new Map(pastes),
+                         attachments: attachments.slice() };
       input.value = "";
       input.style.height = "auto";
       dropPastes();
@@ -1349,7 +1381,8 @@ export function makeComposer(root, cell) {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        bubble("error", FA.sendFailed);
+        giveBack(snapshot, payload.text);
+        bubble("error", FA.sendFailedRestored);
         setBusy(false);
       }
     });
@@ -1482,13 +1515,7 @@ export function makeComposer(root, cell) {
       const el = document.getElementById(id);
       if (el) el.textContent = FA[key];
     }
-    const hint = $("composer-hint");
-    if (hint) {
-      // Four hints was already the ceiling for one line; the rest of the table
-      // lives behind `?`, which is where the TUI keeps it too.
-      hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.hintExpand,
-                          FA.hintKeys].join(" · ");
-    }
+    if (input) input.placeholder = placeholderNow();
     /* NOT input.focus(): with a grid every cell runs this, and the last one
        built would steal the keyboard from the one the user is in. app.js
        focuses the focused column — once, and again on every focus change. */

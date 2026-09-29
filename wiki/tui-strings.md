@@ -139,12 +139,12 @@ Grouped by the phase that wrote them. Keys are `static/strings.fa.js`.
 
 | Group | Keys |
 |---|---|
-| v2.2 — the column | `toolResultLines` `expandHint` `hintExpand` `compacted` `compactedTokens` `pastePlaceholder` `pastePlaceholderShort` `pasteDrop` |
+| v2.2 — the column | `toolResultLines` `expandHint` `compacted` `compactedTokens` `pastePlaceholder` `pastePlaceholderShort` `pasteDrop` |
 | v2.3 — `!` shell rows | `shellExit` `shellNoOutput` `shellFailed` |
 | v2.3 — Ctrl+R history search | `searchLabel` `searchNone` `searchHint` |
 | v2.3 — Ctrl+G external editor | `editorWaiting` `editorFailed` |
 | v2.3 — the `@` menu | `fileNone` |
-| v2.3 — the `?` key sheet | `hintKeys` `keysTitle` `keysClose` `keySend` `keyNewline` `keyStop` `keyHistory` `keySearch` `keySlash` `keyFiles` `keyBash` `keyEditor` `keyClear` `keyExpand` `keyTodos` `keyThinking` `keyModel` `keyPosture` `keyZwnj` `keyPaste` `keyQueue` `keySheet` `keyDialogPick` |
+| v2.3 — the `?` key sheet | `keysTitle` `keysClose` `keySend` `keyNewline` `keyStop` `keyHistory` `keySearch` `keySlash` `keyFiles` `keyBash` `keyEditor` `keyClear` `keyExpand` `keyTodos` `keyThinking` `keyModel` `keyPosture` `keyZwnj` `keyPaste` `keyQueue` `keySheet` `keyDialogPick` |
 | v2.4 — the numbered dialogs | `permHint` `permFeedbackPlaceholder` `permFeedbackMoved` `askHint` `pickerHint` |
 | v2.5 — the welcome box | `welcomeTitle` `welcomeCwd` `welcomeNoProject` `welTipKeys` |
 | v2.5 — the status line | `slPostureAsk` `notifyDone` |
@@ -168,9 +168,8 @@ into §2-5.
 
 | id | رشتهٔ TUI | فارسی v2 | strings.fa.js | یادداشت |
 |---|---|---|---|---|
-| `grid.split.usage` | — | «این دستور فقط ۱ یا ۲ یا ۴ ستون را می‌پذیرد» | `cmdSplitUsage` | `/split` با هر عدد دیگری |
-| `grid.split.done` | — | «چیدمان به {n} ستون تغییر کرد» | `cmdSplitDone` | پس از `/split 1` یا `/split 2` — هر دو واقعاً ستون‌اند |
-| `grid.split.done.grid` | — | «چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد» | `cmdSplitDoneGrid` | پس از `/split 4`. جملهٔ جدا دارد چون ۴ اصلاً چهار ستون نیست: دو ستون و دو ردیف است و پیام قبلی دروغ می‌گفت (MA3-T4) |
+| `grid.split.usage` | — | «این دستور عددی از ۱ تا ۶ می‌پذیرد» | `cmdSplitUsage` | `/split` با هر عدد دیگری |
+| `grid.split.done` | — | «چیدمان به {n} قاب تغییر کرد» | `cmdSplitDone` | پس از هر `/split n` — «قاب» نه «ستون»، چون از BridgeMind port P3 شبکه N قاب را در چند ردیف می‌چیند |
 | `grid.cell.badge` | — | «ستون {n} — با Alt+{n} به اینجا بیایید» | `cellBadgeTitle` | تولتیپ نشان رقمی هر ستون؛ رقم‌ها ترتیب DOM‌اند، پس زیر `dir=rtl` «۱» بالا-راست است، نه بالا-چپ |
 
 **Reused, not new:** `permOtherSession` («این درخواست از گفتگوی دیگری است:») already shipped

@@ -272,3 +272,55 @@ under test:
 The stub has to run before the app's modules capture `EventSource`; `test_reload.py` injects it as
 a classic `<script>` at `<body>`, which is what was measured to work. The exact ordering rule
 against a deferred module was not tested — copy the working shape rather than reasoning about it.
+
+## Headless gates on Linux (the cloud container, 2026-09-24)
+
+A Claude Code cloud session runs this repo on Linux, with no Edge but a Playwright Chromium at
+`/opt/pw-browsers/chromium`. `find_edge()` in `test_layout.py` — the one lookup every headless
+gate now imports, `run_spec_test.py` included — tries `PCG_BROWSER` before the two Edge paths.
+The container runs as root, and Chromium refuses to start as root without `--no-sandbox`
+(the failure is a zygote error on stderr and an empty `--dump-dom`, which the gates report as
+"the probe never ran"). Keep that flag out of the repo — point `PCG_BROWSER` at a wrapper:
+
+```sh
+printf '#!/bin/sh\nexec /opt/pw-browsers/chromium --no-sandbox "$@"\n' > /tmp/chromium
+chmod +x /tmp/chromium
+PCG_BROWSER=/tmp/chromium PCG_UI=terminal python3 test_split.py
+```
+
+**Linux Chromium is not Edge on Windows, but do not assume a difference: the "baseline" below
+turned out to be a real bug (see the correction).** Measured on the HEAD of 2026-09-24, before any change, `test_split.py` fails in ways
+that pass on Edge: the `/` command list measures 0x0 in cell 4, Alt+3 leaves
+`document.activeElement` outside every cell (the headless window has no OS focus), and on the
+terminal edition every status stack measures 0 px. A change is judged by "the failure list did
+not grow", run with and without it (`git stash push -- static static-terminal`).
+
+**Where that baseline came from — it was OUR bug, and it hid the prompt on Edge too
+(corrected 2026-09-29).** This paragraph used to blame "one Blink bug, not our CSS" and claim
+every check passed on Edge. Both were wrong, and the user paid for it: in both editions the
+prompt vanished the moment the first message landed. `.cell.home` was `display: grid`, and
+leaving the home state switched the pane grid -> flex on a `container-type: size` box; after
+that the composer had no layout box (0x0 at 0,0) and the transcript took its room. The "a
+same-value inline style lays it out" observation was real and was misread as proof of a
+browser-only bug. The fix keeps the pane `display: flex` in both states and builds the home
+layout with flex (`.home` flex 1, a `::after` spacer in the web edition). It must say
+`display: flex` explicitly, because the generic `.home { display: none }` also matches the
+pane itself. With it, `test_layout` passes on both editions and `test_split` passes
+167/167 (web) and 172/172 (terminal) here, and `shots.py` no longer carries its "workaround".
+**Lesson: a headless failure that "only happens on Linux" is a bug until proven on the target
+browser; never file it as a baseline without that proof.**
+
+`test_units.py` and `test_reload.py` run here since the same day: `test_units` skips the 11
+checks that need `cmd.exe` or `D:\` path semantics (`check_win`, counted as skipped, never on
+Windows), and its MAX_TABS race runs on a deeper listen backlog, because Linux **resets** the
+overflow of a 5-deep accept queue where Windows queues it. `test_reload` kills with `pkill -P`
+off Windows and builds the transcript folder with `transcript_dir()`'s own `/` rule; this
+container has a real `claude` (2.1.281) and an idle `--resume` is free. Still Windows-only:
+`test_no_console.py`, `test_tui_vocab.py`, `smoke_test.py` (a paid turn) and `setup.ps1`.
+
+**Headless screenshots freeze CSS transitions** (`shots.py`, 2026-09-24). Under
+`--virtual-time-budget` a `transition` on `color`/`background` did not advance: a segmented
+control drew the previously pressed option lit and the newly pressed one dim, while
+`aria-pressed` was right. A probe reading `getComputedStyle` 20 ms after the click saw the same
+mid-transition values. Before reading a state colour off a shot, check the element carries no
+transition — the new-session page's options carry none for that reason.

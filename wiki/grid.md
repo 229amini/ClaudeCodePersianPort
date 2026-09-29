@@ -26,6 +26,35 @@ three document-level chords (shift+tab, Esc, ctrl+o/t) dispatch to the
 focused cell rather than binding per instance. `/split 1|2|4` is the only
 layout command; any other number is refused as text, never sent to the CLI.
 
+### A render may move focus; `focusCell()` waits for it (pcg-0o7, 2026-09-24)
+
+`state` mirrors the focused column's scope, and `withRenderTarget` points `state`, `log` and
+`statusline` at another scope for one synchronous render, then puts back what it saved. That
+swap is only sound if nothing re-points those three while `fn()` runs — and a render can:
+`permission_request` for a conversation in another column calls `showPermission()`, which opens
+**that column's** dialog and `.focus()`es it. `focusin` fires synchronously, so the capture
+listener ran `focusCell()` in the middle of the swap:
+
+1. `stashFocusedScope()` copied `state` — at that moment the *asking* conversation's scope —
+   over the scope of the column being left;
+2. `adoptFocusedScope()` re-pointed `state`, and `setFocusedCell()` re-pointed `log`;
+3. the render's `finally` then restored the **old** column's `state` and `log` under the new focus.
+
+So the left column's running turn read idle (its ledger now held the other conversation's
+`outstanding`), and — worse, and not in the original report — the newly focused conversation's
+next lines were written into the column the keyboard had just left. The sidebar dot and the
+per-cell dot were both wrong because `tabFacts()` reads the same corrupted scopes, which is why
+they agreed and why the bug was first filed against `tabFacts()`.
+
+The fix is at the choke point, not at the dialog: `render.js` counts nested
+`withRenderTarget`s (`inRenderTarget()`), and `focusCell()` re-queues itself with
+`queueMicrotask` while one is open. `fn()` is synchronous, so the microtask cannot run before the
+swap is over; the dialog still takes the keyboard, the bookkeeping just follows one tick later.
+Not "don't focus the dialog": that is a UX decision, and any other focus-moving render
+(`composer.restore`, a future dialog) would reopen the same hole. Both editions carried the
+identical code. Gated in `test_split.py` §6b — negative-tested: without the fix, both assertions
+fail at every size on both editions.
+
 ## Parking, not closing
 
 Shrinking the grid parks the removed cells' tabs — server session stays
@@ -57,6 +86,14 @@ per state, Persian word in `title`. The grid's per-cell dot and the
 sidebar's `.sess-dot` call the same function — one computation, two paint
 sites, plus each cell's own digit badge (`cellBadgeTitle`) for which
 `alt+N` reaches it.
+
+**Shape, not only hue, in both editions (pcg-973, 2026-09-24).** The terminal edition draws the
+state as a glyph (`● ◉ ⊘ ○`, one CSS rule in `static-terminal/style.css`). The web edition's dots
+are empty 7px spans, so the same four shapes are drawn with the box instead: filled `background`
+(running), an `outline` ring around the disc (waiting), an inset ring plus a 135° gradient band
+(error), an inset ring alone (idle). The web spec gate reads each state's outline style, box
+shadow, background image and fill (never a colour) and requires four different signatures, for
+`.tab-dot` and `.sess-dot` both. Negative-tested: the old CSS gives four identical signatures.
 
 ## MA2 worktree, reused per cell
 
@@ -129,6 +166,94 @@ transcript from 58/59% of a 4-up cell to 64/65%, bought from padding and type sc
 hiding a status field — `test_split.py`'s "holds more than it shows" assertion exists to make
 that non-negotiable, and `LOG_SHARE` is keyed by edition (`terminal: 60, web: 40`) because the
 two editions measure differently and one shared number red-gates the other.
+
+## The new-session page (BRIDGEMIND-PORT.md §D8, P4, 2026-09-24)
+
+`static-terminal/js/newsession.js` fills `section#new-session` inside `#stage`; while it is open
+`#stage.ns-open > #grid` is `display: none` (hidden, never destroyed — the conversations keep
+running). It imports only the leaf modules and gets the grid through a bridge from `app.js`
+(`initNewSession`): `currentCwd`, `fits(n)`, `place(tabs, target)`, `say`, `focusBack`.
+
+Three things that are not obvious from the code:
+
+- **The six-conversation limit is read from `/api/tabs` when the page opens**, not from the
+  window's `tabList`. `refreshTabs()` is a 200 ms debounce, so a page opened right after a launch
+  counted the conversations it had just opened as not there — `test_newsession.py` caught it.
+- **`fits(n)` measures `#stage`, not `#grid`**: the grid has no box while the page covers it. It
+  adds the sidebar's tree-minus-rail width back for n > 1, the same correction `addPane()` makes,
+  because more than one pane collapses the sidebar (§1 of the rail section).
+- **Order is the contract.** Opens are sequential (`worktree: "auto"` reserves its name
+  server-side — `next_worktree_name` remembers names handed out in this process, since the CLI
+  makes the folder only after spawn); any refusal closes every tab this launch opened; the
+  reviewer's `plan` posture is set **before** its first message, or the first turn could edit.
+  `/clear` is not this page: it is `chrome.js newChatHere()`, one fresh conversation in this
+  folder, as in the TUI.
+
+## The notification centre (BRIDGEMIND-PORT.md §D9, P5, 2026-09-24)
+
+`static-terminal/js/notices.js` owns the model (window memory, cap 50), the bell in the sidebar
+head and its `[popover]` panel; `app.js noteTabEvent()` decides what is news. The rule: never a
+`replayed` event, never a stop (`aborted_streaming`), and never the focused pane of a **visible**
+window — a hidden window's focused pane is news, because nobody saw it. One unread "needs" per
+conversation; a second permission request is the same news. A notice is read when its
+conversation is placed in, or focused in, a pane, or the window comes back visible on it.
+
+- **The title is asked at paint time**, not stored at creation: session titles arrive with
+  `/api/projects`, often after the event that made the notice. The stored one is only for a
+  closed conversation, whose row is drawn disabled with «این گفتگو بسته شده است».
+- **The OS notification's click jumps through a `pcg:jump` CustomEvent** on `window`:
+  `render.js notifyTurnEnd()` cannot import `app.js`, and the event carries `state.tab` captured
+  when the notification was made.
+- Gate: `test_notices.py` (17 checks, negative-tested against a missing replay guard).
+
+## Folding (BRIDGEMIND-PORT.md §D11, P7, 2026-09-24)
+
+- **A tool run is `.run`**: the folded `details.card.tool.group.run-earlier` (summary: the run's
+  counts plus «+N مورد قبلی») and then the NEWEST card as itself. `toolHome()` moves the previous
+  newest card into the fold as a node, so `state.toolCards` keeps routing into the same body.
+  A lone card still stays loose in the log, which is what the cycle fold's adjacency test needs.
+- **A long user message** (> 8 lines or > 600 characters, counted on the text) is `.msg.user.fold`:
+  the content in `.fold-body` at `6lh`, and a toggle whose words are drawn from `data-label`
+  (generated content), so `/export`, `/copy` and the loop fold never read «بیشتر».
+- **A long history** (> 400 events, `chrome.js renderInto`) draws its last ~300, snapped back to
+  a user turn, with a `.history-earlier` row that renders the previous chunk into a detached node
+  under a fresh scope and moves it in above, holding the scroll. The snap is load-bearing: the
+  spec fixture uses 13 events a turn precisely so an unsnapped cut lands on a `tool_result`.
+- **`.log.cv` (content-visibility) is written but not switched on.** It needs stick-to-bottom,
+  `/export` and find-in-page shown to work on Windows Edge first.
+
+## The Changes panel (BRIDGEMIND-PORT.md §D12, P8, 2026-09-24)
+
+One new route, `GET /api/changes?tab=[&file=][&summary=1]` (`server.py list_changes` /
+`file_changes`), read-only git in the **session's** `history_cwd` — never a path from the request.
+`&file=` must be a name the listing itself returned (anything else is a 400 `unknown-file`, so a
+traversal never reaches git), and it is passed after `--` as an argument list, no shell. Counts are
+against `HEAD`, with a fallback for a repository that has no commit yet; an untracked file comes
+back as an all-added diff built from its text; over 200 KiB of diff answers `too-large` with a line
+count. `-z` is what keeps a Persian name or a name with a space whole — `core.quotepath=off`
+only matters for the non-`-z` forms. Covered in `test_units.py` against a real temp repository.
+
+Client: `static-terminal/js/changes.js`, one per pane in the pane's own `.changes` section; while
+open, `.cell.changes-open > .log` is `display: none`. The files this conversation's own edit tools
+named come first — `render.js` keeps `state.touched` from `tool_use` inputs (absolute, any slash,
+any case) and `mineOf()` matches them against git's repo-relative paths via the listing's `root`.
+A row opens to `renderUnifiedDiff()`, which builds the SAME `.dl` rows as `renderDiff()` through
+one shared `diffLine()`, so spec rule 8 covers both. Two traps met here: an empty last line after
+the final `\n` is not a context row (git's blank context line is `" "`), and a `.diff-stat` is
+`direction: ltr`, so its own logical margins point the wrong way inside an RTL row — the panel uses
+a physical `margin-right: auto`. The state line's «N فایل تغییر کرد» comes from a `summary=1` call
+after each non-replayed `result` (`app.js countChanges`). Gate: `test_changes.py` (15, stubbed).
+
+## App zoom and the prefs store (BRIDGEMIND-PORT.md §D13, P9, 2026-09-24)
+
+`static-terminal/js/prefs.js` is a leaf holding the two values the Windows probe decides:
+`ZOOM_MODE` (`"native"` shipped — Edge's own Ctrl+= / Ctrl+- / Ctrl+0, nothing drawn — or
+`"css"`: `:root.css-zoom { zoom: var(--zoom) }` in steps 80–150 %, the three chords handled by
+`e.code`, a readout in the sidebar footer) and `PREFS_STORE` (`"session"` shipped, or `"local"`,
+which only helps with a stable port — not built, see §D13). The layout record (`pcg.layout`) now
+goes through `readPref`/`writePref`, so one value moves both. `<html data-zoom-mode="css">`
+overrides the constant; that is how `test_zoom.py` (7) proves both branches, and how
+`SHOT_ZOOM=1.25 python shots.py …` renders the 125 % set without editing the module.
 
 ## Open items
 

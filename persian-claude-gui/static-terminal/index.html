@@ -33,6 +33,16 @@
       <path d="M6.9 16.6h4"/>
     </svg>
     <span class="brand" id="brand"></span>
+    <!-- THE BELL (BRIDGEMIND-PORT.md §D9): unread notices from conversations
+         you are not looking at. Its panel is built by js/notices.js. -->
+    <button type="button" id="btn-bell" class="bell-btn" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/>
+        <path d="M10 20.5a2.2 2.2 0 004 0"/>
+      </svg>
+      <span class="bell-count" hidden></span>
+    </button>
     <!-- THE RAIL TOGGLE (TERMINAL-REDESIGN.md §1). The sidebar has two widths
          and the width FOLLOWS THE SPLIT — `/split 2|4` collapses it to 48px so
          the columns get the ~120px it was spending on empty tree, `/split 1`
@@ -64,16 +74,11 @@
        (TERMINAL-REDESIGN.md §3). The three buttons are built in js/app.js, not
        here, for the reason every other Persian label in this shell is: the
        digits are formatted fa-IR and the titles come from strings.fa.js. -->
-  <div class="side-split">
-    <span class="side-split-label" id="split-label"></span>
-    <div id="split-seg" role="group"></div>
-  </div>
-
   <div class="side-scroll">
     <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
          /api/tabs by js/chrome.js; hidden until there is one. -->
     <h2 id="tabs-title" class="side-title" hidden></h2>
-    <nav id="open-tabs" aria-label="نشست‌های باز" hidden></nav>
+    <nav id="open-tabs" aria-label="گفتگوهای باز" hidden></nav>
 
     <h2 id="projects-title" class="side-title"></h2>
     <nav id="projects" aria-label="پروژه‌ها"></nav>
@@ -89,6 +94,12 @@
       </svg>
       <span id="btn-help-label"></span>
     </a>
+    <!-- The five-hour quota is the ACCOUNT's, so it lives here once instead of
+         in every pane's status line (§D5). Painted by js/render.js setStatus. -->
+    <div id="side-quota" class="side-quota" hidden></div>
+    <!-- The app zoom level, only in prefs.js's CSS zoom mode and only when it
+         is not 100% (BRIDGEMIND-PORT.md §D13). -->
+    <div id="side-zoom" class="side-zoom" hidden></div>
     <!-- Which build is running. server.py substitutes {{VERSION}} into every
          .html it serves, so this and the window title cannot disagree with the
          code that is actually answering. LTR by markup (spec rule 2). -->
@@ -111,6 +122,9 @@
      avoid (MA3-T0 turned every one of them into a class). -->
 <div id="stage">
   <div id="grid" data-split="1"></div>
+  <!-- The new-session page (BRIDGEMIND-PORT.md §D8); js/newsession.js fills it.
+       While it is open #grid is hidden, never destroyed. -->
+  <section id="new-session" class="ns" hidden></section>
 </div>
 
 <template id="cell-tpl">
@@ -131,9 +145,19 @@
     <span class="cell-dot" role="img" data-status="idle" hidden>●</span>
     <bdi class="topbar-title" dir="auto"></bdi>
     <bdi class="topbar-name"></bdi>
+    <!-- BRIDGEMIND-PORT.md §D5: the pane's own three controls, at its END.
+         Named from strings.fa.js by js/app.js (no text in the markup). -->
+    <span class="pane-actions">
+      <button type="button" class="pane-btn pane-menu"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+      <button type="button" class="pane-btn pane-zoom"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></button>
+      <button type="button" class="pane-btn pane-close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </span>
   </header>
 
   <main class="log" aria-live="polite" aria-label="گفتگو"></main>
+  <!-- THE CHANGES PANEL (BRIDGEMIND-PORT.md §D12), js/changes.js. While it is
+       open the transcript above is hidden, never removed. -->
+  <section class="changes" hidden></section>
 
   <!-- Home / empty state: THE TUI'S WELCOME BOX (V2-PLAN §2 «Delete», §6).
        The greeting and its four action cards are gone. What the terminal
@@ -162,6 +186,12 @@
            bind (js/chrome.js). -->
       <ul class="wel-tips"></ul>
     </div>
+    <!-- A pane with NO conversation in it (§D5): one line, one button - never
+         the welcome box again, and never a composer that can send nowhere. -->
+    <div class="empty-pane">
+      <p class="empty-line" dir="auto"></p>
+      <button type="button" class="empty-btn"></button>
+    </div>
   </section>
 
   <div class="replay-banner" hidden></div>
@@ -189,6 +219,9 @@
 
   <dialog class="perm">
     <form class="perm-form">
+      <!-- What KIND of action is asking (BRIDGEMIND-PORT.md §D10), js/perm.js
+           permKind(): read before the tool name, which is English. -->
+      <p class="perm-kind" dir="auto" hidden></p>
       <h2 class="perm-title"></h2>
       <p class="perm-body" dir="auto"></p>
       <!-- Which conversation is asking, when it is not the one on screen: one
@@ -308,7 +341,6 @@
         </button>
       </div>
     </div>
-    <div class="composer-hint meta"></div>
   </form>
 
   <footer class="statusline" aria-label="نوار وضعیت"></footer>
