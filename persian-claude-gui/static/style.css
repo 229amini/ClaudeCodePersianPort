@@ -864,6 +864,12 @@ pre, code, .path, .diff, .tool-output, .mono {
   line-height: 1.5;
 }
 .greeting .mark { color: var(--accent); flex: none; }
+/* One line, whatever the hour. The greeting is picked by the clock, and the
+   evening one («عصر بخیر! چه کاری انجام دهیم؟») is the longest: in a 4-up
+   cell of a 760x480 window it wrapped to two lines and pushed the empty cell
+   3px off the window — a layout gate that failed only after 17:00. */
+.greeting { max-inline-size: 100%; }
+.greeting-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- home action cards ------------------------------------------------------ */
 /* Same reading column as the composer below them, so the home state reads as
