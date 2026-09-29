@@ -95,6 +95,9 @@ const PROJECTS = {
    (the CLI's own side of an `@path` read fails silently). */
 let attachStatus = 200;
 let messageStatus = 200;      // §D10: a send the server refuses
+// Kept for ONE use: a real round trip to the server is the only wait that
+// takes real time under --virtual-time-budget (see drop() below).
+const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
@@ -330,7 +333,11 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
      not come back yet — which read as "the server said yes" and then landed a
      chip in the middle of the next case. (Why: --virtual-time-budget skips a
      timer forward instantly but does NOT wait on a FileReader, so a sleep here
-     buys real time only by accident.)
+     buys real time only by accident. It did: 25 x sleep(10) ran out before the
+     reader answered, and «an image still posts» failed with called=False
+     (pcg-l2i). Each poll is now a real request to the server instead, and
+     virtual time holds still while a request is out, so the reader gets the
+     real milliseconds the old loop only pretended to give it.)
 
      The loop is bounded tightly on purpose. A drop that never resolves burns
      its whole budget, and four of those would run the page past the 9 s virtual
@@ -342,7 +349,10 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
     dt.items.add(file);
     dropTarget.dispatchEvent(new DragEvent("drop",
       { dataTransfer: dt, bubbles: true, cancelable: true }));
-    for (let i = 0; i < 25 && settled() < expect; i++) await sleep(10);
+    for (let i = 0; i < 200 && settled() < expect; i++) {
+      await realFetch("/api/tabs" + location.search + "&poll=" + i, { cache: "no-store" })
+        .catch(() => {});
+    }
   };
 
   let attachMark = calls.length;
