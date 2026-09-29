@@ -623,6 +623,7 @@ function toggleRail() {
 
 export const tabs = new Map();   // tab -> {node, scope, chrome, cell}
 let tabList = [];                // the server's own view, for the sidebar
+let layoutPanel = null;          // the layout control's panel (pcg-7bi), below
 // Finished turns a BACKGROUND tab collected since it was last on screen.
 // tab -> count; the entry is dropped the moment the tab becomes visible.
 const unread = new Map();
@@ -1202,6 +1203,8 @@ export function applyTabs(data) {
     else blank(focusedCell());
   }
   paintTabs();
+  // An open layout panel counts the open conversations: keep it true.
+  if (layoutPanel?.matches(":popover-open")) paintLayout();
 }
 
 // chrome.js draws the sidebar and the session rows; it asks for a switch or a
@@ -1223,6 +1226,110 @@ setTabBridge({
   newSession: (opts) => openNewSession(opts),
 });
 
+/* Would n panes fit `box`, with the sidebar at the width n panes will give
+   it: more than one collapses it to the rail (§1) unless a press says not. */
+function fitsPanes(n, box) {
+  if (n <= 1) return true;
+  let { W, H } = box;
+  if (railOverride === null && !document.body.classList.contains("rail")) {
+    const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
+    W += Math.max(0, side - 48);
+  }
+  return !!layoutFor(n, W, H, gapPx(), true);
+}
+
+/* --- the layout control (pcg-7bi) --------------------------------------------
+   How many of the OPEN conversations are on screen. More panes take the open
+   conversations not yet shown, in the sidebar's order; fewer send the rest
+   back to the sidebar, still running (setSplit parks them). Sizes stay
+   draggable at the dividers; «هم‌اندازه» is `equalize`, Alt+= on the keys. */
+function arrange(n) {
+  if (!setSplit(n)) return;
+  const free = tabList.map((t) => t.tab).filter((one) => !cellOf(one));
+  for (const cell of cells) if (!cell.tab && free.length) placeIn(cell, free.shift());
+  paintTabs();
+}
+
+const layoutBtn = document.getElementById("btn-layout");
+
+function paintLayout() {
+  const title = document.createElement("h2");
+  title.textContent = FA.layoutButton;
+  const open = document.createElement("p");
+  open.className = "layout-open";
+  open.textContent = FA.layoutOpen.replace("{n}", tabList.length.toLocaleString("fa-IR"));
+  const seg = document.createElement("div");
+  seg.className = "ns-seg";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", FA.layoutButton);
+  for (let n = 1; n <= MAX_PANES; n++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ns-opt";
+    b.dataset.key = String(n);
+    b.textContent = n.toLocaleString("fa-IR");
+    b.setAttribute("aria-pressed", String(n === cells.length));
+    b.disabled = !fitsPanes(n, gridBox());
+    b.title = b.disabled ? FA.nsNoRoom : FA.layoutCount.replace("{n}", n.toLocaleString("fa-IR"));
+    b.addEventListener("click", () => {
+      arrange(n);
+      paintLayout();
+      placeLayout();
+      layoutPanel.querySelector(`[data-key="${n}"]`)?.focus();
+    });
+    seg.append(b);
+  }
+  const equal = document.createElement("button");
+  equal.type = "button";
+  equal.className = "layout-equal";
+  // The chord in its own LTR box: a trailing `=` is neutral, and inside the
+  // Persian run «(Alt+=)» drew as «(=+Alt)».
+  const chord = document.createElement("kbd");
+  chord.dir = "ltr";
+  chord.textContent = FA.layoutEqualizeKey;
+  equal.append(FA.layoutEqualize + " ", chord);
+  equal.disabled = cells.length < 2;
+  equal.addEventListener("click", () => equalize());
+  const hint = document.createElement("p");
+  hint.className = "layout-hint";
+  hint.textContent = FA.layoutHint;
+  layoutPanel.replaceChildren(title, open, seg, equal, hint);
+}
+
+/* Hangs off the button toward the stage, as the bell's panel does
+   (notices.js place): its right edge on the sidebar's left edge. CSS px. */
+function placeLayout() {
+  const side = document.getElementById("sidebar")?.getBoundingClientRect();
+  const at = layoutBtn.getBoundingClientRect();
+  const gap = 8;
+  layoutPanel.style.left = "auto";
+  layoutPanel.style.bottom = "auto";
+  layoutPanel.style.right = Math.max(gap, cssPx(innerWidth - (side ? side.left : at.left)) + gap) + "px";
+  const h = layoutPanel.offsetHeight;
+  layoutPanel.style.top = Math.max(gap, Math.min(cssPx(at.top), cssPx(innerHeight) - h - gap)) + "px";
+}
+
+if (layoutBtn) {
+  layoutBtn.title = FA.layoutButton;
+  layoutBtn.setAttribute("aria-label", FA.layoutButton);
+  layoutPanel = document.createElement("div");
+  layoutPanel.id = "layout-panel";
+  layoutPanel.className = "bell-panel layout-panel";
+  layoutPanel.popover = "auto";
+  document.body.append(layoutPanel);
+  layoutBtn.setAttribute("aria-controls", layoutPanel.id);
+  layoutPanel.addEventListener("toggle", (e) => {
+    layoutBtn.setAttribute("aria-expanded", String(e.newState === "open"));
+  });
+  layoutBtn.addEventListener("click", () => {
+    if (layoutPanel.matches(":popover-open")) { layoutPanel.hidePopover(); return; }
+    paintLayout();
+    layoutPanel.showPopover();
+    placeLayout();
+    layoutPanel.querySelector('[aria-pressed="true"]')?.focus();
+  });
+}
+
 /* The new-session page's view of the grid (BRIDGEMIND-PORT.md §D8). Handed in,
    because newsession.js may not import this module. */
 function stageBox() {       // CSS px, as gridBox()
@@ -1242,15 +1349,7 @@ initNewSession({
   // Would N panes fit this window? Measured off #stage (the grid is hidden
   // while the page is open), with the sidebar at the width N panes will give
   // it: more than one collapses it to the rail (§1) unless a press says not.
-  fits(n) {
-    if (n <= 1) return true;
-    let { W, H } = stageBox();
-    if (railOverride === null && !document.body.classList.contains("rail")) {
-      const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
-      W += Math.max(0, side - 48);
-    }
-    return !!layoutFor(n, W, H, gapPx(), true);
-  },
+  fits: (n) => fitsPanes(n, stageBox()),
   focusBack: () => focusedCell()?.composer.focus(),
   // Slot order is pane order: slot ۱ in pane ۱. A target is the empty pane
   // whose button asked, and it gets the one conversation.
