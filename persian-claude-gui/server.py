@@ -54,7 +54,7 @@ COOKIE_NAME = "pcg_token"
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
     "web":      ("static",          "کلاد فارسی",            "1.6.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.6.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.6.1"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -2160,6 +2160,65 @@ def export_transcript(text: str) -> tuple[str | None, str | None]:
     except OSError as exc:
         return None, str(exc)
     return str(target), None
+
+
+# The turn-end signal (render.js flashTaskbar). A page cannot flash its own
+# taskbar button and Edge app mode never grants a Notification (measured on the
+# target PC, wiki/grid.md M2), so the server does it: FlashWindowEx through
+# stdlib ctypes. The window is found by the title the page itself sent,
+# compared with the BiDi marks stripped (Chromium may wrap an RTL title in
+# them) and as a substring (Edge may append its own name). The foreground
+# window is skipped -- it is being looked at -- and FLASHW_TIMERNOFG stops the
+# flash by itself once the window comes to the front.
+FLASHW_TRAY, FLASHW_TIMERNOFG = 0x2, 0xC
+BIDI_MARKS = dict.fromkeys(map(ord, "\u200e\u200f\u202a\u202b\u202c\u202d\u202e"
+                                    "\u2066\u2067\u2068\u2069"))
+
+
+def flash_window(title: str) -> int:
+    """Flash the taskbar button of every window showing `title`. Returns how many."""
+    title = title.translate(BIDI_MARKS).strip()
+    if sys.platform != "win32" or not title:
+        return 0
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND),
+                        ("dwFlags", wintypes.DWORD), ("uCount", wintypes.UINT),
+                        ("dwTimeout", wintypes.DWORD)]
+
+        user32 = ctypes.WinDLL("user32")
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        foreground = user32.GetForegroundWindow()
+        found: list[int] = []
+
+        def visit(hwnd, _lparam):
+            if hwnd == foreground or not user32.IsWindowVisible(hwnd):
+                return True
+            cls = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(hwnd, cls, 64)
+            if cls.value != "Chrome_WidgetWin_1":
+                return True
+            size = user32.GetWindowTextLengthW(hwnd)
+            if size > 0:
+                text = ctypes.create_unicode_buffer(size + 1)
+                user32.GetWindowTextW(hwnd, text, size + 1)
+                if title in text.value.translate(BIDI_MARKS):
+                    found.append(hwnd)
+            return True
+
+        callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(visit)
+        user32.EnumWindows(callback, 0)
+        for hwnd in found:
+            info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd,
+                              FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0)
+            user32.FlashWindowEx(ctypes.byref(info))
+        return len(found)
+    except (OSError, AttributeError, ValueError):
+        # A nicety: a failed flash must never fail the request it rides on.
+        return 0
 
 
 def pick_files(interpreter: Path) -> list[str]:
@@ -4509,6 +4568,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": error})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "path": path})
+        elif parsed.path == "/api/attention":
+            title = body.get("title")
+            flashed = flash_window(title[:512]) if isinstance(title, str) else 0
+            self._send_json(HTTPStatus.OK, {"ok": True, "flashed": flashed})
         elif parsed.path == "/api/attach/pick":
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
         elif parsed.path == "/api/attach/paste":

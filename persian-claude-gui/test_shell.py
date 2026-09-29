@@ -16,8 +16,9 @@ what v2.5 is answerable for:
   - the posture row follows the WRAPPER's posture rather than the CLI's raw
     `permissionMode`, because «محتاط» and «خودکار» are both `default` down the
     pipe and only the wrapper knows which one the user picked;
-  - a turn that settles while the window is hidden raises one notification, and
-    a REPLAYED settle raises none — a refresh must not announce history;
+  - a turn that settles while the window is hidden asks the server for one
+    taskbar flash, naming the window by its title, and a REPLAYED settle asks
+    for none — a refresh must not announce history;
   - every window-local command of §3.5 is answered here, at the right route,
     with the right body: /copy /export /status /resume /cd /add-dir /branch
     /btw /bash /config /hooks /keybindings /memory /tasks;
@@ -132,15 +133,10 @@ Object.defineProperty(navigator, "clipboard", {
   value: { writeText: (text) => { copied.push(text); return Promise.resolve(); } },
 });
 
-/* A hidden window, and a notification that records instead of showing. */
-const notes = [];
+/* A hidden window. The turn-end signal is a taskbar flash the SERVER does
+   (render.js flashTaskbar), so what is measured is the POST that asks for it. */
 Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
-window.Notification = class {
-  static permission = "granted";
-  static requestPermission() { return Promise.resolve("granted"); }
-  constructor(title, opts) { notes.push({ title, opts }); }
-  addEventListener() {}
-};
+const flashes = (mark) => calls.slice(mark).filter((c) => c.url.startsWith("/api/attention"));
 
 const send = async (text, wait = 90) => {
   input.value = text;
@@ -183,18 +179,19 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   await sleep(60);
   out.chipAfterWrapper = document.querySelector(".posture-chip-name")?.textContent ?? "";
 
-  /* --- the turn-end notification ------------------------------------------ */
+  /* --- the turn-end taskbar flash ----------------------------------------- */
+  const flashMark = calls.length;
   window.renderEvent({ type: "assistant", message: { content: [
     { type: "text", text: "\u067e\u0627\u0633\u062e \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a." }] } });
   window.renderEvent({ type: "result", subtype: "success", total_cost_usd: 0.0102 });
   await sleep(80);
-  out.notifiedLive = notes.length;
+  out.notifiedLive = flashes(flashMark).length;
   window.renderEvent({ type: "result", subtype: "success", total_cost_usd: 0.02,
                        replayed: true });
   await sleep(80);
-  out.notifiedAfterReplay = notes.length;
-  out.notifyTitle = notes[0]?.title ?? "";
-  out.faNotify = FA.notifyDone;
+  out.notifiedAfterReplay = flashes(flashMark).length;
+  out.notifyTitle = flashes(flashMark)[0]?.body?.title ?? "";
+  out.faNotify = document.title;
 
   /* --- §3.5 /copy and /export --------------------------------------------- */
   await send("/copy");
@@ -537,11 +534,12 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           all(x and x in body for x in (m.get("faEffortLabel"), m.get("faStyleLabel"))),
           body[:80] or "no /status body")
 
-    check("a settle while the window is hidden raises ONE notification",
-          m.get("notifiedLive") == 1 and m.get("notifyTitle") == m.get("faNotify"),
+    check("a settle while the window is hidden asks for ONE taskbar flash, by its title",
+          m.get("notifiedLive") == 1 and m.get("notifyTitle")
+          and m.get("notifyTitle") == m.get("faNotify"),
           f"{m.get('notifiedLive')} \u00d7 \u00ab{m.get('notifyTitle')}\u00bb")
 
-    check("a REPLAYED settle raises none",
+    check("a REPLAYED settle asks for none",
           m.get("notifiedAfterReplay") == 1, str(m.get("notifiedAfterReplay")))
 
     check("/copy hands the last answer to the clipboard",

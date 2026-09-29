@@ -1069,40 +1069,23 @@ function settlePulse() {
    stdin pipe of a CLI that is still working, and `_recap_wanted` then swallows
    the running turn's real reply (wiki/parity-chrome.md "The session recap"). */
 /* «The turn is over and you are not looking» (V2-PLAN §3.4, last row).
-   A DESKTOP notification, no sound: this window is a terminal replacement and
-   a terminal does not chime.
+   The TASKBAR BUTTON flashes, no sound: this window is a terminal replacement
+   and a terminal does not chime. It was a desktop Notification until the
+   target PC measured that Edge app mode never shows the permission prompt --
+   requestPermission() resolves "default" silently, so it never fired
+   (wiki/grid.md, M2). A page cannot flash its own taskbar button, so the
+   server does it (server.py flash_window), finding the window by the title
+   this page gave it.
 
-   Three guards, and each one is a defect it prevents. `live` is false for the
-   SSE backlog a reloading window replays — every finished turn in the history
-   runs through endBatch() again, and without it a refresh at 3 a.m. would fire
-   a notification per turn ever taken. `document.hidden` is the whole point: a
-   turn that ended while the person was watching needs no announcement. And
-   permission is asked for only at the moment there is something to say, never
-   at load — a prompt on startup is the thing everyone denies for ever. */
-function notifyTurnEnd() {
-  if (typeof Notification === "undefined") return;
-  const say = () => {
-    // Between the ask and the answer the user may have come back.
-    if (Notification.permission !== "granted" || !document.hidden) return;
-    try {
-      const note = new Notification(FA.notifyDone, {
-        body: state.status.cwd || FA.appName, silent: true,
-      });
-      // Jumps to the conversation that finished, not just to the window
-      // (§D9). An event, because this module cannot import app.js.
-      const tab = state.tab;
-      note.addEventListener("click", () =>
-        window.dispatchEvent(new CustomEvent("pcg:jump", { detail: { tab } })));
-    } catch (err) {
-      // Notifications are a nicety; a browser that refuses to construct one
-      // (or a page that lost its permission mid-session) must not break the
-      // settle it is hanging off.
-    }
-  };
-  if (Notification.permission === "granted") say();
-  else if (Notification.permission === "default") {
-    Notification.requestPermission().then(say).catch(() => {});
-  }
+   Two guards, and each one is a defect it prevents. `live` is false for the
+   SSE backlog a reloading window replays -- every finished turn in the history
+   runs through endBatch() again, and without it a refresh would flash once
+   per turn ever taken. Not looking is `document.hidden` (minimised) OR no
+   focus (another program in front): a turn that ended while the person was
+   watching needs no announcement. And the flash stops by itself when the
+   window comes to the front, so there is nothing to clear here. */
+function flashTaskbar() {
+  api("/api/attention", { title: document.title }).catch(() => {});
 }
 
 /* `live` is false when this settle is replaying history rather than watching
@@ -1113,7 +1096,7 @@ function endBatch(settled = true, live = true) {
   settlePulse();
   resetTurn();
   toChrome("busy", false);
-  if (live && settled && state.cell && document.hidden) notifyTurnEnd();
+  if (live && settled && state.cell && (document.hidden || !document.hasFocus())) flashTaskbar();
   const recap = settled && state.recapWorthy;
   state.recapWorthy = false;
   // The CLI writes its own «※ recap: …» when you come back to a turn you were
