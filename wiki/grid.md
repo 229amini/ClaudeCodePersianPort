@@ -295,6 +295,13 @@ All three swappable values stay as shipped:
   count 1, then 2). A random port is a new origin every run (count 1 each time), and the app uses a
   random port, so `PREFS_STORE` stays `"session"`: `"local"` would buy nothing without a stable
   port. `devicePixelRatio` was 1.1 on every run, which is Windows display scaling, not Edge zoom.
+  **Notifications: `Notification.requestPermission()` showed no prompt at all** and resolved
+  `"default"` (user confirmed nothing appeared). So `render.js`'s turn-end OS notification
+  (it asks on `"default"`, fires only on `"granted"`) never fires on this PC. Open: whether that
+  is app mode, the per-run origin, or Edge's quiet-permission UI; the in-window bell is
+  unaffected.
+- **M3, font:** the three vendored static Vazirmatn weights read correctly at 13 and 15 px
+  (user confirmed by eye). No variable build was tried (`--font` not passed).
 - **M4, root CSS zoom:** the probe's naive `style.left = rect.left` menu landed at 1.25 × the anchor
   (847→1059, 1065→1337), which is the rects-are-screen-px rule above, measured on the target
   Edge. The shipped `cssPx()` fix stands.
