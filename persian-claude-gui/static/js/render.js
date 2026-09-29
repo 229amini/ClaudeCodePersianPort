@@ -2172,6 +2172,12 @@ export function renderEvent(ev) {
         for (const key of ["context", "cost", "quota"]) {
           if (typeof ev[key] === "number") patch[key] = ev[key];
         }
+        // The composer bar's panel (COMPOSER-BAR.md). `limits` may be null:
+        // a login with no plan limits, which the panel says out loud.
+        if ("limits" in ev) patch.limits = ev.limits;
+        if (ev.context_detail && typeof ev.context_detail === "object") {
+          patch.contextDetail = ev.context_detail;
+        }
         setStatus(patch);
       } else if (ev.subtype === "statusline") {
         setStatus({ custom: ev.segments || (ev.text ? [{ text: ev.text }] : null) });
