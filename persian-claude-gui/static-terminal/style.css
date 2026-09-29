@@ -1393,6 +1393,10 @@ body.rail .rail-icon { transform: scaleX(-1); }
   justify-content: center;
   inline-size: 22px;
   block-size: 22px;
+  /* The generic `button { min-height: 44px }` would otherwise win the height
+     and make every pane header 47px - measured, it cost the 4-up transcript
+     its 60%. */
+  min-height: 0;
   padding: 0;
   border: 0;
   border-radius: var(--r-chip);
@@ -1500,7 +1504,18 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 .cell.home .topbar { min-height: 0; padding: 4px 24px 0; }
 
 .cell.home {
-  display: grid;
+  /* STAYS FLEX. This used to be `display: grid`, and leaving the home state
+     flipped the cell grid -> flex on a `container-type: size` box - after
+     which Chromium (Edge included) laid the composer out at 0x0 and the
+     transcript took its room: the prompt vanished the moment the first
+     message landed, in both editions (measured 2026-09-29; either removing
+     the size containment or never switching display cures it, and the cqh
+     rules need the containment). So the home layout is built with flex.
+     `display: flex` is written out, not inherited from .cell: the generic
+     `.home { display: none }` also matches this element (it carries the
+     class too), and without the declaration here the whole pane vanished. */
+  display: flex;
+
   /* TP1 §2/§3: the greeting grows from the TOP and the prompt + status line are
      bottom-anchored TOGETHER. So the one elastic track is the greeting's, and
      the two rows under it are `auto` — the status line used to sit in a
@@ -1515,10 +1530,13 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 
      Four rows, not three: the first is the emptied topbar above (the digit
      badge), and giving it a track of its own is what keeps the greeting, the
-     prompt and the status line in rows of their own. */
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+     prompt and the status line in rows of their own.
+     (Written as flex now - see above: the greeting is the one elastic item,
+     flex: 1 1 0 with min-height 0, and the prompt and the status line follow
+     it at their own height.) */
 }
 .cell.home > .home {
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   /* Flush at the TOP, and at the START of the line — which under dir="rtl" is

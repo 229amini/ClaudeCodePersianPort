@@ -816,15 +816,22 @@ pre, code, .path, .diff, .tool-output, .mono {
    `/split 1` would shift the greeting into the status line's row. */
 .cell.home .topbar { min-height: 0; padding-block: 8px 0; }
 
+/* Greeting + cards bottom-aligned above the composer, the status line at the
+   foot. The greeting never drops below its content (the cards would be
+   clipped from the top on a short window); the empty space under the
+   composer (::after) is what gives way instead, 1 : 1.2 as before. */
 .cell.home {
-  display: grid;
-  /* Greeting + cards bottom-aligned above the composer. The first row never
-     drops below its content (the cards would be clipped from the top on a short
-     window); the trailing empty row is what gives way instead.
-     `min-content` on the first row and `minmax(0, …)` on the last: a quarter
-     of an 800px window is 385px tall, and a row that cannot shrink below its
-     own content pushes the composer out of the column. */
-  grid-template-rows: auto minmax(min-content, 1fr) auto minmax(0, 1.2fr);
+  /* STAYS FLEX. This used to be `display: grid`, and leaving the home state
+     flipped the cell grid -> flex on a `container-type: size` box - after
+     which Chromium (Edge included) laid the composer out at 0x0 and the
+     transcript took its room: the prompt vanished the moment the first
+     message landed, in both editions (measured 2026-09-29; either removing
+     the size containment or never switching display cures it, and the cqh
+     rules need the containment). So the home layout is built with flex.
+     `display: flex` is written out, not inherited from .cell: the generic
+     `.home { display: none }` also matches this element (it carries the
+     class too), and without the declaration here the whole pane vanished. */
+  display: flex;
 }
 .cell.home > .home {
   display: flex;
@@ -832,9 +839,14 @@ pre, code, .path, .diff, .tool-output, .mono {
   justify-content: flex-end;
   align-items: center;
   padding-block-end: 26px;
+  flex: 1 1 0;
+}
+.cell.home::after {
+  content: "";
+  flex: 1.2 1 0;
   min-height: 0;
 }
-.cell.home .statusline { align-self: end; }
+.cell.home > .statusline { order: 1; }
 
 .greeting {
   display: flex;

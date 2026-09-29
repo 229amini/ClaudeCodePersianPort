@@ -39,6 +39,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   **2026-09-24:** running the headless gates on Linux Chromium (`PCG_BROWSER` + a
   `--no-sandbox` wrapper), and the Chromium 141 stale-layout bug that explains the failures only
   that environment has.
+  **2026-09-29:** the "Linux Chromium baseline" was a real bug that hid the prompt on Edge too.
+  See the correction in §"Headless gates on Linux" before filing any headless failure as
+  environmental.
 - [frontend-modules.md](frontend-modules.md) — **read before editing `static/js/`.** The
   seven-module layout, the import cycle it rests on and the one invariant that keeps it safe, and why the CSS
   cascade layers are ordered the way they are (not the way the plan sketched). Since v2.3 it also

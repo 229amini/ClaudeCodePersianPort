@@ -288,26 +288,27 @@ chmod +x /tmp/chromium
 PCG_BROWSER=/tmp/chromium PCG_UI=terminal python3 test_split.py
 ```
 
-**Linux Chromium is not Edge on Windows: compare against a baseline, never against the Windows
-numbers.** Measured on the HEAD of 2026-09-24, before any change, `test_split.py` fails in ways
+**Linux Chromium is not Edge on Windows, but do not assume a difference: the "baseline" below
+turned out to be a real bug (see the correction).** Measured on the HEAD of 2026-09-24, before any change, `test_split.py` fails in ways
 that pass on Edge: the `/` command list measures 0x0 in cell 4, Alt+3 leaves
 `document.activeElement` outside every cell (the headless window has no OS focus), and on the
 terminal edition every status stack measures 0 px. A change is judged by "the failure list did
 not grow", run with and without it (`git stash push -- static static-terminal`).
 
-**Where that baseline comes from — one Blink bug, not our CSS** (measured 2026-09-24). The
-container's Chromium is **141**, older than the Edge the colleague runs. Once a cell leaves the
-home state (`.cell.home` → `.cell`, grid → flex on a `container-type: size` box), its
-`form.composer` keeps `display: block` and every ancestor is laid out, yet it measures **0×0 at
-(0,0)** and the status line sits flush against the transcript, as if the form were not in the
-flow. Writing any inline style on the composer, **even `contain: none`, which is already its
-computed value**, lays it out at full size on the spot. A same-value write that changes layout is
-a stale-layout invalidation bug; no stylesheet can produce it. Everything inside the composer
-follows: the `/` popup reads 0×0 with no cap, and Alt+3's `composer.focus()` is a no-op on a
-field with no box, so `activeElement` is outside every cell. The terminal edition's 0 px status
-stacks show the same symptom but were not traced to this bug. A nudge at the `.home` toggle
-(`chrome.js`) did **not** clear it, so no product-side workaround is kept.
-Every one of these checks passes on Edge on Windows.
+**Where that baseline came from — it was OUR bug, and it hid the prompt on Edge too
+(corrected 2026-09-29).** This paragraph used to blame "one Blink bug, not our CSS" and claim
+every check passed on Edge. Both were wrong, and the user paid for it: in both editions the
+prompt vanished the moment the first message landed. `.cell.home` was `display: grid`, and
+leaving the home state switched the pane grid -> flex on a `container-type: size` box; after
+that the composer had no layout box (0x0 at 0,0) and the transcript took its room. The "a
+same-value inline style lays it out" observation was real and was misread as proof of a
+browser-only bug. The fix keeps the pane `display: flex` in both states and builds the home
+layout with flex (`.home` flex 1, a `::after` spacer in the web edition). It must say
+`display: flex` explicitly, because the generic `.home { display: none }` also matches the
+pane itself. With it, `test_layout` passes on both editions and `test_split` passes
+167/167 (web) and 172/172 (terminal) here, and `shots.py` no longer carries its "workaround".
+**Lesson: a headless failure that "only happens on Linux" is a bug until proven on the target
+browser; never file it as a baseline without that proof.**
 
 `test_units.py` and `test_reload.py` run here since the same day: `test_units` skips the 11
 checks that need `cmd.exe` or `D:\` path semantics (`check_win`, counted as skipped, never on

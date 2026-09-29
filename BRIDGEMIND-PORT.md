@@ -669,7 +669,9 @@ opens it in Edge **app-mode** like the shortcut does, and shows a table on scree
 
 > **Build status, 2026-09-24.** P0–P9 are built on `claude/sleepy-hypatia-gaj477` and P10's
 > docs are written (terminal edition 0.2.0). Every phase's shot set was taken in the Linux
-> container with the Chromium 141 workaround, **not yet on Windows Edge**. P0's measurements
+> container, **not yet on Windows Edge**. (Until 2026-09-29 those shots used a "Chromium 141
+> workaround" that was really hiding our own vanishing-prompt bug; the bug is fixed and the
+> workaround is gone — `wiki/dev-environment.md`.) P0's measurements
 > (M1–M4, M6: run `probe_edge.py` on the target PC) are still open. They decide three swappable
 > values: the Alt chords in `PANE_KEYS`, and `ZOOM_MODE` and `PREFS_STORE` in `prefs.js`. M5 (the
 > worktree name race) was answered in code, by the server's name reservation.
