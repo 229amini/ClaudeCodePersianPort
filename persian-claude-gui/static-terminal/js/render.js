@@ -1068,7 +1068,8 @@ function settlePulse() {
    same event, so `request_recap`'s busy-guard passes, `/recap` goes down the
    stdin pipe of a CLI that is still working, and `_recap_wanted` then swallows
    the running turn's real reply (wiki/parity-chrome.md "The session recap"). */
-/* «The turn is over and you are not looking» (V2-PLAN §3.4, last row).
+/* «The turn is over, or it is waiting on you, and you are not looking»
+   (V2-PLAN §3.4, last row).
    The TASKBAR BUTTON flashes, no sound: this window is a terminal replacement
    and a terminal does not chime. It was a desktop Notification until the
    target PC measured that Edge app mode never shows the permission prompt --
@@ -1077,14 +1078,21 @@ function settlePulse() {
    server does it (server.py flash_window), finding the window by the title
    this page gave it.
 
-   Two guards, and each one is a defect it prevents. `live` is false for the
-   SSE backlog a reloading window replays -- every finished turn in the history
-   runs through endBatch() again, and without it a refresh would flash once
-   per turn ever taken. Not looking is `document.hidden` (minimised) OR no
-   focus (another program in front): a turn that ended while the person was
-   watching needs no announcement. And the flash stops by itself when the
-   window comes to the front, so there is nothing to clear here. */
+   Two callers: a settled turn (endBatch) and a permission request, which is
+   a turn BLOCKED on the person -- the one moment a flash is worth most. Only
+   a real ask reaches here: an auto-approved or remembered tool is published
+   as permission_resolved and never as a request.
+
+   Two guards, and each one is a defect it prevents. Neither caller may flash
+   for a replay: the SSE backlog a reloading window replays runs every
+   finished turn and every old request through here again, and without it a
+   refresh would flash once per turn ever taken. And not looking is
+   `document.hidden` (minimised) OR no focus (another program in front),
+   checked here: something that happened while the person was watching needs
+   no announcement. The flash stops by itself when the window comes to the
+   front, so there is nothing to clear. */
 function flashTaskbar() {
+  if (!document.hidden && document.hasFocus()) return;
   api("/api/attention", { title: document.title }).catch(() => {});
 }
 
@@ -1096,7 +1104,7 @@ function endBatch(settled = true, live = true) {
   settlePulse();
   resetTurn();
   toChrome("busy", false);
-  if (live && settled && state.cell && (document.hidden || !document.hasFocus())) flashTaskbar();
+  if (live && settled && state.cell) flashTaskbar();
   const recap = settled && state.recapWorthy;
   state.recapWorthy = false;
   // The CLI writes its own «※ recap: …» when you come back to a turn you were
@@ -2820,6 +2828,7 @@ export function renderEvent(ev) {
         // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
         // blocked until its timeout with nothing on screen.
         showPermission(ev);
+        if (!ev.replayed) flashTaskbar();
       } else if (ev.subtype === "permission_resolved") {
         pulsePhase("tools");
         dismissPermission(ev.request_id);
