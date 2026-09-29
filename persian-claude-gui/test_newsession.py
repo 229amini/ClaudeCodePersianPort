@@ -78,6 +78,7 @@ window.fetch = async (url, init) => {
     openTabs.push({ tab, cwd: body.path });
     return json({ tab, cwd: body.path });
   }
+  if (u.startsWith("/api/project/pick")) return json({ path: "C:/kar/tazeh", git: true });
   if (u.startsWith("/api/tab/close")) {
     openTabs = openTabs.filter((t) => t.tab !== body.tab);
     return json({ ok: true, active: "" });
@@ -243,6 +244,28 @@ const cellCount = () => document.querySelectorAll("#grid .cell").length;
   out.clearOpened = since(mark).filter((c) => c.url.startsWith("/api/project/open"))
     .map((c) => c.body.path).join();
 
+  // 9. A folder and a branch per conversation (pcg-6aj), and a picked repo
+  //    that can take a branch (pcg-h9p).
+  await open();
+  count(2).click(); await sleep(20);
+  const rows = () => [...page.querySelectorAll(".ns-slot-folder")];
+  const boxes = () => [...page.querySelectorAll(".ns-slot-branch input")];
+  out.rowForms = rows().length + "/" + boxes().length;
+  out.hintShown = !page.querySelector(".ns-sub + .ns-note").hidden;
+  rows()[1].value = "C:/kar/sade"; rows()[1].dispatchEvent(new Event("change")); await sleep(20);
+  out.rowFolders = rows().map((r) => r.value).join();
+  out.rowGit = boxes().map((b) => (b.disabled ? "off" : "on")).join();
+  boxes()[0].click(); await sleep(20);
+  out.mixedRadios = [...page.querySelectorAll(".ns-radio input")].map((r) => r.checked).join();
+  rows()[1].value = "__pick"; rows()[1].dispatchEvent(new Event("change")); await sleep(60);
+  out.pickedRow = rows()[1].value + "/" + (boxes()[1].disabled ? "off" : "on");
+  out.topAfterPick = folder().value;
+  boxes()[1].click(); await sleep(20);
+  mark = calls.length;
+  go().click(); await sleep(400);
+  out.slotOpens = since(mark).filter((c) => c.url.startsWith("/api/project/open"))
+    .map((c) => c.body.path + ":" + (c.body.worktree ?? "-")).join();
+
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
   document.getElementById("probe-out").textContent =
@@ -327,6 +350,20 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("the reviewer's message opens with the brief; the builder's is the task",
           m.get("prBrief") and m.get("prBuilderText") == "baresi kon",
           f"brief {m.get('prBrief')} / builder «{m.get('prBuilderText')}»")
+    check("with two conversations each row has its own folder and branch",
+          m.get("rowForms") == "2/2" and m.get("hintShown"),
+          f"{m.get('rowForms')}, hint {m.get('hintShown')}")
+    check("a row's own folder changes that row only; a non-repo row cannot branch",
+          m.get("rowFolders") == "C:/kar/mokhzan,C:/kar/sade" and m.get("rowGit") == "on,off",
+          f"{m.get('rowFolders')} / {m.get('rowGit')}")
+    check("rows that differ leave both isolation radios unchecked",
+          m.get("mixedRadios") == "false,false", str(m.get("mixedRadios")))
+    check("a folder picked for one row is a repo when the server says so (pcg-h9p)",
+          m.get("pickedRow") == "C:/kar/tazeh/on" and m.get("topAfterPick") == "C:/kar/mokhzan",
+          f"{m.get('pickedRow')}, top {m.get('topAfterPick')}")
+    check("launch opens each conversation in its own folder, branched as its row says",
+          m.get("slotOpens") == "C:/kar/mokhzan:auto,C:/kar/tazeh:auto",
+          str(m.get("slotOpens")))
     check("/clear is one fresh conversation in this folder, not the page",
           m.get("clearNoPage") and m.get("clearOpened") == "C:/kar/mokhzan",
           f"page hidden {m.get('clearNoPage')}, opened «{m.get('clearOpened')}»")

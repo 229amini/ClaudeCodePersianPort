@@ -4441,7 +4441,11 @@ class Handler(BaseHTTPRequestHandler):
                             {"ok": ok})
         elif parsed.path == "/api/project/pick":
             chosen = pick_folder(Path(sys.executable))
-            self._send_json(HTTPStatus.OK, {"path": chosen})
+            # `git` too: the new-session page offers a branch of its own only
+            # in a repo, and a folder picked here was always taken for none.
+            # Same test as list_projects (a worktree's .git is a FILE).
+            self._send_json(HTTPStatus.OK, {
+                "path": chosen, "git": bool(chosen) and (Path(chosen) / ".git").exists()})
         elif parsed.path == "/api/project/open":
             # SPAWNS a tab. Every other open conversation keeps running -- this
             # endpoint used to kill the one session the server had, which is

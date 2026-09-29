@@ -6,6 +6,11 @@
    every one of them, and a preview of exactly what will launch. It replaces
    the «۱ | ۲ | ۴» control as the way into more than one pane.
 
+   The folder and isolation fields set EVERY conversation at once; with more
+   than one, each preview row has its own folder and its own «شاخهٔ جدا», so
+   one launch can put a builder in each of two repos (pcg-6aj). `model.slots`
+   is the truth that launches; the two fields only write into it.
+
    Imports only the two leaf modules. Everything it needs from the grid comes
    through the bridge app.js hands in (`initNewSession`) - app.js is the entry
    module and nothing may import it (wiki/frontend-modules.md).
@@ -76,7 +81,7 @@ export async function openNewSession(opts = {}) {
     projects.unshift({ path: cwd, git: false });
   }
   model = { preset: "solo", projects, path: cwd,
-            count: 1, iso: "shared", task: "", error: "" };
+            count: 1, iso: "shared", slots: [], task: "", error: "" };
   applyPreset("solo");
   ui.task.value = "";
   root.hidden = false;
@@ -136,10 +141,10 @@ function build() {
   const folder = el("select", "ns-folder");
   folder.addEventListener("change", () => {
     if (folder.value === "__pick") {
-      pickFolder();
+      pickFolder(null);
       return;
     }
-    model.path = folder.value;
+    setAllPath(folder.value);
     touched();
   });
   const folderPath = el("bdi", "ns-folder-path");
@@ -170,6 +175,7 @@ function build() {
   task.addEventListener("input", () => { model.task = task.value; paintPreview(); });
 
   const previewTitle = el("h3", "ns-sub", FA.nsPreviewTitle);
+  const previewHint = el("p", "ns-note", FA.nsPreviewHint);
   const preview = el("ul", "ns-preview");
   const error = el("p", "ns-error");
   error.setAttribute("role", "alert");
@@ -192,10 +198,10 @@ function build() {
               field(FA.nsCount, counts),
               field(FA.nsIsolation, iso),
               field(FA.nsTask, task),
-              previewTitle, preview, error, actions);
+              previewTitle, previewHint, preview, error, actions);
   root.append(card);
   ui = { presets, folder, folderPath, counts, isoShared, isoTree, isoNote, task,
-         preview, error, go, cancel };
+         previewHint, preview, error, go, cancel };
 }
 
 function radio(value, text) {
@@ -204,7 +210,7 @@ function radio(value, text) {
   input.type = "radio";
   input.name = "ns-iso";
   input.value = value;
-  input.addEventListener("change", () => { model.iso = value; touched(); });
+  input.addEventListener("change", () => { setAllIso(value); touched(); });
   label.append(input, el("span", "", text));
   return { label, input };
 }
@@ -213,22 +219,54 @@ function applyPreset(key) {
   const p = PRESETS[key];
   model.preset = key;
   model.count = p.count;
-  model.iso = p.iso === "worktree" && !isGit() ? "shared" : p.iso;
+  model.slots = [];
+  setAllIso(p.iso);
 }
 
-// Any change by hand makes the preset «دلخواه».
+// Any change by hand makes the preset «دلخواه». «جفت» only holds while both
+// sit in one folder, unbranched: the reviewer has to see the builder's files.
 function touched() {
+  syncSlots();
   const p = PRESETS[model.preset];
-  if (p && (p.count !== model.count || (p.lockShared && model.iso !== "shared"))) {
+  const split = model.slots.some((s) => s.iso === "worktree" || !samePath(s.path, model.slots[0].path));
+  if (p && (p.count !== model.count || (p.lockShared && split))) {
     model.preset = "custom";
   }
-  if (model.iso === "worktree" && !isGit()) model.iso = "shared";
   paint();
 }
 
-function isGit() {
-  const p = model.projects.find((x) => x.path.toLowerCase() === (model.path || "").toLowerCase());
-  return !!p?.git;
+function samePath(a, b) {
+  return (a || "").toLowerCase() === (b || "").toLowerCase();
+}
+
+function gitOf(path) {
+  return !!model.projects.find((x) => samePath(x.path, path))?.git;
+}
+
+// A branch of its own exists only in a repo: asked for anywhere else, the
+// conversation shares its folder, and the note under the field says why.
+function isoFor(path, iso) {
+  return iso === "worktree" && gitOf(path) ? "worktree" : "shared";
+}
+
+// One slot per conversation; a new one starts from the two fields.
+function syncSlots() {
+  model.slots.length = Math.min(model.slots.length, model.count);
+  while (model.slots.length < model.count) {
+    model.slots.push({ path: model.path, iso: isoFor(model.path, model.iso) });
+  }
+}
+
+function setAllPath(path) {
+  model.path = path;
+  model.slots = [];
+  syncSlots();
+}
+
+function setAllIso(iso) {
+  model.iso = iso;
+  syncSlots();
+  for (const slot of model.slots) slot.iso = isoFor(slot.path, iso);
 }
 
 function roles() {
@@ -243,14 +281,19 @@ function countBlock(n) {
   return "";
 }
 
-async function pickFolder() {
+/* `slot`: the one conversation whose row asked, or null for all of them. */
+async function pickFolder(slot) {
   try {
-    const picked = (await api("/api/project/pick", {})).path;
+    const got = await api("/api/project/pick", {});
+    const picked = got.path;
     if (picked) {
-      if (!model.projects.some((p) => p.path.toLowerCase() === picked.toLowerCase())) {
-        model.projects.unshift({ path: picked, git: false });
-      }
-      model.path = picked;
+      const known = model.projects.find((p) => samePath(p.path, picked));
+      // The server says whether it is a repo; it used to be taken for none,
+      // so a picked repo could never get a branch of its own (pcg-h9p).
+      if (known) known.git = known.git || !!got.git;
+      else model.projects.unshift({ path: picked, git: !!got.git });
+      if (slot === null) setAllPath(picked);
+      else model.slots[slot] = { path: picked, iso: isoFor(picked, model.slots[slot].iso) };
     }
   } catch (err) {
     // The dialog failed or was cancelled; the folder stays what it was.
@@ -258,22 +301,27 @@ async function pickFolder() {
   touched();
 }
 
+function folderOptions(select, value) {
+  select.replaceChildren();
+  for (const p of model.projects) {
+    const o = el("option", "", p.name || p.path.split(/[\\/]/).filter(Boolean).pop() || p.path);
+    o.value = p.path;
+    o.title = p.path;
+    select.append(o);
+  }
+  const other = el("option", "", FA.nsPickOther);
+  other.value = "__pick";
+  select.append(other);
+  select.value = model.projects.find((p) => samePath(p.path, value))?.path ?? value ?? "";
+}
+
 function paint() {
   if (!ui || !model) return;
   for (const b of ui.presets.children) {
     b.setAttribute("aria-pressed", String(b.dataset.key === model.preset));
   }
-  ui.folder.replaceChildren();
-  for (const p of model.projects) {
-    const o = el("option", "", p.name || p.path.split(/[\\/]/).filter(Boolean).pop() || p.path);
-    o.value = p.path;
-    o.title = p.path;
-    ui.folder.append(o);
-  }
-  const other = el("option", "", FA.nsPickOther);
-  other.value = "__pick";
-  ui.folder.append(other);
-  ui.folder.value = model.path || "";
+  syncSlots();
+  folderOptions(ui.folder, model.path || "");
   ui.folderPath.replaceChildren(model.path ? pathEl(model.path) : "");
 
   // A count that cannot launch is drawn and disabled, with its reason on it.
@@ -292,34 +340,80 @@ function paint() {
       if (!countBlock(n)) { model.count = n; return paint(); }
     }
   }
-  const git = isGit();
+  // The two radios describe the rows: both unchecked when the rows differ.
+  const anyGit = model.slots.some((s) => gitOf(s.path));
+  const allGit = model.slots.every((s) => gitOf(s.path));
   const locked = PRESETS[model.preset]?.lockShared;
-  ui.isoTree.input.disabled = !git || !!locked;
-  ui.isoShared.input.checked = model.iso !== "worktree";
-  ui.isoTree.input.checked = model.iso === "worktree";
-  ui.isoNote.textContent = !git ? FA.nsNotGit : locked ? FA.nsPairShared : "";
+  ui.isoTree.input.disabled = !anyGit || !!locked;
+  ui.isoShared.input.checked = model.slots.every((s) => s.iso === "shared");
+  ui.isoTree.input.checked = model.slots.every((s) => s.iso === "worktree");
+  ui.isoNote.textContent = !anyGit ? FA.nsNotGit : locked ? FA.nsPairShared
+    : !allGit && model.iso === "worktree" ? FA.nsTreeSomeOnly : "";
   ui.isoNote.hidden = !ui.isoNote.textContent;
   ui.error.textContent = model.error;
   ui.error.hidden = !model.error;
-  ui.go.disabled = launching || !model.path || !!countBlock(model.count);
+  ui.go.disabled = launching || model.slots.some((s) => !s.path) || !!countBlock(model.count);
   paintPreview();
 }
 
+function nameOf(path) {
+  return model.projects.find((p) => samePath(p.path, path))?.name
+    || (path || "").split(/[\\/]/).filter(Boolean).pop() || "—";
+}
+
+/* One row per conversation. With more than one, each row IS a small form -
+   its own folder and its own branch - rebuilt on every paint, so the control
+   that had the keyboard gets it back afterwards. */
 function paintPreview() {
+  syncSlots();
+  const had = document.activeElement?.closest?.(".ns-slot") ? document.activeElement : null;
+  const again = had && { slot: had.dataset.slot, kind: had.dataset.kind };
   ui.preview.replaceChildren();
-  const name = model.projects.find((p) => p.path === model.path)?.name
-    || (model.path || "").split(/[\\/]/).filter(Boolean).pop() || "—";
+  const editable = model.count > 1;
+  const locked = !!PRESETS[model.preset]?.lockShared;
+  ui.previewHint.hidden = !editable;
   roles().forEach((role, i) => {
+    const slot = model.slots[i];
     const li = el("li", "ns-slot");
     li.append(el("span", "ns-slot-n", (i + 1).toLocaleString("fa-IR")));
-    const proj = el("bdi", "ns-slot-proj", name);
-    proj.setAttribute("dir", "auto");
-    li.append(proj,
-              el("span", "ns-slot-iso", model.iso === "worktree" ? FA.nsSlotWorktree : FA.nsSlotShared),
-              el("span", "ns-slot-role" + (role === "reviewer" ? " is-reviewer" : ""),
+    if (editable) {
+      const pick = el("select", "ns-slot-folder");
+      pick.dataset.slot = String(i);
+      pick.dataset.kind = "folder";
+      pick.setAttribute("aria-label", FA.nsSlotFolder.replace("{n}", (i + 1).toLocaleString("fa-IR")));
+      folderOptions(pick, slot.path);
+      pick.title = slot.path;
+      pick.addEventListener("change", () => {
+        if (pick.value === "__pick") { pickFolder(i); return; }
+        model.slots[i] = { path: pick.value, iso: isoFor(pick.value, slot.iso) };
+        touched();
+      });
+      const branch = el("label", "ns-slot-branch");
+      const box = el("input");
+      box.type = "checkbox";
+      box.dataset.slot = String(i);
+      box.dataset.kind = "branch";
+      box.checked = slot.iso === "worktree";
+      box.disabled = locked || !gitOf(slot.path);
+      branch.title = !gitOf(slot.path) ? FA.nsNotGit : locked ? FA.nsPairShared : "";
+      box.addEventListener("change", () => {
+        model.slots[i].iso = isoFor(slot.path, box.checked ? "worktree" : "shared");
+        touched();
+      });
+      branch.append(box, el("span", "", FA.nsSlotBranch));
+      li.append(pick, branch);
+    } else {
+      const proj = el("bdi", "ns-slot-proj", nameOf(slot.path));
+      proj.setAttribute("dir", "auto");
+      li.append(proj, el("span", "ns-slot-iso", slot.iso === "worktree" ? FA.nsSlotWorktree : FA.nsSlotShared));
+    }
+    li.append(el("span", "ns-slot-role" + (role === "reviewer" ? " is-reviewer" : ""),
                  role === "reviewer" ? FA.nsRoleReviewer : FA.nsRoleBuilder));
     ui.preview.append(li);
   });
+  if (again) {
+    ui.preview.querySelector(`[data-slot="${again.slot}"][data-kind="${again.kind}"]`)?.focus();
+  }
   if (model.task.trim()) {
     const li = el("li", "ns-slot ns-slot-task", FA.nsSlotTask);
     li.setAttribute("dir", "auto");
@@ -330,7 +424,7 @@ function paintPreview() {
 /* --- launch: all or nothing ------------------------------------------------- */
 
 async function launch() {
-  if (launching || !model?.path || countBlock(model.count)) return;
+  if (launching || !model || model.slots.some((s) => !s.path) || countBlock(model.count)) return;
   launching = true;
   model.error = "";
   ui.go.textContent = FA.nsLaunching;
@@ -338,9 +432,9 @@ async function launch() {
   const opened = [];
   const who = roles();
   try {
-    for (let i = 0; i < model.count; i++) {
-      const body = { path: model.path };
-      if (model.iso === "worktree") body.worktree = "auto";
+    for (const slot of model.slots) {
+      const body = { path: slot.path };
+      if (slot.iso === "worktree") body.worktree = "auto";
       const data = await api("/api/project/open", body);
       opened.push(data.tab);
     }
