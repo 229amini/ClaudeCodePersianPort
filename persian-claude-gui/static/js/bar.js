@@ -96,40 +96,139 @@ export function isOpen() {
 
 /* --- 1. a numbered menu ---------------------------------------------------- */
 
-/* rows: [{key, title, note?, selected?, disabled?}]. The digit is the row's
-   place in the list, never part of its text (the choice.js rule), and it is a
-   key while the menu is open. */
-export function openMenu(anchor, { title, rows, onPick, toCss }) {
+/* One row: the name (and a one-line note) at the start, then ✓ and the digit
+   at the end — claude.ai's order, mirrored by the RTL row. `tip` is a hover
+   title for what does not fit a one-line row (a model's description). */
+function menuRow(row, digit) {
+  const b = el("button", "bar-row");
+  b.type = "button";
+  b.disabled = !!row.disabled;
+  if (row.key !== undefined) b.dataset.key = row.key;
+  if (row.selected) b.setAttribute("aria-current", "true");
+  if (row.tip) b.title = row.tip;
+  const text = el("span", "bar-row-text");
+  const name = el("span", "bar-row-title", row.title);
+  name.dir = "auto";
+  text.append(name);
+  if (row.note) {
+    const note = el("span", "bar-row-note", row.note);
+    note.dir = "auto";
+    text.append(note);
+  }
+  b.append(text, el("span", "bar-row-check", row.selected ? "✓" : ""),
+           el("span", "bar-row-digit", digit));
+  return b;
+}
+
+/* rows: [{key, title, note?, tip?, selected?, disabled?}]. The digit is the
+   row's place in the list, never part of its text (the choice.js rule), and it
+   is a key while the menu is open.
+
+   `hint`: a quiet word at the head's far end (the mode menu's Shift+Tab).
+   `more`: {title, rows} — the rest of a long list behind one row that opens a
+   flyout beside the menu (claude.ai's «More models ›»). Its rows take no digit.
+   `footer`: {title, onClick} — one row under a rule that is not a choice (the
+   mode menu's count of what «خودکار» approved, which opens that list). */
+export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, footer }) {
   const pick = (row) => {
     close();
     anchor.focus();
     onPick?.(row);
   };
+  let flyout = null;
+  const shut = () => { flyout?.remove(); flyout = null; };
   const { pop } = popover(anchor, "bar-menu", title, (box) => {
-    if (title) box.append(el("div", "bar-head", title));
-    rows.forEach((row, i) => {
-      const b = el("button", "bar-row");
-      b.type = "button";
-      b.disabled = !!row.disabled;
-      b.dataset.key = row.key;
-      if (row.selected) b.setAttribute("aria-current", "true");
-      const text = el("span", "bar-row-text");
-      const name = el("span", "bar-row-title", row.title);
-      name.dir = "auto";
-      text.append(name);
-      if (row.note) {
-        const note = el("span", "bar-row-note", row.note);
-        note.dir = "auto";
-        text.append(note);
+    if (title) {
+      const head = el("div", "bar-head");
+      head.append(el("span", "", title));
+      if (hint) {
+        const key = el("span", "bar-head-hint", hint);
+        key.dir = "auto";
+        head.append(key);
       }
-      b.append(text, el("span", "bar-row-check", row.selected ? "✓" : ""),
-               el("span", "bar-row-digit", i < 9 ? faNum(i + 1) : ""));
+      box.append(head);
+    }
+    rows.forEach((row, i) => {
+      const b = menuRow(row, i < 9 ? faNum(i + 1) : "");
       b.addEventListener("click", () => pick(row));
+      b.addEventListener("mouseenter", shut);
       box.append(b);
     });
+    if (more?.rows?.length) {
+      box.append(el("hr", "bar-rule"));
+      const b = menuRow({ title: more.title }, "");
+      b.classList.add("bar-more");
+      b.setAttribute("aria-haspopup", "menu");
+      b.setAttribute("aria-expanded", "false");
+      b.querySelector(".bar-row-digit").textContent = "‹";
+      const openFlyout = () => {
+        if (flyout) return;
+        flyout = el("div", "bar-pop bar-flyout");
+        flyout.setAttribute("role", "menu");
+        for (const row of more.rows) {
+          const r = menuRow(row, "");
+          r.addEventListener("click", () => pick(row));
+          flyout.append(r);
+        }
+        b.after(flyout);
+        b.setAttribute("aria-expanded", "true");
+        // Beside the menu, on the side the chevron points to (the start of an
+        // RTL row is its right, so «‹» opens leftward), lined up with the row.
+        const rr = b.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+        const w = flyout.offsetWidth, h = flyout.offsetHeight;
+        const vw = toCss ? toCss(innerWidth) : innerWidth;
+        const vh = toCss ? toCss(innerHeight) : innerHeight;
+        const cv = toCss ?? ((v) => v);
+        let left = cv(pr.left) - GAP / 2 - w;
+        if (left < EDGE) left = Math.min(cv(pr.right) + GAP / 2, vw - w - EDGE);
+        const top = Math.max(EDGE, Math.min(cv(rr.top) - 4, vh - h - EDGE));
+        flyout.style.left = left + "px";
+        flyout.style.top = top + "px";
+        flyout.addEventListener("keydown", (e) => {
+          const items = [...flyout.querySelectorAll(".bar-row")];
+          if (e.key === "ArrowRight" || e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            shut();
+            b.setAttribute("aria-expanded", "false");
+            b.focus();
+          } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            const at = items.indexOf(document.activeElement);
+            const next = e.key === "ArrowDown" ? at + 1 : at - 1;
+            items[(next + items.length) % items.length]?.focus();
+          }
+        });
+      };
+      b.addEventListener("mouseenter", openFlyout);
+      b.addEventListener("click", () => {
+        openFlyout();
+        (flyout.querySelector('.bar-row[aria-current="true"]')
+          ?? flyout.querySelector(".bar-row"))?.focus();
+      });
+      b.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft") return;
+        e.preventDefault();
+        b.click();
+      });
+      box.append(b);
+    }
+    if (footer) {
+      box.append(el("hr", "bar-rule"));
+      const f = menuRow({ title: footer.title }, "");
+      f.classList.add("bar-foot");
+      f.addEventListener("mouseenter", shut);
+      f.addEventListener("click", () => {
+        close();
+        footer.onClick?.();
+      });
+      box.append(f);
+    }
   }, toCss);
   pop.addEventListener("keydown", (e) => {
-    const rowsEl = [...pop.querySelectorAll(".bar-row:not(:disabled)")];
+    if (e.target.closest?.(".bar-flyout")) return;
+    const rowsEl = [...pop.querySelectorAll(":scope > .bar-row:not(:disabled)")];
     const digit = /^Digit([1-9])$/.exec(e.code) || /^Numpad([1-9])$/.exec(e.code);
     if (digit && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const row = rows[Number(digit[1]) - 1];

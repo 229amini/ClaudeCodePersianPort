@@ -168,16 +168,12 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
 
   out.slOrder = [...statusline.children].map((el) => el.className);
   out.slCustom = statusline.querySelector(".sl-custom")?.textContent ?? "";
-  out.slPostureMode = statusline.querySelector(".sl-posture")?.dataset.posture ?? "";
-  out.slArrows = statusline.querySelectorAll(".sl-posture .sl-arrow").length;
-  out.slPostureText = statusline.querySelector(".sl-posture-text")?.textContent ?? "";
-  out.slHint = statusline.querySelector(".sl-posture .sl-hint")?.textContent ?? "";
-  out.slFacts = statusline.querySelector(".sl-state")?.textContent ?? "";
-  out.slModelTitle = statusline.querySelector(".sl-model")?.title ?? "";
-  out.faAcceptEdits = FA.slPostureAcceptEdits;
-  out.faAsk = FA.slPostureAsk;
-  out.faHint = FA.slPostureHint;
-  out.faModel = FA.slModel;
+  out.slText = statusline.textContent;
+  out.slPostureRows = statusline.querySelectorAll(".sl-posture").length;
+  out.chipAfterInit = document.querySelector(".posture-chip-name")?.textContent ?? "";
+  out.faAcceptEdits = FA.postureAcceptEdits;
+  out.faAsk = FA.postureAsk;
+  out.faSentence = FA.slPostureAcceptEdits;
   out.faEffortLabel = FA.slEffort;
   out.faStyleLabel = FA.slStyle;
 
@@ -185,8 +181,7 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   // `autoApprove` are both `default` down the pipe (server.py POSTURES).
   window.renderEvent({ type: "wrapper", subtype: "posture", posture: "ask", auto_count: 0 });
   await sleep(60);
-  out.slPostureAfterWrapper = statusline.querySelector(".sl-posture-text")?.textContent ?? "";
-  out.slArrowsAfterWrapper = statusline.querySelectorAll(".sl-posture .sl-arrow").length;
+  out.chipAfterWrapper = document.querySelector(".posture-chip-name")?.textContent ?? "";
 
   /* --- the turn-end notification ------------------------------------------ */
   window.renderEvent({ type: "assistant", message: { content: [
@@ -514,39 +509,33 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
         out.append((name, bool(ok), detail))
 
     order = m.get("slOrder") or []
-    # BRIDGEMIND-PORT.md §D5: the facts row is gone - the machine's own line,
-    # then ONE state line that starts with the posture sentence.
-    check("the status line is the custom line, then one state line",
-          len(order) == 2 and "sl-posture" in order[1] and "sl-state" in order[1],
-          " | ".join(order) or "empty")
+    # CLAUDE-AI-PARITY.md P1: the bar under the prompt names the mode and the
+    # model, so the status line under it carries neither - the machine's own
+    # line, and a state line only when there is news (quota, changed files).
+    check("the status line is the machine's own line alone while there is no news",
+          order == ["sl-line"], " | ".join(order) or "empty")
 
     check("the machine's own statusLine output is the FIRST line",
           m.get("slCustom") == "KHATE KHODAM" and order[:1] == ["sl-line"],
           m.get("slCustom", "") or "no custom line")
 
-    check("the posture row is the TUI's sentence, with its own key",
-          m.get("slPostureText") == m.get("faAcceptEdits")
-          and m.get("slHint") == m.get("faHint"),
-          f"{m.get('slPostureText')} / {m.get('slHint')}")
+    text = m.get("slText", "")
+    check("the status line repeats neither the mode nor the model the bar shows",
+          m.get("slPostureRows") == 0 and "Opus" not in text
+          and (m.get("faSentence") or "\0") not in text, text[:80] or "empty")
 
-    check("acceptEdits draws \u23f5\u23f5, two arrows",
-          m.get("slArrows") == 2 and m.get("slPostureMode") == "acceptEdits",
-          f"{m.get('slArrows')} arrows, mode {m.get('slPostureMode')}")
+    check("the bar's mode chip names the CLI's mode at init",
+          m.get("chipAfterInit") == m.get("faAcceptEdits"),
+          f"{m.get('chipAfterInit')} / {m.get('faAcceptEdits')}")
 
     check("the WRAPPER's posture wins over the CLI's raw permissionMode",
-          m.get("slPostureAfterWrapper") == m.get("faAsk")
-          and m.get("slArrowsAfterWrapper") == 1,
-          f"{m.get('slPostureAfterWrapper')} / {m.get('slArrowsAfterWrapper')} arrow")
+          m.get("chipAfterWrapper") == m.get("faAsk"),
+          f"{m.get('chipAfterWrapper')} / {m.get('faAsk')}")
 
-    facts = m.get("slFacts", "")
     body = m.get("statusBody", "")
-    check("the state line names the model; effort and style moved to /status",
-          "Opus 5" in facts and m.get("slModelTitle") == "claude-opus-5"
-          and not any(x and x in facts for x in (m.get("faEffortLabel"),
-                                                 m.get("faStyleLabel")))
-          and all(x and x in body for x in (m.get("faEffortLabel"),
-                                            m.get("faStyleLabel"))),
-          facts[:80] or "no state line")
+    check("effort and style live in /status",
+          all(x and x in body for x in (m.get("faEffortLabel"), m.get("faStyleLabel"))),
+          body[:80] or "no /status body")
 
     check("a settle while the window is hidden raises ONE notification",
           m.get("notifiedLive") == 1 and m.get("notifyTitle") == m.get("faNotify"),

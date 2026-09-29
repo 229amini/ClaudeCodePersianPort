@@ -156,6 +156,45 @@ const NOW = Date.now();
   out.effortPost = since(mark).filter((c) => c.url === "/api/effort").map((c) => c.body.level).join();
   pop()?.hidePopover(); await sleep(20);
 
+  // claude.ai's model shape (CLAUDE-AI-PARITY.md P1): the newest of each
+  // family, then «More models ›» with the rest; and the mode menu's footer is
+  // what «خودکار» approved, opening its list. bar.js menus only — the web
+  // edition's in-cell menu is its own (P4).
+  ev({ type: "wrapper", subtype: "init_info", info: { output_style: "default",
+       available_output_styles: ["default"], models: [
+    { value: "default", resolvedModel: "claude-sonnet-5-5", displayName: "Default (recommended)" },
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5", description: "complex work" },
+    { value: "sonnet", resolvedModel: "claude-sonnet-5-5", displayName: "Sonnet 5.5" },
+    { value: "claude-opus-5", resolvedModel: "claude-opus-5", displayName: "Opus 5" }] } });
+  await sleep(30);
+  q(".model-chip")?.click(); await sleep(40);
+  out.barMenus = !!pop()?.classList.contains("bar-menu");
+  if (out.barMenus) {
+    out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-more):not(.bar-foot) .bar-row-title")]
+      .map((t) => t.textContent).join("|");
+    out.tip = pop().querySelector(":scope > .bar-row")?.title ?? "";
+    out.notes = pop().querySelectorAll(":scope > .bar-row .bar-row-note").length;
+    pop().querySelector(".bar-more")?.click(); await sleep(30);
+    out.flyout = [...pop().querySelectorAll(".bar-flyout .bar-row-title")].map((t) => t.textContent).join("|");
+    const fr = pop().querySelector(".bar-flyout")?.getBoundingClientRect();
+    const mr = pop().getBoundingClientRect();
+    out.flyoutBeside = !!fr && (fr.right <= mr.left + 1 || fr.left >= mr.right - 1);
+    mark = calls.length;
+    [...pop().querySelectorAll(".bar-flyout .bar-row")].at(-1)?.click(); await sleep(40);
+    out.setFromFlyout = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
+      .map((c) => c.body.params.model).join();
+    ev({ type: "wrapper", subtype: "posture", posture: "autoApprove", auto_count: 3 });
+    await sleep(30);
+    q(".posture-chip")?.click(); await sleep(40);
+    out.foot = pop()?.querySelector(".bar-foot .bar-row-title")?.textContent ?? "";
+    out.wantFoot = FA.barAutoCount.replace("{n}", "۳");
+    pop()?.querySelector(".bar-foot")?.click(); await sleep(40);
+    out.auditOpen = !!document.querySelector("dialog.picker[open]")
+      && (document.querySelector("dialog.picker")?.textContent ?? "").includes(FA.autoActionsTitle);
+    document.querySelector("dialog.picker")?.close?.();
+    out.noChip = !document.querySelector(".auto-chip");
+  }
+
   // «+»: files, slash, and the MCP switches.
   q(".bar-plus-btn")?.click(); await sleep(80);
   out.plusRows = pop()?.querySelectorAll(".bar-row").length ?? -1;
@@ -225,6 +264,18 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
           m.get("modelRows") == 2 and m.get("modelDigits") == "۱,۲" and m.get("modelCheck") == "v-",
           f"{m.get('modelRows')} rows / {m.get('modelDigits')} / {m.get('modelCheck')}")
     check("a digit picks from the model menu", m.get("setModel") == "sonnet", str(m.get("setModel")))
+    if m.get("barMenus"):
+        check("the model menu lists the newest of each family, no notes, the description as a tip",
+              m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("notes") == 0
+              and m.get("tip") == "complex work", f"{m.get('primary')} / {m.get('notes')} / {m.get('tip')}")
+        check("«مدل‌های دیگر» opens the rest in a flyout beside the menu",
+              m.get("flyout") == "Default (recommended)|Opus 5" and m.get("flyoutBeside"),
+              f"{m.get('flyout')} / beside {m.get('flyoutBeside')}")
+        check("a flyout row picks its model", m.get("setFromFlyout") == "claude-opus-5",
+              str(m.get("setFromFlyout")))
+        check("the audit count is the mode menu's footer, and it opens the list; no bar chip",
+              m.get("foot") == m.get("wantFoot") and m.get("auditOpen") and m.get("noChip"),
+              f"«{m.get('foot')}» / list {m.get('auditOpen')} / no chip {m.get('noChip')}")
     check("the mode menu lists the four postures and a digit picks",
           m.get("modeRows") == 4 and m.get("posture") == "plan", f"{m.get('modeRows')} / {m.get('posture')}")
     check("the effort slider starts at the current level and posts a change",

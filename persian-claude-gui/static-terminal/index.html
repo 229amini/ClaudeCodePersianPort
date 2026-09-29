@@ -327,14 +327,9 @@
              used to SAY moves to the status line in v2.5 (§3.4); the state
              itself never left js/controls.js.
 
-             The audit counter below is deliberately NOT one of them: it is not
-             a picker, and «خودکار» approving things silently is the defect the
-             count exists to prevent. -->
+             The audit count of «خودکار» lives in the mode menu's footer
+             (CLAUDE-AI-PARITY.md P1): claude.ai's bar carries the mode alone. -->
 
-        <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
-             on the user's behalf. Never hidden behind a menu. A button, not a
-             span: it opens the list of those approvals, so it has to be
-             clickable AND reachable from the keyboard. -->
         <!-- THE COMPOSER BAR (COMPOSER-BAR.md, 2026-09-29). User decision: the
              claude.ai/code bar in this edition too — «+», the mode, then the
              model, effort and the context ring at the far end. Each opens a
@@ -348,7 +343,6 @@
         <button type="button" class="bar-chip posture-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
           <span class="posture-chip-name"></span>
         </button>
-        <button type="button" class="auto-chip chip-btn is-info" hidden></button>
 
         <span class="comp-spacer"></span>
 
