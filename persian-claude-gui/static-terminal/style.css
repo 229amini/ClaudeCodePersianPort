@@ -1197,6 +1197,25 @@ body.rail .rail-icon { transform: scaleX(-1); }
   color: var(--fg);
 }
 .ns-slot-n { color: var(--fg-faint); min-inline-size: 1em; }
+/* With more than one conversation a row is its own small form (pcg-6aj):
+   centred rather than on the baseline, because a select has no text line to
+   share with the numbers beside it. */
+.ns-preview:has(.ns-slot-folder) .ns-slot { align-items: center; flex-wrap: wrap; }
+.ns-slot-folder {
+  font: inherit;
+  min-inline-size: 9em;
+  max-inline-size: 16em;
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--border);
+  background: var(--raise);
+  color: var(--fg);
+}
+.ns-slot-folder:focus-visible,
+.ns-slot-branch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ns-slot-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); cursor: pointer; }
+.ns-slot-branch input { accent-color: var(--accent); margin: 0; }
+.ns-slot-branch:has(input:disabled) { color: var(--fg-faint); cursor: not-allowed; }
 .ns-slot-proj { font-weight: var(--wt-title); }
 .ns-slot-iso, .ns-slot-role { color: var(--fg-muted); }
 .ns-slot-iso::before, .ns-slot-role::before { content: "· "; color: var(--fg-faint); }
