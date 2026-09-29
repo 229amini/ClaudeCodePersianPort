@@ -761,7 +761,7 @@ function titleOf(tab) {
   return entry ? tabTitle(entry) : FA.tabFresh;
 }
 
-/* A notice (or the OS notification) says "go there": focus the pane holding
+/* A notice says "go there": focus the pane holding
    it, or put it in the focused pane, then flash that pane once (§D9). */
 async function jumpTo(tab) {
   if (!tabs.has(tab) && !tabList.some((t) => t.tab === tab)) return;
@@ -774,10 +774,6 @@ async function jumpTo(tab) {
   cell.root.classList.add("flash");
   setTimeout(() => cell.root.classList.remove("flash"), 700);
 }
-window.addEventListener("pcg:jump", (e) => {
-  window.focus();
-  jumpTo(e.detail?.tab);
-});
 
 /* What this WINDOW knows about each conversation and the server does not: the
    uuid ledger says whether it is working, and the last result says whether it

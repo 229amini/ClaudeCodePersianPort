@@ -499,11 +499,6 @@ window.FA = {
   slPostureBypass: "دور زدن اجازه‌ها",
   slPostureHint: "shift+tab برای تغییر",
 
-  /* The turn ended while the window was not being looked at. The body is the
-     folder, so a person with several conversations open knows which one
-     finished before they switch to it. */
-  notifyDone: "پاسخ آماده است",
-
   /* The window-local commands of V2-PLAN §3.5 (js/commands.js). Each one
      answers in the column as a `meta` row: what happened, in one line. None of
      them reached the model, so none of them may look like an answer. */
