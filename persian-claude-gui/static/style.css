@@ -996,9 +996,12 @@ pre, code, .path, .diff, .tool-output, .mono {
 /* Chat sidedness follows the RTL shell: the user sits on the right (start) in
    a filled bubble; the assistant reads as plain text on the page, claude.ai-
    style. Alignment is layout only — never a substitute for `dir` on the text. */
+/* The site's bubble, measured (wiki/claude-ai-code-reference.md §1). */
 .msg.user {
   align-self: flex-start;
-  background: var(--surface-2);
+  background: rgb(255 255 255 / .05);
+  border-radius: 10px;
+  padding: 8px 12px;
 }
 
 /* The assistant is plain text on the page, not a bubble — it has no surface to
@@ -1044,10 +1047,14 @@ pre, code, .path, .diff, .tool-output, .mono {
 }
 .msg a { color: var(--accent); }
 
+/* The site's inline code chip, measured. */
 .msg :not(pre) > code {
-  background: var(--surface-2);
-  padding: .12em .35em;
-  border-radius: 4px;
+  color: rgb(236 126 126);
+  background: rgb(255 255 255 / .05);
+  border: 1px solid rgb(255 255 255 / .1);
+  padding: .05em .3em;
+  border-radius: 5px;
+  font-size: .9em;
 }
 
 .msg pre {
@@ -1181,6 +1188,54 @@ details.card[open] {
 /* A run of consecutive tool calls, folded into one row. The summary is the
    only part that is chrome; everything inside is the ordinary cards, so the
    body gives them back the gutter the rail needs and nothing else. */
+/* A RUN OF STEPS IS ONE LINE (CLAUDE-AI-PARITY.md P2), measured off
+   claude.ai/code (wiki/claude-ai-code-reference.md §3, "Expanded run"): shut,
+   a muted sentence and a chevron; open, the steps in one bordered box, a row
+   per step on hairlines, no icons, each row opening again onto its detail. */
+details.card.run { border: 0; background: none; overflow: visible; }
+details.card.run[open] { border: 0; background: none; }
+details.card.run > summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-inline-size: 100%;
+  padding: 0;
+  min-height: 0;
+  color: var(--fg-muted);
+  background: none;
+  cursor: pointer;
+}
+details.card.run > summary:hover { background: none; color: var(--fg); }
+details.card.run > summary::after {
+  content: "‹";
+  flex: none;
+  font-size: 1.1em;
+  line-height: 1;
+  transition: transform var(--dur) var(--ease);
+}
+details.card.run[open] > summary::after { transform: rotate(-90deg); }
+.run-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-name { color: inherit; }
+.run-stat { flex: none; display: inline-flex; gap: 4px; font-size: .92em; font-variant-numeric: tabular-nums; }
+.run-err { flex: none; }
+.run-err:empty { display: none; }
+details.card.run.has-failed > summary .run-err { color: var(--accent); }
+details.card.run > .card-body {
+  margin-block-start: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+details.card.run > .card-body > * { margin: 0; border-radius: 0; }
+details.card.run > .card-body > * + * { border-block-start: 1px solid var(--border); }
+details.card.run > .card-body > details.card > summary { padding: 8px 10px; }
+details.card.run > .card-body > details.card[open] { background: var(--surface); }
+details.card.run > .card-body .tool-icon:not(.glyph) { display: none; }
+details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
+.log .run details.card > summary::before,
+.log .run details.card > summary::after { content: none; }
+
 details.card.group > .card-body { padding: 4px 0 6px 6px; }
 /* A grouped run can fall back to an MCP tool's own (unbounded-length) name —
    groupSummaryText() in render.js — so this row needs the same one-line
@@ -1397,7 +1452,21 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .pulse.live .pulse-glyph { animation: pulse-breathe 2s var(--ease) infinite; }
 @keyframes pulse-breathe { 50% { opacity: .3; } }
 
-.pulse-verb { color: var(--fg); }
+.pulse-verb { color: var(--fg-muted); }
+
+/* «۱ کار در حال اجرا»: the site's blue chip; it opens the tasks panel. */
+.pulse-tasks {
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(76 139 245 / .16);
+  color: rgb(128 176 255);
+  font: inherit;
+  cursor: pointer;
+}
+.pulse-tasks:hover { background: rgb(76 139 245 / .26); }
+.pulse-tasks:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* tabular-nums so a ticking counter does not jiggle the line it sits on. */
 .pulse-meta {
@@ -2201,10 +2270,25 @@ button.round {
    the whole strip disappears when there is nothing out. */
 .agents-strip {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: 8px;
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
 }
+/* The site's «N running task» chip, the same as the working line's. */
+.ag-chip {
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(76 139 245 / .16);
+  color: rgb(128 176 255);
+  font: inherit;
+  font-size: .85em;
+  cursor: pointer;
+}
+.ag-chip:hover { background: rgb(76 139 245 / .26); }
+.ag-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.agents-strip .ag-wait { padding: 0; }
 .agents-strip[hidden] { display: none; }   /* beats the flex above */
 
 .ag-row {
@@ -2328,6 +2412,64 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
   box-shadow: 0 18px 50px rgb(0 0 0 / .5);
 }
 #agent-drawer:popover-open { display: flex; flex-direction: column; }
+
+/* THE BACKGROUND TASKS PANEL (CLAUDE-AI-PARITY.md P3), after claude.ai/code's:
+   a full-height column at the stage side (inline-END = physical left, away
+   from the sidebar, for the drawer's reason above), cards on a quiet surface.
+   Same [popover] rules as the drawer: display only on :popover-open, the
+   opposite inset `auto`, block-size auto so both block insets apply. */
+#tasks-panel {
+  position: fixed;
+  inset-block: 8px;
+  inset-inline-end: 8px;
+  inset-inline-start: auto;
+  inline-size: min(380px, calc(100vw - 16px));
+  block-size: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev, var(--bg));
+  color: var(--fg);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
+}
+#tasks-panel:popover-open { display: flex; flex-direction: column; }
+.tk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+           flex: none; padding: 12px 14px 8px; }
+.tk-heading { font-weight: var(--wt-title); }
+.tk-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px;
+           display: flex; flex-direction: column; gap: 8px; }
+.tk-body > * { flex: none; }
+.tk-section, .tk-empty { color: var(--fg-muted); font-size: .85em; padding: 4px 2px 0; }
+.tk-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+           border-radius: 8px; background: rgb(255 255 255 / .04); }
+.tk-top { display: flex; align-items: flex-start; gap: 10px; }
+.tk-title { flex: 1; min-inline-size: 0; color: var(--fg); }
+.tk-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+           color: var(--fg-muted); font-size: .85em; }
+.tk-kind { color: var(--fg); }
+.tk-model { color: var(--fg); background: none; padding: 0; }
+.tk-now { color: var(--fg-muted); }
+.tk-view, .tk-finished, .tk-clear, .tk-stop {
+  min-height: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.tk-view { align-self: flex-start; padding: 0; color: rgb(128 176 255); font-size: .85em; }
+.tk-view:hover { text-decoration: underline; }
+.tk-stop { flex: none; inline-size: 22px; block-size: 22px; border: 1px solid var(--border);
+           border-radius: 5px; position: relative; }
+.tk-stop::before { content: ""; position: absolute; inset: 6px; border-radius: 2px;
+                   background: var(--fg-muted); }
+.tk-stop:hover { background: var(--surface-2); }
+.tk-stop:hover::before { background: var(--fg); }
+.tk-finished-row { display: flex; align-items: center; justify-content: space-between; padding-top: 6px; }
+.tk-finished { padding: 2px; color: var(--fg-muted); font-size: .9em; }
+.tk-finished::after { content: " ‹"; }
+.tk-finished[aria-expanded="true"]::after { content: " ⌄"; }
+.tk-clear { inline-size: 24px; block-size: 24px; border-radius: 5px; color: var(--fg-muted); }
+.tk-clear::before { content: "🗑"; filter: grayscale(1); font-size: .9em; }
+.tk-clear:hover { background: var(--surface-2); color: var(--fg); }
+.tk-view:focus-visible, .tk-finished:focus-visible, .tk-clear:focus-visible, .tk-stop:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
 #agent-drawer::backdrop { background: rgb(0 0 0 / .45); }
 
 .ag-head {
@@ -2604,32 +2746,40 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 8px 4px;
+  padding: 6px 10px 4px;
   color: var(--fg-muted);
-  font-size: var(--fs-meta, 12px);
+  font-size: var(--fs-meta, 12.5px);
 }
+.bar-head-hint { font-size: 11.5px; opacity: .8; }
+/* claude.ai's rows: a regular-weight name, a one-line muted note, ✓ and the
+   digit at the row's end. Tight — a menu is a list you scan, not a form. */
 .bar-row {
   display: flex;
   align-items: center;
   gap: 10px;
   inline-size: 100%;
   min-height: 0;
-  padding: 7px 8px;
+  padding: 6px 10px;
   border: 0;
   border-radius: var(--r-row, 8px);
   background: none;
   color: var(--fg);
   font: inherit;
+  font-weight: 400;
+  line-height: 1.35;
   text-align: start;
   cursor: pointer;
 }
-.bar-row:hover:not(:disabled), .bar-row:focus-visible { background: var(--surface-2); outline: none; }
+.bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--surface-2); outline: none; }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
 .bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
-.bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-row-note { color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
-.bar-row-check { flex: none; inline-size: 1em; color: var(--accent); text-align: center; }
-.bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12px); text-align: center; }
+.bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.bar-row-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
+.bar-row-check { flex: none; inline-size: 1em; color: rgb(98 155 245); text-align: center; }
+.bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
+.bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
+.bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
+.bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
 .bar-rule { margin: 6px 4px; border: 0; border-block-start: 1px solid var(--border); }
 .bar-muted { color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 0; }
 .bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 6px 8px 2px; }
@@ -2647,22 +2797,41 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-btn:hover { background: var(--surface-2); }
 .bar-btn:focus-visible, .bar-switch:focus-visible, .bar-slider-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* The slider: «سریع‌تر» at the start (right), «باهوش‌تر» at the end. */
-.bar-slider { padding: 8px 10px 12px; min-inline-size: 280px; }
-.bar-slider .bar-head { padding-inline: 0; }
+/* The slider, after claude.ai: «تلاش  زیاد» together at the start, «سریع‌تر»
+   (right) … «باهوش‌تر» (left), and a gray pill with one dot per level under a
+   light thumb. The pill is the WRAPPER's background, not the range's own track,
+   so the dots can sit on it and under the thumb. */
+.bar-slider { padding: 8px 12px 14px; min-inline-size: 280px; }
+.bar-slider .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; font-size: var(--fs-ui, 13px); }
 .bar-slider-now { color: var(--fg); font-weight: 500; }
-.bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 4px 0 6px; }
-.bar-slider-track { position: relative; }
+.bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); margin: 8px 0 8px; }
+.bar-slider-track { position: relative; block-size: 22px; border-radius: 11px; background: var(--surface-2); }
 .bar-slider-ticks {
   position: absolute;
-  inset-inline: 10px;
+  inset-inline: 9px;
   inset-block-start: 50%;
   display: flex;
   justify-content: space-between;
   pointer-events: none;
 }
 .bar-tick { inline-size: 4px; block-size: 4px; margin-block-start: -2px; border-radius: 50%; background: var(--fg-faint, var(--fg-muted)); }
-.bar-slider-range { inline-size: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.bar-slider-range {
+  position: absolute; inset: 0;
+  inline-size: 100%; block-size: 100%;
+  margin: 0; padding: 0 2px;
+  appearance: none; -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.bar-slider-range::-webkit-slider-runnable-track { block-size: 22px; background: transparent; border: 0; }
+.bar-slider-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  inline-size: 14px; block-size: 18px; margin-block-start: 2px;
+  border-radius: 7px; background: #f4f3ee; border: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.bar-slider-range:focus-visible { outline: none; }
+.bar-slider-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* The context panel. */
 .bar-usage { min-inline-size: 320px; padding: 6px 10px 10px; }

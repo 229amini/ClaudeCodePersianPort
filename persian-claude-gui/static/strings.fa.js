@@ -19,23 +19,21 @@ window.FA = {
   hintZwnj: "نیم‌فاصله: Shift+Space",
   hintPosture: "سطح اجازه: Shift+Tab",
 
-  thinking: "در حال فکر کردن",
+  thinking: "فکر",
 
-  /* The turn's live line. The CLI answers "is it still working?" with one
-     changing sentence — a whimsical gerund, how long, how much it has written —
-     and the whimsy is the point: a turn that takes four minutes needs a line
-     that is not the same four words for four minutes.
-
-     These are masdars (verbal nouns) because ONE word has to read in both
-     frames: «در حال بافتن…» while it runs, «بافتن — ۵ دقیقه و ۳۲ ثانیه» once it
-     is done. A conjugated past tense would need a second list. */
-  pulseVerbs: [
-    "بافتن", "جوشاندن", "سنجیدن", "ورز دادن", "کندوکاو", "چیدن", "تراشیدن",
-    "گره زدن", "پختن", "رصد کردن", "صیقل دادن", "ریسیدن", "نقشه کشیدن",
-    "پروراندن", "غربال کردن", "کاویدن", "دم کردن", "جوش خوردن",
-  ],
-  pulseRunning: "در حال {verb}…",
-  pulseDone: "{verb} — {time}",
+  /* The working line (CLAUDE-AI-PARITY.md P2), after claude.ai/code's
+     «3m 51s · 117.6k tokens · 1 running task · Almost done thinking…»: what
+     it is doing, and the chip for the background helpers still going. */
+  pulseStart: "در حال کار…",
+  pulseTasks: "{n} کار در حال اجرا",
+  pulsePhases: {
+    thinking: "در حال فکر کردن…",
+    writing: "در حال نوشتن…",
+    tools: "در حال اجرای ابزار…",
+    waiting: "منتظر اجازهٔ شما…",
+  },
+  /* The TUI's own «esc to interrupt», the working line's tooltip. */
+  spinnerInterrupt: "Esc برای توقف",
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
   elapsedMinSec: "{m} دقیقه و {s} ثانیه",
@@ -73,25 +71,33 @@ window.FA = {
     Agent: "عامل پس‌زمینه",
   },
 
-  /* Counted form, for the row that collapses a run of consecutive calls:
-     «۱ فایل خوانده شد، ۱۱ فرمان اجرا شد». The verbs above read as a label on
-     one card; after a number they need their noun back, or «۱۱ اجرا شد» says
-     eleven of nothing. Unlisted tools fall back to the verb, then to the name. */
-  toolGroupNouns: {
-    Read: "فایل خوانده شد",
-    Write: "فایل نوشته شد",
-    Edit: "ویرایش",
-    MultiEdit: "ویرایش",
-    NotebookEdit: "ویرایش",
-    Bash: "فرمان اجرا شد",
-    Glob: "جست‌وجوی فایل",
-    Grep: "جست‌وجو در متن",
-    WebFetch: "دریافت از وب",
-    WebSearch: "جست‌وجوی وب",
-    Task: "کار فرعی",
-    Skill: "مهارت",
-    Agent: "عامل پس‌زمینه اجرا شد",
-  },
+  /* A run of steps is ONE line (CLAUDE-AI-PARITY.md P2), in the site's own
+     vocabulary (wiki/claude-ai-code-reference.md §"Tool line vocabulary"):
+     one part per kind in order of first use, past tense, one file named and
+     several counted, «(N failed)» when a step failed. */
+  actShellOne: "یک فرمان اجرا شد",
+  actShellMany: "{n} فرمان اجرا شد",
+  actReadOne: "{name} خوانده شد",
+  actReadMany: "{n} فایل خوانده شد",
+  actEditOne: "{name} ویرایش شد",
+  actEditMany: "{n} فایل ویرایش شد",
+  actWriteOne: "{name} ساخته شد",
+  actWriteMany: "{n} فایل ساخته شد",
+  actSearchOne: "یک جست‌وجو انجام شد",
+  actSearchMany: "{n} جست‌وجو انجام شد",
+  actFetchOne: "یک صفحهٔ وب خوانده شد",
+  actFetchMany: "{n} صفحهٔ وب خوانده شد",
+  actWebSearchOne: "در وب جست‌وجو شد",
+  actWebSearchMany: "{n} جست‌وجو در وب انجام شد",
+  actAgentOne: "یک عامل اجرا شد",
+  actAgentMany: "{n} عامل اجرا شد",
+  actBgDoneOne: "یک کار پس‌زمینه تمام شد",
+  actBgDoneMany: "{n} کار پس‌زمینه تمام شد",
+  actOtherOne: "از یک ابزار استفاده شد",
+  actOtherMany: "از {n} ابزار استفاده شد",
+  actThought: "فکر کرد",
+  actJoin: "، ",
+  actFailed: "({n} ناموفق)",
 
   /* A polling loop wrote the same sentence and made the same call eight times;
      the transcript keeps one of them and says how many there were. Persian
@@ -107,11 +113,33 @@ window.FA = {
   agentDone: "عامل پس‌زمینه تمام شد",
   agentEnded: "عامل پس‌زمینه پایان یافت",
   agentRunning: "در حال اجرا",
-  agentOpen: "دیدن کاری که این عامل انجام می‌دهد",
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
   agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
-  agentHistory: "عامل‌های پیشین ({n})",
+  /* The Background tasks panel (CLAUDE-AI-PARITY.md P3), after claude.ai/code's. */
+  tasksTitle: "کارهای پس‌زمینه",
+  tasksRunning: "در حال اجرا",
+  tasksNone: "کاری در حال اجرا نیست",
+  tasksFinished: "پایان‌یافته {n}",
+  tasksClear: "پاک کردن فهرست پایان‌یافته‌ها",
+  tasksView: "دیدن گزارش",
+  tasksStop: "توقف این کار",
+  tasksKindAgent: "عامل",
+  tasksKindCommand: "فرمان",
+  tasksTokens: "{n} توکن",
+  tasksToolUses: "{n} بار ابزار",
+  tasksNow: {
+    Bash: "در حال اجرای فرمان",
+    PowerShell: "در حال اجرای فرمان",
+    Read: "در حال خواندن فایل",
+    Edit: "در حال ویرایش فایل",
+    Write: "در حال نوشتن فایل",
+    Grep: "در حال جست‌وجو",
+    Glob: "در حال جست‌وجو",
+    WebFetch: "در حال خواندن وب",
+    WebSearch: "در حال جست‌وجوی وب",
+    other: "در حال استفاده از ابزار",
+  },
 
   /* The queue. A message sent while Claude is still answering is not delivered
      — it waits in the CLI's own command queue — so the window says «در صف»
