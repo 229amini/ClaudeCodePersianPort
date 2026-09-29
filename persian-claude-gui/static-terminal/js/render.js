@@ -31,7 +31,7 @@ import { effortLabel, styleLabel } from "./controls.js";
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
    background agent's transcript back through this renderer. Same invariant —
    nothing crosses the edge until event time. */
-import { refreshAgents, resetAgents } from "./agents.js";
+import { refreshAgents, resetAgents, noteTaskProgress } from "./agents.js";
 
 const FA = window.STRINGS;
 
@@ -2328,6 +2328,11 @@ export function renderEvent(ev) {
         if (ev.output_style) setStatus({ style: ev.output_style });
       } else if (ev.subtype === "compact_boundary") {
         renderCompactBoundary(ev.compact_metadata);
+      } else if (ev.subtype === "task_progress" || ev.subtype === "task_started") {
+        // A background helper's own running report — tokens, tool uses, the
+        // tool it is on (wiki/cli-stream-json-findings.md §5.10). Chrome for
+        // the tasks panel (agents.js), never a transcript row.
+        noteTaskProgress(ev);
       } else if (ev.subtype === "status" && ev.permissionMode) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.

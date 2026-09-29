@@ -3566,10 +3566,25 @@ body.rail .side-zoom { display: none; }
    the whole strip disappears when there is nothing out. */
 .agents-strip {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: 8px;
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
 }
+/* The site's «N running task» chip, the same as the working line's. */
+.ag-chip {
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(76 139 245 / .16);
+  color: rgb(128 176 255);
+  font: inherit;
+  font-size: .85em;
+  cursor: pointer;
+}
+.ag-chip:hover { background: rgb(76 139 245 / .26); }
+.ag-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.agents-strip .ag-wait { padding: 0; }
 .agents-strip[hidden] { display: none; }   /* beats the flex above */
 
 .ag-row {
@@ -3701,6 +3716,64 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
   box-shadow: 0 18px 50px rgb(0 0 0 / .5);
 }
 #agent-drawer:popover-open { display: flex; flex-direction: column; }
+
+/* THE BACKGROUND TASKS PANEL (CLAUDE-AI-PARITY.md P3), after claude.ai/code's:
+   a full-height column at the stage side (inline-END = physical left, away
+   from the sidebar, for the drawer's reason above), cards on a quiet surface.
+   Same [popover] rules as the drawer: display only on :popover-open, the
+   opposite inset `auto`, block-size auto so both block insets apply. */
+#tasks-panel {
+  position: fixed;
+  inset-block: 8px;
+  inset-inline-end: 8px;
+  inset-inline-start: auto;
+  inline-size: min(380px, calc(100vw - 16px));
+  block-size: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  color: var(--fg);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
+}
+#tasks-panel:popover-open { display: flex; flex-direction: column; }
+.tk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+           flex: none; padding: 12px 14px 8px; }
+.tk-heading { font-weight: var(--wt-title); }
+.tk-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px;
+           display: flex; flex-direction: column; gap: 8px; }
+.tk-body > * { flex: none; }
+.tk-section, .tk-empty { color: var(--fg-muted); font-size: .85em; padding: 4px 2px 0; }
+.tk-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+           border-radius: 8px; background: rgb(255 255 255 / .04); }
+.tk-top { display: flex; align-items: flex-start; gap: 10px; }
+.tk-title { flex: 1; min-inline-size: 0; color: var(--fg); }
+.tk-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+           color: var(--fg-muted); font-size: .85em; }
+.tk-kind { color: var(--fg); }
+.tk-model { color: var(--fg); background: none; padding: 0; }
+.tk-now { color: var(--fg-muted); }
+.tk-view, .tk-finished, .tk-clear, .tk-stop {
+  min-height: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.tk-view { align-self: flex-start; padding: 0; color: rgb(128 176 255); font-size: .85em; }
+.tk-view:hover { text-decoration: underline; }
+.tk-stop { flex: none; inline-size: 22px; block-size: 22px; border: 1px solid var(--border);
+           border-radius: 5px; position: relative; }
+.tk-stop::before { content: ""; position: absolute; inset: 6px; border-radius: 2px;
+                   background: var(--fg-muted); }
+.tk-stop:hover { background: var(--surface-2); }
+.tk-stop:hover::before { background: var(--fg); }
+.tk-finished-row { display: flex; align-items: center; justify-content: space-between; padding-top: 6px; }
+.tk-finished { padding: 2px; color: var(--fg-muted); font-size: .9em; }
+.tk-finished::after { content: " ‹"; }
+.tk-finished[aria-expanded="true"]::after { content: " ⌄"; }
+.tk-clear { inline-size: 24px; block-size: 24px; border-radius: 5px; color: var(--fg-muted); }
+.tk-clear::before { content: "🗑"; filter: grayscale(1); font-size: .9em; }
+.tk-clear:hover { background: var(--surface-2); color: var(--fg); }
+.tk-view:focus-visible, .tk-finished:focus-visible, .tk-clear:focus-visible, .tk-stop:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
 #agent-drawer::backdrop { background: rgb(0 0 0 / .45); }
 
 .ag-head {

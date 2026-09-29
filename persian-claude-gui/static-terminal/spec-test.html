@@ -1632,76 +1632,99 @@ check("a subagent's sidechain prompt echo renders nothing",
   !specLog.textContent.includes("single word PING"),
   specLog.childElementCount + " vs " + beforeSide);
 
-/* The strip above the composer, painted from a synthetic /api/agents payload
-   through the shipping builder (window.renderAgents). The description is Latin
-   inside the RTL shell — the assertion has to be the computed direction, not
-   the text, or it passes on a row that renders backwards. */
+/* BACKGROUND TASKS (CLAUDE-AI-PARITY.md P3). The strip above the composer is
+   the site's «N running task» chip and nothing else; the chip opens the panel,
+   whose cards carry the CLI's own task_progress numbers. Painted from a
+   synthetic /api/agents payload through the shipping builder
+   (window.renderAgents). */
 window.renderAgents([
   { id: "a1", kind: "agent", description: "Audit the RTL rules",
-    agentType: "Explore", model: "opus", status: "running",
+    agentType: "Explore", model: "claude-opus-5-5", status: "running",
     startedAt: Math.floor(Date.now() / 1000) - 120 },
   { id: "b2", kind: "command", description: "npm test", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
 const strip = document.querySelector(".agents-strip");
-const stripRows = [...(strip?.querySelectorAll(".ag-row") ?? [])];
-const stripDesc = stripRows[0]?.querySelector(".ag-desc");
-check("the agents strip isolates a Latin description inside the RTL shell",
-  !strip.hidden && dirOf(strip) === "rtl" && stripDesc?.tagName === "BDI" &&
-  dirOf(stripDesc) === "ltr" &&
-  getComputedStyle(stripDesc).unicodeBidi === "isolate",
-  (dirOf(strip) ?? "none") + " shell / " + (dirOf(stripDesc) ?? "none") + " " +
-  (stripDesc ? getComputedStyle(stripDesc).unicodeBidi : "none"));
+const stripChip = strip?.querySelector(".ag-chip");
+check("the strip is the running-task chip, counted in Persian digits",
+  !strip.hidden && stripChip?.textContent === window.STRINGS.pulseTasks.replace("{n}", "۱") &&
+  strip.querySelector(".ag-wait")?.textContent === window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
+  !strip.querySelector(".ag-row"),
+  (strip.hidden ? "hidden" : "visible") + " / «" + (stripChip?.textContent ?? "no chip") + "»");
 
-/* The strip is the LIVE line above the composer, so it carries what is still
-   running and nothing else — a finished helper (here the completed `b2`
-   command) has already reported back in the transcript, and leaving its row up
-   there only accumulated dead rows for the life of the session. The registry
-   itself keeps every entry; the drawer is the history view. */
-check("an agent row opens, and a finished helper is not in the strip at all",
-  stripRows.length === 1 && stripRows[0].tagName === "BUTTON" &&
-  !strip.querySelector('[data-agent-id="b2"]') &&
-  stripRows[0].querySelector(".ag-type")?.textContent === "Explore",
-  stripRows.map(r => r.dataset.agentId + ":" + r.tagName).join(",") || "no rows");
+stripChip.click();
+const tPanel = document.getElementById("tasks-panel");
+const cardA = tPanel?.querySelector('.tk-card[data-agent-id="a1"]');
+const cardTitle = cardA?.querySelector(".tk-title");
+check("the chip opens the tasks panel, laid out only while open",
+  !!tPanel && tPanel.matches(":popover-open") && getComputedStyle(tPanel).display === "flex",
+  tPanel ? getComputedStyle(tPanel).display : "no panel");
 
-// Prose, so Persian digits (rule 5) — both the elapsed time and the count.
-check("the strip counts the waiting agents in Persian digits",
-  strip.querySelector(".ag-wait")?.textContent ===
-    window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
-  stripRows[0].querySelector(".ag-time")?.textContent === "۲ دقیقه",
-  (strip.querySelector(".ag-wait")?.textContent ?? "no wait line") + " / " +
-  (stripRows[0]?.querySelector(".ag-time")?.textContent ?? "no elapsed"));
+// Latin inside the RTL shell: the computed direction, not the text, or this
+// passes on a title that renders backwards.
+check("a running card isolates its Latin title and says kind and time in Persian",
+  cardTitle?.tagName === "BDI" && dirOf(cardTitle) === "ltr" &&
+  getComputedStyle(cardTitle).unicodeBidi === "isolate" &&
+  cardA.querySelector(".tk-kind")?.textContent === window.STRINGS.tasksKindAgent &&
+  cardA.querySelector(".tk-time")?.textContent === "۲ دقیقه" &&
+  !!cardA.querySelector(".tk-stop") && !!cardA.querySelector(".tk-view"),
+  (dirOf(cardTitle) ?? "none") + " / " + (cardA?.querySelector(".tk-time")?.textContent ?? "no time"));
 
-/* paint() rebuilds every `.ag-row` from scratch on each poll (replaceChildren
-   ()), which used to throw focus to <body> mid-tab — a keyboard/screen-reader
-   user could not use the strip for as long as any agent ran. Focus the first
-   row, repaint with the SAME agent id, and check focus followed the row
-   instead of falling back to document.body. Not a BiDi property — this bug
-   has nothing to do with direction — so the assertion is DOM identity
-   (dataset.agentId), the analogous "not textContent" check for a focus bug. */
-strip.querySelector('.ag-row[data-agent-id="a1"]')?.focus();
+check("a finished task is folded behind «پایان‌یافته N», not a running card",
+  !tPanel.querySelector('.tk-card[data-agent-id="b2"]') &&
+  tPanel.querySelector(".tk-finished")?.textContent ===
+    window.STRINGS.tasksFinished.replace("{n}", "۱"),
+  tPanel.querySelector(".tk-finished")?.textContent ?? "no toggle");
+
+// The CLI's own running report fills the card — never an estimate.
+window.renderEvent({ type: "system", subtype: "task_progress", task_id: "a1",
+  usage: { total_tokens: 117600, tool_uses: 14, duration_ms: 93000 }, last_tool_name: "Bash" });
+const factsA = tPanel.querySelector('.tk-card[data-agent-id="a1"]')?.textContent ?? "";
+check("task_progress puts the tokens, tool uses and current step on the card",
+  factsA.includes(window.STRINGS.tasksTokens.replace("{n}", "۱۱۷٫۶ هزار")) &&
+  factsA.includes(window.STRINGS.tasksToolUses.replace("{n}", "۱۴")) &&
+  factsA.includes(window.STRINGS.tasksNow.Bash) &&
+  factsA.includes("Opus 5.5"),
+  factsA.replace(/\s+/g, " ").slice(0, 120));
+
+// The card repaints on every poll; focus must follow the card, not fall to body.
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-stop')?.focus();
 window.renderAgents([
   { id: "a1", kind: "agent", description: "Audit the RTL rules",
-    agentType: "Explore", model: "opus", status: "running",
+    agentType: "Explore", model: "claude-opus-5-5", status: "running",
     startedAt: Math.floor(Date.now() / 1000) - 125 },
   { id: "b2", kind: "command", description: "npm test", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
-check("a repaint preserves focus on the equivalent row instead of dropping it to body",
-  document.activeElement?.dataset.agentId === "a1" &&
-  document.activeElement !== document.body,
+check("a repaint keeps focus on the same card instead of dropping it to body",
+  document.activeElement?.closest?.("[data-agent-id]")?.dataset.agentId === "a1",
   document.activeElement === document.body ? "focus lost to body"
-    : (document.activeElement?.dataset.agentId ?? "no agent id"));
+    : (document.activeElement?.closest?.("[data-agent-id]")?.dataset.agentId ?? "elsewhere"));
 
-/* The drawer. It is a [popover], and the trap that costs a session is `display`:
-   an author rule at any specificity beats the UA rule that hides a CLOSED
-   popover, so it may only be set on :popover-open. A drawer that is always
-   visible and a drawer that never opens look identical in a screenshot. */
-stripRows[0].click();
+// The stop square posts the CLI's own stop_task for THIS task.
+const fetchBeforeStop = window.fetch;
+const stopPosts = [];
+window.fetch = async (url, init) => {
+  if (init?.body) stopPosts.push(JSON.parse(init.body));
+  return new Response(JSON.stringify({ ok: true, agents: [] }),
+                      { headers: { "Content-Type": "application/json" } });
+};
+// api() reaches fetch synchronously, before its first await, so the post is
+// recorded by the time click() returns — the verdict stays one task.
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-stop')?.click();
+window.fetch = fetchBeforeStop;
+check("the stop square sends stop_task for that task",
+  stopPosts.some((b) => b.subtype === "stop_task" && b.params?.task_id === "a1"),
+  JSON.stringify(stopPosts).slice(0, 120) || "no post");
+
+/* «دیدن گزارش» opens the drawer. It is a [popover], and the trap that costs a
+   session is `display`: an author rule at any specificity beats the UA rule
+   that hides a CLOSED popover, so it may only be set on :popover-open. */
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-view').click();
 const dPanel = document.getElementById("agent-drawer");
-check("clicking an agent opens a drawer that is laid out only while open",
+check("«دیدن گزارش» opens the agent's drawer, laid out only while open",
   !!dPanel && dPanel.matches(":popover-open") &&
   getComputedStyle(dPanel).display === "flex" &&
   dirOf(dPanel.querySelector(".ag-head .ag-desc")) === "ltr" &&
@@ -1712,10 +1735,8 @@ check("clicking an agent opens a drawer that is laid out only while open",
 
 /* The popover UA sheet sets `height: fit-content`, and an absolutely positioned
    box whose height is not `auto` ignores its own `inset-block-end` — so the
-   drawer grew downward off the bottom of the window, `.ag-log`'s `flex: 1` had
-   no bounded height to fill, and a long agent transcript could not be scrolled
-   to at all. Only a drawer holding MORE than fits can see it, hence the filler:
-   an empty drawer is inside the window either way. */
+   drawer grew downward off the bottom of the window. Only a drawer holding MORE
+   than fits can see it, hence the filler. */
 const dLog = dPanel.querySelector(".ag-log");
 const filler = document.createElement("div");
 filler.style.blockSize = "400vh";
@@ -1727,67 +1748,59 @@ check("the drawer stays inside the window and scrolls its own transcript",
   "px window, log " + dLog.scrollHeight + " in " + dLog.clientHeight);
 filler.remove();
 
-// Closing has to take the panel AND its poll with it — one exit, so nothing
-// keeps reading a transcript for a drawer nobody is looking at.
 dPanel.querySelector(".ag-close").click();
 check("closing the drawer removes it entirely",
   !document.getElementById("agent-drawer"),
   document.getElementById("agent-drawer") ? "still there" : "gone");
 
-/* Drawer toggle race: click agent A, then agent B before A's own `toggle`
-   fires. openDrawer() closes the previous drawer with hidePopover(), which
-   runs SYNCHRONOUSLY, but a popover's `toggle` event is only QUEUED (the same
-   trap the close button above already sidesteps) — so A's toggle listener is
-   still live when B's drawer is built and open. The listener used to call the
-   module-global closeDrawer() unconditionally, so A's late event tore down
-   B's drawer instead of its own. Fired synthetically rather than waited for:
-   the harness's script is synchronous and the queued task would not have run
-   before the DOM dump, but the listener itself does not know or care whether
-   the event was queued or dispatched by hand. */
+/* Drawer toggle race: a closed drawer's QUEUED `toggle` must not tear down the
+   drawer that replaced it (the listener used to call the module-global
+   closeDrawer() unconditionally). Fired by hand: the harness is synchronous. */
 window.renderAgents([
   { id: "ra1", kind: "agent", description: "Race helper A", agentType: "Explore",
     status: "running", startedAt: Math.floor(Date.now() / 1000) - 30 },
   { id: "ra2", kind: "agent", description: "Race helper B", agentType: "Explore",
     status: "running", startedAt: Math.floor(Date.now() / 1000) - 20 },
 ]);
-const raceRows = [...strip.querySelectorAll(".ag-row")];
-raceRows[0].click();                          // opens A
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+document.querySelector('#tasks-panel .tk-card[data-agent-id="ra1"] .tk-view').click();
 const panelA = document.getElementById("agent-drawer");
-raceRows[1].click();                          // opens B — openDrawer() closes A first
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+document.querySelector('#tasks-panel .tk-card[data-agent-id="ra2"] .tk-view').click();
 const panelB = document.getElementById("agent-drawer");
 const lateToggle = new Event("toggle");
 lateToggle.newState = "closed";
-panelA.dispatchEvent(lateToggle);             // A's queued toggle, fired late
+panelA.dispatchEvent(lateToggle);
 check("a late toggle from a closed drawer does not tear down the one that replaced it",
-  document.getElementById("agent-drawer") === panelB &&
+  panelA !== panelB && document.getElementById("agent-drawer") === panelB &&
   panelB.matches(":popover-open"),
   document.getElementById("agent-drawer")
     ? "drawer B present" : "drawer GONE — closed the wrong one");
-panelB.querySelector(".ag-close").click();    // leave no drawer open behind
+panelB.querySelector(".ag-close").click();
 
-/* R3: a finished agent used to vanish from the UI entirely once its running
-   row left the strip — a row's own click was the only way into the drawer,
-   and paint() never painted anything but status==="running". A muted history
-   toggle keeps the running-only strip (deliberate — finished-rows-shown-
-   forever was the original complaint) but makes a completed agent reachable
-   again. */
+/* A finished agent must stay reachable once nothing runs: /tasks opens the
+   panel onto the folded list (commands.js), and the strip goes away. */
 window.renderAgents([
   { id: "c1", kind: "agent", description: "Refactor the exporter",
     agentType: "Explore", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 300,
     finishedAt: Math.floor(Date.now() / 1000) - 120 },
 ]);
-check("a finished-only registry shows the toggle, not a row",
-  !strip.hidden && !!strip.querySelector(".ag-history") &&
-  strip.querySelectorAll(".ag-row").length === 0,
-  (strip.hidden ? "hidden" : "visible") + " / " +
-  (strip.querySelector(".ag-history") ? "toggle" : "no toggle") + " / " +
-  strip.querySelectorAll(".ag-row").length + " rows");
-
-strip.querySelector(".ag-history").click();
-check("clicking the toggle paints the finished agent as a completed row",
-  !!strip.querySelector('button.ag-row[data-status="completed"]'),
-  strip.querySelector(".ag-row")?.dataset.status ?? "no row");
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+const fPanel = document.getElementById("tasks-panel");
+check("with only finished work the strip is gone and the panel says nothing runs",
+  strip.hidden && !!fPanel?.querySelector(".tk-empty") && !fPanel.querySelector(".tk-card"),
+  (strip.hidden ? "no strip" : "STRIP") + " / " + (fPanel?.querySelector(".tk-empty") ? "empty note" : "no note"));
+fPanel.querySelector(".tk-finished").click();
+check("unfolding «پایان‌یافته» shows the finished card, with its report link",
+  !!fPanel.querySelector('.tk-card[data-status="completed"] .tk-view') &&
+  !fPanel.querySelector('.tk-card[data-status="completed"] .tk-stop'),
+  fPanel.querySelector(".tk-card")?.dataset.status ?? "no card");
+fPanel.querySelector(".tk-clear").click();
+check("the wipe clears the finished list from the panel",
+  !fPanel.querySelector(".tk-card") && !fPanel.querySelector(".tk-finished"),
+  fPanel.querySelectorAll(".tk-card").length + " cards");
+fPanel.querySelector(".ag-close").click();
 
 window.renderAgents([]);
 check("an empty registry still hides the strip entirely",
