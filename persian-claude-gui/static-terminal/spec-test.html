@@ -2864,6 +2864,44 @@ check("the row's ✕ asks the CLI to drop that one message, by uuid",
   JSON.parse(qPosts[0].body ?? "{}").uuid === "q-fa",
   qPosts.map((p) => p.url + " " + p.body).join(" | ") || "nothing sent");
 
+/* The four actions under a queued message, after claude.ai/code (pcg-e11):
+   copy, ↺ back into the prompt, ✕ delete, «الان بفرست». The requests go out
+   synchronously on click; a stub that never answers keeps the HTTP reply out
+   of it, so what is asserted is the CLI's own `cancelled` event arriving
+   FIRST - the race a plain delete has to survive. */
+const qHold = window.fetch;
+const qSent = [];
+window.fetch = (url, options) => {
+  qSent.push({ url: String(url).split("?")[0], body: JSON.parse(options?.body ?? "{}") });
+  return new Promise(() => {});
+};
+input.value = "";
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-del", "این را کلاً حذف کن");
+  qSend("q-back", "این را برگردان تا ویرایش کنم");
+});
+const qActs = [...(qStrip()?.querySelector('[data-uuid="q-del"]')?.querySelectorAll("button") ?? [])]
+  .map((b) => b.className.split(" ").pop());
+check("a queued row offers copy, ↺, ✕ and «الان بفرست», in that order",
+  qActs.join() === "queued-copy,queued-edit,queued-x,queued-now", qActs.join());
+qStrip()?.querySelector('[data-uuid="q-del"] .queued-x')?.click();
+qStrip()?.querySelector('[data-uuid="q-back"] .queued-edit')?.click();
+withRenderTarget(qLog, qScope, () => { qLife("q-del", "cancelled"); qLife("q-back", "cancelled"); });
+check("✕ deletes, even when the CLI's cancel beats the reply; ↺ puts the text back",
+  !input.value.includes("این را کلاً حذف کن") && input.value.includes("این را برگردان تا ویرایش کنم")
+  && qSent.filter((c) => c.url === "/api/queue/cancel").map((c) => c.body.uuid).join() === "q-del,q-back",
+  "box «" + input.value + "» / " + qSent.map((c) => c.url + ":" + (c.body.uuid ?? "")).join(" | "));
+input.value = "";
+withRenderTarget(qLog, qScope, () => qSend("q-now", "این را الان بفرست"));
+qSent.length = 0;
+qStrip()?.querySelector('[data-uuid="q-now"] .queued-now')?.click();
+check("«الان بفرست» stops the running turn, which keeps the queue and runs it",
+  qSent.length === 1 && qSent[0].url === "/api/interrupt",
+  qSent.map((c) => c.url).join(" | ") || "nothing sent");
+withRenderTarget(qLog, qScope, () => qLife("q-now", "cancelled"));
+window.fetch = qHold;
+input.value = "";
+
 /* The wrapper saying this conversation has nothing in flight empties the strip
    — and hands the text back, which is the opposite of what this case used to
    assert. The old rule ("idle_sync means the wrapper can no longer account for
