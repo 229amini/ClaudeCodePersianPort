@@ -296,51 +296,136 @@ function endStreamPaint(el) {
   el.classList.remove("streaming");
 }
 
-/* A run of consecutive tool calls collapses into ONE row — «۱ فایل خوانده شد،
-   ۱۱ فرمان اجرا شد» — the way the CLI's own transcript does it. Eleven cards
-   between two sentences is noise, and the whole point of this window is that a
-   non-technical reader can follow the conversation; the group keeps every card
-   exactly one click away instead of hiding it.
+/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every step between two
+   sentences joins one run, and the run is ONE shut row that says what happened
+   the way claude.ai/code says it — «یک فرمان اجرا شد، 5.png خوانده شد ‹». A
+   lone call is a run too: the site draws «Used …: read documentation ›» for
+   one call, and a single step drawn as a tool card among one-line runs was
+   the scattered row the user reported. Opening the row lists the steps, each
+   still its own card, so nothing is further than it was.
 
-   Two deliberate limits:
-   - The group forms on the SECOND card. A lone Bash call reads better as
-     itself than as «۱ فرمان اجرا شد», so the first card goes in the log and is
-     pulled into the group only if a second one follows it.
-   - Anything that is not a plain tool card ends the run: a sentence, a
-     question, a todo list, the result line. That is what makes the grouping
-     mean "these happened together" rather than "these are the same tool".
-
-   `.ask` is excluded because a question the user must answer can never be
-   folded shut, and the group itself is built by hand rather than through
-   card(): card() appends, append() calls this, and a `.card.tool` group would
-   route itself straight back in.
-
-   `.thinking` IS part of the run. With interleaved thinking the model thinks
-   between every call, so a thinking card that ENDED the run shattered a
-   fifteen-step turn into fifteen groups of one, separated by fifteen identical
-   content-free «در حال فکر کردن» rows — the ladder the user reported. It joins
-   the run instead, and is deliberately not counted in the summary: the row says
-   what HAPPENED, and thinking is not one of the things that happened. */
+   What joins:
+   - a tool card (`.tool`), counted by kind;
+   - a thought WITH text (`.thinking`), not counted: the line says what
+     HAPPENED. An empty thought never reaches here — no card is built for one
+     (620 of 755 blocks in a real session were signature-only, and the CLI
+     draws nothing for them either, read out of the 2.1.284 bundle);
+   - a background task's completion notice (`.agent-note`), counted: the
+     site's «finished a background command».
+   `.ask` stays out: a question the user must answer is never folded shut. */
 function isRunnable(el) {
   if (!el.classList) return false;
-  if (el.classList.contains("thinking")) return true;
+  if (el.classList.contains("thinking") || el.classList.contains("agent-note")) return true;
   return el.classList.contains("tool") && !el.classList.contains("ask")
          && !el.classList.contains("group");
 }
 
-function groupSummaryText(counts) {
-  const parts = [];
-  for (const [name, n] of counts) {
-    // An MCP name has no Persian noun and never will (the server set is
-    // per-machine) — falling back to `name` reintroduces the forty-character
-    // mcp__<server>__<tool> identifier that toolSummary() below was
-    // specifically split apart for (bead pcg-9jx). mcpName() is the same
-    // split, reused rather than duplicated.
-    const mcp = mcpName(name);
-    const noun = FA.toolGroupNouns?.[name] ?? FA.toolVerbs?.[name] ?? (mcp ? mcp.tool : name);
-    parts.push(n.toLocaleString("fa-IR") + " " + noun);
+const ACT_KIND = {
+  Bash: "shell", PowerShell: "shell", BashOutput: "shell", KillShell: "shell",
+  Read: "read", Edit: "edit", MultiEdit: "edit", NotebookEdit: "edit", Write: "write",
+  Glob: "search", Grep: "search", WebFetch: "fetch", WebSearch: "websearch",
+  Agent: "agent", Task: "agent",
+};
+
+/* The sentence, as nodes: a file name inside Persian prose is an LTR island,
+   so it is a `<bdi>` rather than a character in a string (spec rule 2). One
+   part per kind, in the order each kind first happened. */
+function activityNodes(steps) {
+  const kinds = new Map();
+  let thought = false;
+  for (const el of steps) {
+    if (el.classList.contains("thinking")) { thought = true; continue; }
+    let key, kind;
+    if (el.classList.contains("agent-note")) {
+      key = kind = "bgdone";
+    } else {
+      const name = el.dataset.tool || "";
+      const mcp = mcpName(name);
+      kind = mcp ? "mcp" : (ACT_KIND[name] ?? "other");
+      key = mcp ? "mcp:" + mcp.server : kind === "other" ? "other:" + name : kind;
+    }
+    const k = kinds.get(key) ?? kinds.set(key, { kind, n: 0, targets: [], el }).get(key);
+    k.n += 1;
+    const target = el.dataset.target;
+    if (target && !k.targets.includes(target)) k.targets.push(target);
   }
-  return parts.join("، ");
+  const parts = [];
+  const text = (t) => [document.createTextNode(t)];
+  const withName = (template, name) => {
+    const [before, after] = template.split("{name}");
+    const bdi = document.createElement("bdi");
+    bdi.className = "run-name";
+    bdi.dir = "auto";
+    bdi.textContent = name;
+    return [document.createTextNode(before), bdi, document.createTextNode(after ?? "")];
+  };
+  const many = (template, n) => text(template.replace("{n}", faNum(n)));
+  for (const [key, k] of kinds) {
+    const files = k.targets.length;
+    switch (k.kind) {
+      case "shell": parts.push(k.n === 1 ? text(FA.actShellOne) : many(FA.actShellMany, k.n)); break;
+      case "read":
+        parts.push(files === 1 ? withName(FA.actReadOne, k.targets[0])
+                               : many(FA.actReadMany, files || k.n)); break;
+      case "edit":
+        parts.push(files === 1 ? withName(FA.actEditOne, k.targets[0])
+                               : many(FA.actEditMany, files || k.n)); break;
+      case "write":
+        parts.push(files === 1 ? withName(FA.actWriteOne, k.targets[0])
+                               : many(FA.actWriteMany, files || k.n)); break;
+      case "search": parts.push(k.n === 1 ? text(FA.actSearchOne) : many(FA.actSearchMany, k.n)); break;
+      case "fetch": parts.push(k.n === 1 ? text(FA.actFetchOne) : many(FA.actFetchMany, k.n)); break;
+      case "websearch": parts.push(k.n === 1 ? text(FA.actWebSearchOne) : many(FA.actWebSearchMany, k.n)); break;
+      case "agent": parts.push(k.n === 1 ? text(FA.actAgentOne) : many(FA.actAgentMany, k.n)); break;
+      case "bgdone": parts.push(k.n === 1 ? text(FA.actBgDoneOne) : many(FA.actBgDoneMany, k.n)); break;
+      case "mcp": {
+        // «از github استفاده شد: create_issue» — the site's «Used <server>:
+        // <tool>». Both names are per-machine and never translated (pcg-9jx).
+        const m = mcpName(k.el.dataset.tool);
+        parts.push(k.n === 1
+          ? [...withName(FA.actMcpOne.replace("{tool}", "\u0000"), m.server)]
+              .flatMap((node) => node.nodeType === 3 && node.data.includes("\u0000")
+                ? withName(node.data.replace("\u0000", "{name}"), m.tool) : [node])
+          : withName(FA.actMcpMany.replace("{n}", faNum(k.n)), m.server));
+        break;
+      }
+      default: {
+        const name = key.slice("other:".length);
+        parts.push(k.n === 1 ? withName(FA.actOtherOne, name)
+                             : withName(FA.actOtherMany.replace("{n}", faNum(k.n)), name));
+      }
+    }
+  }
+  if (!parts.length && thought) parts.push(text(FA.actThought));
+  const out = [];
+  parts.forEach((p, i) => {
+    if (i) out.push(document.createTextNode(FA.actJoin));
+    out.push(...p);
+  });
+  return out;
+}
+
+/* Built by hand, not through card(): card() appends, append() asks toolHome(),
+   and a `.card.tool` run would route itself straight back in. The classes
+   `card tool group` are kept so every reader that skips a run by them still
+   does (a run is not a tool call). */
+function openRun() {
+  const details = document.createElement("details");
+  details.className = "card tool group run";
+  const summary = document.createElement("summary");
+  const text = label("", "run-text");
+  const err = label("", "run-err");
+  err.hidden = true;
+  summary.append(text, err);
+  const body = document.createElement("div");
+  body.className = "card-body";
+  details.append(summary, body);
+  log.append(details);
+  return { details, body, text, err, steps: [], errors: 0 };
+}
+
+function paintRun(run) {
+  run.text.replaceChildren(...activityNodes(run.steps));
 }
 
 function toolHome(el) {
@@ -348,48 +433,23 @@ function toolHome(el) {
     state.run = null;
     return log;
   }
-  const run = state.run ??= { first: null, group: null, counts: new Map(), latest: null,
-                              earlier: 0 };
-  const name = el.dataset.tool;
-  if (name) run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
+  let run = state.run;
+  if (!run || !log.contains(run.details)) run = state.run = openRun();
+  run.steps.push(el);
+  paintRun(run);
+  return run.body;
+}
 
-  if (!run.group) {
-    if (!run.first) {          // first of a possible run: stays inline
-      run.first = el;
-      return log;
-    }
-    /* §D11.2: the run shows its NEWEST card as itself, and the earlier ones
-       behind one folded row - «۳ فرمان اجرا شد · +۲ مورد قبلی». A folded row
-       that hid the step being taken right now read as nothing happening. */
-    const wrap = document.createElement("div");
-    wrap.className = "run";
-    const details = document.createElement("details");
-    details.className = "card tool group run-earlier";
-    const summary = document.createElement("summary");
-    const more = label("", "run-more");
-    summary.append(icon("run"), label("", "tool-verb"), more);
-    details.append(summary);
-    const body = document.createElement("div");
-    body.className = "card-body";
-    details.append(body);
-    run.first.replaceWith(wrap);      // takes the first card's place in the log
-    wrap.append(details);
-    body.append(run.first);
-    run.earlier = 1;
-    run.group = { wrap, details, body, text: summary.querySelector(".tool-verb"), more };
-  } else if (run.latest) {
-    // The card that was newest joins the earlier ones, as a node: every map
-    // that routes into it (state.toolCards) keeps pointing at the same body.
-    run.group.body.append(run.latest);
-    run.earlier += 1;
-  }
-  run.latest = el;
-  // A run of nothing but thinking has no action to count; it still needs a row
-  // that says something, so it names itself.
-  run.group.text.textContent = run.counts.size
-    ? groupSummaryText(run.counts) : FA.thinking;
-  run.group.more.textContent = FA.runEarlier.replace("{n}", faNum(run.earlier));
-  return run.group.wrap;
+/* A failed step says so on the run's own line, so a shut run is not a green
+   light over a red step. */
+function noteRunError(body) {
+  const row = body?.closest?.("details.run");
+  if (!row) return;
+  const err = row.querySelector(":scope > summary > .run-err");
+  const n = Number(row.dataset.errors || 0) + 1;
+  row.dataset.errors = String(n);
+  err.textContent = FA.actErrors.replace("{n}", faNum(n));
+  err.hidden = false;
 }
 
 /* --- a polling loop is one pair, not sixteen rows ---------------------------
