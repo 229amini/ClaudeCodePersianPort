@@ -54,7 +54,7 @@ OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
-          "newsession-pair", "bell", "changes")
+          "newsession-pair", "bell", "changes", "layout", "queue")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -246,6 +246,28 @@ async function run() {
     APP.cells[0].changes.open();
     await sleep(120);
     document.querySelector(".ch-file").open = true;
+    return;
+  }
+  if (SCENE === "queue") {
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    turn("t1", 1);
+    ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "q1",
+              text: "بعدش تست‌ها را هم دوباره اجرا کن"});
+    ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "q2",
+              text: "and update the changelog when you are done"});
+    return;
+  }
+  if (SCENE === "layout") {
+    useTabs(TABS, "t1");
+    APP.applyTabs({tabs: TABS, active: "t1"});
+    await sleep(60);
+    for (const t of TABS) status(t.tab, t.cwd);
+    await sleep(400);     // the refreshed /api/tabs lands first, as in the bell scene
+    document.getElementById("btn-layout").click();
+    await sleep(120);
     return;
   }
   if (SCENE === "bell") {

@@ -49,7 +49,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   keydown listener after it must check `defaultPrevented` — and, since v2.4, **why the dialogs are
   rows in the column** rather than modals, and the four things that had to change together for
   that to hold.
-- [rtl-rendering-notes.md](rtl-rendering-notes.md) — how to re-run the spec tests (one free
+- [rtl-rendering-notes.md](rtl-rendering-notes.md) — **2026-09-29:** a Latin name in an RTL list,
+  and why `text-align: match-parent` does not fix it in Chromium. Also: how to re-run the spec tests (one free
   command now), why bare paths need a JS pass, and the two traps (subresource auth, global-scope
   collision) that a screenshot cannot catch. Also **what breaks when the window is made small**,
   and why the picker menus were sizing themselves off their own anchor. **2026-09-24:** an empty
@@ -58,7 +59,9 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   live, how they differ from the live stream, the restart pitfalls (stale readers, replay
   history), and **the two shapes a `user` turn arrives in** — one of which is mostly the CLI's own
   injected envelopes, not the person.
-- [parity-chrome.md](parity-chrome.md) — the interrupt control message, slash commands, image
+- [parity-chrome.md](parity-chrome.md) — **2026-09-29:** §"The statusLine payload" (the CLI's own
+  shape, field by field, and why a thin payload printed a thin bar) and the queue row's four
+  actions. Also: the interrupt control message, slash commands, image
   blocks, statusLine passthrough, and the CLI features deliberately left unbuilt.
 - [background-agents.md](background-agents.md) — the measured background-agent lifecycle on
   2.1.226: launch ack shape, `<task-notification>`, `subagents/agent-*.jsonl` + meta.json, and
@@ -90,6 +93,10 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   **2026-09-24 (pcg-0o7):** why `focusCell()` defers itself while a `withRenderTarget` is open
   — a dialog focusing itself mid-render used to file one conversation's state under another.
   Same day, pcg-973: the web edition's status dots differ in shape as well as hue.
+  **2026-09-29:** CSS app zoom is shipped (a 2K screen opens at 125 %) and what it cost — rects are
+  screen px, style lengths CSS px, so every menu placed from a rect was off (the table there); the
+  layout control for conversations already open; per-conversation folders and branches on the
+  new-session page.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

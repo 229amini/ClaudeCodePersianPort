@@ -247,13 +247,61 @@ after each non-replayed `result` (`app.js countChanges`). Gate: `test_changes.py
 ## App zoom and the prefs store (BRIDGEMIND-PORT.md §D13, P9, 2026-09-24)
 
 `static-terminal/js/prefs.js` is a leaf holding the two values the Windows probe decides:
-`ZOOM_MODE` (`"native"` shipped — Edge's own Ctrl+= / Ctrl+- / Ctrl+0, nothing drawn — or
+`ZOOM_MODE` (`"native"` shipped until 2026-09-29, `"css"` since — see below; native is Edge's own Ctrl+= / Ctrl+- / Ctrl+0, nothing drawn — or
 `"css"`: `:root.css-zoom { zoom: var(--zoom) }` in steps 80–150 %, the three chords handled by
 `e.code`, a readout in the sidebar footer) and `PREFS_STORE` (`"session"` shipped, or `"local"`,
 which only helps with a stable port — not built, see §D13). The layout record (`pcg.layout`) now
 goes through `readPref`/`writePref`, so one value moves both. `<html data-zoom-mode="css">`
-overrides the constant; that is how `test_zoom.py` (7) proves both branches, and how
+overrides the constant; that is how `test_zoom.py` (9 since 2026-09-29) proves both branches, and how
 `SHOT_ZOOM=1.25 python shots.py …` renders the 125 % set without editing the module.
+
+### CSS zoom is shipped now, and what it cost (2026-09-29, pcg-ujz)
+
+The user's report: a 2560×1440 panel at 100 % Windows scaling draws everything small. Only the
+CSS mode can **start** larger (Edge's own level is per origin and the port changes every run), so
+`ZOOM_MODE` is `"css"` and `autoZoom()` picks the step that makes the screen read like a
+1920-wide one: 2560 → 1.25, 2048 → 1.1, 3840 → 1.5, never below 1. `screen.width` is already in
+CSS px, so Windows' own scaling is counted once. It is **capped by the window** (`AUTO_MIN_ROOM`,
+1100 CSS px), because `@media` rules do not see root zoom, and it follows window resizes until
+the user picks a level. Ctrl+0 returns to that level, not to 100 %.
+
+That made M4 ours to answer, and it failed exactly as feared. Measured on Chromium 141 under
+`:root { zoom: 1.25 }`:
+
+| Read | Space |
+|---|---|
+| `getBoundingClientRect()`, `innerWidth`/`innerHeight`, a pointer's `clientX` | **screen** px (a 200 px left reads 250) |
+| `offsetWidth`/`offsetHeight`, `clientHeight`, `scrollHeight`, every `style` length you write | **CSS** px |
+
+So `menu.style.left = rect.left + "px"` lands at 1.25 × `rect.left`: the kebab menu, the sidebar
+hover card, the bell panel and the slash-popup cap were all off, and `layoutFor()`'s room was
+over-counted. The rule: **convert rects on the way in with `prefs.js cssPx()` and do the
+arithmetic in CSS px.** Keep `offset*` for an element's own size: a rect read during the menu's
+`scale(.96)` entry animation is short, which is what the first attempt at this fix got wrong
+(8 px off, caught by `test_zoom.py`). A divider drag is a ratio of two rects and needs nothing.
+
+## The layout control (pcg-7bi, 2026-09-29)
+
+The user asked to arrange the conversations that are ALREADY open. Since the new-session page
+replaced «۱ | ۲ | ۴» (P4) only `/split` and Alt keys reached `setSplit()`, and that page opens new
+conversations. `#btn-layout` sits beside «گفتگوی جدید» (stacked under it in the rail); its panel
+has the open count, pane counts ۱–۶ (disabled with the reason when `fitsPanes()` says no room),
+«هم‌اندازه کردن قاب‌ها» (`equalize`) and a hint that the dividers drag. `arrange(n)` is
+`setSplit(n)` **plus** filling each new blank pane with an open conversation not yet on screen, in
+the sidebar's order: `/split` alone leaves them blank, which was the complaint. Two things found
+by looking: the head had ~104 px left beside three icons and wrapped the product name, which is
+why the button is not there; and «(Alt+=)» drew as «(=+Alt)» inside the Persian run (a trailing
+`=` is neutral), so the chord is its own LTR `<kbd>`. `test_arrange.py` (7).
+
+## Per-conversation folders on the new-session page (pcg-6aj, 2026-09-29)
+
+With more than one conversation each preview row is its own small form: a folder `<select>` and
+a «شاخهٔ جدا» checkbox, enabled only when that row's folder is a git repo (and locked in «جفت»).
+`model.slots` is what launches; the folder and isolation fields above set every row at once, and
+the two radios are both unchecked when the rows differ. `/api/project/pick` now returns `git`: a
+folder picked there was always taken for a non-repo, so it could never get a branch (pcg-h9p).
+The rows are rebuilt on every paint, so the control that had the keyboard is re-focused by its
+`data-slot`/`data-kind`.
 
 ## Open items
 

@@ -16,6 +16,7 @@ import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking } from "./render.js";
 import { runWindowCommand } from "./commands.js";
 import { newChatHere } from "./chrome.js";
+import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
 
@@ -658,9 +659,11 @@ export function makeComposer(root, cell) {
     if (!box) return;
     const bounds = (root instanceof Element ? root : document.body)
       .getBoundingClientRect();
-    const roomAbove = box.top - bounds.top - POP_GAP - POP_EDGE;
+    // The rects are SCREEN px and the constants and writes CSS px: the
+    // arithmetic runs in CSS px (prefs.js cssPx; 1 unless the app is zoomed).
+    const roomAbove = cssPx(box.top - bounds.top) - POP_GAP - POP_EDGE;
     el.style.maxHeight = Math.max(0, Math.min(
-      bounds.height - 2 * POP_EDGE, Math.max(POP_MIN, roomAbove))) + "px";
+      cssPx(bounds.height) - 2 * POP_EDGE, Math.max(POP_MIN, roomAbove))) + "px";
     const over = Math.round(el.offsetHeight - roomAbove);
     if (over > 0) el.style.insetBlockEnd = `calc(100% + ${POP_GAP - over}px)`;
   }

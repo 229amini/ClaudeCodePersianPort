@@ -16,6 +16,7 @@
    ========================================================================= */
 
 import { relWhen } from "./chrome.js";
+import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
 const CAP = 50;
@@ -92,9 +93,10 @@ function place() {
   const gap = 8;
   panel.style.left = "auto";
   panel.style.bottom = "auto";
-  panel.style.right = Math.max(gap, innerWidth - (side ? side.left : at.left) + gap) + "px";
+  // CSS px: the rects converted on the way in (prefs.js cssPx).
+  panel.style.right = Math.max(gap, cssPx(innerWidth - (side ? side.left : at.left)) + gap) + "px";
   const h = panel.offsetHeight;
-  panel.style.top = Math.max(gap, Math.min(at.top, innerHeight - h - gap)) + "px";
+  panel.style.top = Math.max(gap, Math.min(cssPx(at.top), cssPx(innerHeight) - h - gap)) + "px";
 }
 
 /* `kind`: "done" | "needs" | "failed". Called by app.js, which has already

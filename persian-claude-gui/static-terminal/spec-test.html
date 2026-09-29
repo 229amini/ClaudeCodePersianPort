@@ -1263,6 +1263,23 @@ check("the pulse is pinned last while the turn runs, though it was appended firs
   pulse ? "order " + getComputedStyle(pulse).order + " vs card "
           + getComputedStyle(pulseCard).order : "no pulse");
 
+// The live line says WHAT the turn is doing once it knows (pcg-els, after
+// claude.ai/code): the tool_use above made it «running a tool»; a thought and
+// then prose move it on, and the settled line below still wears the verb.
+const phaseAfterTool = pulse?.querySelector(".pulse-verb")?.textContent;
+window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
+  delta: { type: "thinking_delta", thinking: "hmm" } } });
+const phaseThinking = pulse?.querySelector(".pulse-verb")?.textContent;
+window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
+  delta: { type: "text_delta", text: "باشه" } } });
+const phaseWriting = pulse?.querySelector(".pulse-verb")?.textContent;
+window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "باشه" }] } });
+check("the live line names the phase: a tool, then thinking, then writing",
+  phaseAfterTool === window.STRINGS.pulsePhases.tools &&
+  phaseThinking === window.STRINGS.pulsePhases.thinking &&
+  phaseWriting === window.STRINGS.pulsePhases.writing,
+  [phaseAfterTool, phaseThinking, phaseWriting].join(" → "));
+
 // The turn's result, and it settles NOTHING on its own: the command we sent is
 // still open, and a window that closed the line here would drop the stop button
 // while a message folded into that turn was still to be answered.
@@ -2863,6 +2880,44 @@ check("the row's ✕ asks the CLI to drop that one message, by uuid",
   qPosts.length === 1 && qPosts[0].url === "/api/queue/cancel" &&
   JSON.parse(qPosts[0].body ?? "{}").uuid === "q-fa",
   qPosts.map((p) => p.url + " " + p.body).join(" | ") || "nothing sent");
+
+/* The four actions under a queued message, after claude.ai/code (pcg-e11):
+   copy, ↺ back into the prompt, ✕ delete, «الان بفرست». The requests go out
+   synchronously on click; a stub that never answers keeps the HTTP reply out
+   of it, so what is asserted is the CLI's own `cancelled` event arriving
+   FIRST - the race a plain delete has to survive. */
+const qHold = window.fetch;
+const qSent = [];
+window.fetch = (url, options) => {
+  qSent.push({ url: String(url).split("?")[0], body: JSON.parse(options?.body ?? "{}") });
+  return new Promise(() => {});
+};
+input.value = "";
+withRenderTarget(qLog, qScope, () => {
+  qSend("q-del", "این را کلاً حذف کن");
+  qSend("q-back", "این را برگردان تا ویرایش کنم");
+});
+const qActs = [...(qStrip()?.querySelector('[data-uuid="q-del"]')?.querySelectorAll("button") ?? [])]
+  .map((b) => b.className.split(" ").pop());
+check("a queued row offers copy, ↺, ✕ and «الان بفرست», in that order",
+  qActs.join() === "queued-copy,queued-edit,queued-x,queued-now", qActs.join());
+qStrip()?.querySelector('[data-uuid="q-del"] .queued-x')?.click();
+qStrip()?.querySelector('[data-uuid="q-back"] .queued-edit')?.click();
+withRenderTarget(qLog, qScope, () => { qLife("q-del", "cancelled"); qLife("q-back", "cancelled"); });
+check("✕ deletes, even when the CLI's cancel beats the reply; ↺ puts the text back",
+  !input.value.includes("این را کلاً حذف کن") && input.value.includes("این را برگردان تا ویرایش کنم")
+  && qSent.filter((c) => c.url === "/api/queue/cancel").map((c) => c.body.uuid).join() === "q-del,q-back",
+  "box «" + input.value + "» / " + qSent.map((c) => c.url + ":" + (c.body.uuid ?? "")).join(" | "));
+input.value = "";
+withRenderTarget(qLog, qScope, () => qSend("q-now", "این را الان بفرست"));
+qSent.length = 0;
+qStrip()?.querySelector('[data-uuid="q-now"] .queued-now')?.click();
+check("«الان بفرست» stops the running turn, which keeps the queue and runs it",
+  qSent.length === 1 && qSent[0].url === "/api/interrupt",
+  qSent.map((c) => c.url).join(" | ") || "nothing sent");
+withRenderTarget(qLog, qScope, () => qLife("q-now", "cancelled"));
+window.fetch = qHold;
+input.value = "";
 
 /* The wrapper saying this conversation has nothing in flight empties the strip
    — and hands the text back, which is the opposite of what this case used to
