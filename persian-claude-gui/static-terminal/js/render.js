@@ -857,6 +857,19 @@ function pickVerb(seed) {
   return FA.pulseVerbs[h % FA.pulseVerbs.length];
 }
 
+/* WHAT the turn is doing, in place of the verb once there is an answer
+   (pcg-els, after claude.ai/code's «Running tools…»): thinking, writing,
+   running a tool, or waiting on the person. Called from the events that
+   mark each one; a change rewrites the line, which happens a few times a
+   turn, not twice a second. The SETTLED line keeps the verb: it is the
+   turn's record, and a reload must redraw it identically. */
+function pulsePhase(phase) {
+  const p = state.pulse;
+  if (!p || p.phase === phase) return;
+  p.phase = phase;
+  p.text.textContent = FA.pulsePhases[phase] ?? FA.pulseRunning.replace("{verb}", p.verb);
+}
+
 function startPulse(seed) {
   clearPulse();
   const el = document.createElement("div");
@@ -2232,6 +2245,7 @@ export function renderEvent(ev) {
         // Stream as plain text; markdown is rendered once the message closes,
         // so half-written fences never reach marked.
         if (!state.streamBubble) {
+          pulsePhase("writing");
           state.streamBubble = bubble("assistant", "");
           // Plain text under `.msg`'s unicode-bidi:plaintext ignores `dir`;
           // the class is what lets the measured direction apply while the
@@ -2244,6 +2258,7 @@ export function renderEvent(ev) {
         queueStreamText(state.streamBubble, log, state.streamText);
       } else if (typeof delta.thinking === "string") {
         if (!state.thinkingBody) {
+          pulsePhase("thinking");
           state.thinkingPeek = label("", "tool-target");
           // The thought is the model's own prose — usually English, sometimes
           // not. Never pathEl(): forcing LTR on prose is the spec's first trap.
@@ -2278,6 +2293,7 @@ export function renderEvent(ev) {
       // the Task tool_use they belong to. They render INSIDE that row's card.
       withParent(ev.parent_tool_use_id
                  && state.toolCards.get(ev.parent_tool_use_id), () => {
+      if ((ev.message?.content ?? []).some((part) => part.type === "tool_use")) pulsePhase("tools");
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
@@ -2651,12 +2667,14 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "permission_request") {
+        pulsePhase("waiting");
         // NEVER gated: one modal queue serves every open tab, and a background
         // conversation waiting on an answer is exactly the case the dialog has
         // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
         // blocked until its timeout with nothing on screen.
         showPermission(ev);
       } else if (ev.subtype === "permission_resolved") {
+        pulsePhase("tools");
         dismissPermission(ev.request_id);
         const card = state.toolCards.get(ev.tool_use_id);
         // A question was answered, not "allowed" — same event, different act.

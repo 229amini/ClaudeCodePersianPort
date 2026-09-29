@@ -80,6 +80,9 @@
   --surface: rgb(255 255 255 / .03);
   --surface-2: rgb(255 255 255 / .06);
   --fg: #ededed;
+  /* Prose a notch under --fg (pcg-els, after claude.ai/code): a long answer in
+     full white glares; bold and headings keep --fg, so they still stand out. */
+  --fg-prose: #d6d6d6;
   --fg-muted: #a3a3a3;
   --fg-faint: #8a8a8a;
   --border: rgb(255 255 255 / .07);
@@ -1999,6 +2002,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   align-self: stretch;
   max-width: none;
   background: transparent;
+  color: var(--fg-prose);
   padding-block: 1px;
   /* PHYSICAL, not logical, and deliberately so — same reason `.code-copy`
      below is. `.msg` is `unicode-bidi: plaintext` and carries `dir="auto"`, so
@@ -2081,7 +2085,14 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
    top of one that already reads as a break. Halved: the leading separates the
    paragraphs, the margin only has to group them. */
 .msg p { margin: .45em 0; }
-.msg h1, .msg h2, .msg h3 { font-weight: var(--wt-strong); line-height: 1.4; margin: .7em 0 .25em; }
+.msg h1, .msg h2, .msg h3 { font-weight: var(--wt-strong); line-height: 1.4; margin: .7em 0 .25em; color: var(--fg); }
+/* The UA's 2em h1 read as a page title in the middle of an answer. A heading
+   in a reply is a section label: a step or two above the body, as claude.ai
+   sets it. */
+.msg h1 { font-size: 1.3em; }
+.msg h2 { font-size: 1.15em; }
+.msg h3 { font-size: 1.02em; }
+.msg strong { color: var(--fg); }
 .msg ul, .msg ol { padding-inline-start: 1.4em; margin: .35em 0; }
 .msg blockquote {
   border-inline-start: 3px solid var(--border);
@@ -2301,7 +2312,9 @@ html[data-mirror-glyphs="on"] .glyph.mirror {
   transform: scaleX(-1);
 }
 
-.tool-verb { color: var(--fg); }
+/* A tool row is where the work happened, not what it said: muted, as
+   claude.ai draws «Ran 3 commands» (pcg-els). The answer is the bright text. */
+.tool-verb { color: var(--fg-muted); }
 
 /* The `⎿` branch: how much output the row has, before you open it (render.js
    markResult). Same end of the row as the elapsed counter and the same
@@ -2347,7 +2360,7 @@ details.card[open] > summary .tool-branch { opacity: .45; }
 
 /* The filename, not the path — the row stays one line at any depth. */
 .tool-target {
-  color: var(--fg-muted);
+  color: var(--fg-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
