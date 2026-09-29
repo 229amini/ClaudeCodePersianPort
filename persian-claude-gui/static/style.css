@@ -462,11 +462,17 @@ pre, code, .path, .diff, .tool-output, .mono {
 .proj-head[aria-expanded="true"] .caret { transform: rotate(-90deg); }
 .proj-head .folder { flex: none; color: var(--fg-muted); }
 .proj-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 0 1 auto, not 1: a Latin name resolves LTR, so in a box as wide as the
+     row its `start` was the row's far LEFT edge — «system32» hugged the pill
+     while every Persian name sat at the right (pcg-84j). A box the size of
+     its text sits at the row's start instead and still ellipses when long.
+     (`text-align: match-parent` would say this, but Chromium resolves it as
+     the name's OWN start: measured, still left. Never `right`: spec traps.) */
 }
 
 /* Renaming a project: the field stands exactly where the row's own name was,
@@ -536,13 +542,13 @@ pre, code, .path, .diff, .tool-output, .mono {
   line-height: 1.6;
 }
 .sess-preview {
-  flex: 1;
+  flex: 0 1 auto;   /* see .proj-name */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sess-when { flex: none; color: var(--fg-muted); font-size: .82em; }
+.sess-when { flex: none; margin-inline-start: auto; color: var(--fg-muted); font-size: .82em; }
 
 .sess-act {
   flex: none;
