@@ -661,6 +661,16 @@ they stay out of `textContent`. Read `wiki/parity-chrome.md` §"Message marks" b
 `marks.js`, which is a leaf and byte-identical in both editions. New gate `test_marks.py` **29**
 (negative-tested). Every free gate re-run on both editions and green.
 
+**2026-09-29 (same day) — claude.ai/code parity, PAUSED after P1. Read `HANDOFF.md` first.**
+The user's verdict on the terminal edition: noisy transcript («در حال فکر کردن» over and over),
+scattered tool rows, the mode and model twice under the prompt, and popovers unlike the site.
+Their ask: make it like claude.ai/code. Plan: `CLAUDE-AI-PARITY.md`, epic `pcg-368`. P1 (the
+bar) is built and pushed to the branch, NOT merged. P2 (the transcript) is a WIP commit.
+**The next session's first job is to look at a real claude.ai/code session in a browser**,
+which a cloud container cannot do (claude.ai answers 403). Then re-plan, then continue.
+`wiki/tui-transcript.md` has how the 2.1.284 CLI itself draws a transcript: empty thinking
+draws nothing, and there is no auto-approval counter.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is

@@ -76,6 +76,10 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   `extract_tui_vocab.py`, with a «کلید v2» column that `test_keys.py` reads its cases from. The
   binary self-updates overnight, so a hand-written key table would already be stale — regenerate,
   never transcribe.
+- [tui-transcript.md](tui-transcript.md) — **2026-09-29:** how the 2.1.284 TUI draws a transcript,
+  read out of the binary with byte offsets: empty thinking draws nothing, read/search calls fold
+  into one dim sentence, there is no auto-approval counter, and todos have no transcript row. The
+  CLI half of `CLAUDE-AI-PARITY.md`.
 - [tui-strings.md](tui-strings.md) — the same for the TUI's words: every string v2 translates,
   the key it ships as in `static/strings.fa.js`, and the ones deliberately dropped with the reason.
   §8 is the list of strings v2 **authored**, grouped by phase, waiting on one review by a native
