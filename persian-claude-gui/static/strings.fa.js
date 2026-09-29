@@ -365,6 +365,19 @@ window.FA = {
      notice said «۴ ستون» over a layout with two of them (MA3-T4 defect 4). */
   cmdSplitDoneGrid: "چیدمان به چهار گفتگو در دو ستون و دو ردیف تغییر کرد",
   cellBadgeTitle: "ستون {n} — با Alt+{n} به اینجا بیایید",
+  /* Message marks (js/marks.js, pcg-8ip — the same keys in both editions). */
+  markJustNow: "همین حالا",
+  markMinutesAgo: "{n} دقیقهٔ پیش",
+  markHoursAgo: "{n} ساعت پیش",
+  markYesterday: "دیروز",
+  markCopy: "رونوشت متن",
+  markCopied: "رونوشت شد",
+  markPin: "سنجاق کردن این پیام",
+  markUnpin: "برداشتن سنجاق",
+  markPinsTitle: "پیام‌های سنجاق‌شده",
+  markSessionStart: "شروع گفتگو",
+  markPinned: "پیام سنجاق‌شده",
+  markEdited: "{n} فایل ویرایش شد",
   /* The composer bar (COMPOSER-BAR.md, js/bar.js — the same keys in both
      editions). */
   barMode: "حالت",
