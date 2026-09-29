@@ -330,6 +330,14 @@ window.FA = {
   // hint left under the prompt is the one a Persian writer needs every line.
   phIdle: "پیام خود را بنویسید — نیم‌فاصله: Shift+Space",
   phBusy: "در حال کار — پیام بعدی در صف می‌ماند · Esc برای توقف",
+  /* The button at the end of the box (pcg-368.6), after claude.ai/code's
+     «Send» / «Queue for later»: mid-turn a message either goes now, into the
+     running turn, or waits here until that turn is over. */
+  sendNow: "بفرست",
+  sendLater: "بعداً بفرست",
+  stopTurn: "توقف (Esc)",
+  laterTag: "بعد از این نوبت",
+  laterBack: "برگرداندن به کادر نوشتن",
   // The pane header and its menu (§D5).
   paneMenu: "کارهای این قاب",
   paneZoom: "تمام‌صفحه",
