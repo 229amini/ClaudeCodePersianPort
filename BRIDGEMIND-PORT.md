@@ -534,7 +534,9 @@ Esc or «انصراف» closes it. Centred card, `--bg`, `--r-panel`, `--pad` ×
   fades over 700 ms (reduced motion: shown 700 ms, no fade). A notice whose tab is gone is drawn
   disabled with «این گفتگو بسته شده است».
 - The existing OS notification (`render.js notifyTurnEnd`) keeps its conditions; its click now
-  jumps to the tab the same way instead of only `window.focus()`.
+  jumps to the tab the same way instead of only `window.focus()`. *(Superseded 2026-09-29: Edge
+  app mode never grants the permission, so it is a taskbar flash now — `wiki/grid.md` §"The
+  turn-end signal is a taskbar flash".)*
 
 ## D10. The permission card and the composer
 

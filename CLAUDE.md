@@ -699,6 +699,15 @@ Owner decisions:
 - Confirmation `y`/`n` are dropped from the doc. The window never answered them.
 - `test_tui_vocab` is terminal-only and prints SKIP under `PCG_UI=web`.
 
+**2026-09-29 — the turn-end signal is a taskbar flash; terminal 0.6.1.** On the target PC,
+Edge app mode never showed the Notification permission prompt, so the turn-end OS notification
+never fired. The server now flashes the window's taskbar button: `render.js flashTaskbar()`
+posts `/api/attention` with `document.title`, and `server.py flash_window()` calls
+`FlashWindowEx` through stdlib `ctypes`. It fires on a live settle, never a replay, while the
+window is hidden **or** unfocused. The notification, `notifyDone` and the `pcg:jump` listener
+are gone. Read `wiki/grid.md` §"The turn-end signal is a taskbar flash". The flash itself is
+verified only on Windows.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -889,7 +898,7 @@ Two checks exist:
 | Layout control (2026-09-29) | `python persian-claude-gui\test_arrange.py` | terminal edition: the button beside «گفتگوی جدید» opens a panel with the open count; more panes are FILLED with the open conversations not on screen; fewer close nothing; a count with no room is disabled with the reason. **7 checks**, routes stubbed. Free. |
 | Composer bar (2026-09-29) | `python persian-claude-gui\test_bar.py` | BOTH editions: `bar.js` is one file in two places; the ◔ ring and the context/usage panel (categories, headroom, `/compact`, 5h/weekly/per-model limits, a login with none); the model and mode menus number their rows, check the current one and pick by digit; the effort slider posts a change; «+» opens the native file dialog, starts a slash command and toggles THAT MCP server; the model flyout and the mode menu's audit footer; and (terminal) the send/stop button and «بعداً بفرست». **45 checks**, routes stubbed. Free. |
 | Message marks (2026-09-29) | `python persian-claude-gui\test_marks.py` | BOTH editions: `marks.js` is one file in two places; a message says when it was said from its OWN timestamp, and none of that is in its `textContent`; pins load by session id, mark their message and fill the rail («شروع گفتگو» then each pin); a pin click posts THIS message in THIS conversation and the rail follows the answer; a rail click jumps and flashes; copy writes the source text; a settled turn ends in ONE change card summed per file, every `+A −D` measured left to right, a row opens its edit; a replayed user turn is marked by its uuid. **29 checks**, routes stubbed. Free. |
-| Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row, the OS notification's jump. **17 checks**. Free. |
+| Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row. **16 checks**. Free. |
 | Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
 | App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: native (forced by `<html data-zoom-mode>`) leaves Ctrl+= / - / 0 to Edge; css (shipped since 2026-09-29) steps 80–150 %, clamps, shows a readout, remembers the level, picks the automatic level from the screen and window, and opens a kebab menu under its button at 125 % (M4). **9 checks**, two page loads. Free. |
 | Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |

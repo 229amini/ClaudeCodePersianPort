@@ -147,7 +147,7 @@ Grouped by the phase that wrote them. Keys are `static/strings.fa.js`.
 | v2.3 — the `?` key sheet | `keysTitle` `keysClose` `keySend` `keyNewline` `keyStop` `keyHistory` `keySearch` `keySlash` `keyFiles` `keyBash` `keyEditor` `keyClear` `keyExpand` `keyTodos` `keyThinking` `keyModel` `keyPosture` `keyZwnj` `keyPaste` `keyQueue` `keySheet` `keyDialogPick` |
 | v2.4 — the numbered dialogs | `permHint` `permFeedbackPlaceholder` `permFeedbackMoved` `askHint` `pickerHint` |
 | v2.5 — the welcome box | `welcomeTitle` `welcomeCwd` `welcomeNoProject` `welTipKeys` |
-| v2.5 — the status line | `slPostureAsk` `notifyDone` |
+| v2.5 — the status line | `slPostureAsk` |
 | v2.5 — window-local commands | `cmdCopied` `cmdCopyEmpty` `cmdCopyFailed` `exportYou` `exportClaude` `cmdExported` `cmdExportEmpty` `cmdExportFailed` `statusTitle` `statusVersion` `cmdResumeHint` `cmdBranchDone` `cmdBranchFailed` `cmdBtwCost` `cmdBtwFailed` `cmdOpened` `cmdOpenFailed` `memoryTitle` `memoryUser` `memoryUserNote` `memoryProject` `memoryProjectNote` `cmdTasksEmpty` |
 | v2.6 — `/help` | `helpTitle` `helpSlash` `helpKeys` `helpGuide` `helpGuideNote`, and the one-line description of every command the window answers, in `cmdHelp` |
 
