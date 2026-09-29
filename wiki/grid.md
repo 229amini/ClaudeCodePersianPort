@@ -340,3 +340,16 @@ The rows are rebuilt on every paint, so the control that had the keyboard is re-
   status line) under any CSS — `test_split.py` marks that size `tight` and
   checks only that the column boxes stay inside the window, not that their
   content does.
+
+## A layout gate that failed only after 17:00 (2026-09-29)
+
+Web `test_split.py` passed in the afternoon and failed in the evening on the same code: at 760x480
+with four panes, two empty cells sat at `y = -3`. `greetingText()` (chrome.js) picks the home
+greeting by `new Date().getHours()`. The evening line «عصر بخیر! چه کاری انجام دهیم؟» is the
+longest of the four. In a 275 px cell it wrapped to a second line, and that line pushed the cell's
+content past its box.
+
+Measured by pinning the clock: `TZ=Etc/GMT-12` (05:00) and `TZ=Etc/GMT+3` (14:00) passed,
+and 17:00 UTC failed. The greeting now stays on one line and ellipsises. **Anything drawn from the
+clock is an input to the layout gates.** Run them under a second `TZ` before calling a failure
+flaky, or before calling one fixed.
