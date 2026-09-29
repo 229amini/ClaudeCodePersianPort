@@ -17,6 +17,10 @@ import { api } from "./api.js";
 /* A leaf, like api.js: the numbered list every v2.4 dialog is made of. Sharing
    it with chrome.js costs no import edge in either direction. */
 import { optionList, dialogHint } from "./choice.js";
+/* Two more leaves: the composer bar's popovers (COMPOSER-BAR.md) and the
+   screen-px -> CSS-px conversion they are placed with under app zoom. */
+import { openMenu, openSlider } from "./bar.js";
+import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
 
@@ -486,7 +490,43 @@ export function makeControls(root, cell) {
 
   /* --- init ------------------------------------------------------------------ */
 
+  /* --- the composer bar (COMPOSER-BAR.md) -------------------------------------
+
+     The chips open claude.ai-style popovers over the SAME state and the same
+     write paths the numbered pickers use: nothing here is a second source of
+     truth, and a failure still reports through the inline picker. */
+  function openModelMenu() {
+    const current = modelEntry();
+    return openMenu(ui.modelChip, {
+      title: FA.barModel, toCss: cssPx,
+      rows: models.map((m) => ({ key: m.value, title: m.displayName || m.value,
+                                 note: m.description || "", selected: m === current })),
+      onPick: pickModel,
+    });
+  }
+
+  function openEffortSlider() {
+    const levels = effortLevels();
+    if (!levels.length) return null;
+    return openSlider(ui.effortChip, {
+      title: FA.barEffort, toCss: cssPx, levels, current: effort, label: effortLabel,
+      onPick: (level) => pickEffort({ key: level }),
+    });
+  }
+
+  function openModeMenu() {
+    return openMenu(ui.postureChip, {
+      title: FA.barMode, toCss: cssPx,
+      rows: POSTURES.map((p) => ({ key: p.key, title: p.title, note: p.note,
+                                   selected: p.key === posture })),
+      onPick: pickPosture,
+    });
+  }
+
   function initControls() {
+    ui.modelChip?.addEventListener("click", openModelMenu);
+    ui.effortChip?.addEventListener("click", openEffortSlider);
+    ui.postureChip?.addEventListener("click", openModeMenu);
     if (!ui.picker) return;   // spec-test.html carries no composer chrome
 
     ui.autoChip?.addEventListener("click", (e) => {
