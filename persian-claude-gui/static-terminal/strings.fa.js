@@ -30,6 +30,12 @@ window.FA = {
     "پروراندن", "غربال کردن", "کاویدن", "دم کردن", "جوش خوردن",
   ],
   pulseRunning: "در حال {verb}…",
+  pulsePhases: {
+    thinking: "در حال فکر کردن…",
+    writing: "در حال نوشتن…",
+    tools: "در حال اجرای ابزار…",
+    waiting: "منتظر اجازهٔ شما…",
+  },
   pulseDone: "{verb} — {time}",
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
