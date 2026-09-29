@@ -91,7 +91,6 @@ export function makeControls(root, cell) {
     modelName: $("model-chip-name"),
     postureChip: $("posture-chip"),
     postureName: $("posture-chip-name"),
-    autoChip: $("auto-chip"),
     effortChip: $("effort-chip"),
     effortName: $("effort-chip-name"),
     styleChip: $("style-chip"),
@@ -299,14 +298,34 @@ export function makeControls(root, cell) {
     setAutoCount(count);
   }
 
+  /* The CLI's own permissionMode, for when the wrapper has not named a posture
+     — and for the two modes the wrapper can receive but never sets
+     (`bypassPermissions`, `auto`). The status line used to name those
+     (`s.posture ?? s.mode`, §8.4); since it stopped repeating the bar
+     (CLAUDE-AI-PARITY.md P1), the chip is the one place left to say them. */
+  let cliMode = null;
+  const CLI_MODES = {
+    default: () => POSTURES.find((p) => p.key === "ask"),
+    plan: () => POSTURES.find((p) => p.key === "plan"),
+    acceptEdits: () => POSTURES.find((p) => p.key === "acceptEdits"),
+    auto: () => POSTURES.find((p) => p.key === "autoApprove"),
+    bypassPermissions: () => ({ key: "bypassPermissions", title: FA.slPostureBypass, note: "" }),
+  };
+
+  function setCliMode(mode) {
+    cliMode = mode || null;
+    paintPosture();
+  }
+
   function paintPosture() {
     if (!ui.postureChip) return;
-    ui.postureChip.hidden = !posture;
-    if (!posture) return;
-    const entry = POSTURES.find((p) => p.key === posture) ?? POSTURES[0];
+    const entry = posture ? (POSTURES.find((p) => p.key === posture) ?? POSTURES[0])
+      : CLI_MODES[cliMode]?.() ?? null;
+    ui.postureChip.hidden = !entry;
+    if (!entry) return;
     ui.postureName.textContent = entry.title;
     ui.postureChip.title = entry.note;
-    ui.postureChip.dataset.posture = posture;
+    ui.postureChip.dataset.posture = entry.key;
   }
 
   /* What was approved without asking, so the counter can be opened and read.
@@ -322,10 +341,6 @@ export function makeControls(root, cell) {
   /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
   function setAutoCount(count) {
     autoCount = Number(count) || 0;
-    if (!ui.autoChip) return;
-    ui.autoChip.hidden = autoCount === 0;
-    ui.autoChip.textContent = autoCount.toLocaleString("fa-IR") + " " + FA.autoActions;
-    ui.autoChip.title = FA.autoActionsTitle;
   }
 
   /* --- one window, N conversations -------------------------------------------
@@ -342,7 +357,7 @@ export function makeControls(root, cell) {
      settings schema rejects is a fact about the build, not about a session. */
   function snapshot() {
     return { models, chosen, resolved, styles, style, effort, posture, autoCount,
-             autoActions: autoActions.slice() };
+             cliMode, autoActions: autoActions.slice() };
   }
 
   /* A tab that has never been looked at has no snapshot — hence the defaults on
@@ -356,6 +371,7 @@ export function makeControls(root, cell) {
     style = s.style ?? null;
     effort = s.effort ?? null;
     posture = s.posture ?? null;
+    cliMode = s.cliMode ?? null;
     autoActions.length = 0;
     if (s.autoActions) autoActions.push(...s.autoActions);
     paintModel();   // paints the effort chip too
@@ -497,10 +513,22 @@ export function makeControls(root, cell) {
      truth, and a failure still reports through the inline picker. */
   function openModelMenu() {
     const current = modelEntry();
+    const row = (m) => ({ key: m.value, title: m.displayName || m.value,
+                          tip: m.description || "", selected: m === current });
+    // claude.ai's shape: the newest model of each family, then «More models ›»
+    // for the rest. A family is the name's first word, read off the CLI's own
+    // list in the CLI's own order, so the first of each is the newest; the
+    // CLI's «Default» alias is not a family and goes behind the flyout too.
+    const seen = new Set(), primary = [], rest = [];
+    for (const m of models) {
+      const family = String(m.displayName || m.value).split(/\s+/)[0].toLowerCase();
+      if (m.value === "default" || seen.has(family)) rest.push(m);
+      else { seen.add(family); primary.push(m); }
+    }
     return openMenu(ui.modelChip, {
       title: FA.barModel, toCss: cssPx,
-      rows: models.map((m) => ({ key: m.value, title: m.displayName || m.value,
-                                 note: m.description || "", selected: m === current })),
+      rows: primary.map(row),
+      more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null,
       onPick: pickModel,
     });
   }
@@ -514,11 +542,17 @@ export function makeControls(root, cell) {
     });
   }
 
+  /* The count of what «خودکار» approved lives here now, under the mode that
+     produced it, instead of as a second chip beside the mode: claude.ai's bar
+     carries the mode and nothing else. The list behind it is still one click
+     away — it is that posture's audit trail. */
   function openModeMenu() {
     return openMenu(ui.postureChip, {
-      title: FA.barMode, toCss: cssPx,
+      title: FA.barMode, hint: FA.slPostureHint, toCss: cssPx,
       rows: POSTURES.map((p) => ({ key: p.key, title: p.title, note: p.note,
                                    selected: p.key === posture })),
+      footer: autoCount ? { title: FA.barAutoCount.replace("{n}", autoCount.toLocaleString("fa-IR")),
+                            onClick: openAuditList } : null,
       onPick: pickPosture,
     });
   }
@@ -528,11 +562,6 @@ export function makeControls(root, cell) {
     ui.effortChip?.addEventListener("click", openEffortSlider);
     ui.postureChip?.addEventListener("click", openModeMenu);
     if (!ui.picker) return;   // spec-test.html carries no composer chrome
-
-    ui.autoChip?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openAuditList();
-    });
 
     /* Escape inside the dialog closes it. Bound here rather than on the document
        so it cannot reach the composer's interrupt handler, which checks
@@ -553,7 +582,7 @@ export function makeControls(root, cell) {
      picker is open — with two cells there is no longer a single answer. */
   return {
     applyInitInfo, setModelResolved, resetControls,
-    setPostureState, setEffortState, setOutputStyle,
+    setPostureState, setEffortState, setOutputStyle, setCliMode,
     setAutoCount, noteAutoAction,
     snapshot, restore, cyclePosture,
     openPicker, pickerOpen, closePicker,

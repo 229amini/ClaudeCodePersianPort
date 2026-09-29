@@ -55,7 +55,7 @@ OUT_ROOT = HERE / "shots"
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
-          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks")
+          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -108,6 +108,13 @@ def stub_script(now: float) -> str:
             "    return Promise.resolve(new Response(JSON.stringify({ok: true, response: {mcpServers: ["
             "      {name: 'github', status: 'connected'}, {name: 'playwright', status: 'disabled'}]}}),"
             "      {headers: {'Content-Type': 'application/json'}}));"
+            # The Background tasks panel: one helper still running, one done.
+            "  if (path === '/api/agents') return Promise.resolve(new Response(JSON.stringify({agents: ["
+            "    {id: 'ag1', kind: 'agent', description: 'CLI transcript rendering research', agentType: 'general-purpose',"
+            "     model: 'claude-opus-5-5', status: 'running', startedAt: Date.now() / 1000 - 93},"
+            "    {id: 'ag0', kind: 'command', description: 'npm test', status: 'completed',"
+            "     startedAt: Date.now() / 1000 - 900, finishedAt: Date.now() / 1000 - 800}]}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
             # Message marks: one pinned answer, so the rail has something to list.
             "  if (path === '/api/pins') return Promise.resolve(new Response("
             "    JSON.stringify({pins: [{uuid: 'a-t11', label: 'انجام شد. حالا هر قاب فقط یک خط وضعیت دارد'}]}),"
@@ -217,7 +224,7 @@ async function run() {
     task.dispatchEvent(new Event("input"));
     return;
   }
-  if (SCENE === "conversation" || SCENE === "permission" || SCENE === "marks") {
+  if (SCENE === "conversation" || SCENE === "permission" || SCENE === "marks" || SCENE === "tasks") {
     useTabs([TABS[0]], "t1");
     APP.applyTabs({tabs: [TABS[0]], active: "t1"});
     await sleep(60);
@@ -226,6 +233,21 @@ async function run() {
     ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000,
               total_cost_usd: 0.42});
     ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    if (SCENE === "tasks") {
+      // A turn still running, with a helper out: the working line carries the
+      // chip, and the chip opens the panel.
+      ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "u-live",
+                text: "این دو پروژه را بررسی کن و گزارش بده."});
+      say("t1", [{type: "tool_use", id: "ag-t", name: "Agent", input: {
+        description: "CLI transcript rendering research", subagent_type: "general-purpose",
+        prompt: "…", run_in_background: true}}]);
+      ev("t1", {type: "system", subtype: "task_progress", task_id: "ag1",
+                usage: {total_tokens: 117600, tool_uses: 14, duration_ms: 93000},
+                last_tool_name: "Bash"});
+      await sleep(900);
+      document.querySelector(".pulse-tasks:not([hidden])")?.click();
+      await sleep(300);
+    }
     if (SCENE === "marks") {
       // A still picture cannot hover: show the pinned answer's strip and the
       // rail's list the way a pointer resting on them would.

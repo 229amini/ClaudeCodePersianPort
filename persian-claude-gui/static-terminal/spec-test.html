@@ -364,6 +364,17 @@ check("tool cards cannot be flex-shrunk out of existence",
    must be the file name — a full Windows path wraps and the row stops being
    one line, which is the whole point of the rail. */
 const sum9 = card9?.querySelector("summary");
+/* Every step lives inside a run now (CLAUDE-AI-PARITY.md P2), and a shut run
+   renders nothing — a height read there is 0 and passes for the wrong reason.
+   So the run is opened first, and the row's own padding is taken out: what is
+   measured is the text, which must be one line. */
+const textHeight = (sum) => {
+  const run = sum?.closest("details.run");
+  if (run) run.open = true;
+  if (!sum) return 99;
+  const cs = getComputedStyle(sum);
+  return sum.getBoundingClientRect().height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+};
 check("tool row names the action in Persian",
   sum9?.querySelector(".tool-verb")?.textContent === window.STRINGS.toolVerbs.Write,
   sum9?.querySelector(".tool-verb, .tool-name")?.textContent ?? "no label");
@@ -373,8 +384,8 @@ check("tool row shows the file name, not the whole path",
   sum9?.querySelector(".tool-target")?.textContent ?? "no target");
 
 check("tool row stays on one line",
-  (sum9?.getBoundingClientRect().height ?? 99) < 40,
-  Math.round(sum9?.getBoundingClientRect().height ?? 0) + "px");
+  textHeight(sum9) > 0 && textHeight(sum9) < 40,
+  Math.round(textHeight(sum9)) + "px");
 
 
 /* The CLI narrates a stopped turn as a `user` message reading "[Request
@@ -461,9 +472,9 @@ check("MCP tool row names the tool and its server separately",
   (sumMcp?.querySelector(".tool-server")?.textContent ?? "no server"));
 
 check("MCP tool row fits on one line, unclipped",
-  (sumMcp?.getBoundingClientRect().height ?? 99) < 40 &&
+  textHeight(sumMcp) > 0 && textHeight(sumMcp) < 40 &&
   sumMcp?.scrollWidth <= sumMcp?.clientWidth + 1,
-  Math.round(sumMcp?.getBoundingClientRect().height ?? 0) + "px, " +
+  Math.round(textHeight(sumMcp)) + "px, " +
   sumMcp?.scrollWidth + " vs " + sumMcp?.clientWidth);
 
 /* A subagent has no file, command or pattern to name it, so every Task row used
@@ -1079,11 +1090,11 @@ check("escaping raw HTML left fenced and inline code untouched",
   (codeMsg.querySelector("pre code")?.textContent.trim() ?? "no fence") + " / " +
   (codeMsg.querySelector("p code")?.textContent ?? "no span"));
 
-/* Consecutive tool calls fold into one row, as the CLI's own transcript does.
-   The count is the assertion a textContent check on the cards cannot make: it
-   has to say «۲ فرمان اجرا شد» in Persian digits, and the cards themselves must
-   still be present inside — grouping that DROPPED a card would look identical
-   from the outside. */
+/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every call between two
+   sentences joins one run, whose line says what happened in the site's words —
+   one part per kind in order of first use, one file named, several counted.
+   The steps must still all be inside: a run that DROPPED a card would read the
+   same from outside. */
 for (const cmd of ["git status", "git log"]) {
   window.renderEvent({
     type: "assistant",
@@ -1096,40 +1107,36 @@ window.renderEvent({
   message: { content: [{ type: "tool_use", id: "g-read", name: "Read",
                          input: { file_path: "C:\\x\\a.txt" } }] },
 });
-const group = [...specLog.querySelectorAll("details.card.group")].at(-1);
-/* BRIDGEMIND-PORT.md §D11.2: the run is `.run` = the folded row with the
-   earlier steps, then the NEWEST step as itself. Every card still has to be
-   somewhere in it, and the newest has to be the one outside the fold. */
-const runOf = (g) => g?.parentElement?.matches(".run") ? g.parentElement : null;
-const latestOf = (g) => runOf(g)?.querySelector(":scope > details.card.tool:not(.group)");
-const earlierOf = (g) => g?.querySelectorAll(":scope > .card-body > details.card").length ?? 0;
-check("a run of tool calls collapses into one counted row, the newest step shown",
-  group?.querySelector("summary .tool-verb")?.textContent === "۲ فرمان اجرا شد، ۱ فایل خوانده شد" &&
-  earlierOf(group) === 2 && latestOf(group)?.dataset.tool === "Read" &&
-  group.querySelector("summary .run-more")?.textContent === "+۲ مورد قبلی" &&
-  runOf(group)?.parentElement === specLog && !group.open,
-  (group?.querySelector("summary .tool-verb")?.textContent ?? "no group") + " / " +
-  earlierOf(group) + " earlier + " + (latestOf(group)?.dataset.tool ?? "no latest") + " / «" +
-  (group?.querySelector("summary .run-more")?.textContent ?? "") + "»");
+const group = [...specLog.querySelectorAll("details.run")].at(-1);
+const stepsOf = (g) => g?.querySelectorAll(":scope > .card-body > *").length ?? 0;
+const runText = (g) => g?.querySelector(":scope > summary .run-text")?.textContent ?? "";
+check("a run of tool calls is ONE line in the site's words, every step inside",
+  runText(group) === "۲ فرمان اجرا شد، a.txt خوانده شد" &&
+  stepsOf(group) === 3 && group.parentElement === specLog && !group.open,
+  (runText(group) || "no run") + " / " + stepsOf(group) + " steps");
 
-// A sentence between two calls ends the run — that is what makes the group mean
-// "these happened together" rather than "these are the same tool".
+// The file name is an LTR island inside the Persian sentence (spec rule 2).
+check("a file named on the run's line is isolated",
+  group?.querySelector(".run-text bdi.run-name")?.textContent === "a.txt",
+  group?.querySelector(".run-text bdi")?.outerHTML ?? "no bdi");
+
+// A sentence between two calls ends the run — that is what makes the line mean
+// "these happened together". A lone call is a run too, the site's «Ran a
+// command ›».
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "تمام." }] } });
 window.renderEvent({
   type: "assistant",
   message: { content: [{ type: "tool_use", id: "g-after", name: "Bash",
                          input: { command: "echo done" } }] },
 });
-check("a sentence between calls ends the run",
-  [...specLog.querySelectorAll("details.card.group")].at(-1) === group &&
-  specLog.lastElementChild?.dataset.tool === "Bash",
-  specLog.lastElementChild?.tagName + "/" + (specLog.lastElementChild?.dataset.tool ?? "-"));
+const lone = specLog.lastElementChild;
+check("a sentence between calls ends the run; a lone call is a one-line run",
+  lone !== group && lone?.matches("details.run") && stepsOf(lone) === 1 &&
+  runText(lone) === window.STRINGS.actShellOne,
+  (lone?.className ?? "-") + " / «" + runText(lone) + "»");
 
-/* A grouped run of MCP calls used to fall through to the raw forty-character
-   identifier (mcp__server__tool) — toolSummary() below was specifically
-   changed to split that into a name + server chip (bead pcg-9jx), but
-   groupSummaryText() never got the same treatment. A fresh sentence first, so
-   this group's count is not diluted by the Bash call above it. */
+/* MCP calls: the site says «used N tools», so the forty-character
+   mcp__server__tool identifier (pcg-9jx) never reaches the line at all. */
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "دوباره." }] } });
 for (let i = 0; i < 2; i++) {
   window.renderEvent({
@@ -1138,18 +1145,14 @@ for (let i = 0; i < 2; i++) {
                            name: "mcp__claude-in-chrome__tabs_context_mcp", input: {} }] },
   });
 }
-const groupMcp = [...specLog.querySelectorAll("details.card.group")].at(-1);
-const groupMcpVerb = groupMcp?.querySelector("summary .tool-verb");
-check("a grouped run of MCP calls shows the short tool name, not the raw identifier",
-  groupMcpVerb?.textContent === "۲ tabs_context_mcp" &&
+const groupMcp = [...specLog.querySelectorAll("details.run")].at(-1);
+const groupMcpVerb = groupMcp?.querySelector(":scope > summary .run-text");
+check("a run of MCP calls says «used 2 tools», never the raw identifier",
+  groupMcpVerb?.textContent === window.STRINGS.actOtherMany.replace("{n}", "۲") &&
   !groupMcpVerb.textContent.includes("mcp__"),
-  groupMcpVerb?.textContent ?? "no group");
+  groupMcpVerb?.textContent ?? "no run");
 
-// Not a BiDi rule, but the same class of silent failure as the rest of this
-// file: a raw identifier long enough to overflow the row needs the same
-// one-line ellipsis guard the singular MCP row already has, or it just
-// spills out of the box instead of being clipped.
-check("the grouped MCP summary ellipses instead of overflowing the row",
+check("the run's line ellipses instead of overflowing",
   !!groupMcpVerb &&
   getComputedStyle(groupMcpVerb).textOverflow === "ellipsis" &&
   getComputedStyle(groupMcpVerb).overflow === "hidden",
@@ -1184,29 +1187,32 @@ const flushFrame = () => {
   for (const fn of frameQueue.splice(0)) fn(performance.now());
 };
 
-/* Interleaved thinking: the model thinks between every call, so a thinking card
-   that ENDED the run shattered a fifteen-step turn into fifteen groups of one,
-   each separated by an identical, content-free «در حال فکر کردن» row. Thinking
-   joins the run instead — and must NOT be counted in the summary, which reports
-   actions. Both halves are invisible to a textContent check on the cards: a
-   thinking card that broke the run and one that joined it hold the same text. */
+/* Interleaved thinking joins the run as a step and is NOT counted — the line
+   reports what happened. And a thought with no text (signature only: 620 of
+   755 in a real session) draws nothing at all, the CLI's rule and the site's
+   (wiki/tui-transcript.md §1): that was the «در حال فکر کردن» ladder. */
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "شروع." }] } });
 const thought = (t) => window.renderEvent(
   { type: "stream_event", event: { type: "content_block_delta", delta: { thinking: t } } });
+const cardsBefore = specLog.querySelectorAll("details.card.thinking").length;
+thought(""); thought("");
+window.renderEvent({ type: "assistant", message: { content: [
+  { type: "thinking", thinking: "", signature: "sig" }] } });
+check("a thought with no text draws nothing, live or closed",
+  specLog.querySelectorAll("details.card.thinking").length === cardsBefore,
+  (specLog.querySelectorAll("details.card.thinking").length - cardsBefore) + " cards");
 thought("First I check the repo state.");
 window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
   id: "th-1", name: "Bash", input: { command: "git status" } }] } });
 thought("Now the log.");
 window.renderEvent({ type: "assistant", message: { content: [{ type: "tool_use",
   id: "th-2", name: "Bash", input: { command: "git log" } }] } });
-const thGroup = [...specLog.querySelectorAll("details.card.group")].at(-1);
-const thVerb = thGroup?.querySelector(":scope > summary .tool-verb")?.textContent;
-check("thinking joins the run instead of shattering it into one group per call",
-  thGroup !== groupMcp && thVerb === "۲ فرمان اجرا شد" &&
-  earlierOf(thGroup) === 3 && !!latestOf(thGroup) &&
+const thGroup = [...specLog.querySelectorAll("details.run")].at(-1);
+check("thinking joins the run as a step, uncounted",
+  thGroup !== groupMcp && runText(thGroup) === "۲ فرمان اجرا شد" &&
+  stepsOf(thGroup) === 4 &&
   specLog.querySelectorAll(":scope > details.card.thinking").length === 0,
-  (thVerb ?? "no group") + " / " +
-  earlierOf(thGroup) + " earlier + " + (latestOf(thGroup) ? 1 : 0) + " latest / " +
+  (runText(thGroup) || "no run") + " / " + stepsOf(thGroup) + " steps / " +
   specLog.querySelectorAll(":scope > details.card.thinking").length + " loose");
 
 // Shut, every thinking row carried the same word and nothing else. The opening
@@ -1291,19 +1297,19 @@ check("a result alone leaves the line running: the command has not closed yet",
 
 // Persian prose, so Persian digits — and the token figure is the CLI's own, not
 // a guess: 10 900 has to read «۱۰٫۹ هزار», not «10.9k».
-doneCmd("cmd-solo");
 const pulseText = pulse?.textContent ?? "";
-check("the pulse settles into the turn's closing line, counted in Persian digits",
-  !pulse.classList.contains("live") &&
-  /^[^۰-۹]*—\s*[۰-۹]/.test(pulse.querySelector(".pulse-verb").textContent) &&
+check("the working line counts in Persian digits, the CLI's own tokens",
   pulseText.includes("۱۰٫۹ هزار توکن") && !/[0-9]/.test(pulseText),
   pulseText.replace(/\s+/g, " ").trim() || "empty");
 
-// Settled, it is the LAST thing in the turn — the record of what just happened,
-// not a header sitting above the work it describes.
-check("the settled line ends the turn instead of snapping back above it",
-  specLog.lastElementChild === pulse && getComputedStyle(pulse).order === "0",
-  specLog.lastElementChild?.className + " / order " + getComputedStyle(pulse).order);
+// The command closes and the line GOES: claude.ai/code leaves nothing where the
+// working line was (CLAUDE-AI-PARITY.md P2) — no «✻ … — ۴۲ ثانیه» record.
+doneCmd("cmd-solo");
+check("a finished turn leaves no working line behind",
+  !pulse.isConnected && specLog.querySelectorAll(".pulse").length === 0 &&
+  !document.body.classList.contains("busy"),
+  specLog.querySelectorAll(".pulse").length + " lines / " +
+  (document.body.classList.contains("busy") ? "busy" : "idle"));
 
 /* Queued sends: the CLI queues a mid-turn message and answers EACH message
    with its own result event, keeping one spinner over the whole queue. Two
@@ -1343,9 +1349,9 @@ withRenderTarget(pulseScoped, pulseScope, () => {
   window.renderEvent({ type: "result", subtype: "success", usage: {}, result: "ok" });
   doneCmd("cmd-q2");
 });
-check("the last command of the queue settles its one pulse into one closing line",
+check("the last command of the queue ends its one working line",
   pulseScoped.querySelectorAll(".pulse.live").length === 0 &&
-  pulseScoped.querySelectorAll(".pulse").length === 1 &&
+  pulseScoped.querySelectorAll(".pulse").length === 0 &&
   pulseScope.outstanding.size === 0,
   pulseScoped.querySelectorAll(".pulse.live").length + " live / " +
   pulseScoped.querySelectorAll(".pulse").length + " total / ledger " +
@@ -1383,7 +1389,7 @@ withRenderTarget(foldScoped, foldScope, () => {
 });
 check("one result for two sends still settles once, on the last uuid we sent",
   foldScoped.querySelectorAll(".pulse.live").length === 0 &&
-  foldScoped.querySelectorAll(".pulse").length === 1 &&
+  foldScoped.querySelectorAll(".pulse").length === 0 &&
   !document.body.classList.contains("busy"),
   foldScoped.querySelectorAll(".pulse").length + " pulse rows, " +
   foldScoped.querySelectorAll(".pulse.live").length + " still live / " +
@@ -1571,12 +1577,19 @@ window.renderEvent({
     "<summary>Background command \"npm test\" completed (exit code 0)</summary>\n" +
     "</task-notification>" }] },
 });
-check("a background command's notification is one line with nothing to open",
-  specLog.lastElementChild?.tagName === "DIV" &&
-  specLog.lastElementChild?.classList.contains("agent-note") &&
-  specLog.lastElementChild?.textContent.includes(window.STRINGS.agentDone),
-  specLog.lastElementChild?.tagName + "." +
-  (specLog.lastElementChild?.className ?? "-"));
+// It is a step of the run it lands in: the site's «finished a background
+// command» on the run's own line (CLAUDE-AI-PARITY.md P2).
+const bgRun = specLog.lastElementChild;
+const bgStep = bgRun?.querySelector(":scope > .card-body > :last-child");
+check("a background command's notification is a one-line step, counted on its run",
+  bgRun?.matches("details.run") && bgStep?.tagName === "DIV" &&
+  bgStep.classList.contains("agent-note") &&
+  bgStep.textContent.includes(window.STRINGS.agentDone) &&
+  // The agent's report above landed in the same run, so the line counts both.
+  bgRun.querySelector(".run-text")?.textContent.includes(
+    window.STRINGS.actBgDoneMany.replace("{n}", "۲")),
+  (bgRun?.className ?? "-") + " / " + (bgStep?.className ?? "-") + " / «" +
+  (bgRun?.querySelector(".run-text")?.textContent ?? "") + "»");
 
 /* The CLI addresses itself through `user` messages — injected skill bodies,
    hook output — and flags them isMeta. Its own UI never shows them. */
@@ -1619,76 +1632,99 @@ check("a subagent's sidechain prompt echo renders nothing",
   !specLog.textContent.includes("single word PING"),
   specLog.childElementCount + " vs " + beforeSide);
 
-/* The strip above the composer, painted from a synthetic /api/agents payload
-   through the shipping builder (window.renderAgents). The description is Latin
-   inside the RTL shell — the assertion has to be the computed direction, not
-   the text, or it passes on a row that renders backwards. */
+/* BACKGROUND TASKS (CLAUDE-AI-PARITY.md P3). The strip above the composer is
+   the site's «N running task» chip and nothing else; the chip opens the panel,
+   whose cards carry the CLI's own task_progress numbers. Painted from a
+   synthetic /api/agents payload through the shipping builder
+   (window.renderAgents). */
 window.renderAgents([
   { id: "a1", kind: "agent", description: "Audit the RTL rules",
-    agentType: "Explore", model: "opus", status: "running",
+    agentType: "Explore", model: "claude-opus-5-5", status: "running",
     startedAt: Math.floor(Date.now() / 1000) - 120 },
   { id: "b2", kind: "command", description: "npm test", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
 const strip = document.querySelector(".agents-strip");
-const stripRows = [...(strip?.querySelectorAll(".ag-row") ?? [])];
-const stripDesc = stripRows[0]?.querySelector(".ag-desc");
-check("the agents strip isolates a Latin description inside the RTL shell",
-  !strip.hidden && dirOf(strip) === "rtl" && stripDesc?.tagName === "BDI" &&
-  dirOf(stripDesc) === "ltr" &&
-  getComputedStyle(stripDesc).unicodeBidi === "isolate",
-  (dirOf(strip) ?? "none") + " shell / " + (dirOf(stripDesc) ?? "none") + " " +
-  (stripDesc ? getComputedStyle(stripDesc).unicodeBidi : "none"));
+const stripChip = strip?.querySelector(".ag-chip");
+check("the strip is the running-task chip, counted in Persian digits",
+  !strip.hidden && stripChip?.textContent === window.STRINGS.pulseTasks.replace("{n}", "۱") &&
+  strip.querySelector(".ag-wait")?.textContent === window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
+  !strip.querySelector(".ag-row"),
+  (strip.hidden ? "hidden" : "visible") + " / «" + (stripChip?.textContent ?? "no chip") + "»");
 
-/* The strip is the LIVE line above the composer, so it carries what is still
-   running and nothing else — a finished helper (here the completed `b2`
-   command) has already reported back in the transcript, and leaving its row up
-   there only accumulated dead rows for the life of the session. The registry
-   itself keeps every entry; the drawer is the history view. */
-check("an agent row opens, and a finished helper is not in the strip at all",
-  stripRows.length === 1 && stripRows[0].tagName === "BUTTON" &&
-  !strip.querySelector('[data-agent-id="b2"]') &&
-  stripRows[0].querySelector(".ag-type")?.textContent === "Explore",
-  stripRows.map(r => r.dataset.agentId + ":" + r.tagName).join(",") || "no rows");
+stripChip.click();
+const tPanel = document.getElementById("tasks-panel");
+const cardA = tPanel?.querySelector('.tk-card[data-agent-id="a1"]');
+const cardTitle = cardA?.querySelector(".tk-title");
+check("the chip opens the tasks panel, laid out only while open",
+  !!tPanel && tPanel.matches(":popover-open") && getComputedStyle(tPanel).display === "flex",
+  tPanel ? getComputedStyle(tPanel).display : "no panel");
 
-// Prose, so Persian digits (rule 5) — both the elapsed time and the count.
-check("the strip counts the waiting agents in Persian digits",
-  strip.querySelector(".ag-wait")?.textContent ===
-    window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
-  stripRows[0].querySelector(".ag-time")?.textContent === "۲ دقیقه",
-  (strip.querySelector(".ag-wait")?.textContent ?? "no wait line") + " / " +
-  (stripRows[0]?.querySelector(".ag-time")?.textContent ?? "no elapsed"));
+// Latin inside the RTL shell: the computed direction, not the text, or this
+// passes on a title that renders backwards.
+check("a running card isolates its Latin title and says kind and time in Persian",
+  cardTitle?.tagName === "BDI" && dirOf(cardTitle) === "ltr" &&
+  getComputedStyle(cardTitle).unicodeBidi === "isolate" &&
+  cardA.querySelector(".tk-kind")?.textContent === window.STRINGS.tasksKindAgent &&
+  cardA.querySelector(".tk-time")?.textContent === "۲ دقیقه" &&
+  !!cardA.querySelector(".tk-stop") && !!cardA.querySelector(".tk-view"),
+  (dirOf(cardTitle) ?? "none") + " / " + (cardA?.querySelector(".tk-time")?.textContent ?? "no time"));
 
-/* paint() rebuilds every `.ag-row` from scratch on each poll (replaceChildren
-   ()), which used to throw focus to <body> mid-tab — a keyboard/screen-reader
-   user could not use the strip for as long as any agent ran. Focus the first
-   row, repaint with the SAME agent id, and check focus followed the row
-   instead of falling back to document.body. Not a BiDi property — this bug
-   has nothing to do with direction — so the assertion is DOM identity
-   (dataset.agentId), the analogous "not textContent" check for a focus bug. */
-strip.querySelector('.ag-row[data-agent-id="a1"]')?.focus();
+check("a finished task is folded behind «پایان‌یافته N», not a running card",
+  !tPanel.querySelector('.tk-card[data-agent-id="b2"]') &&
+  tPanel.querySelector(".tk-finished")?.textContent ===
+    window.STRINGS.tasksFinished.replace("{n}", "۱"),
+  tPanel.querySelector(".tk-finished")?.textContent ?? "no toggle");
+
+// The CLI's own running report fills the card — never an estimate.
+window.renderEvent({ type: "system", subtype: "task_progress", task_id: "a1",
+  usage: { total_tokens: 117600, tool_uses: 14, duration_ms: 93000 }, last_tool_name: "Bash" });
+const factsA = tPanel.querySelector('.tk-card[data-agent-id="a1"]')?.textContent ?? "";
+check("task_progress puts the tokens, tool uses and current step on the card",
+  factsA.includes(window.STRINGS.tasksTokens.replace("{n}", "۱۱۷٫۶ هزار")) &&
+  factsA.includes(window.STRINGS.tasksToolUses.replace("{n}", "۱۴")) &&
+  factsA.includes(window.STRINGS.tasksNow.Bash) &&
+  factsA.includes("Opus 5.5"),
+  factsA.replace(/\s+/g, " ").slice(0, 120));
+
+// The card repaints on every poll; focus must follow the card, not fall to body.
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-stop')?.focus();
 window.renderAgents([
   { id: "a1", kind: "agent", description: "Audit the RTL rules",
-    agentType: "Explore", model: "opus", status: "running",
+    agentType: "Explore", model: "claude-opus-5-5", status: "running",
     startedAt: Math.floor(Date.now() / 1000) - 125 },
   { id: "b2", kind: "command", description: "npm test", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 90,
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
-check("a repaint preserves focus on the equivalent row instead of dropping it to body",
-  document.activeElement?.dataset.agentId === "a1" &&
-  document.activeElement !== document.body,
+check("a repaint keeps focus on the same card instead of dropping it to body",
+  document.activeElement?.closest?.("[data-agent-id]")?.dataset.agentId === "a1",
   document.activeElement === document.body ? "focus lost to body"
-    : (document.activeElement?.dataset.agentId ?? "no agent id"));
+    : (document.activeElement?.closest?.("[data-agent-id]")?.dataset.agentId ?? "elsewhere"));
 
-/* The drawer. It is a [popover], and the trap that costs a session is `display`:
-   an author rule at any specificity beats the UA rule that hides a CLOSED
-   popover, so it may only be set on :popover-open. A drawer that is always
-   visible and a drawer that never opens look identical in a screenshot. */
-stripRows[0].click();
+// The stop square posts the CLI's own stop_task for THIS task.
+const fetchBeforeStop = window.fetch;
+const stopPosts = [];
+window.fetch = async (url, init) => {
+  if (init?.body) stopPosts.push(JSON.parse(init.body));
+  return new Response(JSON.stringify({ ok: true, agents: [] }),
+                      { headers: { "Content-Type": "application/json" } });
+};
+// api() reaches fetch synchronously, before its first await, so the post is
+// recorded by the time click() returns — the verdict stays one task.
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-stop')?.click();
+window.fetch = fetchBeforeStop;
+check("the stop square sends stop_task for that task",
+  stopPosts.some((b) => b.subtype === "stop_task" && b.params?.task_id === "a1"),
+  JSON.stringify(stopPosts).slice(0, 120) || "no post");
+
+/* «دیدن گزارش» opens the drawer. It is a [popover], and the trap that costs a
+   session is `display`: an author rule at any specificity beats the UA rule
+   that hides a CLOSED popover, so it may only be set on :popover-open. */
+tPanel.querySelector('.tk-card[data-agent-id="a1"] .tk-view').click();
 const dPanel = document.getElementById("agent-drawer");
-check("clicking an agent opens a drawer that is laid out only while open",
+check("«دیدن گزارش» opens the agent's drawer, laid out only while open",
   !!dPanel && dPanel.matches(":popover-open") &&
   getComputedStyle(dPanel).display === "flex" &&
   dirOf(dPanel.querySelector(".ag-head .ag-desc")) === "ltr" &&
@@ -1699,10 +1735,8 @@ check("clicking an agent opens a drawer that is laid out only while open",
 
 /* The popover UA sheet sets `height: fit-content`, and an absolutely positioned
    box whose height is not `auto` ignores its own `inset-block-end` — so the
-   drawer grew downward off the bottom of the window, `.ag-log`'s `flex: 1` had
-   no bounded height to fill, and a long agent transcript could not be scrolled
-   to at all. Only a drawer holding MORE than fits can see it, hence the filler:
-   an empty drawer is inside the window either way. */
+   drawer grew downward off the bottom of the window. Only a drawer holding MORE
+   than fits can see it, hence the filler. */
 const dLog = dPanel.querySelector(".ag-log");
 const filler = document.createElement("div");
 filler.style.blockSize = "400vh";
@@ -1714,67 +1748,59 @@ check("the drawer stays inside the window and scrolls its own transcript",
   "px window, log " + dLog.scrollHeight + " in " + dLog.clientHeight);
 filler.remove();
 
-// Closing has to take the panel AND its poll with it — one exit, so nothing
-// keeps reading a transcript for a drawer nobody is looking at.
 dPanel.querySelector(".ag-close").click();
 check("closing the drawer removes it entirely",
   !document.getElementById("agent-drawer"),
   document.getElementById("agent-drawer") ? "still there" : "gone");
 
-/* Drawer toggle race: click agent A, then agent B before A's own `toggle`
-   fires. openDrawer() closes the previous drawer with hidePopover(), which
-   runs SYNCHRONOUSLY, but a popover's `toggle` event is only QUEUED (the same
-   trap the close button above already sidesteps) — so A's toggle listener is
-   still live when B's drawer is built and open. The listener used to call the
-   module-global closeDrawer() unconditionally, so A's late event tore down
-   B's drawer instead of its own. Fired synthetically rather than waited for:
-   the harness's script is synchronous and the queued task would not have run
-   before the DOM dump, but the listener itself does not know or care whether
-   the event was queued or dispatched by hand. */
+/* Drawer toggle race: a closed drawer's QUEUED `toggle` must not tear down the
+   drawer that replaced it (the listener used to call the module-global
+   closeDrawer() unconditionally). Fired by hand: the harness is synchronous. */
 window.renderAgents([
   { id: "ra1", kind: "agent", description: "Race helper A", agentType: "Explore",
     status: "running", startedAt: Math.floor(Date.now() / 1000) - 30 },
   { id: "ra2", kind: "agent", description: "Race helper B", agentType: "Explore",
     status: "running", startedAt: Math.floor(Date.now() / 1000) - 20 },
 ]);
-const raceRows = [...strip.querySelectorAll(".ag-row")];
-raceRows[0].click();                          // opens A
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+document.querySelector('#tasks-panel .tk-card[data-agent-id="ra1"] .tk-view').click();
 const panelA = document.getElementById("agent-drawer");
-raceRows[1].click();                          // opens B — openDrawer() closes A first
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+document.querySelector('#tasks-panel .tk-card[data-agent-id="ra2"] .tk-view').click();
 const panelB = document.getElementById("agent-drawer");
 const lateToggle = new Event("toggle");
 lateToggle.newState = "closed";
-panelA.dispatchEvent(lateToggle);             // A's queued toggle, fired late
+panelA.dispatchEvent(lateToggle);
 check("a late toggle from a closed drawer does not tear down the one that replaced it",
-  document.getElementById("agent-drawer") === panelB &&
+  panelA !== panelB && document.getElementById("agent-drawer") === panelB &&
   panelB.matches(":popover-open"),
   document.getElementById("agent-drawer")
     ? "drawer B present" : "drawer GONE — closed the wrong one");
-panelB.querySelector(".ag-close").click();    // leave no drawer open behind
+panelB.querySelector(".ag-close").click();
 
-/* R3: a finished agent used to vanish from the UI entirely once its running
-   row left the strip — a row's own click was the only way into the drawer,
-   and paint() never painted anything but status==="running". A muted history
-   toggle keeps the running-only strip (deliberate — finished-rows-shown-
-   forever was the original complaint) but makes a completed agent reachable
-   again. */
+/* A finished agent must stay reachable once nothing runs: /tasks opens the
+   panel onto the folded list (commands.js), and the strip goes away. */
 window.renderAgents([
   { id: "c1", kind: "agent", description: "Refactor the exporter",
     agentType: "Explore", status: "completed",
     startedAt: Math.floor(Date.now() / 1000) - 300,
     finishedAt: Math.floor(Date.now() / 1000) - 120 },
 ]);
-check("a finished-only registry shows the toggle, not a row",
-  !strip.hidden && !!strip.querySelector(".ag-history") &&
-  strip.querySelectorAll(".ag-row").length === 0,
-  (strip.hidden ? "hidden" : "visible") + " / " +
-  (strip.querySelector(".ag-history") ? "toggle" : "no toggle") + " / " +
-  strip.querySelectorAll(".ag-row").length + " rows");
-
-strip.querySelector(".ag-history").click();
-check("clicking the toggle paints the finished agent as a completed row",
-  !!strip.querySelector('button.ag-row[data-status="completed"]'),
-  strip.querySelector(".ag-row")?.dataset.status ?? "no row");
+window.dispatchEvent(new CustomEvent("pcg:tasks"));
+const fPanel = document.getElementById("tasks-panel");
+check("with only finished work the strip is gone and the panel says nothing runs",
+  strip.hidden && !!fPanel?.querySelector(".tk-empty") && !fPanel.querySelector(".tk-card"),
+  (strip.hidden ? "no strip" : "STRIP") + " / " + (fPanel?.querySelector(".tk-empty") ? "empty note" : "no note"));
+fPanel.querySelector(".tk-finished").click();
+check("unfolding «پایان‌یافته» shows the finished card, with its report link",
+  !!fPanel.querySelector('.tk-card[data-status="completed"] .tk-view') &&
+  !fPanel.querySelector('.tk-card[data-status="completed"] .tk-stop'),
+  fPanel.querySelector(".tk-card")?.dataset.status ?? "no card");
+fPanel.querySelector(".tk-clear").click();
+check("the wipe clears the finished list from the panel",
+  !fPanel.querySelector(".tk-card") && !fPanel.querySelector(".tk-finished"),
+  fPanel.querySelectorAll(".tk-card").length + " cards");
+fPanel.querySelector(".ag-close").click();
 
 window.renderAgents([]);
 check("an empty registry still hides the strip entirely",
@@ -2216,10 +2242,10 @@ check("a turn in flight reports working, with one live status line",
 withRenderTarget(stuck, stuckScope, () => {
   window.renderEvent({ type: "wrapper", subtype: "idle_sync" });
 });
-check("idle_sync ends a turn that produced no result: idle window, settled line",
+check("idle_sync ends a turn that produced no result: idle window, no line left",
   !document.body.classList.contains("busy") && stuckScope.outstanding.size === 0 &&
   stuck.querySelectorAll(".pulse.live").length === 0 &&
-  stuck.querySelectorAll(".pulse").length === 1,
+  stuck.querySelectorAll(".pulse").length === 0,
   (document.body.classList.contains("busy") ? "STILL busy" : "idle") +
   " / ledger " + stuckScope.outstanding.size + " / " +
   stuck.querySelectorAll(".pulse.live").length + " live of " +
@@ -2233,8 +2259,8 @@ withRenderTarget(stuck, stuckScope, () => {
   window.renderEvent({ type: "result", subtype: "error_during_execution",
                        terminal_reason: "aborted_streaming", usage: {} });
 });
-check("a late idle_sync and a late aborted result add no second closing line",
-  stuck.querySelectorAll(".pulse").length === 1 &&
+check("a late idle_sync and a late aborted result bring no line back",
+  stuck.querySelectorAll(".pulse").length === 0 &&
   stuck.querySelectorAll(".pulse.live").length === 0 &&
   !document.body.classList.contains("busy") &&
   stuck.textContent.includes(window.STRINGS.stopped),
@@ -2686,13 +2712,16 @@ function replayOneTurn() {
                         duration_ms: 125_000, result: "ok" });
     doneCmd("cmd-replay");
   });
-  return box.querySelector(".pulse")?.textContent.replace(/\s+/g, " ").trim() ?? "";
+  return { text: box.textContent.replace(/\s+/g, " ").trim(),
+           lines: box.querySelectorAll(".pulse").length };
 }
 const replayA = replayOneTurn();
 const replayB = replayOneTurn();
-check("a replayed turn settles to the same closing line, timed by the CLI's own clock",
-  !!replayA && replayA === replayB && replayA.includes("۲ دقیقه و ۵ ثانیه"),
-  "«" + replayA + "» vs «" + replayB + "»");
+// Since P2 a finished turn keeps no line at all — which is also the end of the
+// reload defect above: there is no verb or clock left to re-invent.
+check("a replayed turn renders the same twice and leaves no working line",
+  replayA.text === replayB.text && replayA.lines === 0 && replayB.lines === 0,
+  "«" + replayA.text + "» ×" + replayA.lines + " vs «" + replayB.text + "» ×" + replayB.lines);
 
 /* The recap itself: the CLI's «※ recap: …» as a transcript entry. It is model
    prose, so it goes through the markdown path like every other answer — a

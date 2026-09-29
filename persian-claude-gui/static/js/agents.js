@@ -21,6 +21,7 @@ import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import {
   bulkAppend, label, renderEvent, state, withRenderTarget, newRenderScope,
+  setRunningTasks, shortModel,
 } from "./render.js";
 
 const FA = window.STRINGS;
@@ -33,7 +34,10 @@ let strip = null;       // the row of agents above the composer
 let listTimer = 0;
 let refreshTimer = 0;
 let drawer = null;      // { id, panel, body, live, scope, cursor, empty }
-let showHistory = false; // finished rows are folded behind the .ag-history toggle
+let showHistory = false; // the panel's «پایان‌یافته» list, folded until asked
+let panel = null;       // the Background tasks panel, while it is open
+const progress = new Map();  // task id -> the CLI's latest system/task_progress
+const cleared = new Set();   // finished ids the person wiped from the panel
 
 /* --- the strip -------------------------------------------------------------- */
 
@@ -41,7 +45,7 @@ let showHistory = false; // finished rows are folded behind the .ag-history togg
    on the spec harness too, which carries no composer markup of its own. It
    lands where the context notice already sits — the same kind of thing, a line
    ABOUT the conversation rather than part of it. */
-/* MA4-T2: there is one registry per window (the helpers belong to the session
+/* MA3-T2: there is one registry per window (the helpers belong to the session
    the keyboard is in) but N columns it could be drawn in, so the strip is
    RE-ANCHORED on every paint rather than parked in whichever column happened
    to be first. Moving a node re-parents it, so this is one insert, not a
@@ -92,108 +96,226 @@ function dotEl(status) {
   return dot;
 }
 
-/* A `command` is a shell command the CLI backgrounded: there is no subagent
-   transcript on disk for it and there never will be, so it gets no drawer —
-   and it is a <div>, not a disabled button. A control you can press and nothing
-   happens is worse than one that was never offered. */
-function rowEl(agent) {
-  const openable = agent.kind === "agent";
-  const row = document.createElement(openable ? "button" : "div");
-  row.className = "ag-row";
-  row.dataset.status = agent.status || "running";
-  row.dataset.agentId = agent.id;   // read back by paint() to restore focus
-  if (openable) {
-    row.type = "button";
-    row.title = FA.agentOpen;
-    row.addEventListener("click", () => openDrawer(agent));
-  }
-
-  row.append(dotEl(agent.status));
-
-  // The description is the model's own line about the work, usually English,
-  // sitting in an RTL row: isolate it (spec rule 2). <bdi dir="auto"> rather
-  // than a forced LTR, because the model may well write it in Persian.
-  const desc = document.createElement("bdi");
-  desc.className = "ag-desc";
-  desc.setAttribute("dir", "auto");
-  desc.textContent = agent.description || FA.agentRow;
-  row.append(desc);
-
-  // What kind of helper it is — muted, like the MCP row's server chip.
-  const origin = agent.agentType || agent.model;
-  if (origin) {
-    const chip = pathEl(String(origin));
-    chip.classList.add("ag-type");
-    row.append(chip);
-  }
-
-  const when = elapsed(agent);
-  if (when) row.append(label(when, "ag-time"));
-  return row;
-}
-
+/* The strip above the composer, since CLAUDE-AI-PARITY.md P3: nothing but
+   the site's «N running task» chip — and only while the turn itself is over,
+   since during a turn the same chip rides the working line (render.js). The
+   rows, the history and the drawer's way in all moved into the panel. */
 function paint() {
   const el = stripEl();
-  // replaceChildren() below rebuilds every row from scratch on each 3s poll,
-  // which silently threw focus to <body> mid-tab for a keyboard/screen-reader
-  // user — every poll cycle, for as long as any agent ran. Save which agent
-  // (if any) owned focus and hand it back to the equivalent new row rather
-  // than reconciling the DOM node-by-node (a bigger diff for the same fix).
-  const focusedId = el.contains(document.activeElement)
-    ? document.activeElement.dataset.agentId : null;
-  el.replaceChildren();
-
-  // The strip is about what is happening NOW — it sits above the composer,
-  // where the CLI prints "Waiting for N background agents". A finished agent
-  // has already reported back in the transcript, so its row does not show by
-  // default (finished-rows-shown-forever was the original complaint) — but it
-  // must stay reachable, since a row's own click is the only way into the
-  // drawer. `registry` still holds every entry the server reported: the
-  // toggle below folds it open, and an open drawer polls its own agent by id
-  // regardless of this filter.
   const running = registry.filter((a) => a.status === "running");
-  const finished = registry.filter((a) => a.status !== "running");
   /* «کار در جریان است», published the way `busy` already is: as a body class.
      The composer's idle hint («مدتی از این گفتگو گذشته») fires on a quiet
      stretch, and a turn that dispatched helpers IS quiet — the model's own turn
      ended minutes ago while the agents keep working — so the hint arrived in the
      middle of a working session and the user read it as an error. This module
      is the only one that knows, and the class is the signal it already reads in
-     the other direction three lines below (`body.busy`, written by composer.js
-     setBusy). A shared import would close a third module cycle for one boolean. */
+     the other direction below (`body.busy`, written by composer.js setBusy). */
   document.body.classList.toggle("agents-running", running.length > 0);
-  if (!running.length && !finished.length) {
+  setRunningTasks(running.length);
+  if (panel) paintPanel();
+  el.replaceChildren();
+  if (!running.length || document.body.classList.contains("busy")) {
     el.hidden = true;
     return;
   }
-  for (const agent of running) el.append(rowEl(agent));
-
-  if (finished.length) {
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "ag-history";
-    toggle.textContent = FA.agentHistory.replace("{n}", finished.length.toLocaleString("fa-IR"));
-    toggle.addEventListener("click", () => { showHistory = !showHistory; paint(); });
-    el.append(toggle);
-    if (showHistory) {
-      for (const agent of finished) el.append(rowEl(agent));
-    }
-  }
-
-  if (focusedId) {
-    el.querySelector(`[data-agent-id="${CSS.escape(focusedId)}"]`)?.focus();
-  }
-
-  // The CLI prints "Waiting for N background agents" once its own turn is over
-  // and helpers are still out. Same fact, in Persian, counted off the registry
-  // — never parsed out of a message. Still running-only: a finished agent is
-  // not something anyone is waiting for.
-  if (running.length && !document.body.classList.contains("busy")) {
-    el.append(label(FA.agentsWaiting.replace("{n}", running.length.toLocaleString("fa-IR")),
-                    "ag-wait"));
-  }
+  const n = running.length.toLocaleString("fa-IR");
+  el.append(taskChip(running.length),
+            label(FA.agentsWaiting.replace("{n}", n), "ag-wait"));
   el.hidden = false;
 }
+
+function taskChip(count) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "ag-chip";
+  chip.textContent = FA.pulseTasks.replace("{n}", count.toLocaleString("fa-IR"));
+  chip.addEventListener("click", () => openPanel());
+  return chip;
+}
+
+/* --- the Background tasks panel (P3) -----------------------------------------
+
+   After claude.ai/code's, from the user's screenshot: «در حال اجرا» cards —
+   what it is doing, «عامل · ۱ دقیقه», the model, tokens, tool uses and the
+   current step, «دیدن گزارش», a stop square — then «پایان‌یافته N ‹» folded,
+   with a wipe for that list. The numbers are the CLI's own `system/task_progress`
+   (wiki/cli-stream-json-findings.md §5.10); nothing here is estimated. */
+
+/* The CLI's running report for one helper. Live only — a reload replays the
+   hub's backlog, which carries these too, so the panel comes back filled. */
+export function noteTaskProgress(ev) {
+  const id = ev.task_id;
+  if (!id) return;
+  const was = progress.get(id) ?? {};
+  progress.set(id, {
+    tokens: ev.usage?.total_tokens ?? was.tokens,
+    toolUses: ev.usage?.tool_uses ?? was.toolUses,
+    lastTool: ev.last_tool_name ?? was.lastTool,
+    description: ev.description ?? was.description,
+  });
+  if (panel) paintPanel();
+}
+
+function fmtCount(n) {
+  if (typeof n !== "number") return "";
+  return n >= 1000
+    ? FA.thousands.replace("{n}", (Math.round(n / 100) / 10).toLocaleString("fa-IR"))
+    : n.toLocaleString("fa-IR");
+}
+
+function nowDoing(tool) {
+  if (!tool) return "";
+  return FA.tasksNow?.[tool] ?? FA.tasksNow?.other ?? "";
+}
+
+function taskCard(agent) {
+  const live = agent.status === "running";
+  const card = document.createElement("div");
+  card.className = "tk-card";
+  card.dataset.status = agent.status || "running";
+  card.dataset.agentId = agent.id;
+  const p = progress.get(agent.id) ?? {};
+
+  const top = document.createElement("div");
+  top.className = "tk-top";
+  const title = document.createElement("bdi");
+  title.className = "tk-title";
+  title.setAttribute("dir", "auto");
+  title.textContent = agent.description || p.description || FA.agentRow;
+  top.append(title);
+  if (live) {
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "tk-stop";
+    stop.title = FA.tasksStop;
+    stop.setAttribute("aria-label", FA.tasksStop);
+    stop.addEventListener("click", () => stopTask(agent, stop));
+    top.append(stop);
+  }
+  card.append(top);
+
+  const kind = document.createElement("div");
+  kind.className = "tk-meta";
+  kind.append(label(agent.kind === "agent" ? FA.tasksKindAgent : FA.tasksKindCommand, "tk-kind"));
+  const when = elapsed(agent);
+  if (when) kind.append(label(when, "tk-time"));
+  card.append(kind);
+
+  const facts = document.createElement("div");
+  facts.className = "tk-meta";
+  if (agent.model) {
+    const m = pathEl(shortModel(String(agent.model)));
+    m.classList.add("tk-model");
+    facts.append(m);
+  }
+  if (typeof p.tokens === "number") facts.append(label(FA.tasksTokens.replace("{n}", fmtCount(p.tokens)), "tk-fact"));
+  if (typeof p.toolUses === "number") facts.append(label(FA.tasksToolUses.replace("{n}", fmtCount(p.toolUses)), "tk-fact"));
+  if (live && p.lastTool) facts.append(label(nowDoing(p.lastTool), "tk-now"));
+  if (facts.childElementCount) card.append(facts);
+
+  // A backgrounded shell command has no transcript on disk and never will, so
+  // it gets no way in — a link that opens onto nothing is worse than none.
+  if (agent.kind === "agent") {
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "tk-view";
+    view.textContent = FA.tasksView;
+    view.addEventListener("click", () => openDrawer(agent));
+    card.append(view);
+  }
+  return card;
+}
+
+async function stopTask(agent, button) {
+  button.disabled = true;
+  try {
+    await api("/api/control", { tab: state.tab, subtype: "stop_task",
+                                params: { task_id: agent.id } });
+  } catch (err) {
+    button.disabled = false;
+    return;
+  }
+  refreshAgents();
+}
+
+function paintPanel() {
+  if (!panel) return;
+  const running = registry.filter((a) => a.status === "running");
+  const finished = registry.filter((a) => a.status !== "running" && !cleared.has(a.id));
+  const focusedId = panel.body.contains(document.activeElement)
+    ? document.activeElement.closest("[data-agent-id]")?.dataset.agentId : null;
+  panel.body.replaceChildren();
+  panel.body.append(label(FA.tasksRunning, "tk-section"));
+  if (running.length) for (const a of running) panel.body.append(taskCard(a));
+  else panel.body.append(label(FA.tasksNone, "tk-empty"));
+  if (finished.length) {
+    const row = document.createElement("div");
+    row.className = "tk-finished-row";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "tk-finished";
+    toggle.setAttribute("aria-expanded", String(showHistory));
+    toggle.textContent = FA.tasksFinished.replace("{n}", finished.length.toLocaleString("fa-IR"));
+    toggle.addEventListener("click", () => { showHistory = !showHistory; paintPanel(); });
+    const wipe = document.createElement("button");
+    wipe.type = "button";
+    wipe.className = "tk-clear";
+    wipe.title = FA.tasksClear;
+    wipe.setAttribute("aria-label", FA.tasksClear);
+    wipe.addEventListener("click", () => {
+      for (const a of finished) cleared.add(a.id);
+      paintPanel();
+    });
+    row.append(toggle, wipe);
+    panel.body.append(row);
+    if (showHistory) for (const a of finished) panel.body.append(taskCard(a));
+  }
+  if (focusedId) {
+    panel.body.querySelector(`[data-agent-id="${CSS.escape(focusedId)}"] button`)?.focus();
+  }
+}
+
+export function openPanel() {
+  if (panel) { paintPanel(); return true; }
+  closeDrawer();
+  const el = document.createElement("div");
+  el.id = "tasks-panel";
+  el.popover = "auto";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", FA.tasksTitle);
+  const head = document.createElement("header");
+  head.className = "tk-head";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ag-close";
+  close.textContent = "×";
+  close.title = FA.agentClose;
+  close.setAttribute("aria-label", FA.agentClose);
+  close.addEventListener("click", () => closePanel());
+  head.append(label(FA.tasksTitle, "tk-heading"), close);
+  const body = document.createElement("div");
+  body.className = "tk-body";
+  el.append(head, body);
+  document.body.append(el);
+  el.addEventListener("toggle", (e) => {
+    if (e.newState === "closed" && panel?.el === el) closePanel();
+  });
+  panel = { el, body };
+  el.showPopover();
+  paintPanel();
+  refreshAgents();
+  return true;
+}
+
+function closePanel() {
+  if (!panel) return;
+  const el = panel.el;
+  panel = null;
+  if (el.matches(":popover-open")) el.hidePopover();
+  el.remove();
+}
+
+window.addEventListener("pcg:tasks", () => openPanel());
 
 /* --- polling ---------------------------------------------------------------- */
 
@@ -424,12 +546,25 @@ function closeDrawer() {
    `reset` — the one choke point every session swap goes through (project
    switch, new chat and resume all restart the CLI through it). State surviving
    a swap is this project's known defect family. */
+/* `/tasks` (V2-PLAN §3.5): the TUI's «show me the background work» opens the
+   panel. False when there is nothing to show, so the caller says so in its
+   own words rather than opening an empty box. */
+export function unfoldAgents() {
+  if (!registry.length) return false;
+  showHistory = true;
+  openPanel();
+  return true;
+}
+
 export function resetAgents() {
   clearTimeout(listTimer);
   clearTimeout(refreshTimer);
   listTimer = refreshTimer = 0;
   closeDrawer();
+  closePanel();
   registry = [];
+  progress.clear();
+  cleared.clear();
   showHistory = false;
   paint();
   // No refreshAgents() here: this runs from render.js's `wrapper/reset`

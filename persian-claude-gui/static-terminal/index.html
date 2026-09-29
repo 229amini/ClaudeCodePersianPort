@@ -310,6 +310,25 @@
              label association needs a real id, not a class. -->
         <textarea class="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
                   autocomplete="off" spellcheck="false" aria-label="پیام"></textarea>
+
+        <!-- ONE BUTTON AT THE END OF THE BOX (CLAUDE-AI-PARITY.md, pcg-368.6),
+             after claude.ai/code: send ↵, or — while a turn runs and the box
+             is empty — stop ⊙. With text mid-turn, hovering send offers
+             «بفرست» / «بعداً بفرست» (Ctrl+Enter). Esc still reaches stop
+             through this button (composer.js `stop:`). Labels are set from
+             strings.fa.js by composer.js. -->
+        <button type="button" class="comp-act send" disabled>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 7v5a3 3 0 0 0 3 3h11"/><path d="M15 11l4 4-4 4"/>
+          </svg>
+        </button>
+        <button type="button" class="comp-act stop" hidden>
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>
+            <rect x="9" y="9" width="6" height="6" rx="1.2" fill="currentColor"/>
+          </svg>
+        </button>
       </div>
 
       <div class="comp-row">
@@ -327,14 +346,9 @@
              used to SAY moves to the status line in v2.5 (§3.4); the state
              itself never left js/controls.js.
 
-             The audit counter below is deliberately NOT one of them: it is not
-             a picker, and «خودکار» approving things silently is the defect the
-             count exists to prevent. -->
+             The audit count of «خودکار» lives in the mode menu's footer
+             (CLAUDE-AI-PARITY.md P1): claude.ai's bar carries the mode alone. -->
 
-        <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
-             on the user's behalf. Never hidden behind a menu. A button, not a
-             span: it opens the list of those approvals, so it has to be
-             clickable AND reachable from the keyboard. -->
         <!-- THE COMPOSER BAR (COMPOSER-BAR.md, 2026-09-29). User decision: the
              claude.ai/code bar in this edition too — «+», the mode, then the
              model, effort and the context ring at the far end. Each opens a
@@ -348,7 +362,6 @@
         <button type="button" class="bar-chip posture-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
           <span class="posture-chip-name"></span>
         </button>
-        <button type="button" class="auto-chip chip-btn is-info" hidden></button>
 
         <span class="comp-spacer"></span>
 
@@ -366,16 +379,6 @@
           </svg>
         </button>
 
-        <!-- Stop stays: it is the way out of a running turn and the `?` sheet
-             calls it Esc, which reaches it through this very button
-             (composer.js `stop:`). It is hidden until a turn is in flight, so
-             the resting prompt still carries nothing. -->
-        <button type="button" class="stop round danger" hidden
-                aria-label="توقف (Esc)" title="توقف (Esc)">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
-            <rect x="6" y="6" width="12" height="12" rx="2"/>
-          </svg>
-        </button>
       </div>
     </div>
   </form>

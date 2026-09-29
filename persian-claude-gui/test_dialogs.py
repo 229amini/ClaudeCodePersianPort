@@ -101,9 +101,13 @@ def main() -> int:
                         "menu-popup") if f'id="{c}"' in html]
     check(not gone, "the capability chips and their popup are out of index.html",
           f"still there: {gone}")
-    # The audit counter stays: it reports what already happened, it is not a
-    # control, and V2-PLAN §2 keeps it for that reason.
-    check('class="auto-chip' in html, "the audit counter stays — it is a label, not a control")
+    # The audit count left the bar (CLAUDE-AI-PARITY.md P1: claude.ai's bar
+    # carries the mode alone) but not the window: the mode menu's footer opens
+    # the same list, which is the only defence «خودکار» has.
+    controls = read(JS / "controls.js")
+    check('class="auto-chip' not in html and "footer: autoCount" in controls
+          and "onClick: openAuditList" in controls,
+          "the audit count moved from a bar chip into the mode menu, still opening its list")
 
     stage = html.index('<div id="stage">')
     perm, picker = html.index('<dialog class="perm">'), html.index('<dialog class="picker">')
