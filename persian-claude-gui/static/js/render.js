@@ -29,7 +29,7 @@ import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel } from "./
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
    background agent's transcript back through this renderer. Same invariant —
    nothing crosses the edge until event time. */
-import { refreshAgents, resetAgents } from "./agents.js";
+import { refreshAgents, resetAgents, noteTaskProgress } from "./agents.js";
 
 const FA = window.STRINGS;
 
@@ -220,51 +220,134 @@ function endStreamPaint(el) {
   el.classList.remove("streaming");
 }
 
-/* A run of consecutive tool calls collapses into ONE row — «۱ فایل خوانده شد،
-   ۱۱ فرمان اجرا شد» — the way the CLI's own transcript does it. Eleven cards
-   between two sentences is noise, and the whole point of this window is that a
-   non-technical reader can follow the conversation; the group keeps every card
-   exactly one click away instead of hiding it.
+/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every step between two
+   sentences joins one run, and the run is ONE shut row that says what happened
+   the way claude.ai/code says it — «یک فرمان اجرا شد، 5.png خوانده شد ‹». A
+   lone call is a run too: the site draws «Used …: read documentation ›» for
+   one call, and a single step drawn as a tool card among one-line runs was
+   the scattered row the user reported. Opening the row lists the steps, each
+   still its own card, so nothing is further than it was.
 
-   Two deliberate limits:
-   - The group forms on the SECOND card. A lone Bash call reads better as
-     itself than as «۱ فرمان اجرا شد», so the first card goes in the log and is
-     pulled into the group only if a second one follows it.
-   - Anything that is not a plain tool card ends the run: a sentence, a
-     question, a todo list, the result line. That is what makes the grouping
-     mean "these happened together" rather than "these are the same tool".
-
-   `.ask` is excluded because a question the user must answer can never be
-   folded shut, and the group itself is built by hand rather than through
-   card(): card() appends, append() calls this, and a `.card.tool` group would
-   route itself straight back in.
-
-   `.thinking` IS part of the run. With interleaved thinking the model thinks
-   between every call, so a thinking card that ENDED the run shattered a
-   fifteen-step turn into fifteen groups of one, separated by fifteen identical
-   content-free «در حال فکر کردن» rows — the ladder the user reported. It joins
-   the run instead, and is deliberately not counted in the summary: the row says
-   what HAPPENED, and thinking is not one of the things that happened. */
+   What joins:
+   - a tool card (`.tool`), counted by kind;
+   - a thought WITH text (`.thinking`), not counted: the line says what
+     HAPPENED. An empty thought never reaches here — no card is built for one
+     (620 of 755 blocks in a real session were signature-only, and the CLI
+     draws nothing for them either, read out of the 2.1.284 bundle);
+   - a background task's completion notice (`.agent-note`), counted: the
+     site's «finished a background command».
+   `.ask` stays out: a question the user must answer is never folded shut. */
 function isRunnable(el) {
   if (!el.classList) return false;
-  if (el.classList.contains("thinking")) return true;
+  if (el.classList.contains("thinking") || el.classList.contains("agent-note")) return true;
   return el.classList.contains("tool") && !el.classList.contains("ask")
          && !el.classList.contains("group");
 }
 
-function groupSummaryText(counts) {
-  const parts = [];
-  for (const [name, n] of counts) {
-    // An MCP name has no Persian noun and never will (the server set is
-    // per-machine) — falling back to `name` reintroduces the forty-character
-    // mcp__<server>__<tool> identifier that toolSummary() below was
-    // specifically split apart for (bead pcg-9jx). mcpName() is the same
-    // split, reused rather than duplicated.
-    const mcp = mcpName(name);
-    const noun = FA.toolGroupNouns?.[name] ?? FA.toolVerbs?.[name] ?? (mcp ? mcp.tool : name);
-    parts.push(n.toLocaleString("fa-IR") + " " + noun);
+const ACT_KIND = {
+  Bash: "shell", PowerShell: "shell", BashOutput: "shell", KillShell: "shell",
+  Read: "read", Edit: "edit", MultiEdit: "edit", NotebookEdit: "edit", Write: "write",
+  Glob: "search", Grep: "search", WebFetch: "fetch", WebSearch: "websearch",
+  Agent: "agent", Task: "agent",
+};
+
+/* The site's vocabulary, measured (wiki/claude-ai-code-reference.md §"Tool line
+   vocabulary"): one part per KIND, in the order each kind was first used,
+   past tense, comma-joined — «Ran a command, read F», «Read N files»,
+   «Edited F +A −D», «used N tools». One file is named, several are counted.
+   An unknown tool is «used a tool». A lone shell step that carries its own
+   `description` (Bash's input field, what the site shows as «Committed P1»)
+   says that instead. Returns {nodes, added, removed, failed}. */
+function activity(steps) {
+  const kinds = new Map();
+  let thought = false, added = 0, removed = 0, failed = 0;
+  for (const el of steps) {
+    if (el.classList.contains("thinking")) { thought = true; continue; }
+    const kind = el.classList.contains("agent-note") ? "bgdone"
+      : ACT_KIND[el.dataset.tool || ""] ?? "other";
+    const k = kinds.get(kind) ?? kinds.set(kind, { n: 0, targets: [] }).get(kind);
+    k.n += 1;
+    const target = el.dataset.target;
+    if (target && !k.targets.includes(target)) k.targets.push(target);
+    added += Number(el.dataset.added || 0);
+    removed += Number(el.dataset.removed || 0);
+    if (el.dataset.failed) failed += 1;
   }
-  return parts.join("، ");
+  const bdi = (t) => {
+    const node = document.createElement("bdi");
+    node.className = "run-name";
+    node.dir = "auto";
+    node.textContent = t;
+    return node;
+  };
+  // A template with {name} becomes [text, <bdi>name</bdi>, text]: a file name
+  // inside Persian prose is an LTR island (spec rule 2).
+  const named = (template, name) => {
+    const [before, after = ""] = template.split("{name}");
+    return [document.createTextNode(before), bdi(name), document.createTextNode(after)];
+  };
+  const text = (t) => [document.createTextNode(t)];
+  const count = (template, n) => text(template.replace("{n}", faNum(n)));
+  const files = (k, one, many) => (k.targets.length === 1 ? named(one, k.targets[0])
+                                   : count(many, k.targets.length || k.n));
+  const only = steps.filter((el) => !el.classList.contains("thinking"));
+  const parts = [];
+  if (only.length === 1 && only[0].dataset.title) {
+    parts.push([bdi(only[0].dataset.title)]);
+  } else {
+    for (const [kind, k] of kinds) {
+      switch (kind) {
+        case "shell": parts.push(k.n === 1 ? text(FA.actShellOne) : count(FA.actShellMany, k.n)); break;
+        case "read": parts.push(files(k, FA.actReadOne, FA.actReadMany)); break;
+        case "edit": parts.push(files(k, FA.actEditOne, FA.actEditMany)); break;
+        case "write": parts.push(files(k, FA.actWriteOne, FA.actWriteMany)); break;
+        case "search": parts.push(k.n === 1 ? text(FA.actSearchOne) : count(FA.actSearchMany, k.n)); break;
+        case "fetch": parts.push(k.n === 1 ? text(FA.actFetchOne) : count(FA.actFetchMany, k.n)); break;
+        case "websearch": parts.push(k.n === 1 ? text(FA.actWebSearchOne) : count(FA.actWebSearchMany, k.n)); break;
+        case "agent": parts.push(k.n === 1 ? text(FA.actAgentOne) : count(FA.actAgentMany, k.n)); break;
+        case "bgdone": parts.push(k.n === 1 ? text(FA.actBgDoneOne) : count(FA.actBgDoneMany, k.n)); break;
+        default: parts.push(k.n === 1 ? text(FA.actOtherOne) : count(FA.actOtherMany, k.n));
+      }
+    }
+  }
+  if (!parts.length && thought) parts.push(text(FA.actThought));
+  const nodes = [];
+  parts.forEach((p, i) => {
+    if (i) nodes.push(document.createTextNode(FA.actJoin));
+    nodes.push(...p);
+  });
+  return { nodes, added, removed, failed };
+}
+
+/* Built by hand, not through card(): card() appends, append() asks toolHome(),
+   and a `.card.tool` run would route itself straight back in. The classes
+   `card tool group` stay so every reader that skips a run by them still does
+   (a run is not a tool call). */
+function openRun() {
+  const details = document.createElement("details");
+  details.className = "card tool group run";
+  const summary = document.createElement("summary");
+  const text = label("", "run-text");
+  const stat = label("", "run-stat");
+  stat.dir = "ltr";
+  const err = label("", "run-err");
+  summary.append(text, stat, err);
+  const body = document.createElement("div");
+  body.className = "card-body";
+  details.append(summary, body);
+  log.append(details);
+  return { details, body, text, stat, err, steps: [] };
+}
+
+function paintRun(run) {
+  const a = activity(run.steps);
+  run.text.replaceChildren(...a.nodes);
+  run.stat.replaceChildren();
+  if (a.added || a.removed) {
+    run.stat.append(label("+" + a.added, "d-add"), label("−" + a.removed, "d-del"));
+  }
+  run.err.textContent = a.failed ? FA.actFailed.replace("{n}", faNum(a.failed)) : "";
+  run.details.classList.toggle("has-failed", a.failed > 0);
 }
 
 function toolHome(el) {
@@ -272,32 +355,25 @@ function toolHome(el) {
     state.run = null;
     return log;
   }
-  const run = state.run ??= { first: null, group: null, counts: new Map() };
-  const name = el.dataset.tool;
-  if (name) run.counts.set(name, (run.counts.get(name) ?? 0) + 1);
+  let run = state.run;
+  if (!run || !log.contains(run.details)) run = state.run = openRun();
+  run.steps.push(el);
+  paintRun(run);
+  return run.body;
+}
 
-  if (!run.group) {
-    if (!run.first) {          // first of a possible run: stays inline
-      run.first = el;
-      return log;
-    }
-    const details = document.createElement("details");
-    details.className = "card tool group";
-    const summary = document.createElement("summary");
-    summary.append(icon("run"), label("", "tool-verb"));
-    details.append(summary);
-    const body = document.createElement("div");
-    body.className = "card-body";
-    details.append(body);
-    run.first.replaceWith(details);   // takes the first card's place in the log
-    body.append(run.first);
-    run.group = { details, body, text: summary.lastChild };
-  }
-  // A run of nothing but thinking has no action to count; it still needs a row
-  // that says something, so it names itself.
-  run.group.text.textContent = run.counts.size
-    ? groupSummaryText(run.counts) : FA.thinking;
-  return run.group.body;
+/* A failed step says so on its run's own line, so a shut run is not a green
+   light over a red step. Found through the DOM, not state.run: a result can
+   land after the run has closed. */
+function noteRunError(body) {
+  const step = body?.closest?.("details.card");
+  const row = step?.parentElement?.closest?.("details.run");
+  if (!step || !row || step.dataset.failed) return;
+  step.dataset.failed = "1";
+  const steps = [...row.querySelectorAll(":scope > .card-body > *")];
+  paintRun({ details: row, text: row.querySelector(".run-text"),
+             stat: row.querySelector(".run-stat"), err: row.querySelector(".run-err"),
+             steps });
 }
 
 /* --- a polling loop is one pair, not sixteen rows ---------------------------
@@ -342,11 +418,17 @@ function openCycle(el, src) {
    what makes the adjacency test mean anything: whatever else landed between the
    two halves — a thought, a todo list, a second call, another turn — is sitting
    between them, and that ends the chain. */
-function closeCycle(details, summary, id) {
+function closeCycle(card, summary, id) {
   const open = state.cycle;
   state.cycle = null;
   const rep = state.repeat;
-  if (!open || details.parentElement !== log
+  // Every call lives in a run now (CLAUDE-AI-PARITY.md P2), so the pair's
+  // second half is the RUN — and only a run holding exactly this one step:
+  // a cycle that made two calls, or thought between them, is not the loop
+  // this folds and fails safe by not matching.
+  const details = card.parentElement?.closest?.("details.run");
+  if (!open || !details || details.parentElement !== log
+      || details.querySelector(":scope > .card-body").childElementCount !== 1
       || open.el.nextElementSibling !== details) {
     state.repeat = null;
     return;
@@ -384,16 +466,9 @@ function closeCycle(details, summary, id) {
     old.details.remove();
     state.toolCards.delete(old.id);
   }
-  /* Nothing removed above can be the OPEN run's first card — the surviving
-     pair's own sentence reset the run a moment ago — but the cost of being
-     wrong is silent and total: toolHome() calls run.first.replaceWith(group) on
-     a parentless node, which is a no-op, so the group never enters the log and
-     every card of that run renders into a detached subtree. Cheaper to check
-     than to reason about. */
-  if (state.run && !state.run.group && state.run.first
-      && !log.contains(state.run.first)) {
-    state.run = null;
-  }
+  // The open run is the surviving pair's, never a removed one — but a run
+  // that left the log must not be appended to again.
+  if (state.run && !log.contains(state.run.details)) state.run = null;
   // Persian digits: this is prose chrome, not a technical value (spec rule 5).
   // Built fresh on the surviving row — the previous badge left with its card.
   details.querySelector(":scope > summary")
@@ -422,12 +497,15 @@ export function bubble(kind, text) {
   return append(el);
 }
 
-function card(kind, summaryNodes, { open = false, tool = "" } = {}) {
+function card(kind, summaryNodes, { open = false, tool = "", data = null } = {}) {
   const details = document.createElement("details");
   details.className = "card " + kind;
   details.open = open;
   // Read by toolHome() below, so it has to be set before append() runs.
   if (tool) details.dataset.tool = tool;
+  for (const [k, v] of Object.entries(data ?? {})) {
+    if (v !== undefined && v !== null && v !== "") details.dataset[k] = String(v);
+  }
 
   const summary = document.createElement("summary");
   summary.append(...summaryNodes);
@@ -655,6 +733,23 @@ function paintPulse(p) {
   p.meta.textContent = parts.join(" · ");
 }
 
+/* «۱ کار در حال اجرا» on the working line, the site's «1 running task» chip:
+   the background helpers still going. agents.js owns the registry and calls
+   this on every paint; the chip opens the Background tasks panel (P3) through
+   an event, because this module cannot import agents.js at evaluation time. */
+let runningTasks = 0;
+
+export function setRunningTasks(n) {
+  runningTasks = Number(n) || 0;
+  paintTasksChip(state.pulse);
+}
+
+function paintTasksChip(p) {
+  if (!p?.tasks) return;
+  p.tasks.hidden = !runningTasks;
+  p.tasks.textContent = FA.pulseTasks.replace("{n}", faNum(runningTasks));
+}
+
 /* Defaults to the scope currently being rendered into. The argument exists for
    ONE caller: app.js dropping a tab, whose 500 ms interval lives in that tab's
    scope and would otherwise keep painting a detached node for the life of the
@@ -664,83 +759,69 @@ export function clearPulse(scope = state) {
   const pulse = scope.pulse;
   if (!pulse) return;
   clearInterval(pulse.timer);
-  // A pulse only reaches here still wearing "live" when something is
-  // abandoning it without settling it first — a `reset`, a dead CLI, or a
-  // resetTurn() that did not ask to keep it. settlePulse() always strips the
-  // class before calling this, so a settled pulse (the turn's permanent
-  // closing line) is never touched here — only the orphaned node is removed.
-  if (pulse.el.classList.contains("live")) pulse.el.remove();
+  // Settled or abandoned (a `reset`, a dead CLI, a resetTurn() that did not
+  // ask to keep it), the line goes: a finished turn leaves no line behind.
+  pulse.el.remove();
   scope.pulse = null;
 }
 
-/* The verb is decorative while the turn runs, but it stays on as that turn's
-   permanent closing line — and a refresh REPLAYS the hub's history, which runs
-   startPulse() again for every turn in it. Math.random() there re-rolled the
-   word on every reload, so a finished turn wore a different verb each time the
-   window was reopened. Derived from the prompt instead: same turn, same verb,
-   for as long as the transcript lives. */
-function pickVerb(seed) {
-  let h = 0;
-  for (const ch of String(seed)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return FA.pulseVerbs[h % FA.pulseVerbs.length];
+/* WHAT the turn is doing (pcg-els, after claude.ai/code's «Almost done
+   thinking…»): thinking, writing, running a tool, or waiting on the person.
+   Called from the events that mark each one; a change rewrites the line,
+   which happens a few times a turn, not twice a second. */
+function pulsePhase(phase) {
+  const p = state.pulse;
+  if (!p || p.phase === phase) return;
+  p.phase = phase;
+  p.text.textContent = FA.pulsePhases[phase] ?? FA.pulseStart;
 }
 
 function startPulse(seed) {
   clearPulse();
+  // The site's working line, measured (wiki/claude-ai-code-reference.md and
+  // the user's screenshots): the spark, «۳ دقیقه و ۵۱ ثانیه · ۱۱۷٫۶ هزار توکن»,
+  // the running-task chip, then what it is doing. Nothing is left behind when
+  // the turn ends — the site draws no closing line (settlePulse()).
   const el = document.createElement("div");
   el.className = "pulse live";
+  el.title = FA.spinnerInterrupt;
   const glyph = label(PULSE_GLYPHS[0], "pulse-glyph");
   glyph.setAttribute("aria-hidden", "true");
-  const verb = pickVerb(seed);
-  const text = label(FA.pulseRunning.replace("{verb}", verb), "pulse-verb");
   // The counters abut Persian prose and are written in Persian digits, so they
   // are prose too — dir="auto" resolves them against their own content rather
   // than being forced LTR, which is the spec's first trap (rule 1).
   const meta = label("", "pulse-meta");
   meta.setAttribute("dir", "auto");
-  el.append(glyph, text, meta);
+  const tasks = document.createElement("button");
+  tasks.type = "button";
+  tasks.className = "pulse-tasks";
+  tasks.hidden = true;
+  tasks.addEventListener("click", () =>
+    window.dispatchEvent(new CustomEvent("pcg:tasks")));
+  const text = label(FA.pulseStart, "pulse-verb");
+  el.append(glyph, meta, tasks, text);
   // A screen reader should hear the outcome, not sixty ticks of a stopwatch.
   el.setAttribute("aria-live", "off");
   append(el);
   const p = state.pulse =
-    { el, glyph, text, meta, verb, started: Date.now(),
+    { el, glyph, text, meta, tasks, seed, started: Date.now(),
       base: 0, live: 0, cliMs: 0, frame: 0 };
   p.timer = setInterval(() => paintPulse(p), 500);
   paintPulse(p);
+  paintTasksChip(p);
 }
 
 function settlePulse() {
   const p = state.pulse;
   if (!p) return;
-  // Before the rewrite and the move below, for the reason append() reads first:
-  // the closing line is longer than the running one and dropping `live` changes
-  // where it sits, so a read taken afterwards answers about a box that no
-  // longer exists.
-  const wasAtBottom = atBottom();
-  p.glyph.textContent = PULSE_GLYPHS[0];
-  // Our wall clock is what the live line counted; `cliMs` is the CLI's own
-  // duration_ms, summed over the turn's results. Live, the wall clock is always
-  // the larger (it starts at the echo, before the CLI has the message), so the
-  // settled line never jumps. In a replay the whole turn arrives in one burst
-  // and the wall clock reads zero — which is the «۰ ثانیه» after a refresh.
-  const elapsed = Math.max(Date.now() - p.started, p.cliMs);
-  p.text.textContent = FA.pulseDone.replace("{verb}", p.verb)
-                                   .replace("{time}", fmtDuration(elapsed));
-  const tokens = p.base + p.live;
-  p.meta.textContent = tokens ? fmtTokens(tokens) : "";
-  // `order: 1` only made it LOOK last; in the DOM it is still sitting where the
-  // turn began, ahead of everything the turn produced. Dropping the class
-  // without this would snap the closing line back above its own turn.
-  p.el.parentElement?.append(p.el);
-  p.el.classList.remove("live");   // stops being "now", becomes this turn's record
-  // clearPulse() runs only now, after the class is off: it removes an
-  // abandoned "live" node from the DOM, and a settled pulse must not look
-  // like one to it. JS runs this function to completion with no interleaving,
-  // so moving the call here (rather than before the settle above) changes
-  // nothing else — it only stops the interval and clears state.pulse.
+  // The turn is over and the site leaves nothing where the working line was —
+  // the message's own hover row carries when it was said (marks.js). Dropping
+  // `live` first is what lets clearPulse() tell this apart from nothing: it
+  // removes the node either way now, and stops the timer.
+  p.el.classList.remove("live");
+  p.el.remove();
   clearPulse();
-  flushEdits();          // the turn's change card, after its closing line
-  if (wasAtBottom) log.scrollTop = log.scrollHeight;
+  flushEdits();          // the turn's change card
 }
 
 /* Everything the window sent has been reported finished (or something emptied
@@ -1526,6 +1607,8 @@ function xmlText(source, tag) {
    and what it came back with. The task-id, tool-use-id, output-file and note
    are plumbing — the CLI writes them for itself. */
 function renderTaskNote(text) {
+  // Counted on the run's line as «(N ناموفق)», the site's «(N failed)».
+  const failed = xmlText(text, "status") === "failed";
   const summary = xmlText(text, "summary");
   const result = xmlText(text, "result");
   const nodes = [icon("task"),
@@ -1546,6 +1629,7 @@ function renderTaskNote(text) {
     // nothing is worse than no card.
     const row = document.createElement("div");
     row.className = "msg assistant meta agent-note";
+    if (failed) row.dataset.failed = "1";
     row.append(...nodes);
     append(row);
     return;
@@ -1553,7 +1637,7 @@ function renderTaskNote(text) {
   // Not a `.tool` card: it is a report, not a step, so it never joins a run of
   // tool calls. The body is the agent's final text, written as markdown for a
   // human — through renderMarkdown like every other message (spec rules 1-2).
-  const { body } = card("agent-note", nodes);
+  const { body } = card("agent-note", nodes, { data: { failed: failed ? "1" : "" } });
   const wrap = document.createElement("div");
   wrap.className = "msg assistant";
   wrap.append(renderMarkdown(result));
@@ -1783,6 +1867,10 @@ export function renderEvent(ev) {
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
         toChrome("outputStyle", ev.output_style);
+      } else if (ev.subtype === "task_progress" || ev.subtype === "task_started") {
+        // A background helper's own running report — chrome for the tasks
+        // panel (agents.js), never a transcript row.
+        noteTaskProgress(ev);
       } else if (ev.subtype === "status" && ev.permissionMode) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.
@@ -1809,6 +1897,7 @@ export function renderEvent(ev) {
         // Stream as plain text; markdown is rendered once the message closes,
         // so half-written fences never reach marked.
         if (!state.streamBubble) {
+          pulsePhase("writing");
           state.streamBubble = bubble("assistant", "");
           // Plain text under `.msg`'s unicode-bidi:plaintext ignores `dir`;
           // the class is what lets the measured direction apply while the
@@ -1820,6 +1909,12 @@ export function renderEvent(ev) {
         // frame — see queueStreamText().
         queueStreamText(state.streamBubble, log, state.streamText);
       } else if (typeof delta.thinking === "string") {
+        pulsePhase("thinking");
+        state.thinkingText += delta.thinking;
+        // Most thoughts carry no text at all — signature only (620 of 755 in a
+        // real session) — and neither the CLI nor claude.ai draws anything for
+        // one (wiki/tui-transcript.md §1). No card until there is a word.
+        if (!state.thinkingBody && !state.thinkingText.trim()) return;
         if (!state.thinkingBody) {
           state.thinkingPeek = label("", "tool-target");
           // The thought is the model's own prose — usually English, sometimes
@@ -1833,8 +1928,7 @@ export function renderEvent(ev) {
         // Same accumulate-then-coalesce shape as the text branch above:
         // `textContent +=` is a full read AND a full write per delta — O(n²)
         // over the thought — and the queue already carries the detached-buffer
-        // and direction rules this body needs.
-        state.thinkingText += delta.thinking;
+        // and direction rules this body needs. (Accumulated above.)
         queueStreamText(state.thinkingBody, log, state.thinkingText);
         // Shut, the row used to carry nothing but the word «فکر» — the same
         // label on every one of them. Its opening clause says what THIS thought
@@ -1848,6 +1942,7 @@ export function renderEvent(ev) {
     }
 
     case "assistant": {
+      if ((ev.message?.content ?? []).some((part) => part.type === "tool_use")) pulsePhase("tools");
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
@@ -1876,6 +1971,17 @@ export function renderEvent(ev) {
           // repeat is compared on.
           openCycle(settled, part.text ?? "");
           if (!ev.parent_tool_use_id) markMessage(settled, ev.uuid, ev.timestamp, part.text ?? "");
+        } else if (part.type === "thinking") {
+          // A replayed thought draws what the live stream drew for it: a step
+          // in the run, only if it has words. Live, the deltas built it already.
+          const thought = String(part.thinking ?? "").trim();
+          if (!state.thinkingBody && thought) {
+            const peek = label(thought.replace(/\s+/g, " ").slice(0, 100), "tool-target");
+            peek.setAttribute("dir", "auto");
+            const { body } = card("thinking", [icon("think"), label(FA.thinking, "tool-verb"), peek]);
+            body.setAttribute("dir", "auto");
+            body.textContent = thought;
+          }
         } else if (part.type === "tool_use") {
           if (part.name === "TodoWrite") {
             renderTodos(part.input?.todos);
@@ -1887,15 +1993,26 @@ export function renderEvent(ev) {
             body.append(renderQuestionBody(part.input.questions));
             state.toolCards.set(part.id, body);
           } else {
-            const { details, body } = card("tool", toolSummary(part.name, part.input),
-                                           { tool: part.name });
+            const file = EDIT_TOOLS.has(part.name)
+              ? part.input?.file_path ?? part.input?.notebook_path : null;
+            // What the run's one line says about this step (activity()): the
+            // file by name, the lines changed, a shell step's own description.
+            // Set before append, which is when the run reads them.
+            const readFile = part.name === "Read" ? part.input?.file_path : null;
+            const d = file ? diffOf(part.name, part.input) ?? { added: 0, removed: 0 } : null;
+            const named = file || readFile;
+            const { details, body } = card("tool", toolSummary(part.name, part.input), {
+              tool: part.name,
+              data: {
+                target: typeof named === "string" ? named.split(/[\\/]/).pop() : "",
+                added: d?.added, removed: d?.removed,
+                title: /^(Bash|PowerShell)$/.test(part.name) ? part.input?.description : "",
+              },
+            });
             body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
             // The turn's change card (pcg-8ip): this conversation's own edits.
-            const file = EDIT_TOOLS.has(part.name)
-              ? part.input?.file_path ?? part.input?.notebook_path : null;
             if (typeof file === "string" && file && !ev.parent_tool_use_id) {
-              const d = diffOf(part.name, part.input) ?? { added: 0, removed: 0 };
               state.turnEdits ??= new Map();   // any scope shape, harness ones too
               const was = state.turnEdits.get(file) ?? { added: 0, removed: 0 };
               state.turnEdits.set(file, { added: was.added + (d.added || 0),
@@ -1922,6 +2039,7 @@ export function renderEvent(ev) {
       if (state.pulse) {
         state.pulse.base += ev.message?.usage?.output_tokens ?? state.pulse.live;
         state.pulse.live = 0;
+        paintPulse(state.pulse);   // the banked figure now, not on the next tick
       }
       return;
     }
@@ -2026,7 +2144,10 @@ export function renderEvent(ev) {
         // themselves — spec rule 8.
         const out = block("tool-output", "");
         out.append(linesAuto(text));
-        if (part.is_error) out.style.color = "var(--danger)";
+        if (part.is_error) {
+          out.style.color = "var(--danger)";
+          noteRunError(body);   // «(N ناموفق)» on the run's own line
+        }
         // intoCard(), exactly like the two branches above — see its own note
         // for why the orphan case may not simply `log.append()`. An earlier
         // fallback here was `bubble("assistant").parentElement`, a way of
@@ -2220,6 +2341,7 @@ export function renderEvent(ev) {
         // exactly once and vanish on the next refresh.
         renderShell(ev);
       } else if (ev.subtype === "permission_request") {
+        pulsePhase("waiting");
         // NEVER gated: one modal queue serves every open tab, and a background
         // conversation waiting on an answer is exactly the case the dialog has
         // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
@@ -2409,4 +2531,19 @@ export function renderEvent(ev) {
       // do not know — show it and move on.
       if (!HANDLED.has(ev.type)) renderRaw(ev);
   }
+}
+
+/* «Opus 5.5» for `claude-opus-5-5`, the way the TUI names a model in its own
+   status line; the full id stays in the tooltip. A name that does not look like
+   a Claude model id is shown as it came. */
+export function shortModel(id) {
+  if (!/^claude-[a-z]+(-|$)/.test(String(id))) return String(id);
+  const bare = String(id).replace(/^claude-/, "");
+  const suffix = (bare.match(/\[[^\]]*\]$/) || [""])[0];
+  const parts = bare.replace(/\[[^\]]*\]$/, "").split("-").filter((x) => !/^\d{8}$/.test(x));
+  const family = parts.shift() || bare;
+  if (!/^[a-z]+$/.test(family)) return String(id);
+  const version = parts.filter((x) => /^\d+$/.test(x)).join(".");
+  return family[0].toUpperCase() + family.slice(1) + (version ? " " + version : "")
+    + (suffix ? " " + suffix : "");
 }
