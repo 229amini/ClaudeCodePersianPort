@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.3.2"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.3.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.4.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.4.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -153,6 +153,11 @@ CONTROL_ALLOWED = frozenset({
     # own. It COSTS A TURN: the CLI asks the model and there is no free refusal
     # path, which is why the window says so before it sends.
     "side_question",
+    # The composer bar's «+ → اتصال‌ها» (COMPOSER-BAR.md). `mcp_status` only
+    # reads. `mcp_toggle {serverName, enabled}` is PERSISTENT, measured
+    # 2026-09-29: it writes projects/<cwd>/disabledMcpServers into
+    # ~/.claude.json, exactly as the TUI's own /mcp does, and the menu says so.
+    "mcp_status", "mcp_toggle",
 })
 # `apply_flag_settings` is deliberately NOT in that list even though the effort
 # chip needs it. Its params are a free-form settings blob, so whitelisting the
@@ -2996,7 +3001,9 @@ class ClaudeSession:
         # get_context_usage after a real turn is tens of seconds (§9), so the
         # cost and quota numbers were lost to a context breakdown that had not
         # come back yet.
-        usage = self.control("get_usage")
+        # skip_behaviors: the reply's `behaviors` section is a scan of every
+        # transcript touched in seven days, which nothing here reads.
+        usage = self.control("get_usage", skip_behaviors=True)
         if usage.get("subtype") == "success":
             body = usage.get("response") or {}
             patch: dict = {}
@@ -3006,6 +3013,11 @@ class ClaudeSession:
             five = (body.get("rate_limits") or {}).get("five_hour") or {}
             if isinstance(five.get("utilization"), (int, float)):
                 patch["quota"] = five["utilization"]
+            # The whole object for the composer bar's usage panel: 5h, 7d and
+            # the per-model weekly windows (`model_scoped`). None on a login
+            # with no plan limits, which the panel says rather than hides.
+            if "rate_limits" in body:
+                patch["limits"] = body["rate_limits"]
             publish(patch)
             if isinstance(body.get("session"), dict):
                 self._sl["cost"] = body["session"]
@@ -3019,7 +3031,19 @@ class ClaudeSession:
         if context.get("subtype") == "success":
             body = context.get("response") or {}
             if isinstance(body.get("percentage"), (int, float)):
-                publish({"context": body["percentage"]})
+                publish({"context": body["percentage"],
+                         # The composer bar's context panel: the same numbers
+                         # the TUI's /context draws, category by category.
+                         "context_detail": {
+                             "total": body.get("totalTokens"),
+                             "max": body.get("maxTokens"),
+                             "threshold": body.get("autoCompactThreshold")
+                             if body.get("isAutoCompactEnabled") else None,
+                             "categories": [
+                                 {k: c.get(k) for k in ("name", "tokens", "color", "kind")}
+                                 for c in (body.get("categories") or [])
+                                 if isinstance(c, dict)],
+                         }})
             size = body.get("maxTokens")
             if statusline and "window" not in self._sl and isinstance(size, int) and size > 0:
                 self._sl["window"] = size

@@ -637,6 +637,18 @@ line that names the phase. New gate `test_arrange.py` 7; spec **196/196** termin
 polls waited on virtual time, which a `FileReader` does not stop; each poll is a real request now
 (2 of 5 failed under CPU load before, 8 of 8 passed after).
 
+**2026-09-29 (same day) — claude.ai/code's composer bar, both editions; web 1.4.0, terminal
+0.4.0.** User request with five screenshots. `COMPOSER-BAR.md` holds the measured sources:
+the model menu from `initialize.models`, the effort slider from `supportedEffortLevels`, the
+mode menu from the wrapper's four postures (not the CLI's `auto`), the context panel from
+`get_context_usage` categories and threshold, the plan limits from `get_usage.rate_limits`
+(asked with `skip_behaviors`), and «+» with files, slash commands and MCP servers
+(`mcp_status`/`mcp_toggle`, which is **persistent** per folder). `js/bar.js` is one leaf file,
+byte-identical in both editions. The terminal edition gained a bar row; the web edition kept its
+in-cell `.menu-popup` (which the layout gates measure) and gained the ✓, digits, slider, ◔ and
+«+». Read `wiki/parity-chrome.md` §"The composer bar". New gate `test_bar.py` **35** (both
+editions, negative-tested).
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -825,6 +837,7 @@ Two checks exist:
 | Split/grid (MA3-T2) | `python persian-claude-gui\test_split.py` | the grid (1/2/4 on the web edition; 1–6 panes with dividers and pane keys on the terminal edition since the BridgeMind port) measured headlessly at five window sizes on ONE server: nothing drawn outside its own cell, the status stack clamped but still scrollable (so a field was never hidden to make it fit), the slash popup inside its cell, and the layout restored after a reload. **167 checks** web, **172** terminal, all passing on Linux Chromium since 2026-09-29. Free. |
 | New-session page (P4) | `python persian-claude-gui\test_newsession.py` | terminal edition: the page opens over a hidden grid (button, Alt+N), presets, disabled counts with their reason (the six-tab limit read from `/api/tabs`, and no room), all-or-nothing launch with rollback on a 409, the reviewer's plan posture before its first message, `/clear` still one fresh conversation, and (2026-09-29) a folder and a branch per row. **26 checks**, routes stubbed. Free. |
 | Layout control (2026-09-29) | `python persian-claude-gui\test_arrange.py` | terminal edition: the button beside «گفتگوی جدید» opens a panel with the open count; more panes are FILLED with the open conversations not on screen; fewer close nothing; a count with no room is disabled with the reason. **7 checks**, routes stubbed. Free. |
+| Composer bar (2026-09-29) | `python persian-claude-gui\test_bar.py` | BOTH editions: `bar.js` is one file in two places; the ◔ ring and the context/usage panel (categories, headroom, `/compact`, 5h/weekly/per-model limits, a login with none); the model and mode menus number their rows, check the current one and pick by digit; the effort slider posts a change; «+» opens the native file dialog, starts a slash command and toggles THAT MCP server. **35 checks**, routes stubbed. Free. |
 | Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row, the OS notification's jump. **17 checks**. Free. |
 | Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
 | App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: native (forced by `<html data-zoom-mode>`) leaves Ctrl+= / - / 0 to Edge; css (shipped since 2026-09-29) steps 80–150 %, clamps, shows a readout, remembers the level, picks the automatic level from the screen and window, and opens a kebab menu under its button at 125 % (M4). **9 checks**, two page loads. Free. |

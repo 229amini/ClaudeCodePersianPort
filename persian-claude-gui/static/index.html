@@ -231,13 +231,15 @@
           <span class="bash-chip-label"></span>
         </span>
 
-        <button type="button" class="ghost icon btn-attach" aria-label="پیوست فایل">
-          <!-- SVG, not an emoji: emoji render differently per platform and
-               cannot be themed. -->
+        <!-- «+» (COMPOSER-BAR.md, 2026-09-29): what the paperclip did, plus
+             the slash commands and this machine's MCP servers — claude.ai/code's
+             own «+» menu. Built by js/bar.js; wired in js/composer.js. SVG,
+             not an emoji: emoji render differently per platform. -->
+        <button type="button" class="ghost icon bar-plus-btn" aria-haspopup="dialog"
+                aria-expanded="false" aria-label="افزودن">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-               stroke-linejoin="round" aria-hidden="true">
-            <path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l8.49-8.49a3.67 3.67 0 015.19 5.19l-8.5 8.49a1.83 1.83 0 01-2.59-2.59l7.84-7.83"/>
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
           </svg>
         </button>
 
@@ -297,6 +299,15 @@
 
         <span class="comp-spacer"></span>
 
+        <!-- ◔ the context window, as a ring; opens the context and usage panel
+             (COMPOSER-BAR.md). Painted by js/render.js setStatus. -->
+        <button type="button" class="bar-chip bar-ring" aria-haspopup="dialog" aria-expanded="false">
+          <svg viewBox="0 0 36 36" width="18" height="18" fill="none" stroke-width="4" aria-hidden="true">
+            <circle class="bar-ring-track" cx="18" cy="18" r="15.9155"/>
+            <circle class="bar-ring-fill" cx="18" cy="18" r="15.9155" pathLength="100"
+                    stroke-dasharray="0 100" transform="rotate(-90 18 18)"/>
+          </svg>
+        </button>
         <button type="submit" class="round send" aria-label="ارسال">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
