@@ -699,14 +699,15 @@ Owner decisions:
 - Confirmation `y`/`n` are dropped from the doc. The window never answered them.
 - `test_tui_vocab` is terminal-only and prints SKIP under `PCG_UI=web`.
 
-**2026-09-29 — the turn-end signal is a taskbar flash; terminal 0.6.1.** On the target PC,
+**2026-09-29 — the turn-end signal is a taskbar flash; terminal 0.6.1, then 0.6.2.** On the target PC,
 Edge app mode never showed the Notification permission prompt, so the turn-end OS notification
 never fired. The server now flashes the window's taskbar button: `render.js flashTaskbar()`
 posts `/api/attention` with `document.title`, and `server.py flash_window()` calls
 `FlashWindowEx` through stdlib `ctypes`. It fires on a live settle, never a replay, while the
 window is hidden **or** unfocused. The notification, `notifyDone` and the `pcg:jump` listener
-are gone. Read `wiki/grid.md` §"The turn-end signal is a taskbar flash". The flash itself is
-verified only on Windows.
+are gone. 0.6.2 flashes for a live permission request too (a turn blocked on the person). Read
+`wiki/grid.md` §"The turn-end signal is a taskbar flash". The flash itself is verified only on
+Windows.
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
@@ -905,7 +906,7 @@ Two checks exist:
 | Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text, an assistant row carries no marker or gutter, and the user row is the site's bubble on the right, identical live and replayed. **29 checks.** Free, no CLI process, no login. |
 | Keys (v2.3) | `python persian-claude-gui\test_keys.py` | every chord the «کلید v2» column of `wiki/tui-keys.md` binds, across the five contexts the prompt owns (Global, Chat, Confirmation, Autocomplete, HistorySearch), dispatched at the real composer in the real `index.html` with the new routes stubbed in, plus `!`, `@`, `\`+Enter and `?` as characters rather than chords. Fails in both directions: a table chord with nothing behind it, or a scenario here for a chord the table never bound. **40 checks** at v2.3, grown to **60** at v2.4 with the whole `Confirmation` context (permission/plan/question Esc and shift+Tab semantics). Free, no CLI process, no login. |
 | Dialogs (v2.4) | `python persian-claude-gui\test_dialogs.py` | the *shape* `test_keys.py` dispatches keys at: the capability chips and the old popup are gone from `index.html`, both dialogs sit inside `#stage` above the prompt, the permission form has no submit button, dialogs open with `show()` and never `showModal()`, the four picker verbs (`/model` `/effort` `/output-style` `/permissions`) map to openers, `choice.js` stays a leaf module, the option digit is never inside the string, and every `FA.*` key the window reads exists in `strings.fa.js`. **31 checks.** Reads files and spawns nothing — the fastest gate here. |
-| Shell (v2.5) | `python persian-claude-gui\test_shell.py` | the status-line stack (three rows in §3.4's order, the posture row following the wrapper rather than the raw CLI mode, one turn-end notification on a live settle and none on a replayed one) and every window-local command of §3.5 — the route each one calls, the body it sends, and the two (`/theme`, an unowned verb) that fall through to the CLI as text, plus the non-image drop (`pcg-qmy.11`): a text file posts, an oversize one never does, and a 400 says so. **39 checks.** Driven headlessly with every route stubbed inside the page — no `claude` process, no login. |
+| Shell (v2.5) | `python persian-claude-gui\test_shell.py` | the status-line stack (three rows in §3.4's order, the posture row following the wrapper rather than the raw CLI mode, one taskbar-flash request on a live settle or permission request and none on a replayed one) and every window-local command of §3.5 — the route each one calls, the body it sends, and the two (`/theme`, an unowned verb) that fall through to the CLI as text, plus the non-image drop (`pcg-qmy.11`): a text file posts, an oversize one never does, and a 400 says so. **39 checks.** Driven headlessly with every route stubbed inside the page — no `claude` process, no login. |
 | Strings (v2.6) | `python persian-claude-gui\test_strings.py` | the two arrows in `claude.exe → wiki/tui-strings.md → static/strings.fa.js → the page`: every wiki row's key exists in the file and the two texts agree, a row shipping nothing says so in both places, no un-allowlisted English in a Persian string, no key in the file that nothing reads, `/help` lists exactly the verbs the window answers, and `help.html` names every command V2-PLAN §4 says the window will not build. **24 checks.** Reads files and spawns nothing. |
 
 Set `PYTHONIOENCODING=utf-8` before driving the server from PowerShell or Persian mojibakes in
