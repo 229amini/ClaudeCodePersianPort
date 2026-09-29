@@ -1771,21 +1771,53 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 }
 .log > * { flex: none; }
 
-/* A RUN OF TOOL CALLS (BRIDGEMIND-PORT.md §D11.2): the folded row with the
-   earlier steps, then the newest step as itself. One log child, so the run is
-   one row to the scroll and to the cycle fold. */
-.run {
-  display: flex;
-  flex-direction: column;
-  gap: var(--log-gap);
+/* A RUN OF STEPS IS ONE LINE (CLAUDE-AI-PARITY.md P2), measured off
+   claude.ai/code (wiki/claude-ai-code-reference.md §3, "Expanded run"): shut,
+   a muted sentence and a chevron; open, the steps in one bordered box, a row
+   per step on hairlines, no icons, each row opening again onto its detail. */
+details.card.run { border: 0; background: none; overflow: visible; }
+details.card.run[open] { border: 0; background: none; }
+details.card.run > summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-inline-size: 100%;
+  padding: 0;
+  min-height: 0;
+  color: var(--fg-muted);
+  background: none;
+  cursor: pointer;
 }
-.run > * { flex: none; }
-.run-more {
+details.card.run > summary:hover { background: none; color: var(--fg); }
+details.card.run > summary::after {
+  content: "‹";
   flex: none;
-  color: var(--fg-faint);
-  font-size: .85em;
+  font-size: 1.1em;
+  line-height: 1;
+  transition: transform var(--dur) var(--ease);
 }
-.run-more::before { content: "· "; }
+details.card.run[open] > summary::after { transform: rotate(-90deg); }
+.run-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-name { color: inherit; }
+.run-stat { flex: none; display: inline-flex; gap: 4px; font-size: .92em; font-variant-numeric: tabular-nums; }
+.run-err { flex: none; }
+.run-err:empty { display: none; }
+details.card.run.has-failed > summary .run-err { color: var(--accent); }
+details.card.run > .card-body {
+  margin-block-start: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+details.card.run > .card-body > * { margin: 0; border-radius: 0; }
+details.card.run > .card-body > * + * { border-block-start: 1px solid var(--border); }
+details.card.run > .card-body > details.card > summary { padding: 8px 10px; }
+details.card.run > .card-body > details.card[open] { background: var(--surface); }
+details.card.run > .card-body .tool-icon:not(.glyph) { display: none; }
+details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
+.log .run details.card > summary::before,
+.log .run details.card > summary::after { content: none; }
 
 /* A LONG MESSAGE OF YOURS (§D11.1): six lines and a fade, then «بیشتر». The
    text is all there; only the box is short. */
@@ -1924,75 +1956,20 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   overflow-wrap: anywhere;
 }
 
-/* V2-PLAN §3.1 row 1: the user's turn is the TUI's `> prompt` ECHO, not a chat
-   bubble. This edition inherited the web one's filled pill verbatim, which is
-   the one shape a terminal cannot draw — so the fill, the radius and the pill
-   padding all go, and the row is dimmed, because what the person typed is
-   already on the screen once and the answer is what the eye is looking for.
-   (The web edition keeps its bubble: standing decision, wiki/editions.md.)
-
-   The gutter geometry is the assistant's, verbatim, so the echo, the answer and
-   every step between them hang off ONE rail. PHYSICAL properties, for the exact
-   reason `.msg.assistant` below spells out: `.msg` carries `dir="auto"`, so an
-   English message resolves `direction: ltr` and every logical property on this
-   box would flip with it, while the gutter belongs to the COLUMN, which is RTL
-   and does not move.
-
-   `:not(.side)` for the reason the assistant's own rule below excludes the
-   same class: a `/btw` question is a `.msg.user` that is NOT a turn in this
-   conversation, it already carries the TUI's `※` and its own rule, and left
-   unexcluded it drew two marks in one row (test_shell.py caught exactly that).
-
-   Alignment is layout only — never a substitute for `dir` on the text. */
+/* YOUR MESSAGE IS A BUBBLE (CLAUDE-AI-PARITY.md P2), measured off
+   claude.ai/code (wiki/claude-ai-code-reference.md §1): a faint fill, 8×12
+   padding, 10px radius, no border — on the RIGHT of the column whatever the
+   language, the side the web edition already uses. The TUI's dimmed prompt
+   echo it replaces read as the same colour as everything else around it.
+   `:not(.side)`: a `/btw` question keeps its own rule. Alignment is layout
+   only — never a substitute for `dir` on the text. */
 .msg.user:not(.side) {
   align-self: flex-start;
-  position: relative;
-  color: var(--fg-muted);
-  background: none;
-  border-radius: 0;
-  padding-block: 1px;
-  padding-left: 2px;
-  padding-right: 35px;   /* 12 (gutter offset) + 15 (mark) + 8 (gap) */
-}
-
-/* The mark is the product's OWN mirrored prompt — the same two paths as the
-   composer's `.comp-mark` and the sidebar head (assets/make_icon.py), never
-   Anthropic's Claude mark, and never a glyph invented for this row: the TUI's
-   recorded vocabulary (wiki/tui-strings.md §1) has no prompt marker in it.
-
-   Drawn as a MASK filled with `currentColor`, not as an <img> or a baked fill:
-   the row is dimmed by its own `color`, and an image would keep the mark at
-   full strength over faded text — and would miss any later theme change too.
-   A pseudo-element for the same three reasons the ⏺ below is one: it is
-   decoration, it must never reach a screen reader, and it must never land in
-   the `textContent` two loop cycles are compared on. It is also the cheap
-   shape — this row is re-rendered on every reload (the /api/session backfill),
-   so a per-row inline <svg> would be paid for over and over.
-
-   `block-size` is the first LINE box, not the row: a two-line message keeps the
-   mark on line one, where the prompt is, instead of centring it on the para.
-
-   THE PREFIX IS NOT DEAD CRUFT — do not tidy it away. Unprefixed `mask` needs
-   Chromium 120+, and this app runs in Edge app-mode on a machine whose version
-   is unknown until setup.ps1 probes it. A dropped `mask` does not degrade to
-   nothing: `background: currentColor` then paints the whole 15px box, so every
-   user row wears a solid muted rectangle where its mark should be — the one
-   failure mode worse than no marker, and invisible both on the author PC and to
-   every gate here. `-webkit-mask` has shipped in Chromium since long before
-   120; the unprefixed line comes second so it wins wherever both are read.
-   Every other property in this rule fails safe: dropped, each one draws
-   NOTHING rather than something wrong. */
-.msg.user:not(.side)::before {
-  content: "";
-  position: absolute;
-  top: 1px;
-  right: 12px;
-  inline-size: 15px;
-  block-size: calc(1em * var(--lh-fa));
-  background: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.1 7.4L11.9 12l5.2 4.6'/%3E%3Cpath d='M6.9 16.6h4'/%3E%3C/svg%3E") no-repeat center / 15px 15px;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.1 7.4L11.9 12l5.2 4.6'/%3E%3Cpath d='M6.9 16.6h4'/%3E%3C/svg%3E") no-repeat center / 15px 15px;
-  pointer-events: none;
+  max-width: min(85%, 62ch);
+  color: var(--fg);
+  background: rgb(255 255 255 / .05);
+  border-radius: 10px;
+  padding: 8px 12px;
 }
 
 /* The assistant is plain text on the page, not a bubble — it has no surface to
@@ -2003,42 +1980,13 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   max-width: none;
   background: transparent;
   color: var(--fg-prose);
-  padding-block: 1px;
-  /* PHYSICAL, not logical, and deliberately so — same reason `.code-copy`
-     below is. `.msg` is `unicode-bidi: plaintext` and carries `dir="auto"`, so
-     an English answer computes `direction: ltr` and every logical property on
-     this box flips with it; the gutter it has to line up with belongs to the
-     COLUMN, which is RTL by the shell's own decision and does not move. A
-     logical padding here put the ⏺ of a Persian answer and the ⏺ of an English
-     one on opposite sides of the same transcript. */
-  padding-left: 2px;
-  padding-right: 35px;   /* 12 (summary padding) + 15 (icon) + 8 (gap) */
+  padding: 0;
   position: relative;
 }
 
-/* «⏺ …» — the TUI's own mark on a line the assistant wrote (V2-PLAN §3.1,
-   glyph table in wiki/tui-strings.md). A pseudo-element rather than a node:
-   it is decoration, it must never reach a screen reader, and it must never
-   land in the `textContent` that closeCycle() compares two loop cycles on.
-
-   It stands in the same 15px gutter the tool icons and the pulse glyph use, so
-   the column reads as ONE rail — the answer, the steps it took and the closing
-   line all hanging off the same edge. The three excluded classes are the
-   assistant bodies that are NOT transcript entries: a plan inside a permission
-   dialog, a helper's report inside its own card, and the one-line notes
-   («متوقف شد») that are chrome about the turn rather than the turn talking. */
-.msg.assistant:not(.meta):not(.plan-body):not(.nested):not(.side)::before {
-  content: "⏺";
-  position: absolute;
-  top: 1px;
-  right: 12px;
-  inline-size: 15px;
-  text-align: center;
-  font-size: .72em;
-  line-height: var(--lh-fa);
-  color: var(--accent);
-  pointer-events: none;
-}
+/* No ⏺ and no gutter (CLAUDE-AI-PARITY.md P2): the site's answer is plain
+   prose on the column, and a coral dot beside an English paragraph that
+   starts at the other edge of an RTL column was the "scattered" row. */
 
 .msg.error {
   align-self: stretch;
@@ -2103,10 +2051,15 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 }
 .msg a { color: var(--accent); }
 
+/* The site's inline code chip, measured: reddish text on a faint fill with
+   a hairline, 5px radius, a little smaller than the prose around it. */
 .msg :not(pre) > code {
-  background: var(--surface-2);
-  padding: .12em .35em;
-  border-radius: 4px;
+  color: rgb(236 126 126);
+  background: rgb(255 255 255 / .05);
+  border: 1px solid rgb(255 255 255 / .1);
+  padding: .05em .3em;
+  border-radius: 5px;
+  font-size: .9em;
 }
 
 .msg pre {
@@ -2504,7 +2457,21 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .pulse.live .pulse-glyph { animation: pulse-breathe 2s var(--ease-breathe) infinite; }
 @keyframes pulse-breathe { 50% { opacity: .3; } }
 
-.pulse-verb { color: var(--fg); }
+.pulse-verb { color: var(--fg-muted); }
+
+/* «۱ کار در حال اجرا»: the site's blue chip; it opens the tasks panel. */
+.pulse-tasks {
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(76 139 245 / .16);
+  color: rgb(128 176 255);
+  font: inherit;
+  cursor: pointer;
+}
+.pulse-tasks:hover { background: rgb(76 139 245 / .26); }
+.pulse-tasks:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* tabular-nums so a ticking counter does not jiggle the line it sits on. */
 .pulse-meta {
@@ -4093,7 +4060,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
 .bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .bar-row-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-row-check { flex: none; inline-size: 1em; color: var(--fg); text-align: center; }
+.bar-row-check { flex: none; inline-size: 1em; color: rgb(98 155 245); text-align: center; }
 .bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
 .bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }

@@ -2633,7 +2633,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
 .bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .bar-row-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-row-check { flex: none; inline-size: 1em; color: var(--fg); text-align: center; }
+.bar-row-check { flex: none; inline-size: 1em; color: rgb(98 155 245); text-align: center; }
 .bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
 .bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
