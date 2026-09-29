@@ -747,7 +747,7 @@ body.rail .layout-btn { inline-size: auto; }
 .proj-head:hover, .sess:hover { background: none; }
 .proj[data-current="true"] > .proj-top { background: var(--surface-2); }
 .proj-top:hover .sess-act,
-.proj-top:focus-within .sess-act { opacity: 1; }
+.proj-top:focus-within .sess-act { opacity: 1; width: 30px; }
 
 .proj-head {
   flex: 1;
@@ -862,15 +862,20 @@ body.rail .layout-btn { inline-size: auto; }
 /* Row actions (⋯, «+»): present and focusable at rest but invisible, shown
    while the pointer or the keyboard is on the row (§D4). `display: none` used
    to take them out of the tab order entirely, so the keyboard could not reach
-   a row's menu at all. */
+   a row's menu at all. And ZERO WIDTH at rest, not only transparent: two
+   invisible 30px buttons held a 60px hole at the end of every row, so the
+   count and the «۵ دقیقه پیش» sat that far in from the edge for no visible
+   reason (user report 2026-09-29). At rest the count is at the row's end; on
+   hover the buttons open beside it. */
 .sess-act {
   flex: none;
   display: inline-flex;
   opacity: 0;
+  overflow: hidden;
   transition: opacity var(--dur-fast) var(--ease);
   align-items: center;
   justify-content: center;
-  width: 30px;
+  width: 0;
   min-height: 30px;
   padding: 0;
   border: 0;
@@ -882,7 +887,7 @@ body.rail .layout-btn { inline-size: auto; }
   font-size: .78em;
 }
 .proj-sessions li:hover .sess-act,
-.proj-sessions li:focus-within .sess-act { opacity: 1; }
+.proj-sessions li:focus-within .sess-act { opacity: 1; width: 30px; }
 .sess-act:hover { background: var(--surface-2); color: var(--fg); }
 
 .arch-head {
@@ -3199,7 +3204,7 @@ button.round {
 /* An open menu must keep its own trigger on screen — the hover rules above
    would otherwise hide the button the menu is anchored to. */
 .proj-top:has(.kebab-menu:popover-open) .sess-act,
-.proj-sessions li:has(.kebab-menu:popover-open) .sess-act { opacity: 1; }
+.proj-sessions li:has(.kebab-menu:popover-open) .sess-act { opacity: 1; width: 30px; }
 
 /* --- statusline -------------------------------------------------------------- */
 /* Three lines, in the TUI's own order (V2-PLAN §3.4): the machine's own
@@ -3268,7 +3273,6 @@ button.round {
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
-.statusline .sl-meter { display: flex; gap: 6px; align-items: center; }
 .statusline progress {
   appearance: none;
   inline-size: 44px;
@@ -3333,30 +3337,6 @@ button.round {
 .statusline .sl-sep { opacity: .45; }
 .statusline .sl-model { color: var(--fg-muted); }
 
-/* The account's five-hour quota, once, in the sidebar footer (§D5). */
-.side-quota {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 2px;
-  color: var(--fg-faint);
-  font-size: var(--fs-meta);
-}
-.side-quota progress {
-  appearance: none;
-  flex: 1;
-  block-size: 4px;
-  border: 0;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.side-quota progress::-webkit-progress-bar {
-  background: color-mix(in srgb, var(--fg-muted) 25%, transparent);
-}
-.side-quota progress::-webkit-progress-value { background: var(--fg-muted); }
-.side-quota progress[data-level="warn"]::-webkit-progress-value { background: var(--st-wait); }
-.side-quota progress[data-level="high"]::-webkit-progress-value { background: var(--st-err); }
-body.rail .side-quota { display: none; }
 /* §D13, CSS zoom mode only (prefs.js): the whole window scales by --zoom. */
 :root.css-zoom { zoom: var(--zoom, 1); }
 .side-zoom { padding: 2px 10px; color: var(--fg-faint); font-size: var(--fs-meta); }
