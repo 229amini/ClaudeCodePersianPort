@@ -18,7 +18,7 @@ import { api, token } from "./api.js";
    called from app.js once every module is live. */
 import {
   bubble, bulkAppend, label, renderEvent, resetTurn, state, setStatus,
-  withRenderTarget, newRenderScope,
+  withRenderTarget, newRenderScope, endReplayMarks,
 } from "./render.js";
 /* The dots on the open-conversations rows are painted from what the permission
    dialogs are asking. One arrow each way (perm.js reads the tab list back), and
@@ -1272,6 +1272,7 @@ export function renderInto(tab, events, resumedNote = false) {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
+    state.turnEdits = new Map();   // this render's own turns only (pcg-8ip)
     if (from > 0) node.append(earlierRow(tab, all, from, node));
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
@@ -1279,6 +1280,7 @@ export function renderInto(tab, events, resumedNote = false) {
     // once, below.
     bulkAppend(() => {
       for (let i = from; i < all.length; i++) renderEvent(all[i]);
+      endReplayMarks();   // the last turn's change card: a replay has no settle
       if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
     });
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message

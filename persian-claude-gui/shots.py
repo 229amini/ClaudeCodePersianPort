@@ -55,7 +55,7 @@ OUT_ROOT = HERE / "shots"
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
-          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus")
+          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -108,6 +108,10 @@ def stub_script(now: float) -> str:
             "    return Promise.resolve(new Response(JSON.stringify({ok: true, response: {mcpServers: ["
             "      {name: 'github', status: 'connected'}, {name: 'playwright', status: 'disabled'}]}}),"
             "      {headers: {'Content-Type': 'application/json'}}));"
+            # Message marks: one pinned answer, so the rail has something to list.
+            "  if (path === '/api/pins') return Promise.resolve(new Response("
+            "    JSON.stringify({pins: [{uuid: 'a-t11', label: 'انجام شد. حالا هر قاب فقط یک خط وضعیت دارد'}]}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
             "  return real(url, opts);"
             "};"
             "})();</script>")
@@ -172,7 +176,8 @@ function status(tab, cwd) {
 }
 
 function turn(tab, n) {
-  ev(tab, {type: "wrapper", subtype: "user_echo", uuid: "u-" + tab + n,
+  const at = (min) => new Date(Date.now() - min * 60e3).toISOString();
+  ev(tab, {type: "wrapper", subtype: "user_echo", uuid: "u-" + tab + n, timestamp: at(12),
            text: "نوار وضعیت هر قاب را یک‌خطی کن و میان‌برها را به صفحهٔ کلیدها ببر."});
   say(tab, [{type: "text", text:
     "باشد. اول `render.js` را می‌خوانم تا ببینم `setStatus()` چند ردیف می‌سازد، بعد:\n\n" +
@@ -188,9 +193,13 @@ function turn(tab, n) {
     old_string: '  hintZwnj: "نیم‌فاصله: Shift+Space",\n  hintKeys: "کلیدها: ?",',
     new_string: '  phIdle: "پیام خود را بنویسید — نیم‌فاصله: Shift+Space",'}}]);
   toolResult(tab, "e" + tab + n, "The file has been updated.");
-  say(tab, [{type: "text", text:
+  say(tab, [{type: "tool_use", id: "w" + tab + n, name: "Write", input: {
+    file_path: "D:\\projects\\ClaudeCodePersianPort\\wiki\\grid.md",
+    content: "## One status line\n\nThe pane keeps one row.\n"}}]);
+  toolResult(tab, "w" + tab + n, "File created.");
+  ev(tab, {type: "assistant", uuid: "a-" + tab + n, timestamp: at(9), message: {content: [{type: "text", text:
     "انجام شد. حالا هر قاب فقط **یک خط وضعیت** دارد: سطح اجازه، مدل و کارهای در پس‌زمینه. " +
-    "بقیهٔ جزئیات در `/status` است."}]);
+    "بقیهٔ جزئیات در `/status` است."}]}});
 }
 
 async function run() {
@@ -208,7 +217,7 @@ async function run() {
     task.dispatchEvent(new Event("input"));
     return;
   }
-  if (SCENE === "conversation" || SCENE === "permission") {
+  if (SCENE === "conversation" || SCENE === "permission" || SCENE === "marks") {
     useTabs([TABS[0]], "t1");
     APP.applyTabs({tabs: [TABS[0]], active: "t1"});
     await sleep(60);
@@ -217,6 +226,16 @@ async function run() {
     ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000,
               total_cost_usd: 0.42});
     ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    if (SCENE === "marks") {
+      // A still picture cannot hover: show the pinned answer's strip and the
+      // rail's list the way a pointer resting on them would.
+      const css = document.createElement("style");
+      css.textContent = '.msg[data-uuid="a-t11"] .msg-acts { opacity: 1 !important; visibility: visible !important; }'
+        + ' .pin-list { display: block !important; }';
+      document.head.append(css);
+      await sleep(200);
+      document.querySelector('.msg[data-uuid="a-t11"]')?.dispatchEvent(new Event("mouseenter"));
+    }
     if (SCENE === "permission") {
       ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "u-p",
                 text: "همین را برای نسخهٔ وب هم انجام بده."});
