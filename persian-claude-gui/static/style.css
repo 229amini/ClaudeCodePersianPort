@@ -1774,11 +1774,13 @@ button.round {
 }
 .menu-popup[hidden] { display: none; }
 
+/* A row is text, then ✓, then its digit (COMPOSER-BAR.md, after
+   claude.ai/code); the text keeps the title-over-note column it always had. */
 .menu-row {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   /* Never shrink. The popup is a flex column with a max-height, so a row with
      `min-height: 0` gave up its own content size once the list was taller than
      the box — the notes then drew ON TOP of the next row's title instead of
@@ -1797,6 +1799,10 @@ button.round {
 .menu-row[aria-checked="true"] { background: var(--accent-soft); }
 .menu-row[aria-checked="true"] .menu-title { color: var(--accent); font-weight: 600; }
 .menu-title { font-size: .92em; }
+.menu-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.menu-check { flex: none; inline-size: 1em; color: var(--accent); text-align: center; }
+.menu-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-muted); font-size: .78em; text-align: center; }
+.menu-head { padding: 6px 10px 4px; color: var(--fg-muted); font-size: .78em; }
 .menu-note { color: var(--fg-muted); font-size: .78em; line-height: 1.7; }
 
 /* The audit counter is a label, not a control: no hover, no pointer. */
