@@ -38,3 +38,12 @@ Epic `pcg-368`. Terminal edition first (it is the one in daily use), then the we
 
 Each phase: spec cases updated where they pinned the old design (the invariant each one guarded
 is kept — one live line, O(1) paint per frame, replay = live), a shot set looked at, gates green.
+
+## Step 1 result (2026-09-29)
+
+Measured in `wiki/claude-ai-code-reference.md` (idle shared session; live items 4, 6, 7, 9-11 not
+observed). Settled by measurement: user bubble at the inline-end (right), 8x12 pad, 10px radius,
+`rgba(255,255,255,.05)`; no assistant marker or gutter; a run of tools = ONE muted
+`Ran N commands ›` line, expand = bordered step list without icons, step expands to command +
+output; turn-end file-edit card; menu check is blue. P2 plan stands with these targets; P3
+(Background tasks panel) and the stop/send button wait for a live capture.
