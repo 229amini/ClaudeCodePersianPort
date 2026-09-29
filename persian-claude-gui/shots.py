@@ -17,16 +17,17 @@ canned list so the sidebar looks like a machine with real projects on it.
 Every other route goes to the real server, booted through
 test_layout.boot_server() so its stdout is drained.
 
-Two headless facts it works around, both measured 2026-09-24:
+One headless fact it works around, measured 2026-09-24:
 - `--headless=new` (Edge, and Chromium's own binary) lays the page out in a
   viewport shorter than the window it was asked for (1280x800 -> 713 tall) and
   screenshots the whole window, leaving a dead band at the bottom. The delta is
   measured once per browser, the window is asked for that much taller, and the
   PNG's trailing rows are cut off again (a PNG scanline only ever refers to the
   one ABOVE it, so dropping rows at the bottom needs no pixel decoding).
-- Chromium 141 on Linux leaves `form.composer` with a stale 0x0 layout once a
-  cell leaves the home state; a same-value `style.contain` write lays it out.
-  Harmless on a browser without the bug, so it is always applied.
+It used to also "work around" a composer measured at 0x0 after a pane left the
+home state, blamed on Chromium 141. That was the app's own bug, on Edge too
+(the prompt vanished at the first message), fixed 2026-09-29 - the workaround
+is gone so a shot can never hide it again.
 """
 
 from __future__ import annotations
@@ -293,16 +294,6 @@ async function run() {
     console.error(err);
   }
   await sleep(400);
-  // Chromium 141 stale-layout workaround (see the module docstring): take the
-  // composer out of the box tree and put it back, forcing a layout in between.
-  // Every child of every cell, not just the composer: nudging one only moved
-  // the stale box onto its next sibling (the status line) - measured.
-  const kids = [...document.querySelectorAll(".cell > *")];
-  const was = kids.map((k) => k.style.display);
-  for (const k of kids) k.style.display = "none";
-  void document.body.offsetHeight;
-  kids.forEach((k, i) => { k.style.display = was[i]; });
-  void document.body.offsetHeight;
 })();
 </script>
 """
