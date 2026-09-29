@@ -185,8 +185,11 @@ export function makeComposer(root, cell) {
     // re-arms the idle hint. Boot's own setBusy(false) is a no-op transition
     // (busy is already false), so an untouched window never earns the hint.
     if (running || busy) lastActivity = Date.now();
+    const ended = busy && !running;
     busy = !!running;
-    if (stopBtn) stopBtn.hidden = !busy;
+    paintAction();
+    // «بعداً بفرست»: the first held message goes the moment the turn is over.
+    if (ended && later.length) setTimeout(sendLater, 0);
     // The CELL is busy, not the window (MA3-T2): four columns can be answering
     // at once and each one owns its own stop button. `body.busy` is still
     // written — agents.js and the idle hint read it — but it now mirrors the
@@ -196,6 +199,136 @@ export function makeComposer(root, cell) {
     cell.onBusy?.();
   }
 
+
+  /* THE ACTION BUTTON (pcg-368.6), after claude.ai/code: one button at the end
+     of the box. Stop ⊙ only while a turn runs AND there is nothing to send —
+     the one moment «send» has nothing to do; otherwise send ↵, dim while the
+     box is empty. The site's split, measured off the user's screenshots. */
+  function isEmpty() {
+    return !input?.value.trim() && !attachments.length;
+  }
+
+  function paintAction() {
+    const empty = isEmpty();
+    if (stopBtn) stopBtn.hidden = !(busy && empty);
+    if (sendBtn) {
+      sendBtn.hidden = busy && empty;
+      sendBtn.disabled = empty || blankNow;
+    }
+    if (!busy || empty) closeSendMenu();
+  }
+
+  /* Mid-turn, send offers two things (the site's hover menu): «بفرست» — now,
+     into the running turn, which is what the CLI does with a mid-turn message
+     — and «بعداً بفرست», held here until the turn is over. Ctrl+Enter is the
+     second one from the keyboard. */
+  let sendMenu = null;
+  function openSendMenu() {
+    if (sendMenu || !busy || isEmpty() || !sendBtn) return;
+    sendMenu = document.createElement("div");
+    sendMenu.className = "send-menu";
+    sendMenu.setAttribute("role", "menu");
+    const row = (text, keys, act) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "send-menu-row";
+      b.setAttribute("role", "menuitem");
+      const k = document.createElement("kbd");
+      k.dir = "ltr";
+      k.textContent = keys;
+      const t = document.createElement("span");
+      t.textContent = text;
+      b.append(t, k);
+      b.addEventListener("click", () => { closeSendMenu(); act(); });
+      return b;
+    };
+    sendMenu.append(row(FA.sendNow, "Enter", () => composer.requestSubmit()),
+                    row(FA.sendLater, "Ctrl+Enter", holdForLater));
+    sendBtn.parentElement.append(sendMenu);
+    sendMenu.addEventListener("mouseleave", closeSendMenu);
+  }
+  function closeSendMenu() {
+    sendMenu?.remove();
+    sendMenu = null;
+  }
+
+  /* Held messages: sent one per finished turn, first in, first out. What the
+     person typed is never lost — a row's ✕ puts it back in the box. */
+  const later = [];
+  function holdForLater() {
+    const text = input?.value.trim() ?? "";
+    if (!text && !attachments.length) return;
+    // `!` commands and the window's own verbs are not messages to hold.
+    if (bashCommand(text) !== null || /^\/\S/.test(text)) {
+      composer.requestSubmit();
+      return;
+    }
+    later.push({ text: expandPastes(text), raw: input.value,
+                 attachments: attachments.slice() });
+    input.value = "";
+    input.style.height = "auto";
+    dropPastes();
+    setAttachments([]);
+    paintLater();
+    paintAction();
+    if (!busy) setTimeout(sendLater, 0);
+  }
+  async function sendLater() {
+    if (busy || !later.length) return;
+    const item = later.shift();
+    paintLater();
+    setBusy(true);
+    try {
+      const res = await fetch("/api/message?t=" + encodeURIComponent(token), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: item.text, attachments: item.attachments, tab: cell.tab }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } catch (err) {
+      later.unshift(item);
+      paintLater();
+      bubble("error", FA.sendFailedRestored);
+      setBusy(false);
+    }
+  }
+  let laterStrip = null;
+  function paintLater() {
+    const box = root.querySelector(".comp-box");
+    if (!box) return;
+    if (!laterStrip) {
+      laterStrip = document.createElement("div");
+      laterStrip.className = "later-strip";
+      box.prepend(laterStrip);
+    }
+    laterStrip.replaceChildren();
+    laterStrip.hidden = !later.length;
+    later.forEach((item, i) => {
+      const row = document.createElement("div");
+      row.className = "later-row";
+      const text = document.createElement("span");
+      text.className = "later-text";
+      text.dir = "auto";
+      text.textContent = item.text;
+      const tag = document.createElement("span");
+      tag.className = "later-tag";
+      tag.textContent = FA.laterTag;
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "later-back";
+      back.textContent = "×";
+      back.title = FA.laterBack;
+      back.setAttribute("aria-label", FA.laterBack);
+      back.addEventListener("click", () => {
+        const [held] = later.splice(i, 1);
+        restoreDraft(held.raw);
+        paintLater();
+        paintAction();
+      });
+      row.append(tag, text, back);
+      laterStrip.append(row);
+    });
+  }
 
   /* The box grows with what is in it, up to 35% of its PANE (§D10) - of the
      window, a 4-up pane's box could eat the whole transcript. Shared, because
@@ -260,7 +393,7 @@ export function makeComposer(root, cell) {
     // An empty pane shows one line and one button instead of a prompt that
     // can send nowhere (§D5); style.css keys that on this class.
     cell.root.classList?.toggle("blank", blankNow);
-    if (sendBtn) sendBtn.disabled = !!blank;
+    paintAction();
   }
 
   /* --- the context notice ----------------------------------------------------
@@ -445,6 +578,7 @@ export function makeComposer(root, cell) {
 
   function setAttachments(list) {
     attachments = list;
+    paintAction();
     if (!attachRow) return;   // spec-test.html has no attachment row
     attachRow.replaceChildren();
     attachRow.hidden = !list.length;
@@ -1302,6 +1436,13 @@ export function makeComposer(root, cell) {
         input.setRangeText("\u200C", selectionStart, selectionEnd, "end");
         return;
       }
+      // Ctrl+Enter mid-turn: the site's «Queue for later» — hold it until the
+      // turn is over rather than folding it into the one that is running.
+      if (e.key === "Enter" && e.ctrlKey && !e.shiftKey && busy) {
+        e.preventDefault();
+        holdForLater();
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         composer.requestSubmit();
@@ -1309,6 +1450,7 @@ export function makeComposer(root, cell) {
     });
 
     input.addEventListener("input", autoGrow);
+    input.addEventListener("input", paintAction);
     // A placeholder the user deleted takes its parked text with it.
     input.addEventListener("input", prunePastes);
 
@@ -1391,6 +1533,17 @@ export function makeComposer(root, cell) {
       }
     });
 
+    if (sendBtn) {
+      sendBtn.title = FA.sendNow;
+      sendBtn.setAttribute("aria-label", FA.sendNow);
+      sendBtn.addEventListener("click", () => composer.requestSubmit());
+      sendBtn.addEventListener("mouseenter", openSendMenu);
+      sendBtn.addEventListener("focus", openSendMenu);
+    }
+    if (stopBtn) {
+      stopBtn.title = FA.stopTurn;
+      stopBtn.setAttribute("aria-label", FA.stopTurn);
+    }
     if (stopBtn) stopBtn.addEventListener("click", async () => {
       stopBtn.disabled = true;
       try {

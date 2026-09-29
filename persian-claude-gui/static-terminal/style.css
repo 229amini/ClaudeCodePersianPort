@@ -1530,17 +1530,82 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 /* With several panes the TUI's banner is enough; its tips are the `?` sheet. */
 #grid:not([data-split="1"]) .wel-tips { display: none; }
 
-/* The stop button, calm (§D5): a small outlined square in the failure colour
-   rather than a large coral disc - it is a control, not an alarm. */
-.comp-box .stop {
-  width: 28px;
+/* THE ACTION BUTTON at the end of the box (pcg-368.6), after claude.ai/code:
+   one quiet square-cornered button — send ↵, or stop ⊙ while a turn runs and
+   the box is empty. Muted until it has something to do. */
+.comp-line { position: relative; }
+.comp-act {
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
   min-width: 28px;
   min-height: 28px;
-  border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--st-err);
+  margin-block-start: 4px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
 }
-.comp-box .stop:hover { background: var(--danger-bg); }
+.comp-act:hover:not(:disabled) { background: var(--surface-2); }
+.comp-act:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: default; opacity: .6; }
+.comp-act[hidden] { display: none; }
+.comp-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.comp-act.stop { color: var(--fg); }
+
+/* «بفرست ⏎ / بعداً بفرست Ctrl+⏎», opening above the button (the site's). */
+.send-menu {
+  position: absolute;
+  inset-block-end: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 190px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev, #1f1f1e);
+  box-shadow: var(--shadow-float, 0 10px 30px rgba(0,0,0,.45));
+}
+.send-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-ui, 13px);
+  cursor: pointer;
+}
+.send-menu-row:hover, .send-menu-row:focus-visible { background: var(--surface-2); outline: none; }
+.send-menu-row kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-muted);
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Messages held for after this turn: dim rows above the prompt, each with a
+   ✕ that puts the text back in the box. */
+.later-strip { display: flex; flex-direction: column; gap: 2px; margin-block-end: 6px; }
+.later-strip[hidden] { display: none; }
+.later-row { display: flex; align-items: center; gap: 8px; color: var(--fg-muted); font-size: .9em; }
+.later-tag { flex: none; font-size: .85em; padding: 0 6px; border-radius: 4px; background: var(--surface-2); }
+.later-text { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.later-back { flex: none; min-height: 0; inline-size: 22px; block-size: 22px; padding: 0; border: 0;
+              border-radius: 5px; background: none; color: var(--fg-muted); cursor: pointer; }
+.later-back:hover { background: var(--surface-2); color: var(--fg); }
 
 .replay-banner {
   display: flex;
