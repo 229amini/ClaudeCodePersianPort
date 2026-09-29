@@ -348,3 +348,25 @@ second one is the one that bit:
 `test_keys.py` reads the chords out of `wiki/tui-keys.md`, so the binding table has one copy:
 binary → wiki (`test_tui_vocab.py`) → page (`test_keys.py`). A key added to the page but not to
 the doc fails the gate as loudly as the reverse.
+
+## Stick to what a row becomes, not to what it was when it landed (2026-09-29)
+
+User report (terminal 0.5.0, screenshot): the answer ran off the bottom of the pane, the scrollbar
+was already at its end, and the view no longer followed. Measured on the current build with a
+headless probe that streams a conversation into a pane: **scrollTop stayed 0 from the third
+message on**, both editions.
+
+- `append()` read `atBottom()`, appended, and wrote `scrollTop = scrollHeight` there and then. But
+  most rows are appended **empty** and filled right after: `bubble("assistant")` then the rendered
+  markdown, `userRow()` then its text. The write scrolled to the bottom of a blank row.
+- The row then grew under the fold, the next append read "not at the bottom" (the gap was a whole
+  message, far past the 80 px window), and the transcript never followed again.
+- Fix: `stickSoon(box)` in `render.js` writes the stick now **and** once more in a microtask, after
+  the synchronous render is over, on the captured box (`log` is swapped per render target, so it is
+  captured, not re-read). Both editions carry it.
+- Gate: a spec case lands a 14-paragraph answer on a pinned log and asserts 0 px left below the
+  view. It fails with the fix removed on the terminal edition (534 px). The web harness passes
+  either way, because of how its log is set up by the cases before it. The web edition's
+  bug and fix were proven with the same probe instead: 792 px short before, 0 after.
+- Streaming was never the culprit: `queueStreamText()` measures before each paint and writes after
+  it, per frame.

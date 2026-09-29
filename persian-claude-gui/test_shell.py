@@ -10,9 +10,9 @@ and `test_keys.py` presses keys at the composer. So this one drives the
 shipping `index.html` headlessly — same Edge, same probe-page trick — and asks
 what v2.5 is answerable for:
 
-  - the status line is a STACK, in the plan's order: the machine's own
-    statusLine output, then the `⏵⏵` posture row in the TUI's words, then the
-    muted facts row that replaced the four chips;
+  - the status line carries only news (quota nearly spent, files changed) and
+    is empty otherwise: the composer bar names the mode and model, and the
+    machine's own statusLine output is no longer painted (2026-09-29);
   - the posture row follows the WRAPPER's posture rather than the CLI's raw
     `permissionMode`, because «محتاط» and «خودکار» are both `default` down the
     pipe and only the wrapper knows which one the user picked;
@@ -527,12 +527,15 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     # CLAUDE-AI-PARITY.md P1: the bar under the prompt names the mode and the
     # model, so the status line under it carries neither - the machine's own
     # line, and a state line only when there is news (quota, changed files).
-    check("the status line is the machine's own line alone while there is no news",
-          order == ["sl-line"], " | ".join(order) or "empty")
+    check("the status line is empty while there is no news",
+          order == [], " | ".join(order) or "empty")
 
-    check("the machine's own statusLine output is the FIRST line",
-          m.get("slCustom") == "KHATE KHODAM" and order[:1] == ["sl-line"],
-          m.get("slCustom", "") or "no custom line")
+    # User decision 2026-09-29: the machine's statusLine output repeated the
+    # folder, model, effort and usage that the pane header and the composer bar
+    # already draw, so it is recorded but not painted.
+    check("the machine's own statusLine output is not repeated under the bar",
+          m.get("slCustom") == "" and "KHATE KHODAM" not in m.get("slText", ""),
+          m.get("slCustom", "") or "not drawn")
 
     text = m.get("slText", "")
     check("the status line repeats neither the mode nor the model the bar shows",

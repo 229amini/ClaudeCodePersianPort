@@ -3141,6 +3141,35 @@ check("every chunk keeps each tool's output with its call",
   histCards().filter((c) => c.querySelector(".tool-branch")).length + " of " +
   histCards().length + " cards have their output");
 
+/* --- a row appended EMPTY and filled after it landed ------------------------
+   bubble() appends and only then gets its rendered markdown; userRow() the same.
+   The stick used to be written at append time, so it scrolled to the bottom of
+   a blank row: the answer then grew under the fold, the next append read "not
+   at the bottom", and the transcript stopped following for good -- the user's
+   report of text running off the pane with the scrollbar already at its end.
+   The box is found from the row itself, because the render target is whatever
+   the checks above left it as. */
+{
+  const tick = (ms = 0) => new Promise((done) => setTimeout(done, ms));
+  const say = (text) => window.renderEvent({ type: "assistant",
+    message: { content: [{ type: "text", text }] } });
+  say("نشانگر آزمون پایین‌ماندن");
+  const marker = [...document.querySelectorAll(".msg.assistant")]
+    .find((m) => m.textContent.includes("نشانگر آزمون پایین‌ماندن"));
+  const box = marker?.parentElement;
+  for (let i = 0; i < 8; i++) say("پاسخ پرکننده برای اسکرول‌خوردن جعبه. ".repeat(10));
+  await tick(0);
+  const canScroll = !!box && box.scrollHeight > box.clientHeight + 200;
+  if (box) box.scrollTop = box.scrollHeight;
+  await tick(0);
+  say(Array.from({ length: 14 }, (_, i) => "بند شمارهٔ " + (i + 1) + " از پاسخ بلند.").join("\n\n"));
+  await tick(0);
+  const gap = box ? Math.round(box.scrollHeight - box.clientHeight - box.scrollTop) : -1;
+  check("a whole answer landing at the bottom is followed to ITS bottom, not to the empty row it began as",
+    canScroll && Math.abs(gap) <= 1,
+    (canScroll ? "" : "NOT SCROLLABLE — the check proves nothing; ") + gap + " px left below the view");
+}
+
 const verdict = document.getElementById("verdict");
 const failed = checks.filter(c => !c.ok);
 verdict.innerHTML = "<b>" + (failed.length ? "<span class='fail'>FAIL</span>"
