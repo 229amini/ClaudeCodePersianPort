@@ -941,12 +941,20 @@ def _stub_session(hub):
 
     def _control(subtype, timeout=None, wait=True, **params):
         session.asked.append(subtype)
+        session.params = getattr(session, "params", {})
+        session.params[subtype] = params
         if subtype == "get_context_usage":
-            return {"subtype": "success", "response": {"percentage": 12.5}}
+            return {"subtype": "success", "response": {
+                "percentage": 12.5, "totalTokens": 125, "maxTokens": 1000,
+                "autoCompactThreshold": 967, "isAutoCompactEnabled": True,
+                "categories": [{"name": "Messages", "tokens": 100, "color": "purple",
+                                "kind": "used", "extra": "dropped"}]}}
         if subtype == "get_usage":
             return {"subtype": "success", "response": {
                 "session": {"total_cost_usd": 0.42},
-                "rate_limits": {"five_hour": {"utilization": 7}}}}
+                "rate_limits": {"five_hour": {"utilization": 7},
+                                "model_scoped": [{"display_name": "Fable",
+                                                  "utilization": 7, "resets_at": None}]}}}
         return {"subtype": "error", "error": f"unexpected: {subtype}"}
 
     session.control = _control
@@ -984,17 +992,25 @@ try:
     # tens of seconds on a machine with a large ~/.claude, and one merged patch
     # meant the fast, always-available cost and quota numbers waited for it --
     # and were dropped entirely when it never came (wiki/control-protocol.md §9).
-    # The statusline runs between them, on the fast half.
-    check("usage, then the statusline, then the slow context",
-              kinds == ["usage", "statusline", "usage"])
+    # The statusline runs between them, on the fast half, and once more when
+    # the slow half names a context window it did not have.
+    check("usage, then the statusline, then the slow context, then the bar again",
+          kinds == ["usage", "statusline", "usage", "statusline"])
     check("cost does not wait on the slow context breakdown",
-          "cost" in spawn_hub.events[0] and "context" in spawn_hub.events[-1])
+          "cost" in spawn_hub.events[0] and "context" in spawn_hub.events[2])
     usage = {}
     for event in spawn_hub.events:
         if event.get("subtype") == "usage":
             usage.update(event)   # merged the way the renderer merges them
     check("usage carries the CLI's own numbers, not client arithmetic",
           (usage.get("context"), usage.get("cost"), usage.get("quota")) == (12.5, 0.42, 7))
+    check("the composer bar gets the whole rate_limits object, per-model rows included",
+          usage.get("limits", {}).get("model_scoped", [{}])[0].get("display_name") == "Fable")
+    check("...and the context by category, with the auto-compact threshold",
+          usage.get("context_detail") == {"total": 125, "max": 1000, "threshold": 967,
+              "categories": [{"name": "Messages", "tokens": 100, "color": "purple", "kind": "used"}]})
+    check("get_usage skips the seven-day behaviors scan nothing reads",
+          spawned.params.get("get_usage") == {"skip_behaviors": True})
     statusline = next((e for e in spawn_hub.events
                        if e.get("subtype") == "statusline"), {})
     payload = json.loads(statusline.get("text") or "{}")

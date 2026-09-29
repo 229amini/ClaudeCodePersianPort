@@ -14,6 +14,10 @@
 "use strict";
 
 import { api } from "./api.js";
+/* A leaf too: the composer bar's popovers (COMPOSER-BAR.md). Only the effort
+   slider comes from it here; the other menus stay the in-cell .menu-popup,
+   which test_layout/test_split measure staying inside its own cell. */
+import { openSlider } from "./bar.js";
 
 const FA = window.STRINGS;
 
@@ -438,10 +442,26 @@ export function makeControls(root, cell) {
     ui.menu.style.right = Math.min(Math.max(0, offset), slack) + "px";
   }
 
+  /* After claude.ai/code (COMPOSER-BAR.md): a title row, then numbered rows
+     with a ✓ on the current one. The digit is the row's place in the list,
+     never part of its text, and a key while the menu is open. */
+  const MENU_TITLES = { model: FA.barModel, posture: FA.barMode,
+                        style: FA.styleTitle, auto: FA.autoActionsTitle };
+  let menuItems = [];
+  let menuPick = null;
+
   function openMenu(owner, items, onPick, anchor) {
     if (!ui.menu) return;
     ui.menu.replaceChildren();
-    for (const item of items) {
+    menuItems = items;
+    menuPick = onPick ?? null;
+    if (MENU_TITLES[owner]) {
+      const head = document.createElement("div");
+      head.className = "menu-head";
+      head.textContent = MENU_TITLES[owner];
+      ui.menu.append(head);
+    }
+    for (const [i, item] of items.entries()) {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "menu-row";
@@ -450,18 +470,27 @@ export function makeControls(root, cell) {
         row.setAttribute("aria-checked", String(!!item.selected));
         row.addEventListener("click", () => onPick(item));
       }
+      const text = document.createElement("span");
+      text.className = "menu-text";
       const title = document.createElement("span");
       title.className = "menu-title";
       title.setAttribute("dir", "auto");   // model names are Latin, postures Persian
       title.textContent = item.title;
-      row.append(title);
+      text.append(title);
       if (item.note) {
         const note = document.createElement("span");
         note.className = "menu-note";
         note.setAttribute("dir", "auto");
         note.textContent = item.note;
-        row.append(note);
+        text.append(note);
       }
+      const check = document.createElement("span");
+      check.className = "menu-check";
+      check.textContent = item.selected ? "✓" : "";
+      const digit = document.createElement("span");
+      digit.className = "menu-digit";
+      digit.textContent = onPick && i < 9 ? (i + 1).toLocaleString("fa-IR") : "";
+      row.append(text, check, digit);
       ui.menu.append(row);
     }
     ui.menu.dataset.owner = owner;
@@ -497,13 +526,16 @@ export function makeControls(root, cell) {
       })), pickModel);
     });
 
+    // The effort levels as one track, «سریع‌تر ↔ باهوش‌تر» (bar.js).
     ui.effortChip.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleMenu("effort", effortLevels().map((level) => ({
-        key: level,
-        title: effortLabel(level),
-        selected: level === effort,
-      })), pickEffort);
+      closeMenu();
+      const levels = effortLevels();
+      if (levels.length) {
+        openSlider(ui.effortChip, { title: FA.barEffort, levels, current: effort,
+                                    label: effortLabel,
+                                    onPick: (level) => pickEffort({ key: level }) });
+      }
     });
 
     ui.styleChip.addEventListener("click", (e) => {
@@ -545,6 +577,16 @@ export function makeControls(root, cell) {
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") closeMenu();
+      // A digit picks from the open menu, unless it is being typed somewhere.
+      const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+      if (!digit || ui.menu.hidden || !menuPick || e.ctrlKey || e.altKey || e.metaKey) return;
+      const t = e.target;
+      if (t?.closest?.("textarea, input, [contenteditable]")) return;
+      const item = menuItems[Number(digit[1]) - 1];
+      if (!item) return;
+      e.preventDefault();
+      closeMenu();
+      menuPick(item);
     });
   }
 

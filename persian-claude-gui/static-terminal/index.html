@@ -335,9 +335,36 @@
              on the user's behalf. Never hidden behind a menu. A button, not a
              span: it opens the list of those approvals, so it has to be
              clickable AND reachable from the keyboard. -->
+        <!-- THE COMPOSER BAR (COMPOSER-BAR.md, 2026-09-29). User decision: the
+             claude.ai/code bar in this edition too — «+», the mode, then the
+             model, effort and the context ring at the far end. Each opens a
+             js/bar.js popover; `/model`, `/effort`, `/permissions` and
+             Shift+Tab still reach the same state the TUI's way. Labels come
+             from strings.fa.js (js/controls.js and js/composer.js). -->
+        <button type="button" class="bar-chip bar-plus-btn" aria-haspopup="dialog" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button type="button" class="bar-chip posture-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
+          <span class="posture-chip-name"></span>
+        </button>
         <button type="button" class="auto-chip chip-btn is-info" hidden></button>
 
         <span class="comp-spacer"></span>
+
+        <button type="button" class="bar-chip model-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
+          <span class="model-chip-name" dir="auto"></span>
+        </button>
+        <button type="button" class="bar-chip effort-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
+          <span class="effort-chip-name" dir="auto"></span>
+        </button>
+        <button type="button" class="bar-chip bar-ring" aria-haspopup="dialog" aria-expanded="false">
+          <svg viewBox="0 0 36 36" width="16" height="16" fill="none" stroke-width="4" aria-hidden="true">
+            <circle class="bar-ring-track" cx="18" cy="18" r="15.9155"/>
+            <circle class="bar-ring-fill" cx="18" cy="18" r="15.9155" pathLength="100"
+                    stroke-dasharray="0 100" transform="rotate(-90 18 18)"/>
+          </svg>
+        </button>
 
         <!-- Stop stays: it is the way out of a running turn and the `?` sheet
              calls it Esc, which reaches it through this very button

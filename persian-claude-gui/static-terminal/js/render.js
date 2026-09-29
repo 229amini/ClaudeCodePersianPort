@@ -22,6 +22,7 @@ import {
 import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
+import { paintRing } from "./bar.js";
 /* Only the two label helpers are still module-level in controls.js; everything
    that PAINTS is per cell now and is reached through `state.cell.controls`
    (the APPLY table below). */
@@ -1947,6 +1948,9 @@ export function setStatus(patch) {
   if (!state.cell || !statusline) return;
   statusline.replaceChildren();
   const s = state.status;
+  // The composer bar's ◔ (COMPOSER-BAR.md): the same figure, as a ring.
+  const ring = state.cell.root?.querySelector(".bar-ring");
+  if (ring) paintRing(ring, s.context);
 
   // FIRST LINE: the machine's own statusLine command output, inherited rather
   // than reimplemented (plan §B-7, V2-PLAN §3.4 row 1 — «Keep, first line»).
@@ -2738,6 +2742,12 @@ export function renderEvent(ev) {
         const patch = {};
         for (const key of ["context", "cost", "quota"]) {
           if (typeof ev[key] === "number") patch[key] = ev[key];
+        }
+        // The composer bar's panel (COMPOSER-BAR.md). `limits` may be null:
+        // a login with no plan limits, which the panel says out loud.
+        if ("limits" in ev) patch.limits = ev.limits;
+        if (ev.context_detail && typeof ev.context_detail === "object") {
+          patch.contextDetail = ev.context_detail;
         }
         setStatus(patch);
       } else if (ev.subtype === "statusline") {

@@ -101,6 +101,9 @@ ALLOWED_LATIN = {
     "o", "r", "g", "l", "t", "p", "v", "j", "x",
     # names
     "claude", "code", "anthropic", "json", "md",
+    # the protocol's own name, as the user's config and the CLI's /mcp spell it
+    # (the composer bar's «اتصال‌ها», 2026-09-29)
+    "mcp",
 }
 
 
