@@ -201,10 +201,34 @@ conversation is placed in, or focused in, a pane, or the window comes back visib
 - **The title is asked at paint time**, not stored at creation: session titles arrive with
   `/api/projects`, often after the event that made the notice. The stored one is only for a
   closed conversation, whose row is drawn disabled with «این گفتگو بسته شده است».
-- **The OS notification's click jumps through a `pcg:jump` CustomEvent** on `window`:
-  `render.js notifyTurnEnd()` cannot import `app.js`, and the event carries `state.tab` captured
-  when the notification was made.
-- Gate: `test_notices.py` (17 checks, negative-tested against a missing replay guard).
+- The OS notification and its `pcg:jump` click are gone (2026-09-29); see the next section.
+- Gate: `test_notices.py` (16 checks, negative-tested against a missing replay guard).
+
+## The turn-end signal is a taskbar flash (2026-09-29)
+
+Edge app mode never showed the Notification permission prompt (M2 below), so the turn-end OS
+notification never fired. The replacement is Windows' own "look at me": the taskbar button
+flashes and stays highlighted until the window comes to the front.
+
+- **A page cannot flash its own taskbar button, so the server does.** `render.js
+  flashTaskbar()` posts `/api/attention {title: document.title}`; `server.py flash_window()`
+  enumerates top-level windows through stdlib `ctypes` (`EnumWindows`), keeps the visible
+  `Chrome_WidgetWin_1` ones whose text contains that title, skips the foreground window, and
+  calls `FlashWindowEx` with `FLASHW_TRAY | FLASHW_TIMERNOFG` — the flash ends by itself when
+  the window comes to the front, so nothing clears it. Off Windows it returns 0.
+- **The title is compared with the BiDi marks stripped and as a substring.** Chromium may wrap
+  an RTL window title in U+202B…U+202C, and a browser may append its own name. The server does
+  not hard-code the title: the page sends its own, so both editions and a renamed session all
+  match.
+- **When:** a live, settled turn (never a replay) while the window is hidden **or** unfocused.
+  The notification only covered hidden; another program in front of a visible window is the
+  common case.
+- **No click-to-conversation.** A flash has no click of its own; the bell says which
+  conversation finished. The `pcg:jump` listener lost its only producer and was removed.
+- Gates: `test_shell.py` counts the POST (one live, none replayed, carrying the title),
+  negative-tested against both guards; `test_units.py` covers the route and the off-Windows
+  no-op. The Python half of the Win32 walk was exercised with a fake `user32`; **the flash
+  itself is verified only on Windows.**
 
 ## Folding (BRIDGEMIND-PORT.md §D11, P7, 2026-09-24)
 
@@ -297,9 +321,9 @@ All three swappable values stay as shipped:
   port. `devicePixelRatio` was 1.1 on every run, which is Windows display scaling, not Edge zoom.
   **Notifications: `Notification.requestPermission()` showed no prompt at all** and resolved
   `"default"` (user confirmed nothing appeared). So `render.js`'s turn-end OS notification
-  (it asks on `"default"`, fires only on `"granted"`) never fires on this PC. Open: whether that
-  is app mode, the per-run origin, or Edge's quiet-permission UI; the in-window bell is
-  unaffected.
+  (it asks on `"default"`, fires only on `"granted"`) never fires on this PC. Whether that is
+  app mode, the per-run origin, or Edge's quiet-permission UI was left unanswered: the
+  notification was replaced by a taskbar flash (§"The turn-end signal is a taskbar flash").
 - **M3, font:** the three vendored static Vazirmatn weights read correctly at 13 and 15 px
   (user confirmed by eye). No variable build was tried (`--font` not passed).
 - **M4, root CSS zoom:** the probe's naive `style.left = rect.left` menu landed at 1.25 × the anchor

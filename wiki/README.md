@@ -110,7 +110,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   **2026-09-29:** CSS app zoom is shipped (a 2K screen opens at 125 %) and what it cost — rects are
   screen px, style lengths CSS px, so every menu placed from a rect was off (the table there); the
   layout control for conversations already open; per-conversation folders and branches on the
-  new-session page.
+  new-session page. Same day: the turn-end signal is a taskbar flash done by the server
+  (`FlashWindowEx` via ctypes), because Edge app mode never grants a Notification.
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

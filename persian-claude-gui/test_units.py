@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -1689,6 +1690,12 @@ check("every uuid the old process still held is reported discarded, in order",
           ("command_lifecycle", "discarded", respawn_b, True)])
 check("and the ledger is empty afterwards", respawn.busy is False)
 
+print("flash_window")
+check("a title of BiDi marks and blanks flashes nothing",
+      server.flash_window("\u200f\u2067 \u2069") == 0)
+check("off Windows it is a no-op, never an error",
+      os.name == "nt" or server.flash_window("کلاد فارسی") == 0)
+
 print("GET /api/projects: the sidebar answers with no tabs open")
 # Routing it through _target() 404d once the last tab closed, and the window
 # catches that silently -- the sidebar froze exactly when the user needs it
@@ -1739,6 +1746,18 @@ with tempfile.TemporaryDirectory() as tmp:
         conn.close()
         check("a POST past MAX_BODY_BYTES is 413, decided off the header",
               oversized.status == 413)
+
+        # The turn-end taskbar flash (render.js flashTaskbar). The title is one
+        # no window has, so this asks for nothing to flash on Windows either.
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+        conn.request("POST", "/api/attention?t=unit-token",
+                     body=json.dumps({"title": "pcg-unit-" + uuid.uuid4().hex}),
+                     headers={"Content-Type": "application/json"})
+        attention = conn.getresponse()
+        answer = json.loads(attention.read().decode("utf-8"))
+        conn.close()
+        check("POST /api/attention answers with no tabs open and flashes nothing unmatched",
+              attention.status == 200 and answer == {"ok": True, "flashed": 0})
     finally:
         if httpd is not None:
             httpd.shutdown()

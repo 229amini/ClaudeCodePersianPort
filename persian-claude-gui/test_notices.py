@@ -13,7 +13,7 @@ the shipping `index.html`:
   - Alt+B opens the panel, newest first; a row jumps to its conversation,
     focuses that pane, flashes it once and marks the notice read;
   - a notice whose conversation was closed is drawn disabled with the reason;
-  - «همه خوانده شد» empties the count; the OS notification's click jumps.
+  - «همه خوانده شد» empties the count.
 
 Free: no CLI, no login.
 
@@ -138,15 +138,6 @@ const cellOfTab = (tab) => [...document.querySelectorAll("#grid .cell")]
   await sleep(30);
   out.altBCloses = !panel().matches(":popover-open");
 
-  // The OS notification's click: an event naming the tab.
-  hidden = true;
-  done("t1");
-  hidden = false;
-  window.dispatchEvent(new CustomEvent("pcg:jump", { detail: { tab: "t1" } }));
-  await sleep(80);
-  out.osJump = document.querySelector("#grid .cell.focused")?.classList.contains("flash");
-  out.osJumpRead = shown();
-
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
   document.getElementById("probe-out").textContent =
@@ -206,9 +197,6 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           m.get("allRead") == "" and m.get("allReadRows") == 0,
           f"{m.get('allRead')!r} / {m.get('allReadRows')} unread rows")
     check("Alt+B closes it again", m.get("altBCloses"))
-    check("the OS notification's click jumps to its conversation and reads it",
-          m.get("osJump") and m.get("osJumpRead") == "",
-          f"flash {m.get('osJump')}, count {m.get('osJumpRead')!r}")
     return out
 
 
