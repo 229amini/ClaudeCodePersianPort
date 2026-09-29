@@ -785,6 +785,7 @@ const APPLY = {
   // One value, because the pill and its counter are set together and a partial
   // restore is this project's oldest defect family.
   posture:     (cell, p) => cell.controls.setPostureState(p?.name, p?.autoCount ?? 0),
+  cliMode:     (cell, mode) => cell.controls.setCliMode?.(mode),
   autoActions: (cell, list) => {
     for (const a of list ?? []) cell.controls.noteAutoAction(a.tool, a.why);
   },
@@ -1943,9 +1944,6 @@ function renderRaw(event) {
    `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
    table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
 const QUOTA_WARN_AT = 95;
-// The context appears on the state line only from here on (§D5); the notice
-// above the prompt keeps its own, higher bar (composer.js WARN_AT).
-const CONTEXT_SHOW_AT = 60;
 
 function meter(pct) {
   const wrap = document.createElement("span");
@@ -2000,23 +1998,6 @@ export function postureText(name) {
   return POSTURE_ROW[name]?.text() ?? "";
 }
 
-function postureRow(name) {
-  const entry = POSTURE_ROW[name];
-  if (!entry) return null;
-  const row = document.createElement("div");
-  row.className = "sl-line sl-posture";
-  row.dataset.posture = name;
-  if (entry.danger) row.classList.add("is-danger");
-  // `⏵` is one of §8.9's three directional glyphs: it points the way the text
-  // runs, so it mirrors with `⎿` and `▸` under the same switch.
-  for (let i = 0; i < entry.arrows; i++) {
-    row.append(glyph("⏵", { mirror: true, cls: "sl-arrow" }));
-  }
-  row.append(label(entry.text(), "sl-posture-text"));
-  row.append(label(FA.slPostureHint, "sl-hint"));
-  return row;
-}
-
 export function setStatus(patch) {
   Object.assign(state.status, patch);
   // One number, two readers: the meter below and the notice above the composer.
@@ -2067,32 +2048,18 @@ export function setStatus(patch) {
     statusline.append(line);
   }
 
-  /* THE STATE LINE (BRIDGEMIND-PORT.md §D5): one line, state only. The
-     posture sentence first, word for word the TUI's, then only what has
-     something to say right now: the model, and the context once it is past
-     CONTEXT_SHOW_AT, and the quota warning. Everything the old facts row
-     carried has one home elsewhere - effort, style, folder, cost and session
-     id in `/status` and the pane menu, the account's quota meter once in the
-     sidebar footer - so this line never wraps and never scrolls. */
-  const row = postureRow(s.posture ?? s.mode) ?? document.createElement("div");
-  row.classList.add("sl-line", "sl-state");
+  /* THE STATE LINE, since CLAUDE-AI-PARITY.md P1: only what the composer bar
+     cannot say. The posture, the model and the context used to open this line
+     (BRIDGEMIND-PORT.md §D5), and the bar under the prompt now says all three
+     — two rows naming the same mode and model was the duplication the user
+     reported. What is left is news: the quota nearly spent, files changed. The
+     line is absent when it has nothing to say. */
+  const row = document.createElement("div");
+  row.className = "sl-line sl-state";
   const add = (el) => {
     if (row.childElementCount) row.append(label("·", "sl-sep"));
     row.append(el);
   };
-  if (s.model) {
-    const model = label(shortModel(s.model), "sl-model");
-    model.title = s.model;
-    add(model);
-  }
-  // Context only once it is worth a glance. `.sl-item`/`.sl-label` is the
-  // shape spec-test.html reads the meter through, kept on purpose.
-  if (s.context !== undefined && s.context >= CONTEXT_SHOW_AT) {
-    const item = document.createElement("span");
-    item.className = "sl-item";
-    item.append(label(FA.slContext + ":", "sl-label"), meter(s.context));
-    add(item);
-  }
   // The five-hour window nearly spent - the binary's own 0.95 default,
   // re-derived by test_tui_vocab.py §10. A warning, so it is a word in the
   // line rather than a fourth row.
@@ -2279,6 +2246,7 @@ export function renderEvent(ev) {
           mode: ev.permissionMode,
           sessionId: ev.session_id,
         });
+        if (ev.permissionMode) toChrome("cliMode", ev.permissionMode);
         // The topbar name follows the column this conversation is IN; the
         // sidebar highlight, the project list and the agents strip follow the
         // column the keyboard is in, because there is one of each per window.
@@ -2317,6 +2285,7 @@ export function renderEvent(ev) {
         // The CLI's echo of a permission-mode change. The statusline shows the
         // raw mode; the pill has its own wrapper-level event.
         setStatus({ mode: ev.permissionMode });
+        toChrome("cliMode", ev.permissionMode);
       }
       // hook_started / hook_response are noise for the user.
       return;

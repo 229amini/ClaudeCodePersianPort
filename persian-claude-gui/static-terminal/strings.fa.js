@@ -669,18 +669,17 @@ window.FA = {
 
   postureTitle: "سطح اجازه",
   posturePlan: "طرح‌ریزی",
-  posturePlanNote: "فقط بررسی می‌کند و طرح کار را می‌نویسد؛ تا وقتی طرح را نپذیرید چیزی را تغییر نمی‌دهد",
+  posturePlanNote: "پیش از هر تغییر، طرح کار را می‌نویسد",
   postureAsk: "محتاط",
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
   postureAcceptEdits: "ویرایش آزاد",
-  postureAcceptEditsNote: "فایل‌های پروژه را بدون پرسش ویرایش می‌کند؛ برای اجرای دستور باز هم می‌پرسد",
+  postureAcceptEditsNote: "ویرایش فایل‌ها را بی‌پرسش می‌پذیرد",
   postureAutoApprove: "خودکار",
-  postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
+  postureAutoApproveNote: "همه‌چیز را بی‌پرسش انجام می‌دهد",
   /* One line under every picker, because a list nobody told you how to answer
      is a list you answer with the mouse. */
   pickerHint: "با شماره یا ↑↓ و Enter انتخاب کنید · Esc برای بستن",
   postureFailed: "تغییر سطح اجازه ممکن نشد",
-  autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
@@ -702,6 +701,8 @@ window.FA = {
      editions). */
   barMode: "حالت",
   barModel: "مدل",
+  barMoreModels: "مدل‌های دیگر",
+  barAutoCount: "{n} کار بی‌پرسش انجام شد",
   barEffort: "تلاش",
   barFaster: "سریع‌تر",
   barSmarter: "باهوش‌تر",
