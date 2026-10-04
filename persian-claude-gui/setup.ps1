@@ -192,6 +192,18 @@ if ($claude) {
     Ok "کلاد کد نصب شد"
 }
 
+# The vendor installer leaves .local\bin off PATH (Sandbox, 2026-10-04), so the
+# login step below ("type claude") failed in a fresh terminal. Persist it for
+# the user, exactly as the installer's own message asks; idempotent.
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    $binDir = Split-Path $claude
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if (($userPath -split ';') -notcontains $binDir) {
+        [Environment]::SetEnvironmentVariable('Path', ((@($userPath, $binDir) | Where-Object { $_ }) -join ';'), 'User')
+        Log "  user PATH += $binDir"
+    }
+}
+
 # ---------------------------------------------------------------- 4. deploy
 Step "کپی برنامه"
 
