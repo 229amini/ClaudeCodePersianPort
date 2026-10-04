@@ -1,0 +1,49 @@
+name: گزارش مشکل
+description: چیزی درست کار نمی‌کند یا درست نمایش داده نمی‌شود (حرفِ به‌هم‌ریخته، دکمهٔ گم، خطا…)
+title: "[مشکل] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ممنون که وقت گذاشتید. هر چه دقیق‌تر بنویسید، زودتر درست می‌شود — و **یک عکس از صفحه** بیشترین کمک را می‌کند.
+        You can also write in English.
+  - type: textarea
+    id: what
+    attributes:
+      label: چه شد؟
+      description: چه کاری کردید، چه انتظاری داشتید، و چه دیدید.
+      placeholder: مثلاً «اسم فایل وسط جملهٔ فارسی جابه‌جا نمایش داده شد.»
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: عکس صفحه
+      description: عکس را همین‌جا بکشید و رها کنید (Paste هم کار می‌کند).
+  - type: dropdown
+    id: edition
+    attributes:
+      label: کدام نسخه؟
+      options:
+        - کلاد فارسی
+        - کلاد فارسی — ترمینال
+        - هر دو
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: شمارهٔ نسخه
+      description: پایین نوار کناری برنامه نوشته شده، مثلاً v1.8.0 یا v0.8.0.
+  - type: input
+    id: windows
+    attributes:
+      label: نسخهٔ ویندوز
+      placeholder: ویندوز ۱۱
+  - type: textarea
+    id: log
+    attributes:
+      label: گزارش نصب (اگر مشکل در نصب بود)
+      description: محتوای فایل persian-claude-gui\setup-log.txt
+      render: text
