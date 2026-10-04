@@ -73,6 +73,10 @@ which changed the window's own screen, not the installer:
 | Claude Code install (`irm claude.ai/install.ps1 \| iex`) | **executed and passed** — 2.1.223 installed, setup continued; `claude` was **not** on PATH afterwards and only the `.local\bin` fallback found it |
 | `-Payload` offline | never executed |
 
+**2026-10-04 re-run, current build, clean Sandbox:** Python install, Claude Code install and
+not-logged-in all executed and passed again (smoke 15/16, only the login check failing). The
+`.local\bin`-off-PATH gap above is now closed by `setup.ps1` itself — `wiki/packaging.md`.
+
 **What Run A found.** A CLI with no credentials answers `result` with subtype **success**, cost 0,
 body `Not logged in · Please run /login`. `smoke_test.py` only checked that a `result` event
 arrived, so it printed `PASS`, setup printed «آزمایش موفق بود», and the Persian login instructions
