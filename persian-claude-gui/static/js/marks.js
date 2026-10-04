@@ -11,6 +11,12 @@
                    hovering lists «شروع گفتگو» and each pin, a click goes there
      changeCard()  at the end of a turn, «N فایل ویرایش شد  +A −D» with one row
                    per file that opens its own edit
+     markTurnEnd() the strip ALWAYS drawn under the last message of a turn
+                   (pcg-lw0; the site's action row, not hover-only)
+     thumbs()      a user turn's images, a row above its bubble (pcg-lw0)
+     foldLong()    a user message over ~15 lines clipped, «بیشتر» (pcg-lw0)
+     openDiff()    a change-card row's edits in a panel BESIDE the transcript
+                   (pcg-lw0); the transcript reflows narrower, ✕ / Esc close
 
    Every word the strip and the rail draw is CSS `content: attr(data-…)`, not
    a text node (the fold toggle's rule, render.js): a message's textContent is
@@ -222,4 +228,151 @@ export function changeCard(files) {
     card.append(b);
   }
   return card;
+}
+
+/* --- 4. the always-on row under a turn's last message (pcg-lw0) --------------
+
+   The site draws copy · pin · time under the LAST message of every finished
+   turn, muted and in flow, where everything else gets it on hover only. Called
+   at the one boundary both sources share (render.js flushEdits): the next user
+   turn, the settle, the end of a replay. The turn's last message is the last
+   decorated answer AFTER the last user message — a turn that only ran tools
+   has none, and must not mark the previous turn's answer a second time. */
+export function markTurnEnd(log) {
+  if (!log) return;
+  const said = [...log.querySelectorAll(":scope > .msg.user")].pop();
+  const last = [...log.querySelectorAll(":scope > .msg.assistant")]
+    .filter((m) => m.querySelector(":scope > .msg-acts")).pop();
+  if (!last || (said && !(said.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING))) return;
+  last.classList.add("turn-last");
+}
+
+/* --- 5. a user turn's images (pcg-lw0) ---------------------------------------
+
+   `srcs` are data: URLs (a replayed transcript carries the image itself) or the
+   wrapper's /api/image route (a live send names a file the server read). The
+   site's row: 160 px tall, the width from the image, above the bubble. */
+export function thumbs(srcs) {
+  const row = el("div", "msg-images");
+  for (const src of srcs) {
+    const img = el("img", "msg-image");
+    img.alt = FA.markImage;
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = src;
+    row.append(img);
+  }
+  return row;
+}
+
+/* --- 6. a long message of yours (pcg-lw0, after §D11.1) ----------------------
+
+   Over 15 lines or 1200 characters, COUNTED on the text rather than measured —
+   a background pane has no layout, and a reload must fold exactly what the
+   live window folded. The whole text stays in the DOM (copy, /export, find);
+   the toggle's words are `data-label`, so textContent never reads them. */
+export const FOLD_LINES = 15;
+export const FOLD_CHARS = 1200;
+
+export function foldLong(msg, text) {
+  const t = String(text ?? "");
+  if (t.length <= FOLD_CHARS && t.split("\n").length <= FOLD_LINES) return;
+  const body = el("div", "fold-body");
+  body.append(...msg.childNodes);
+  const toggle = el("button", "fold-toggle");
+  toggle.type = "button";
+  const paint = (open) => {
+    msg.classList.toggle("unfolded", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.dataset.label = open ? FA.foldLess : FA.foldMore;
+    toggle.setAttribute("aria-label", toggle.dataset.label);
+  };
+  toggle.addEventListener("click", () => paint(!msg.classList.contains("unfolded")));
+  msg.classList.add("fold");
+  msg.append(body, toggle);
+  paint(false);
+}
+
+/* --- 7. a file's edits, beside the transcript (pcg-lw0) ----------------------
+
+   The site opens a change-card row as a panel at the side of the transcript,
+   which reflows narrower. Here it is the turn's OWN edits of that file — the
+   same tool calls the card summed, so it agrees with the card's «+A −D», needs
+   no git, and a replay draws it the same. `nodes()` builds them (render.js
+   renderDiff, the tool card's own diff), one block per edit.
+
+   The panel is a sibling AFTER the transcript, absolutely placed over the
+   transcript's inline-end half while the transcript gives that half up as a
+   margin — no new wrapper around .log, whose flex box is load-bearing (the
+   prompt vanished the last time a pane's display changed). Its block edges are
+   copied from the transcript's own box and kept there by a ResizeObserver. */
+const panels = new WeakMap();     // log -> {panel, sync, ro}
+
+export function openDiff(log, { path, added = 0, removed = 0, nodes }) {
+  if (!log?.parentElement) return null;
+  let p = panels.get(log);
+  if (!p) {
+    const panel = el("section", "diff-side");
+    panel.setAttribute("role", "region");
+    panel.tabIndex = -1;
+    const head = el("div", "diff-side-head");
+    const name = el("bdi", "diff-side-file path");
+    name.dir = "ltr";
+    const stat = el("span", "change-stat");
+    stat.dir = "ltr";
+    const close = el("button", "diff-side-close", "✕");
+    close.type = "button";
+    close.title = FA.diffClose;
+    close.setAttribute("aria-label", FA.diffClose);
+    close.addEventListener("click", () => closeDiff(log));
+    head.append(name, stat, close);
+    const body = el("div", "diff-side-body");
+    panel.append(head, body);
+    panel.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeDiff(log);
+    });
+    const sync = () => {
+      panel.style.top = log.offsetTop + "px";
+      panel.style.height = log.offsetHeight + "px";
+    };
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(sync) : null;
+    p = { panel, name, stat, body, sync, ro };
+    panels.set(log, p);
+  }
+  p.name.textContent = String(path).split(/[\\/]/).pop() || String(path);
+  p.name.title = path;
+  p.panel.setAttribute("aria-label", path);
+  p.stat.replaceChildren(el("span", "d-add", "+" + added), el("span", "d-del", "−" + removed));
+  p.body.replaceChildren(...nodes().map((n) => {
+    const block = el("div", "diff-side-edit");
+    block.append(n);
+    return block;
+  }));
+  if (p.panel.previousElementSibling !== log) log.after(p.panel);
+  const atEnd = isAtEnd(log);
+  log.parentElement.classList.add("diff-open");
+  // Half the width is twice the height: a transcript that was following its
+  // bottom keeps following it (render.js atBottom's 80 px window).
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  p.sync();
+  p.ro?.observe(log);
+  p.panel.focus({ preventScroll: true });
+  return p.panel;
+}
+
+export function closeDiff(log) {
+  const p = log && panels.get(log);
+  if (!p?.panel.isConnected) return;
+  p.ro?.disconnect();
+  p.panel.remove();
+  const atEnd = isAtEnd(log);
+  log.parentElement?.classList.remove("diff-open");
+  if (atEnd) log.scrollTop = log.scrollHeight;
+}
+
+function isAtEnd(log) {
+  return log.scrollHeight - log.scrollTop - log.clientHeight < 80;
 }

@@ -2157,7 +2157,8 @@ check("a delta follows a reader pinned to the bottom and leaves one who scrolled
    Here, while the frame is still driven by hand (see the first stream case). */
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "پایان." }] } });
 flushFrame();
-const FOLD_TEXT = Array.from({ length: 12 }, (_, i) => "خط شمارهٔ " + (i + 1)).join("\n");
+// Over marks.js FOLD_LINES (15 since pcg-lw0; 8 before).
+const FOLD_TEXT = Array.from({ length: 32 }, (_, i) => "خط شمارهٔ " + (i + 1)).join("\n");
 const userOnce = () => {
   window.renderEvent({ type: "wrapper", subtype: "user_echo", text: FOLD_TEXT });
   return [...specLog.querySelectorAll(".msg.user")].at(-1);
@@ -2169,13 +2170,13 @@ const foldShut = foldA?.querySelector(".fold-body")?.getBoundingClientRect().hei
 const labelShut = foldToggle?.dataset.label;
 foldToggle?.click();
 const foldOpen = foldA?.querySelector(".fold-body")?.getBoundingClientRect().height ?? 0;
-check("a long message of yours folds to six lines, and «بیشتر» opens it",
+check("a long message of yours folds to fifteen lines, and «بیشتر» opens it",
   !!foldA?.classList.contains("fold") && labelShut === FA.foldMore &&
   foldToggle.dataset.label === FA.foldLess && foldToggle.getAttribute("aria-expanded") === "true" &&
   foldShut > 0 && foldOpen > foldShut * 1.5,
   (foldA?.className ?? "no row") + " / " + Math.round(foldShut) + "px -> " + Math.round(foldOpen) + "px");
 check("the fold keeps the whole text, and its button's words stay out of it",
-  foldA?.textContent.includes("خط شمارهٔ 12") && !foldA.innerText.includes(FA.foldMore) &&
+  foldA?.textContent.includes("خط شمارهٔ 32") && !foldA.innerText.includes(FA.foldMore) &&
   !foldA.innerText.includes(FA.foldLess),
   (foldA?.innerText ?? "").slice(-30));
 foldToggle?.click();
@@ -3162,9 +3163,17 @@ check("every chunk keeps each tool's output with its call",
   const canScroll = !!box && box.scrollHeight > box.clientHeight + 200;
   if (box) box.scrollTop = box.scrollHeight;
   await tick(0);
+  // Chromium's scroll anchoring can do this stick by itself: in the web
+  // harness it moved the box down by exactly the answer's growth, so the case
+  // passed with stickSoon()'s second write deleted (measured 2026-10-04: 0 px
+  // with anchoring, 526 px without). Off for this one case, so what is
+  // measured is the renderer's own stick, which is what the real window needs.
+  const anchor = box?.style.overflowAnchor ?? "";
+  if (box) box.style.overflowAnchor = "none";
   say(Array.from({ length: 14 }, (_, i) => "بند شمارهٔ " + (i + 1) + " از پاسخ بلند.").join("\n\n"));
   await tick(0);
   const gap = box ? Math.round(box.scrollHeight - box.clientHeight - box.scrollTop) : -1;
+  if (box) box.style.overflowAnchor = anchor;
   check("a whole answer landing at the bottom is followed to ITS bottom, not to the empty row it began as",
     canScroll && Math.abs(gap) <= 1,
     (canScroll ? "" : "NOT SCROLLABLE — the check proves nothing; ") + gap + " px left below the view");

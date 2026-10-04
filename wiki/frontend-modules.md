@@ -365,8 +365,15 @@ message on**, both editions.
   the synchronous render is over, on the captured box (`log` is swapped per render target, so it is
   captured, not re-read). Both editions carry it.
 - Gate: a spec case lands a 14-paragraph answer on a pinned log and asserts 0 px left below the
-  view. It fails with the fix removed on the terminal edition (534 px). The web harness passes
-  either way, because of how its log is set up by the cases before it. The web edition's
+  view. It fails with the fix removed on the terminal edition (534 px). The web edition's
   bug and fix were proven with the same probe instead: 792 px short before, 0 after.
+- **The web harness passed without the fix because of Chromium's scroll anchoring**
+  (diagnosed 2026-10-04). In that harness the box moved down synchronously by exactly the
+  answer's growth (`scrollTop` 6681 -> 7217) with no renderer code writing it; with
+  `overflow-anchor: none` the same run left 526 px below the view. The case now turns anchoring
+  off for itself (both editions, restored after), so it measures the renderer's own stick, and
+  the web gate fails without the microtask (220/221) and passes with it. Do not rely on
+  anchoring in the app: what it pins depends on which node it picked, which is why the real
+  window still fell behind.
 - Streaming was never the culprit: `queueStreamText()` measures before each paint and writes after
   it, per frame.

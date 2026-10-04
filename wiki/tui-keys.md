@@ -1,13 +1,14 @@
 # TUI keys — the default binding table, read out of the binary
 
-**Build:** `claude` **2.1.284**, author PC, 2026-09-29 (counts and computed chords re-verified;
-the per-context tables below were written against 2.1.261 — see "What 2.1.284 moved").
+**Build:** `claude` **2.1.289**, author PC, 2026-10-04 (counts and computed chords re-verified;
+the per-context tables below were written against 2.1.261 — see "What 2.1.284 moved" and
+"What 2.1.289 moved").
 **Source:** `persian-claude-gui/extract_tui_vocab.py` (free; reads `claude.exe`, spawns nothing).
 **Regenerate:** `C:\Python314\python.exe persian-claude-gui\extract_tui_vocab.py`
 **Gate:** `persian-claude-gui/test_tui_vocab.py` fails when this file and the binary disagree.
 
 V2-PLAN.md §3.6: *"Lift the defaults from the binary, not from memory."* This is that table.
-213 bindings across 26 contexts on 2.1.284 (206 / 25 on 2.1.261). The «کلید v2» column is what the window binds — empty means
+223 bindings across 26 contexts on 2.1.289 (213 on 2.1.284, 206 / 25 on 2.1.261). The «کلید v2» column is what the window binds — empty means
 **out of scope for v2**, with the reason in the last column.
 
 > The binary updated itself from 2.1.259 to 2.1.260 overnight on 2026-09-04, between V2-PLAN.md
@@ -45,6 +46,18 @@ V2-PLAN.md §3.6: *"Lift the defaults from the binary, not from memory."* This i
 >   shift+tab`). The window never answered them — its digits come from the numbered list — so
 >   only the rows changed.
 > - `ModelPicker`'s 3 include `s` → `modelPicker:thisSessionOnly` (row below; no v2 key).
+>
+> **What 2.1.289 moved** (2026-10-04; 2.1.287–289 in `~/.local/share/claude/versions`, no 2.1.284
+> left to diff): every load-bearing chord unchanged. 213 → 223 bindings, same 26 contexts.
+> - `Agents` 2 → 8 in 2.1.289: `ctrl+f` find, `ctrl+r` rename, `ctrl+t` pin, `ctrl+up`/`meta+up`
+>   and `ctrl+down`/`meta+down` between groups, beside the old `ctrl+s` switch view.
+> - `Settings` 18 → 20 (`pageup`/`pagedown`) and `Plugin` 3 → 4 (`ctrl+s` →
+>   `plugin:cycleMarketplace`), both already in 2.1.287.
+> - One more binding moved between 2.1.284 and 2.1.287 in a context this file does not count;
+>   with no 2.1.284 binary left it was not identified.
+> - The paste chip's function took the label as a third parameter defaulting to `"Pasted text"`
+>   (`[${r} #${e} +${n} lines]`), shared with a new `✦ Team setup guide` chip. A paste mints the
+>   same two strings; the extractor and §9 of the gate accept either shape.
 
 ## How to read a chord
 
@@ -222,7 +235,7 @@ missed. Each is a screen the window replaces with something else, or a feature �
 
 | Context | Bindings | Why not |
 |---|---|---|
-| `Settings` | 18 | `/config` فایل واقعی را باز می‌کند (V2-PLAN §2)؛ ۱۸ کلید در 2.1.284: `escape` `up` `down` `k` `j` `ctrl+p` `ctrl+n` `home` `end` `space` `enter` (پیمایش و انتخاب)، `/` جست‌وجو، `r` تلاش دوباره، `d` / `w` بازهٔ روز / هفته، `t` مرتب‌سازی با توکن، `ctrl+u` / `ctrl+d` نیم‌صفحه |
+| `Settings` | 20 | `/config` فایل واقعی را باز می‌کند (V2-PLAN §2)؛ ۲۰ کلید در 2.1.289: `escape` `up` `down` `k` `j` `ctrl+p` `ctrl+n` `home` `end` `pageup` `pagedown` `space` `enter` (پیمایش و انتخاب)، `/` جست‌وجو، `r` تلاش دوباره، `d` / `w` بازهٔ روز / هفته، `t` مرتب‌سازی با توکن، `ctrl+u` / `ctrl+d` نیم‌صفحه |
 | `Tabs` | 4 | نوارِ تب‌های v1 با ماوس کار می‌کند و دست‌نخورده می‌ماند |
 | `ThemePicker` | 2 | `/theme` فقط روشن/تاریک است |
 | `Scroll` | 14 | پیمایش و انتخاب متن کار مرورگر است |
@@ -236,8 +249,8 @@ missed. Each is a screen the window replaces with something else, or a feature �
 | `ModelPicker` | 3 | `←`/`→` برای effort؛ v2 آن را فهرست جدا می‌کند. سومی `s` → `modelPicker:thisSessionOnly` (فقط همین جلسه) است؛ v2 کلیدی برایش ندارد |
 | `EffortSlider` | 4 | همان؛ در 2.1.284 از ۱ به ۴ رسید: `←` / `→` کم و زیاد کردن effort، `tab` → `effortSlider:toggleUltracode`، و `s` → `effortSlider:thisSessionOnly` |
 | `Select` | 12 | فهرست‌های v2 از `Confirmation` تبعیت می‌کنند |
-| `Plugin` | 3 | §4 |
-| `Agents` | 2 | نوار عامل‌های v1 دست‌نخورده می‌ماند |
+| `Plugin` | 4 | §4 |
+| `Agents` | 8 | نوار عامل‌های v1 دست‌نخورده می‌ماند |
 
 ## Cannot be rebound
 

@@ -174,7 +174,7 @@ window.FA = {
      the transcript keeps one of them and says how many there were. Persian
      digits — this is prose chrome, not a technical value (spec rule 5). */
   cycleRepeat: "{n} بار",
-  /* §D11: a long message of yours folds to six lines. */
+  /* §D11 / pcg-lw0: a long message of yours folds to ~15 lines (marks.js foldLong). */
   foldMore: "بیشتر",
   foldLess: "کمتر",
   /* §D11.3: a long history draws its last part; this brings back the rest. */
@@ -716,6 +716,9 @@ window.FA = {
   markSessionStart: "شروع گفتگو",
   markPinned: "پیام سنجاق‌شده",
   markEdited: "{n} فایل ویرایش شد",
+  // pcg-lw0: a user turn's image (alt text) and the diff side panel's close.
+  markImage: "تصویر پیوست",
+  diffClose: "بستن",
   /* The composer bar (COMPOSER-BAR.md, js/bar.js — the same keys in both
      editions). */
   barMode: "حالت",

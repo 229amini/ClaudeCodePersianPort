@@ -497,6 +497,41 @@ left-to-right check of every `+A −D`, because a `textContent` assertion is bli
 Negative-tested: dropping the settle flush, `setPinned`'s class toggle, or the stats' `dir=ltr`
 each fails it.
 
+### The four follow-ups (2026-10-04, pcg-lw0, web 1.7.0 / terminal 0.7.0)
+
+From `wiki/claude-ai-code-reference.md`, all four, both editions, user decisions in brackets.
+All the shared parts are in `marks.js`, so it stays one file.
+
+- **The row under a turn's last answer is always drawn** (`markTurnEnd`): in flow, muted, no
+  hover. A turn ends at the one boundary both sources share, `flushEdits()` (the next user
+  row, the settle, the end of a replay), so the mark is the first line of that function, before
+  its early return. Only the last decorated answer AFTER the last user row is marked, so a turn
+  that ran tools and said nothing does not re-mark the previous turn's answer.
+- **A change-card row opens that file's edits beside the transcript** [the turn's own edits,
+  not git; beside, not over]. `state.turnEdits` keeps each edit's `{name, input}`, and the panel
+  draws `renderDiff(diffOf(…))` per edit, so it always agrees with the card's `+A −D`, needs no
+  repository and replays identically. `openDiff()` puts `section.diff-side` AFTER `.log` and
+  gives `.log` a 50 % inline-end margin (left, in RTL); the panel is absolutely placed over that
+  half, its top and height copied from the log's box and kept there by a `ResizeObserver`. No
+  wrapper element around `.log` on purpose: the last time a pane's display changed, the prompt
+  vanished. Under 640 px of pane (`@container`) the panel covers the log. ✕ and Esc close it;
+  `park()` closes it when the pane changes conversation; a transcript that was following its
+  bottom keeps following it across open and close.
+- **Image thumbnails above the user bubble.** A replayed turn's image is in the transcript, so
+  it is a `data:` URL. A live send names a file on disk, so `user_echo` gained `image_urls`:
+  `GET /api/image?path=` serves **only** paths `build_message_blocks()` itself base64'd into an
+  image block (`SENT_IMAGES`, per process), never an arbitrary file; `test_units.py` checks the
+  refusal both before the send and for the file's neighbour after it. No lightbox (the
+  reference did not open one). 160 px tall, capped at `30cqh` in a small pane.
+- **A long message is clipped at 15 lines** (`foldLong`, was 8 lines / 600 characters in the
+  terminal edition only): > 15 lines or > 1200 characters, counted on the text so a background
+  pane and a reload fold the same, a fade and the site's «بیشتر» chip. The web edition gained
+  the fold and its two strings.
+
+Gate: `test_marks.py` **49** (was 29), each new check measured rather than read (the panel's
+rect against the log's, the thumbnail's 160 px and its position above the bubble, the clip's
+`scrollHeight`). Negative-tested by sabotaging all four in `marks.js` at once: 8 checks fail.
+
 ## claude.ai/code parity: the transcript, the tasks panel, the send button (2026-09-29, pcg-368)
 
 The references were the user's screenshots of this project's own claude.ai/code session and a

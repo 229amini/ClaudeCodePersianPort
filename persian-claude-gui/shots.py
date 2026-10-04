@@ -55,7 +55,7 @@ OUT_ROOT = HERE / "shots"
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
-          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks")
+          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -271,6 +271,36 @@ async function run() {
     }
     return;
   }
+  if (SCENE === "lw0") {
+    // pcg-lw0: a turn sent with an image, its always-on action row, a long
+    // message folded behind «بیشتر», and a change row opened beside the log.
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    const c = document.createElement("canvas");
+    c.width = 320; c.height = 200;
+    const g = c.getContext("2d");
+    const grad = g.createLinearGradient(0, 0, 320, 200);
+    grad.addColorStop(0, "#d97757"); grad.addColorStop(1, "#2b2b2b");
+    g.fillStyle = grad; g.fillRect(0, 0, 320, 200);
+    ev("t1", {type: "user", uuid: "u-img", timestamp: new Date(Date.now() - 6e5).toISOString(),
+              message: {content: [
+                {type: "image", source: {type: "base64", media_type: "image/png",
+                                         data: c.toDataURL("image/png").split(",")[1]}},
+                {type: "text", text: "این صفحه در عرض کم به هم می‌ریزد؛ ببین چرا."}]}});
+    turn("t1", 1);
+    ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000});
+    ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "u-long",
+              text: Array.from({length: 22}, (_, i) => "سطر " + (i + 1) + " از یک پیام بلند که کاربر چسبانده است.").join("\n")});
+    ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 1000});
+    ev("t1", {type: "command_lifecycle", command_uuid: "u-long", state: "completed"});
+    await sleep(120);
+    document.querySelector("#grid .cell .change-row")?.click();
+    await sleep(200);
+    return;
+  }
   if (SCENE === "panes3") {
     const three = TABS.slice(0, 3);
     useTabs(three, "t1");
@@ -425,20 +455,61 @@ def write_probe(now: float) -> None:
 
 
 def viewport_delta(browser: str) -> int:
-    """How much shorter than the window this browser's viewport is."""
+    """How much shorter than the window this browser's viewport is IN SCREENSHOT MODE.
+
+    Measured from a screenshot, not from `--dump-dom`: on Windows Edge (2026-10-04)
+    `--dump-dom` reports innerHeight 507 for a 600 window while `--screenshot` lays the
+    page out at the full 600, so a delta taken from the DOM cropped the composer off
+    every shot. The page paints its viewport white on black; the white rows are it.
+    """
     with tempfile.TemporaryDirectory() as tmp:
-        page = Path(tmp) / "vp.html"
-        page.write_text('<body><script>document.body.textContent='
-                        '"VP" + innerHeight + "VP"</script></body>', encoding="utf-8")
-        dom = subprocess.run(
-            [browser, "--headless=new", "--disable-gpu", "--no-first-run",
-             f"--user-data-dir={Path(tmp) / 'p'}", "--window-size=800,600",
-             "--dump-dom", page.as_uri()],
-            capture_output=True, text=True, timeout=60).stdout
-    try:
-        return max(0, 600 - int(dom.split("VP")[1]))
-    except (IndexError, ValueError):
-        return 0
+        page, png = Path(tmp) / "vp.html", Path(tmp) / "vp.png"
+        page.write_text('<html style="background:#000"><body style="margin:0">'
+                        '<div style="height:100vh;background:#fff"></div></body></html>',
+                        encoding="utf-8")
+        subprocess.run(
+            [browser, "--headless=new", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
+             f"--user-data-dir={Path(tmp) / 'p'}", "--window-size=200,600",
+             f"--screenshot={png}", page.as_uri()],
+            capture_output=True, timeout=60)
+        rows = png_first_column(png) if png.exists() else []
+    white = sum(1 for px in rows if min(px) > 200)
+    return max(0, 600 - white) if white else 0
+
+
+def png_first_column(path: Path) -> list[tuple[int, ...]]:
+    """The first pixel of every row of an 8-bit, non-interlaced RGB(A) PNG."""
+    data = path.read_bytes()
+    chunks, pos = [], 8
+    while pos < len(data):
+        size = int.from_bytes(data[pos:pos + 4], "big")
+        chunks.append((data[pos + 4:pos + 8], data[pos + 8:pos + 8 + size]))
+        pos += 12 + size
+    ihdr = chunks[0][1]
+    width, height = int.from_bytes(ihdr[:4], "big"), int.from_bytes(ihdr[4:8], "big")
+    bpp = {2: 3, 6: 4}.get(ihdr[9])
+    if ihdr[8] != 8 or ihdr[12] or bpp is None:
+        return []
+    raw = zlib.decompress(b"".join(body for kind, body in chunks if kind == b"IDAT"))
+    stride, prev, out = width * bpp, bytearray(width * bpp), []
+    for y in range(height):
+        kind, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b, c = prev[i], prev[i - bpp] if i >= bpp else 0
+            if kind == 1:
+                line[i] = (line[i] + a) & 255
+            elif kind == 2:
+                line[i] = (line[i] + b) & 255
+            elif kind == 3:
+                line[i] = (line[i] + (a + b) // 2) & 255
+            elif kind == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        out.append(tuple(line[:bpp]))
+        prev = line
+    return out
 
 
 def _chunk(kind: bytes, body: bytes) -> bytes:

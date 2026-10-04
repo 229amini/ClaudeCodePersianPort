@@ -232,6 +232,17 @@ flashes and stays highlighted until the window comes to the front.
   same for a permission request), negative-tested against each guard; `test_units.py` covers the route and the off-Windows
   no-op. The Python half of the Win32 walk was exercised with a fake `user32`; **the flash
   itself is verified only on Windows.**
+- **Verified on Windows, 2026-10-04 (pcg-dc4), both editions' titles.** A probe booted the
+  server, opened the real Edge `--app` window, minimised it and POSTed `/api/attention` with the
+  page's own title: `GetWindowTextW` returned exactly `document.title` (no BiDi marks, no browser
+  suffix, on this Edge), `flashed: 1`, and a screen grab showed the taskbar button lit with its
+  attention underline 0.4 s and 4 s later. One run in five answered `flashed: 0`; the suspected
+  cause was a minimised window still reported foreground, so the foreground skip now ignores an
+  iconic window (`IsIconic`). The permission-request path posts the same route from the same
+  `flashTaskbar()`, so it was not driven separately (that needs a paid turn).
+- **A fresh Edge profile offers "Translate page from Persian?"** in the app window. Accepting it
+  rewrites the live text nodes the renderer still writes into, so both `index.html` files carry
+  `<meta name="google" content="notranslate">`; the bubble did not appear in the runs after it.
 
 ## Folding (BRIDGEMIND-PORT.md §D11, P7, 2026-09-24)
 
