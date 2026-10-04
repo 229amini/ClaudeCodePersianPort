@@ -13,6 +13,7 @@ import { openPlus, openUsage } from "./bar.js";
    uses — a second one would send into a conversation the server thinks is
    parked (app.js switchTab). */
 import { switchToTab, splitView } from "./chrome.js";
+import { toggleFocus } from "./focus.js";
 
 const FA = window.STRINGS;
 
@@ -455,6 +456,7 @@ export function makeComposer(root, cell) {
     { name: "export", description: FA.cmdExportDesc },
     { name: "branch", description: FA.cmdBranchDesc },
     { name: "split", description: FA.cmdSplitDesc },
+    { name: "focus", description: FA.cmdFocusDesc },
   ];
 
   function allCommands() {
@@ -1020,6 +1022,12 @@ export function makeComposer(root, cell) {
     export: exportTranscript,
     branch: forkSession,
     split: splitGrid,
+    // Focus view (focus.js, pcg-ahh.5): the line says which way it went, since
+    // the change is the absence of rows and is easy to miss.
+    focus: () => {
+      note(toggleFocus() ? FA.focusOn : FA.focusOff);
+      return true;
+    },
   };
 
   /* Returns true when the text was a lifecycle verb and must not be sent.
