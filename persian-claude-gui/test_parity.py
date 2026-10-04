@@ -1,4 +1,4 @@
-r"""VS Code extension parity gate (pcg-ahh, terminal edition).
+r"""VS Code extension parity gate (pcg-ahh; both editions since pcg-cpn).
 
 The user's ask, 2026-10-04, after the app was compared with the Claude Code
 VS Code extension: build the five gaps that matter most, in order.
@@ -11,8 +11,9 @@ VS Code extension: build the five gaps that matter most, in order.
      something the person said with its words back in the prompt;
   5. Focus view: each turn's steps behind one row (Ctrl+Alt+F, /focus).
 
-Each later feature adds its section here. Free: no CLI, no login. Every route
-is stubbed inside the real index.html.
+Every section runs on both editions (PCG_UI=web|terminal, terminal by default),
+and focus.js is one file in two places. Free: no CLI, no login. Every route is
+stubbed inside the real index.html.
 
     python persian-claude-gui\test_parity.py
 """
@@ -40,7 +41,16 @@ PROBE_JS = r"""
 <script type="module">
 import { refreshProjects } from "/static/js/chrome.js";
 import { routeEvent, applyTabs, cellOf, switchTab } from "/static/js/app.js";
-import { runWindowCommand } from "/static/js/commands.js";
+// `/focus` goes through each edition's own command path: the terminal's
+// command table, the web composer's local verbs (typed and sent).
+const commands = await import("/static/js/commands.js").catch(() => null);
+const runFocus = async (cell) => {
+  if (commands) return commands.runWindowCommand("focus", "", cell);
+  const box = cell.root.querySelector("textarea.input");
+  box.value = "/focus";
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FA = window.STRINGS;
 const calls = [];
@@ -89,6 +99,9 @@ const type = async (text) => {
   field.dispatchEvent(new Event("input", { bubbles: true }));
   await sleep(20);
 };
+// The row's ⋯: `.kebab-btn` in the terminal edition, its accessible name in the web one.
+const kebabOf = (row) => row.querySelector(".kebab-btn")
+  ?? [...row.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === FA.moreActions);
 const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   .map((li) => li.dataset.session).join();
 
@@ -121,7 +134,7 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   // --- 1. rename ---
   await type("صفحه");
   const row = nav.querySelector('li[data-session="a1"]');
-  row.querySelector(".kebab-btn").click();
+  kebabOf(row).click();
   await sleep(30);
   const item = [...row.querySelectorAll(".kebab-item")]
     .find((b) => b.textContent === FA.renameSession);
@@ -139,7 +152,7 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   out.reloaded = calls.filter((c) => c.url.startsWith("/api/projects")).length;
   // Esc cancels without a request.
   const row2 = nav.querySelector('li[data-session="a1"]');
-  row2.querySelector(".kebab-btn").click(); await sleep(30);
+  kebabOf(row2).click(); await sleep(30);
   [...row2.querySelectorAll(".kebab-item")].find((b) => b.textContent === FA.renameSession)?.click();
   await sleep(30);
   const edit2 = row2.querySelector(".sess-rename");
@@ -245,7 +258,7 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   await sleep(30);
   out.altGrKept = document.body.classList.contains("focus-view");
   // /focus switches it off, and says so.
-  runWindowCommand("focus", "", cellOf(T));
+  await runFocus(cellOf(T));
   await sleep(60);
   out.offAgain = !document.body.classList.contains("focus-view")
     && rows().every((el) => !el.classList.contains("focus-proc"))
@@ -306,6 +319,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     def check(name: str, ok: bool, detail: str = "") -> None:
         out.append((name, bool(ok), detail))
 
+    a = (HERE / "static" / "js" / "focus.js").read_bytes()
+    b = (HERE / "static-terminal" / "js" / "focus.js").read_bytes()
+    check("js/focus.js is the same file in both editions", a == b)
+
     # 1. search and rename
     check("the sidebar has a search field named in Persian", m.get("placeholder"))
     check("a search ignores the half-space and finds an archived project's conversation",
@@ -332,8 +349,12 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     # 3. the approve-all posture
     names = m.get("postureNames") or []
+    # The web edition has no terminal state line, so no state-line string.
+    if EDITION == "web":
+        names = [n for n in names if n is not None]
     check("the approve-all posture, its state line and its audit note never say «خودکار»",
-          len(names) == 3 and all(n and "خودکار" not in n for n in names)
+          len(names) == (2 if EDITION == "web" else 3)
+          and all(n and "خودکار" not in n for n in names)
           and m.get("cliAuto") not in names, f"{names}")
     web = (HERE / "static" / "strings.fa.js").read_text(encoding="utf-8")
     check("...in the web edition too", 'postureAutoApprove: "تأیید همه"' in web)
@@ -390,9 +411,6 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
 
 def main() -> int:
-    if EDITION != "terminal":
-        print("SKIP - these parity features are the terminal edition's")
-        return 0
     edge = find_edge()
     write_probe()
     try:
