@@ -406,6 +406,12 @@ window.FA = {
   markSessionStart: "شروع گفتگو",
   markPinned: "پیام سنجاق‌شده",
   markEdited: "{n} فایل ویرایش شد",
+  // pcg-lw0: a user turn's image (alt text) and the diff side panel's close.
+  markImage: "تصویر پیوست",
+  diffClose: "بستن",
+  // A long message of yours, clipped (marks.js foldLong).
+  foldMore: "بیشتر",
+  foldLess: "کمتر",
   /* The composer bar (COMPOSER-BAR.md, js/bar.js — the same keys in both
      editions). */
   barMode: "حالت",

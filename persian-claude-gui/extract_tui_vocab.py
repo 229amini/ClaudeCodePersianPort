@@ -104,8 +104,10 @@ STRING_PATTERNS: list[tuple[str, bytes, str]] = [
     ("spinner.interrupt", rb'esc to interrupt', "spinner suffix"),
     # The two interpolations are minified locals and they are renamed by every build:
     # `#${e} +${n}` on 2.1.260, `#${e} +${t}` on 2.1.261. Match their shape, not their names.
+    # 2.1.289 made the label a parameter defaulting to "Pasted text" (`[${r} #${e} +${n} lines]`,
+    # shared with the "Team setup guide" chip); test_tui_vocab §9 pins that default.
     ("paste.placeholder",
-     rb'\[Pasted text #\$\{[A-Za-z_$][\w$]*\} \+\$\{[A-Za-z_$][\w$]*\} lines\]',
+     rb'\[(?:Pasted text|\$\{[A-Za-z_$][\w$]*\}) #\$\{[A-Za-z_$][\w$]*\} \+\$\{[A-Za-z_$][\w$]*\} lines\]',
      "composer paste chip"),
     ("posture.accept_edits", rb'accept edits on', "status line posture"),
     ("posture.plan", rb'plan mode on', "status line posture"),

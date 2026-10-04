@@ -323,4 +323,25 @@ container has a real `claude` (2.1.281) and an idle `--resume` is free. Still Wi
 control drew the previously pressed option lit and the newly pressed one dim, while
 `aria-pressed` was right. A probe reading `getComputedStyle` 20 ms after the click saw the same
 mid-transition values. Before reading a state colour off a shot, check the element carries no
-transition — the new-session page's options carry none for that reason.
+transition — the new-session page's options carry none for that reason. A gate reading an
+`opacity` that fades in has the same problem (`test_marks.py` sets `transition: none` on the
+element before it reads the value the fade ends on).
+
+**`shots.py` measured its viewport in the wrong mode** (fixed 2026-10-04). It asked the window
+for `H + delta` and cut the PNG back to `H`, with `delta` taken from `--dump-dom`'s
+`innerHeight`. On Windows Edge `--dump-dom` reports 507 for a 600 window, but `--screenshot`
+lays the page out at the full 600, so every shot lost its bottom 93 px: the composer was cut
+off and the single-pane shots looked like the vanishing-prompt bug. `viewport_delta()` now
+screenshots a page that paints its viewport white and counts white rows (a stdlib PNG decode,
+`png_first_column`). Windows Edge: delta 0. Linux Chromium's 1280x800 -> 713 case is what the
+old measurement was written for; the new one measures the same mode it crops.
+
+**Windows Sandbox locks renames in a mapped folder.** While `clean-machine.wsb` (or any
+`.wsb` mapping `persian-claude-gui`) is running, `sed -i` there fails with "cannot rename
+…: Device or resource busy" — it writes a temp file and renames it. In-place writes (the Edit
+tool, Python `write_text`) still work. Close the sandbox or edit in place.
+
+**Running `setup.ps1` in the sandbox unattended:** a scratch `.wsb` with a second, writable
+mapped folder and a `<LogonCommand>` that runs `setup.ps1` with `*>&1 | Out-File` into that
+folder, then copies `%TEMP%\persian-claude-setup-log.txt` beside it. The host reads the logs
+without touching the sandbox's UI.

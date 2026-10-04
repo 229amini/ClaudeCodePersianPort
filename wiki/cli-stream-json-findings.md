@@ -775,3 +775,16 @@ the renderer) and **`rate_limit_event`**, which is NOT new to us — `static/js/
 unrecognised type renders as a collapsed raw-JSON card, never a crash) was not exercised by this run.
 
 No contract change. Nothing in the wrapper needed a port for this version.
+
+## 2.1.289 re-verification (2026-10-04, one paid turn)
+
+`claude --version` → **2.1.289** (2.1.287 and 2.1.288 also in `~/.local/share/claude/versions`).
+`smoke_test.py` **PASS — 16/16** against it. A second paid run after that day's server change
+(`/api/image`, `image_urls`) scored **14/16**: `set_permission_mode` timed out (15 s) for `plan`
+and `ask` before the turn, while a Windows Sandbox VM was installing, two `test_no_console` boots
+and a review agent were running. The smoke file's own posture section, cut off before the turn
+(free: control requests only), then passed **3/3** on the same code. Recorded as load, not a
+defect; nothing in that change touches the control channel. `test_tui_vocab.py` went 81/84: no load-bearing chord
+moved; `Settings`/`Plugin`/`Agents` gained bindings and the paste chip's function took its label
+as a third parameter defaulting to `"Pasted text"` (both recorded in `wiki/tui-keys.md` §"What
+2.1.289 moved"; the gate accepts either shape). No wrapper port needed.
