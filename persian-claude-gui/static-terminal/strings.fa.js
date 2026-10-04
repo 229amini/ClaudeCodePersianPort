@@ -501,6 +501,7 @@ window.FA = {
   slPosturePlan: "حالت طرح روشن",
   slPostureAcceptEdits: "پذیرش خودکار ویرایش‌ها روشن",
   slPostureAuto: "حالت خودکار روشن",
+  slPostureAutoApprove: "تأیید همه روشن",
   slPostureBypass: "دور زدن اجازه‌ها",
   slPostureHint: "shift+tab برای تغییر",
 
@@ -699,8 +700,8 @@ window.FA = {
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
   postureAcceptEdits: "ویرایش آزاد",
   postureAcceptEditsNote: "ویرایش فایل‌ها را بی‌پرسش می‌پذیرد",
-  postureAutoApprove: "خودکار",
-  postureAutoApproveNote: "همه‌چیز را بی‌پرسش انجام می‌دهد",
+  postureAutoApprove: "تأیید همه",
+  postureAutoApproveNote: "هر درخواست را بی‌پرسش تأیید می‌کند و می‌شمارد",
   /* One line under every picker, because a list nobody told you how to answer
      is a list you answer with the mouse. */
   pickerHint: "با شماره یا ↑↓ و Enter انتخاب کنید · Esc برای بستن",
@@ -708,7 +709,7 @@ window.FA = {
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
-  autoWhyPosture: "سطح اجازه: خودکار",
+  autoWhyPosture: "سطح اجازه: تأیید همه",
   /* Message marks (js/marks.js, pcg-8ip — the same keys in both editions). */
   markJustNow: "همین حالا",
   markMinutesAgo: "{n} دقیقهٔ پیش",

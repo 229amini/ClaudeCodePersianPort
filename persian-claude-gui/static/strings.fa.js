@@ -329,14 +329,14 @@ window.FA = {
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
   postureAcceptEdits: "ویرایش آزاد",
   postureAcceptEditsNote: "فایل‌های پروژه را بدون پرسش ویرایش می‌کند؛ برای اجرای دستور باز هم می‌پرسد",
-  postureAutoApprove: "خودکار",
+  postureAutoApprove: "تأیید همه",
   postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
   postureFailed: "تغییر سطح اجازه ممکن نشد",
   autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
-  autoWhyPosture: "سطح اجازه: خودکار",
+  autoWhyPosture: "سطح اجازه: تأیید همه",
 
   /* --- the CLI features the terminal edition already had (E3) ---------------
      Every string below belongs to something the real `claude` does in a
