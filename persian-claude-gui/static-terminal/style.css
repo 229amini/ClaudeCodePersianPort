@@ -4581,3 +4581,17 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   .diff-side { inline-size: 100%; border-inline-start: 0; }
 }
 }
+
+/* --- Focus view (pcg-ahh.5, js/focus.js) -----------------------------------
+
+   A turn's process rows fold behind its first one, which keeps its place and
+   says only how many steps it holds. Nothing else moves: the rows are still
+   in the log, hidden, so the renderer's own sibling reads stay true. */
+body.focus-view .log > .focus-proc:not(.focus-head):not(.focus-open) { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > :not(summary) { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > summary > * { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
+  content: attr(data-focus-label);
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
+}

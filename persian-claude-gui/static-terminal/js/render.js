@@ -23,6 +23,7 @@ import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { paintRing } from "./bar.js";
+import { scheduleFocus } from "./focus.js";
 import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
          foldLong, openDiff, closeDiff } from "./marks.js";
 /* Only the two label helpers are still module-level in controls.js; everything
@@ -172,6 +173,7 @@ function append(el, { stick = true } = {}) {
   // reported a step of its own.
   (nest ?? toolHome(el)).append(el);
   if (wasAtBottom) stickSoon(log);
+  scheduleFocus(log);   // Focus view folds the new row too (focus.js)
   return el;
 }
 

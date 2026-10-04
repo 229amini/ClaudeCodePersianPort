@@ -788,3 +788,19 @@ defect; nothing in that change touches the control channel. `test_tui_vocab.py` 
 moved; `Settings`/`Plugin`/`Agents` gained bindings and the paste chip's function took its label
 as a third parameter defaulting to `"Pasted text"` (both recorded in `wiki/tui-keys.md` §"What
 2.1.289 moved"; the gate accepts either shape). No wrapper port needed.
+
+### Fork from a message: `--resume-session-at`, measured free (2026-10-04, 2.1.289)
+
+Hidden from `--help`, present in the parser: `--resume-session-at <message id>` — "When resuming,
+only messages up to and including the chain entry with <message.id>". Spawned over the window's
+own pipe (`-p --input-format stream-json --output-format stream-json --verbose`) as
+`--resume X --fork-session --resume-session-at <uuid of the first answer>` with `--model
+bogus-model-pcg`, one user frame sent: the result was `success`, `is_error: true`,
+`total_cost_usd: 0`, and the NEW transcript held exactly the first question, the first answer and
+the new prompt; the source file still held all four records. So the cut is the CLI's own, it
+works headless, and it costs nothing until a real turn. Any chain entry's `uuid` is accepted; a
+fork that leaves a user message OUT is cut at that record's `parentUuid` (`server.py
+chain_entry`). The binary also has `--rewind-files <user-message-id>` ("Restore files to state at
+the specified user message and exit (requires --resume)"), which the window does **not** use —
+`pcg-ahh.4` forks the conversation and leaves files alone. Probe script: kept out of the repo; the
+recipe is the paragraph above.

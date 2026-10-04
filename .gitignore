@@ -43,4 +43,7 @@ persian-claude-gui/probe_v21_findings.json
 persian-claude-gui/shots/
 ref/
 persian-claude-gui/static*/_shot_probe.html
+# Every headless gate writes a _<name>_probe.html next to index.html and deletes it on exit;
+# one left behind by an interrupted run must never be committed.
+persian-claude-gui/static*/_*_probe.html
 persian-claude-gui/static*/_probe_edge.html
