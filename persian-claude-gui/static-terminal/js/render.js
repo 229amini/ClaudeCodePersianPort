@@ -15,7 +15,7 @@ import { renderMarkdown, pathEl, linesAuto, fillInline, autoDir } from "./bidi.j
    through the renderer. Only hoisted function declarations cross this edge, and
    only at event time — never while the modules are still evaluating. */
 import {
-  setChrome, refreshProjects, setCurrentSession,
+  setChrome, refreshProjects, setCurrentSession, forkFrom,
 } from "./chrome.js";
 /* The permission dialog moved out of chrome.js at MA3-T1: it is per cell, and
    the sidebar is not. Same cycle rules — nothing crosses at evaluation time. */
@@ -642,8 +642,16 @@ const marked = new Map();          // uuid -> the message element
 const pinsAsked = new Set();       // session ids already fetched
 
 function markMessage(el, uuid, ts, text) {
+  // A fork from an answer keeps it; from something the person said it keeps
+  // what came BEFORE, and the words go back into the new prompt (the CLI's
+  // /rewind, as a new conversation: this one is never cut). The tab is read
+  // at click time — a message can be parked and placed in another pane.
+  const mine = el.classList.contains("user");
   decorate(el, { uuid, ts, text, pinned: !!uuid && pinned.has(uuid),
-                 onPin: uuid ? (on) => togglePin(el, uuid, text, on) : null });
+                 onPin: uuid ? (on) => togglePin(el, uuid, text, on) : null,
+                 onFork: uuid ? () => forkFrom({ el, uuid, before: mine, text: mine ? text : "" })
+                   : null,
+                 forkTitle: mine ? FA.markForkBefore : FA.markFork });
   if (uuid) marked.set(uuid, el);
 }
 

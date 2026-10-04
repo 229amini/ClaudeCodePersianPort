@@ -1627,6 +1627,48 @@ export function newChatHere() {
 /* The one failure a user can actually cause here: six conversations already
    open. The server answers 409 with `max_tabs`; api() throws with the status in
    its message, which is the same shape agents.js reads a 404 out of. */
+/* A new conversation from one message (pcg-ahh.4, the VS Code extension's
+   «Fork conversation from here»). The server spawns the copy with the CLI's own
+   --resume-session-at; the conversation it came from is never cut. A forked CLI
+   does not re-emit what it kept, so the new column is drawn from the source
+   transcript, cut at the same message: through it for an answer, before it for
+   something the person said — whose words then go back into the new prompt to
+   be changed and sent again, which is what the CLI's /rewind does in place. */
+export async function forkFrom({ el, uuid, before = false, text = "" }) {
+  // The pane the message is drawn in names the conversation it belongs to.
+  const tab = tabBridge?.cells?.().find((c) => c.root?.contains(el))?.tab;
+  const entry = tab ? openTabEntry(tab) : null;
+  if (!entry?.session_id || !uuid) return void bubble("error", FA.forkFailed);
+  let data;
+  try {
+    data = await api("/api/session/fork", { tab, at: uuid, before });
+  } catch (err) {
+    return void bubble("error", /-> 409$/.test(err?.message ?? "") ? FA.maxTabs : FA.forkFailed);
+  }
+  let events = [];
+  if (data.at) {
+    try {
+      const history = await api("/api/session?id=" + encodeURIComponent(entry.session_id)
+                                + "&cwd=" + encodeURIComponent(entry.cwd || "")
+                                + worktreeQuery(entry.worktree));
+      const all = history.events ?? [];
+      const at = all.findIndex((ev) => ev.uuid === uuid);
+      events = at < 0 ? [] : all.slice(0, before ? at : at + 1);
+    } catch (err) {
+      events = [];   // the copy exists; only its picture of the past is missing
+    }
+  }
+  await switchToTab(data.tab);
+  renderInto(data.tab, events);
+  if (tabBridge?.active?.() === data.tab) {
+    bubble("assistant", FA.forkDone).classList.add("meta");
+    if (text) {
+      tabBridge?.cells?.().find((c) => c.tab === data.tab)?.composer?.restoreDraft(text);
+    }
+  }
+  refreshProjects();
+}
+
 function reportOpenFailure(err) {
   const message = err?.message ?? "";
   // 400 reaches here from one place only: a worktree was asked for in a folder

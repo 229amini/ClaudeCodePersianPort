@@ -1867,7 +1867,7 @@ with tempfile.TemporaryDirectory() as tmp:
     try:
         # Stubbed spawn: no CLI, but slow enough to keep the threads overlapping.
         server.ClaudeSession.start = (
-            lambda self, resume_id=None, fork_id=None: time.sleep(0.02))
+            lambda self, resume_id=None, fork_id=None, fork_at=None: time.sleep(0.02))
         server.RECENTS_FILE = Path(tmp) / "recents.json"
         server.Handler.token = "unit-token"
         server.Handler.hub = server.Hub()
@@ -2297,6 +2297,23 @@ check("fork still wins over resume, worktree or not",
       and server.spawn_args(resume_id="a", fork_id="b").count("--resume") == 1)
 check("every spawn still carries the base args",
       server.spawn_args(worktree="x")[:len(server.CLAUDE_ARGS)] == server.CLAUDE_ARGS)
+# pcg-ahh.4: a fork from a message is the CLI's own cut, measured free on 2.1.289.
+check("a fork from a message cuts the copy with --resume-session-at",
+      server.spawn_args(fork_id="s", fork_at="m-1", worktree="w")[-7:]
+      == ["--resume", "s", "--fork-session", "--resume-session-at", "m-1", "--worktree", "w"])
+check("...and a plain resume never carries a cut",
+      "--resume-session-at" not in server.spawn_args(resume_id="s", fork_at="m-1"))
+with tempfile.TemporaryDirectory() as tmp:
+    chain = Path(tmp) / "c.jsonl"
+    chain.write_text('{"type":"user","uuid":"u-1","parentUuid":null}\n'
+                     'not json u-2\n'
+                     '{"type":"assistant","uuid":"a-1","parentUuid":"u-1"}\n'
+                     '{"type": "user", "uuid": "u-2", "parentUuid": "a-1"}\n', encoding="utf-8")
+    check("chain_entry finds a record by its uuid, spaced JSON too, and skips a broken line",
+          server.chain_entry(chain, "u-2") == {"type": "user", "uuid": "u-2", "parentUuid": "a-1"}
+          and server.chain_entry(chain, "u-1")["parentUuid"] is None
+          and server.chain_entry(chain, "nope") is None
+          and server.chain_entry(Path(tmp) / "missing.jsonl", "u-1") is None)
 
 print("resolve_worktree: the name is a path segment off a request")
 with tempfile.TemporaryDirectory() as tmp:

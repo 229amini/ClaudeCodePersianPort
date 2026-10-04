@@ -7,6 +7,8 @@ VS Code extension: build the five gaps that matter most, in order.
   2. «۲ از ۵» on stacked permission requests (the Questions row is a spec case);
   3. the window's approve-all posture is no longer named «خودکار», the name of
      the CLI's own Auto mode, which it is not;
+  4. a new conversation from a message: through an answer, or from before
+     something the person said with its words back in the prompt;
 
 Each later feature adds its section here. Free: no CLI, no login. Every route
 is stubbed inside the real index.html.
@@ -36,7 +38,7 @@ PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
 <script type="module">
 import { refreshProjects } from "/static/js/chrome.js";
-import { routeEvent, applyTabs } from "/static/js/app.js";
+import { routeEvent, applyTabs, cellOf, switchTab } from "/static/js/app.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FA = window.STRINGS;
 const calls = [];
@@ -56,12 +58,28 @@ window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
   if (u.startsWith("/api/projects")) return json(PROJECTS);
-  if (u.startsWith("/api/tabs")) return json({ tabs: [], active: "" });
+  if (u.startsWith("/api/tabs")) return json({ tabs: TABS_NOW, active: TABS_NOW.at(-1)?.tab ?? "" });
+  if (u.startsWith("/api/session/fork")) {
+    const b = JSON.parse(init.body);
+    const tab = "fork-" + (++forks);
+    TABS_NOW.push({ tab, cwd: "C:/kar/alef", session_id: "" });
+    return json({ ok: true, tab, forked_from: "s-src",
+                  at: b.before ? (b.at === "u2" ? "a1" : null) : b.at });
+  }
+  if (u.startsWith("/api/session?")) return json({ events: HISTORY });
   if (u.startsWith("/api/session/rename")) return json({ ok: true, title: "x" });
   if (u.startsWith("/api/session")) return json({ events: [] });
   if (u.startsWith("/api/agents")) return json({ agents: [] });
   return json({ ok: true });
 };
+const TABS_NOW = [];
+let forks = 0;
+const say = (uuid, text) => ({ type: "user", uuid, timestamp: "2026-10-04T10:00:00Z",
+  message: { content: [{ type: "text", text }] } });
+const answer = (uuid, text) => ({ type: "assistant", uuid, timestamp: "2026-10-04T10:00:05Z",
+  message: { content: [{ type: "text", text }] } });
+const HISTORY = [say("u1", "پرسش یکم"), answer("a1", "پاسخ یکم"),
+                 say("u2", "پرسش دوم"), answer("a2", "پاسخ دوم")];
 const field = document.getElementById("side-search");
 const nav = document.getElementById("projects");
 const type = async (text) => {
@@ -126,6 +144,47 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   edit2.value = "نه";
   edit2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await sleep(30);
+  // --- 4. a new conversation from a message ---
+  TABS_NOW.splice(0, TABS_NOW.length, { tab: "t9", cwd: "C:/kar/alef", session_id: "s-src" });
+  applyTabs({ tabs: TABS_NOW, active: "t9" });
+  await sleep(80);
+  for (const ev of HISTORY) {
+    if (ev.type === "user") routeEvent({ tab: "t9", type: "wrapper", subtype: "user_echo",
+      uuid: ev.uuid, text: ev.message.content[0].text, timestamp: ev.timestamp });
+    else {
+      routeEvent({ tab: "t9", ...ev });
+      routeEvent({ tab: "t9", type: "result", subtype: "success", is_error: false,
+                   total_cost_usd: 0, duration_ms: 5 });
+      routeEvent({ tab: "t9", type: "command_lifecycle", state: "completed",
+                   command_uuid: HISTORY[HISTORY.indexOf(ev) - 1].uuid });
+    }
+  }
+  await sleep(60);
+  const logOf = (tab) => cellOf(tab)?.root.querySelector(".log");
+  const src = () => logOf("t9");
+  const forkBtn = (uuid) => src()?.querySelector(`[data-uuid="${uuid}"] > .msg-acts .msg-fork`);
+  out.forkTitles = [forkBtn("a1")?.title, forkBtn("u2")?.title];
+  out.forkLabelled = forkBtn("a1")?.getAttribute("aria-label") === FA.markFork;
+  out.forkText = forkBtn("a1")?.textContent ?? null;
+  forkBtn("a1")?.click();
+  await sleep(250);
+  const posts = () => calls.filter((c) => c.url.startsWith("/api/session/fork"));
+  out.forkBody1 = posts()[0]?.body;
+  const newLog = () => logOf("fork-1");
+  const said = (log) => [...(log?.querySelectorAll(".msg.user, .msg.assistant") ?? [])]
+    .filter((m) => !m.classList.contains("meta")).map((m) => m.dataset.uuid ?? "").join();
+  out.fork1Rows = said(newLog());
+  out.fork1Note = !!newLog()?.querySelector(".msg.meta") &&
+    newLog().textContent.includes(FA.forkDone);
+  await switchTab("t9");
+  await sleep(80);
+  out.srcKept = said(src());
+  // From before something the person said: the turns before it, its words in the prompt.
+  forkBtn("u2")?.click();
+  await sleep(250);
+  out.forkBody2 = posts()[1]?.body;
+  out.fork2Rows = said(logOf("fork-2"));
+  out.fork2Draft = cellOf("fork-2")?.root.querySelector("textarea.input")?.value;
   // --- 3. the approve-all posture's names ---
   out.postureNames = [FA.postureAutoApprove, FA.slPostureAutoApprove, FA.autoWhyPosture];
   out.cliAuto = FA.slPostureAuto;
@@ -216,6 +275,24 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("both guides name it «تأیید همه» and say it is not the CLI's own Auto",
           all("<b>تأیید همه</b>" in h and "<li><b>خودکار</b>" not in h
               and "این حالت «خودکار» خود کلاد نیست" in h for h in helps))
+
+    # 4. fork from a message
+    check("an answer offers «گفتگوی تازه از اینجا», a user message the before-it version",
+          m.get("forkTitles") == ["گفتگوی تازه از اینجا",
+                                  "گفتگوی تازه از پیش از این پیام، با همین متن در جای نوشتن"]
+          and m.get("forkLabelled") and m.get("forkText") == "",
+          f"{m.get('forkTitles')}, text {m.get('forkText')!r}")
+    check("a fork from an answer asks for THIS tab cut AT that message",
+          m.get("forkBody1") == {"tab": "t9", "at": "a1", "before": False}, f"{m.get('forkBody1')}")
+    check("...and the new column shows the conversation through it, nothing after",
+          m.get("fork1Rows") == "u1,a1" and m.get("fork1Note"),
+          f"rows {m.get('fork1Rows')!r}, note {m.get('fork1Note')}")
+    check("...while the conversation it came from keeps every message",
+          m.get("srcKept") == "u1,a1,u2,a2", f"{m.get('srcKept')!r}")
+    check("a fork from a user message is cut BEFORE it, its words back in the new prompt",
+          m.get("forkBody2") == {"tab": "t9", "at": "u2", "before": True}
+          and m.get("fork2Rows") == "u1,a1" and m.get("fork2Draft") == "پرسش دوم",
+          f"{m.get('forkBody2')}, rows {m.get('fork2Rows')!r}, draft {m.get('fork2Draft')!r}")
 
     # 2. N of M
     check("a lone permission request shows no count", m.get("lone") == "", f"«{m.get('lone')}»")
