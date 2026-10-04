@@ -439,7 +439,10 @@ async function run() {
 
 def write_probe(now: float) -> None:
     page = (STATIC / "index.html").read_text(encoding="utf-8")
-    page = page.replace("{{VERSION}}", "0.0.0").replace("{{TITLE}}", "shot")
+    # The edition's real title and version: these shots also illustrate the
+    # README, where «v0.0.0» in the footer would be a claim about nothing.
+    _folder, title, version = EDITIONS[EDITION]
+    page = page.replace("{{VERSION}}", version).replace("{{TITLE}}", title)
     marker = '<body class="app">'
     if marker not in page:
         sys.exit("index.html no longer opens with " + marker)

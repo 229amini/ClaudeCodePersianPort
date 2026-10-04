@@ -345,3 +345,20 @@ tool, Python `write_text`) still work. Close the sandbox or edit in place.
 mapped folder and a `<LogonCommand>` that runs `setup.ps1` with `*>&1 | Out-File` into that
 folder, then copies `%TEMP%\persian-claude-setup-log.txt` beside it. The host reads the logs
 without touching the sandbox's UI.
+
+## The README's screenshots (2026-10-04)
+
+`docs/screenshots/*.png` and `docs/icon.png` are the public face of the repo, and they are
+generated, not hand-made:
+
+- **Screenshots:** `shots.py` with `PCG_UI` set, at 1280x800, copied out of the git-ignored
+  `persian-claude-gui/shots/`. The scenes used are web `home` and terminal `conversation`,
+  `permission` and `panes3`. Since 2026-10-04 `shots.py` writes the edition's real title and
+  version into the page; it used to print «v0.0.0» in the footer.
+- **Do not use the web edition's `conversation` or `permission` shot.** Its bottom status bar
+  prints the fixture's raw model identifier.
+- **Icon:** the 256 px PNG pulled out of `assets/icon.ico`, which holds PNG frames
+  (`make_icon.py`).
+
+Regenerate the shots whenever the UI changes visibly. The fixtures are fictional (project names,
+paths, costs), so nothing from a real machine reaches the public page.
