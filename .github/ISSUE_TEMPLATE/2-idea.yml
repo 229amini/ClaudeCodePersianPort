@@ -1,0 +1,30 @@
+name: پیشنهاد یا نظر
+description: امکانی که کم دارید، چیزی که بهتر می‌شود، یا فقط تجربه‌تان از کار با برنامه
+title: "[پیشنهاد] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        هر نظری خوش آمد است — حتی «این قسمت گیجم کرد». این برنامه با بازخورد کاربران فارسی‌زبان جلو می‌رود.
+        You can also write in English.
+  - type: textarea
+    id: idea
+    attributes:
+      label: چه چیزی؟
+      description: چه می‌خواهید، یا چه چیزی را بهتر می‌کنید؟
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: چرا به کارتان می‌آید؟
+      description: برای چه کاری لازمش دارید؟ یک مثال واقعی خیلی کمک می‌کند.
+  - type: dropdown
+    id: edition
+    attributes:
+      label: با کدام نسخه کار می‌کنید؟
+      options:
+        - کلاد فارسی
+        - کلاد فارسی — ترمینال
+        - هر دو
