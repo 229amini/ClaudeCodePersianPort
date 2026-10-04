@@ -296,6 +296,35 @@ pre, code, .path, .diff, .tool-output, .mono {
    the margins the new-chat button used to. */
 .side-actions { display: flex; gap: 6px; margin: 2px 10px 10px; }
 .side-actions .new-chat { flex: 1; margin: 0; }
+
+/* Searching the conversations (pcg-ahh.1): a quiet field under the actions,
+   the same ground and border language as the composer, no icon. */
+.side-search {
+  display: block;
+  box-sizing: border-box;
+  inline-size: calc(100% - 20px);
+  margin: 0 10px 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-meta);
+}
+.side-search::placeholder { color: var(--fg-faint); }
+.side-search:focus-visible { outline: none; border-color: var(--accent); }
+/* A hit names the project it lives in, after its own name. */
+.sess-proj {
+  flex: none;
+  max-inline-size: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
+}
 .layout-btn {
   flex: none;
   display: grid;
@@ -968,6 +997,7 @@ body.rail .tab-name {
    is no tree, so it says nothing. */
 body.rail #projects-title,
 body.rail #projects,
+body.rail .side-search,
 body.rail .tab-proj,
 body.rail .wt-chip,
 body.rail .tab-row .tab-close,
@@ -3334,6 +3364,15 @@ body.rail .side-zoom { display: none; }
   font-size: var(--fs-meta);
   line-height: var(--lh-ui);
 }
+/* «۲ از ۵»: stacked requests (pcg-ahh.2), at the title's far end. `.perm p`
+   below is (1,0,1), so this says `.perm .perm-count` to win its margin. */
+.perm .perm-count {
+  float: inline-end;
+  margin: 2px 0 0;
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
 .perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: var(--wt-title); }
 .perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
 
@@ -3969,6 +4008,23 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .q-answer { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .q-picked { font-weight: var(--wt-title); color: var(--accent); }
 
+/* The Questions row (pcg-ahh.2, the VS Code extension's): once a question is
+   answered its card shuts and this stays in the open, one line per question —
+   what was asked, then what was picked. */
+.q-row {
+  display: grid;
+  gap: 4px;
+  margin-block: 4px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  font-size: .92em;
+}
+.q-row-head { color: var(--fg-faint); font-size: var(--fs-meta); }
+.q-row .q-answer { color: var(--fg-muted); }
+.q-row .q-asked::after { content: ":"; }
+
 .meta { color: var(--fg-muted); font-size: .85em; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -4524,4 +4580,18 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   .diff-open > .log { margin-inline-end: 0; }
   .diff-side { inline-size: 100%; border-inline-start: 0; }
 }
+}
+
+/* --- Focus view (pcg-ahh.5, js/focus.js) -----------------------------------
+
+   A turn's process rows fold behind its first one, which keeps its place and
+   says only how many steps it holds. Nothing else moves: the rows are still
+   in the log, hidden, so the renderer's own sibling reads stay true. */
+body.focus-view .log > .focus-proc:not(.focus-head):not(.focus-open) { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > :not(summary) { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > summary > * { display: none; }
+body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
+  content: attr(data-focus-label);
+  color: var(--fg-faint);
+  font-size: var(--fs-meta);
 }

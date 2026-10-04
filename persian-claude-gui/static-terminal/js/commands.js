@@ -36,6 +36,7 @@ import { bubble, label, glyph, state, postureText } from "./render.js";
 import { focusSessions, chooseProject, switchToTab, splitView } from "./chrome.js";
 import { effortLabel, styleLabel } from "./controls.js";
 import { unfoldAgents } from "./agents.js";
+import { toggleFocus } from "./focus.js";
 
 const FA = window.STRINGS;
 
@@ -317,7 +318,7 @@ const COMPOSER_VERBS = ["bash", "model", "effort", "output-style",
    order would work and would also silently reorder the help the next time
    someone alphabetised a table. */
 const HELP_ORDER = ["help", "resume", "status", "copy", "export", "branch",
-                    "btw", "bash", "tasks", "split", "cd", "add-dir", "memory",
+                    "btw", "bash", "tasks", "focus", "split", "cd", "add-dir", "memory",
                     "config", "hooks", "keybindings", "model", "effort",
                     "output-style", "permissions", "clear"];
 
@@ -343,6 +344,16 @@ function helpBlock(arg, cell) {
   });
 }
 
+/* --- /focus -----------------------------------------------------------------
+
+   Focus view (focus.js): every turn's steps behind one row. The same switch as
+   Ctrl+Alt+F; the line says which way it went, since the change is the
+   absence of rows and is easy to miss. */
+function focusView() {
+  note(toggleFocus() ? FA.focusOn : FA.focusOff);
+  return true;
+}
+
 /* --- the table -------------------------------------------------------------
 
    `arg` is whatever followed the verb, trimmed. A verb that ignores its
@@ -363,6 +374,7 @@ export const WINDOW_COMMANDS = {
   keybindings: (arg, cell) => openFile("keybindings", cell),
   memory: memoryPicker,
   tasks,
+  focus: focusView,
   split: splitGrid,
 };
 

@@ -66,6 +66,7 @@ import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js"
 import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 import { makeChanges } from "./changes.js";
 import { initZoom, readPref, writePref, cssPx } from "./prefs.js";
+import { initFocus } from "./focus.js";
 
 const FA = window.STRINGS;
 
@@ -1370,7 +1371,8 @@ initNewSession({
 });
 
 initChrome();
-initZoom();   // §D13: does nothing unless ZOOM_MODE (prefs.js) says "css"
+initZoom();
+initFocus();   // pcg-ahh.5: Focus view, the window's own preference   // §D13: does nothing unless ZOOM_MODE (prefs.js) says "css"
 
 /* --- transport ------------------------------------------------------------ */
 

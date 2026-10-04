@@ -5,8 +5,9 @@
    are byte-identical (test_marks.py says so). A LEAF: it imports nothing; the
    renderer hands in what it knows and gets elements back.
 
-     decorate()    under a message, on hover: ⧉ copy, the pin, and when it was
-                   said («۹ دقیقهٔ پیش», the exact moment on hover)
+     decorate()    under a message, on hover: ⧉ copy, the pin, a fork from
+                   here when the edition offers one (pcg-ahh.4), and when it
+                   was said («۹ دقیقهٔ پیش», the exact moment on hover)
      paintRail()   the pinned messages as dashes at the top of the transcript;
                    hovering lists «شروع گفتگو» and each pin, a click goes there
      changeCard()  at the end of a turn, «N فایل ویرایش شد  +A −D» with one row
@@ -83,7 +84,7 @@ export function pinLabel(text) {
    absolutely placed, so it costs the transcript no height (test_split measures
    what the log gets), and it is invisible until the message is hovered or
    focused. */
-export function decorate(msg, { uuid, ts, text, pinned = false, onPin }) {
+export function decorate(msg, { uuid, ts, text, pinned = false, onPin, onFork, forkTitle }) {
   if (!msg || msg.querySelector(":scope > .msg-acts")) return;
   if (uuid) msg.dataset.uuid = uuid;
   if (ts) msg.dataset.ts = String(ts);
@@ -112,6 +113,21 @@ export function decorate(msg, { uuid, ts, text, pinned = false, onPin }) {
       + '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/></svg>';
     pin.addEventListener("click", () => onPin(!msg.classList.contains("is-pinned")));
     acts.append(pin);
+  }
+  // A new conversation from this point (pcg-ahh.4). Only where the edition
+  // hands in a handler, and only for a message with its own uuid — that is
+  // what the CLI cuts the copy at.
+  if (uuid && onFork) {
+    const fork = el("button", "msg-act msg-fork");
+    fork.type = "button";
+    fork.title = forkTitle || FA.markFork;
+    fork.setAttribute("aria-label", fork.title);
+    fork.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" '
+      + 'stroke-width="1.8" stroke-linecap="round" aria-hidden="true">'
+      + '<circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="7" r="2"/>'
+      + '<path d="M7 7v10M17 9c0 4-10 3-10 8"/></svg>';
+    fork.addEventListener("click", () => onFork());
+    acts.append(fork);
   }
   const when = el("span", "msg-when");
   acts.append(when);

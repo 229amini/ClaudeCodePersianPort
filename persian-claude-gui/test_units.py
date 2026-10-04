@@ -943,6 +943,17 @@ ev = server._normalize_transcript_event({"type": "assistant", "uuid": "dcc1f12b-
     "timestamp": "2026-09-29T12:10:48.344Z", "message": {"content": [{"type": "text", "text": "x"}]}})
 check("history keeps each message's uuid and time for the marks",
       ev.get("uuid") == "dcc1f12b-6db3" and ev.get("timestamp") == "2026-09-29T12:10:48.344Z")
+# pcg-ahh.2: an answered question replays as the Questions row, so the
+# transcript's toolUseResult rides on in the live stream's spelling.
+_qs = [{"question": "کدام؟", "options": [{"label": "A"}]}]
+ev = server._normalize_transcript_event({"type": "user", "toolUseResult": {
+    "questions": _qs, "answers": {"کدام؟": "A"}, "extra": "dropped"},
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}})
+check("an answered question's structured result replays as tool_use_result",
+      ev.get("tool_use_result") == {"questions": _qs, "answers": {"کدام؟": "A"}})
+ev = server._normalize_transcript_event({"type": "user", "toolUseResult": {"stdout": "x"},
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}})
+check("...and any other tool's result does not", "tool_use_result" not in ev)
 
 # --- resume prefill ----------------------------------------------------------
 # After /api/session/resume the bar stayed blank until the first turn: every
@@ -1796,6 +1807,39 @@ with tempfile.TemporaryDirectory() as tmp:
             finally:
                 server.MAX_IMAGE_BYTES = saved_cap
             server.SENT_IMAGES.discard(str(png.resolve()))
+
+        # pcg-ahh.1: renaming a CLOSED conversation appends the CLI's own
+        # custom-title record, so the sidebar and `claude --resume` both read it.
+        proj = Path(tmp) / "proj"
+        proj.mkdir()
+        sid = str(uuid.uuid4())
+        folder = server.PROJECTS_DIR / str(proj).replace(":", "-").replace("\\", "-").replace("/", "-")
+        folder.mkdir()
+        jsonl = folder / f"{sid}.jsonl"
+        jsonl.write_text('{"type":"user","message":{"role":"user","content":"سلام"},'
+                         '"timestamp":"2026-10-04T10:00:00Z"}', encoding="utf-8")   # no final newline
+
+        def rename(body: dict) -> int:
+            c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+            c.request("POST", "/api/session/rename?t=unit-token",
+                      body=json.dumps(body), headers={"Content-Type": "application/json"})
+            r = c.getresponse()
+            r.read()
+            c.close()
+            return r.status
+
+        status = rename({"session_id": sid, "path": str(proj), "title": "  نام   تازه  "})
+        lines = jsonl.read_text(encoding="utf-8").splitlines()
+        check("POST /api/session/rename on a closed session appends one custom-title line",
+              status == 200 and len(lines) == 2
+              and json.loads(lines[1]) == {"type": "custom-title", "customTitle": "نام تازه",
+                                           "sessionId": sid})
+        check("...which the sidebar reads back as the title",
+              server.session_meta(jsonl)[1] == "نام تازه")
+        check("...and an empty name or an unknown session is refused, writing nothing",
+              rename({"session_id": sid, "path": str(proj), "title": "  "}) == 400
+              and rename({"session_id": str(uuid.uuid4()), "path": str(proj), "title": "x"}) == 404
+              and len(jsonl.read_text(encoding="utf-8").splitlines()) == 2)
     finally:
         if httpd is not None:
             httpd.shutdown()
@@ -1823,7 +1867,7 @@ with tempfile.TemporaryDirectory() as tmp:
     try:
         # Stubbed spawn: no CLI, but slow enough to keep the threads overlapping.
         server.ClaudeSession.start = (
-            lambda self, resume_id=None, fork_id=None: time.sleep(0.02))
+            lambda self, resume_id=None, fork_id=None, fork_at=None: time.sleep(0.02))
         server.RECENTS_FILE = Path(tmp) / "recents.json"
         server.Handler.token = "unit-token"
         server.Handler.hub = server.Hub()
@@ -2253,6 +2297,23 @@ check("fork still wins over resume, worktree or not",
       and server.spawn_args(resume_id="a", fork_id="b").count("--resume") == 1)
 check("every spawn still carries the base args",
       server.spawn_args(worktree="x")[:len(server.CLAUDE_ARGS)] == server.CLAUDE_ARGS)
+# pcg-ahh.4: a fork from a message is the CLI's own cut, measured free on 2.1.289.
+check("a fork from a message cuts the copy with --resume-session-at",
+      server.spawn_args(fork_id="s", fork_at="m-1", worktree="w")[-7:]
+      == ["--resume", "s", "--fork-session", "--resume-session-at", "m-1", "--worktree", "w"])
+check("...and a plain resume never carries a cut",
+      "--resume-session-at" not in server.spawn_args(resume_id="s", fork_at="m-1"))
+with tempfile.TemporaryDirectory() as tmp:
+    chain = Path(tmp) / "c.jsonl"
+    chain.write_text('{"type":"user","uuid":"u-1","parentUuid":null}\n'
+                     'not json u-2\n'
+                     '{"type":"assistant","uuid":"a-1","parentUuid":"u-1"}\n'
+                     '{"type": "user", "uuid": "u-2", "parentUuid": "a-1"}\n', encoding="utf-8")
+    check("chain_entry finds a record by its uuid, spaced JSON too, and skips a broken line",
+          server.chain_entry(chain, "u-2") == {"type": "user", "uuid": "u-2", "parentUuid": "a-1"}
+          and server.chain_entry(chain, "u-1")["parentUuid"] is None
+          and server.chain_entry(chain, "nope") is None
+          and server.chain_entry(Path(tmp) / "missing.jsonl", "u-1") is None)
 
 print("resolve_worktree: the name is a path segment off a request")
 with tempfile.TemporaryDirectory() as tmp:
