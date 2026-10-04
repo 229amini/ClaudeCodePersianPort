@@ -73,7 +73,8 @@
 ## نصب در سه قدم
 
 ۱. **[آخرین نسخه را دانلود کنید](https://github.com/229amini/ClaudeCodePersianPort/releases/latest)**
-   (فایل `Source code (zip)`) و از حالت فشرده خارج کنید.
+   (فایل `Source code (zip)`) — یا از دکمهٔ سبز **Code** بالای همین صفحه، **Download ZIP** — و
+   از حالت فشرده خارج کنید.
 ۲. روی **`persian-claude-gui\setup.bat`** دوبار کلیک کنید.
 ۳. از میان‌برِ «کلاد فارسی» یا «کلاد فارسی — ترمینال» روی دسکتاپ بازش کنید.
 

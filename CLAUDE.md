@@ -781,14 +781,17 @@ editions, **29** each (the shared-file check is new), every web section negative
 
 **2026-10-04 (same day) — releases and a public front page.** User request: tag the releases
 and make the GitHub page invite Persian-speaking users to try the app and send feedback.
-- **Tags:** `v1.8.0` (web) and `terminal-v0.8.0` (terminal), each with a GitHub release. Their
-  "Source code (zip)" is the download the README points to.
+- **Tags: NOT created yet.** The cloud session's GitHub proxy refuses tag pushes, releases and
+  repo-settings writes (all three measured, HTTP 403 / remote hang-up). The release notes are in
+  `docs/releases/`; the owner publishes them from their PC (`gh release create v1.8.0 --target
+  main --notes-file docs/releases/v1.8.0.md`, same for `terminal-v0.8.0`). Until then the
+  README's "latest release" link and badge have nothing to point to.
 - **README:** rewritten as a Persian-first landing page: the pain, the features, both editions
   with screenshots, three install steps, an FAQ and a feedback call. The English developer
   section follows it, with its stale facts fixed (the check counts, a hardcoded interpreter path,
   the sidebar side, the posture count, and the never-executed `-Payload` claim).
-- **Feedback:** Persian issue forms in `.github/ISSUE_TEMPLATE/` (bug and idea); the repo's
-  About has a description and topics.
+- **Feedback:** Persian issue forms in `.github/ISSUE_TEMPLATE/` (bug and idea). The repo's
+  About (description and topics) is also left for the owner — the same proxy refused it.
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
