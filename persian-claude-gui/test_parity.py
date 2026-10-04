@@ -9,6 +9,7 @@ VS Code extension: build the five gaps that matter most, in order.
      the CLI's own Auto mode, which it is not;
   4. a new conversation from a message: through an answer, or from before
      something the person said with its words back in the prompt;
+  5. Focus view: each turn's steps behind one row (Ctrl+Alt+F, /focus).
 
 Each later feature adds its section here. Free: no CLI, no login. Every route
 is stubbed inside the real index.html.
@@ -39,6 +40,7 @@ PROBE_JS = r"""
 <script type="module">
 import { refreshProjects } from "/static/js/chrome.js";
 import { routeEvent, applyTabs, cellOf, switchTab } from "/static/js/app.js";
+import { runWindowCommand } from "/static/js/commands.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FA = window.STRINGS;
 const calls = [];
@@ -185,6 +187,70 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   out.forkBody2 = posts()[1]?.body;
   out.fork2Rows = said(logOf("fork-2"));
   out.fork2Draft = cellOf("fork-2")?.root.querySelector("textarea.input")?.value;
+  // --- 5. Focus view ---
+  await switchTab("t9");
+  await sleep(60);
+  const T = "t9";
+  const turn = async (uuid, text, parts) => {
+    routeEvent({ tab: T, type: "wrapper", subtype: "user_echo", uuid, text });
+    for (const part of parts) {
+      if (part.result) routeEvent({ tab: T, type: "user", message: { content: [
+        { type: "tool_result", tool_use_id: part.result, content: "ok" }] } });
+      else routeEvent({ tab: T, type: "assistant", uuid: uuid + "-" + Math.random(),
+                        message: { content: [part] } });
+    }
+    routeEvent({ tab: T, type: "result", subtype: "success", is_error: false,
+                 total_cost_usd: 0, duration_ms: 5 });
+    routeEvent({ tab: T, type: "command_lifecycle", state: "completed", command_uuid: uuid });
+  };
+  const todo = (id, content) => ({ type: "tool_use", id, name: "TodoWrite",
+    input: { todos: [{ content, status: "pending", activeForm: content }] } });
+  const bash = (id) => ({ type: "tool_use", id, name: "Bash", input: { command: "ls " + id } });
+  await turn("f1", "نوبت یک", [todo("td1", "کار کهنه"), bash("b1"), { result: "b1" },
+                                { type: "text", text: "میانهٔ پاسخ" },
+                                bash("b2"), { result: "b2" }, bash("b3"), { result: "b3" },
+                                { type: "text", text: "پایان پاسخ یک" }]);
+  await turn("f2", "نوبت دو", [bash("b4"), { result: "b4" }, todo("td2", "کار تازه"),
+                                { type: "text", text: "پایان پاسخ دو" }]);
+  await sleep(60);
+  const log = logOf(T);
+  const shown = (el) => !!el && getComputedStyle(el).display !== "none";
+  const rows = () => [...log.children];
+  const runs = () => rows().filter((el) => el.matches("details.run"));
+  const todos = () => rows().filter((el) => el.matches("details.card.todos"));
+  out.offAll = rows().filter((el) => el.matches("details.run, details.card.todos")).every(shown);
+  document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyF", key: "f",
+    ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
+  await sleep(60);
+  out.on = document.body.classList.contains("focus-view");
+  const heads = () => rows().filter((el) => el.classList.contains("focus-head"));
+  out.headLabels = heads().map((h) => h.querySelector(":scope > summary")?.dataset.focusLabel);
+  out.headTextHidden = heads().every((h) => !shown(h.querySelector(".run-text, .tool-name")));
+  out.runsShown = runs().map(shown).join();
+  out.todosShown = todos().map(shown).join();
+  out.todoHead = todos()[0].classList.contains("focus-head")
+    && !todos()[1].classList.contains("focus-proc");
+  out.msgsShown = [...log.querySelectorAll(":scope > .msg")].every(shown);
+  // Open turn one only. Its first folded row is the OLD to-do list, which was
+  // drawn open; the click must open the turn and leave that <details> as it was.
+  const wasOpen = heads()[0].open;
+  heads()[0].querySelector(":scope > summary").click();
+  await sleep(40);
+  out.afterOpen = runs().map(shown).join();
+  out.headStillClosed = heads()[1]?.classList.contains("focus-open") === false;
+  out.openNotToggled = rows().find((el) => el.matches("details.card.todos"))?.open === wasOpen;
+  // AltGr types a character on some layouts; it must not switch the view.
+  document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyF", key: "f", ctrlKey: true,
+    altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true }));
+  await sleep(30);
+  out.altGrKept = document.body.classList.contains("focus-view");
+  // /focus switches it off, and says so.
+  runWindowCommand("focus", "", cellOf(T));
+  await sleep(60);
+  out.offAgain = !document.body.classList.contains("focus-view")
+    && rows().every((el) => !el.classList.contains("focus-proc"))
+    && runs().every(shown);
+  out.offNote = log.textContent.includes(FA.focusOff);
   // --- 3. the approve-all posture's names ---
   out.postureNames = [FA.postureAutoApprove, FA.slPostureAutoApprove, FA.autoWhyPosture];
   out.cliAuto = FA.slPostureAuto;
@@ -293,6 +359,25 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           m.get("forkBody2") == {"tab": "t9", "at": "u2", "before": True}
           and m.get("fork2Rows") == "u1,a1" and m.get("fork2Draft") == "پرسش دوم",
           f"{m.get('forkBody2')}, rows {m.get('fork2Rows')!r}, draft {m.get('fork2Draft')!r}")
+
+    # 5. Focus view
+    check("Focus view is off by default: every step row is on screen", m.get("offAll"))
+    check("Ctrl+Alt+F folds each turn's steps behind ONE row that counts them",
+          m.get("on") and m.get("headLabels") == ["۴ مرحله", "۱ مرحله"] and m.get("headTextHidden"),
+          f"on {m.get('on')}, labels {m.get('headLabels')}, text hidden {m.get('headTextHidden')}")
+    check("...the later runs of a turn are hidden, the messages are not",
+          m.get("runsShown") == "false,false,true" and m.get("msgsShown"),
+          f"runs {m.get('runsShown')}, messages {m.get('msgsShown')}")
+    check("...and the LATEST to-do list stays in the open; an older one is the fold row",
+          m.get("todosShown") == "true,true" and m.get("todoHead"), f"{m.get('todosShown')}")
+    check("a click opens that turn's steps where they are, and only that turn's",
+          m.get("afterOpen") == "true,true,true" and m.get("headStillClosed")
+          and m.get("openNotToggled"),
+          f"{m.get('afterOpen')}, other turn closed {m.get('headStillClosed')}, "
+          f"details untouched {m.get('openNotToggled')}")
+    check("AltGr (Ctrl+Alt on a Windows keyboard) does not switch the view", m.get("altGrKept"))
+    check("/focus switches it back, says so, and leaves no fold behind",
+          m.get("offAgain") and m.get("offNote"), f"{m.get('offAgain')} / note {m.get('offNote')}")
 
     # 2. N of M
     check("a lone permission request shows no count", m.get("lone") == "", f"«{m.get('lone')}»")
