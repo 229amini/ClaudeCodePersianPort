@@ -24,7 +24,7 @@ import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { paintRing } from "./bar.js";
 import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
-         foldLong, openDiff } from "./marks.js";
+         foldLong, openDiff, closeDiff } from "./marks.js";
 /* Only the two label helpers are still module-level in controls.js; everything
    that PAINTS is per cell now and is reached through `state.cell.controls`
    (the APPLY table below). */
@@ -2923,6 +2923,7 @@ export function renderEvent(ev) {
         // this any more (T4a). The path stays because the event is still part
         // of the protocol and the spec harness drives it: scoped to the tab it
         // names, it clears that conversation and nothing else.
+        closeDiff(log);   // a sibling of the log: replaceChildren misses it
         log.replaceChildren();
         state.turnEdits = new Map();   // no card for a conversation that is gone
         resetTurn();

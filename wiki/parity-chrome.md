@@ -519,9 +519,12 @@ All the shared parts are in `marks.js`, so it stays one file.
   bottom keeps following it across open and close.
 - **Image thumbnails above the user bubble.** A replayed turn's image is in the transcript, so
   it is a `data:` URL. A live send names a file on disk, so `user_echo` gained `image_urls`:
-  `GET /api/image?path=` serves **only** paths `build_message_blocks()` itself base64'd into an
-  image block (`SENT_IMAGES`, per process), never an arbitrary file; `test_units.py` checks the
-  refusal both before the send and for the file's neighbour after it. No lightbox (the
+  `GET /api/image?path=` serves **only** paths `build_message_blocks()` base64'd into an image
+  block of a message the CLI then took (`SENT_IMAGES`, per process, filled after
+  `send_blocks()` succeeds), never an arbitrary file; at serve time the path must still resolve
+  to itself and still be within `MAX_IMAGE_BYTES` (a review found a swapped-in link or a grown
+  file would otherwise be served). `test_units.py` checks the refusal before the send, for the
+  file's neighbour, and for a file over the cap. No lightbox (the
   reference did not open one). 160 px tall, capped at `30cqh` in a small pane.
 - **A long message is clipped at 15 lines** (`foldLong`, was 8 lines / 600 characters in the
   terminal edition only): > 15 lines or > 1200 characters, counted on the text so a background
