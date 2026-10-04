@@ -1889,30 +1889,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .log .run details.card > summary::before,
 .log .run details.card > summary::after { content: none; }
 
-/* A LONG MESSAGE OF YOURS (§D11.1): six lines and a fade, then «بیشتر». The
-   text is all there; only the box is short. */
-.msg.user.fold:not(.unfolded) > .fold-body {
-  max-block-size: 6lh;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
-  mask-image: linear-gradient(to bottom, #000 65%, transparent);
-}
-.fold-toggle {
-  display: block;
-  min-height: 0;
-  margin-block-start: 2px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: var(--r-chip);
-  background: none;
-  color: var(--fg-faint);
-  font: inherit;
-  font-size: var(--fs-meta);
-  font-weight: var(--wt-body);
-}
-.fold-toggle::before { content: attr(data-label); }
-.fold-toggle:hover { background: var(--surface); color: var(--fg); }
-.fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A long message of yours: the message-marks block below (pcg-lw0). */
 
 /* THE CHANGES PANEL (BRIDGEMIND-PORT.md §D12): in the pane, in place of the
    transcript while it is open. Rows are the sidebar's density; a row opens to
@@ -4441,4 +4418,110 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .change-row .change-stat { margin-inline-start: auto; }
 .change-stat { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; }
 .change-go { color: var(--fg-faint, var(--fg-muted)); }
+
+/* pcg-lw0. The row under a turn's LAST message is always drawn, in flow and
+   muted (the site's action row); every other message keeps it on hover. */
+.msg.turn-last > .msg-acts {
+  position: static;
+  inline-size: fit-content;
+  margin-block-start: 4px;
+  margin-right: auto;
+  padding: 0;
+  background: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A user turn's images, above its bubble and on the bubble's side. */
+.msg-images {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+  max-inline-size: 100%;
+}
+.msg-image {
+  display: block;
+  block-size: min(160px, 30cqh);
+  inline-size: auto;
+  max-inline-size: min(480px, 100%);
+  object-fit: contain;
+  border: 1px solid rgb(255 255 255 / .1);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+/* A long message of yours: ~15 lines and a fade, then «بیشتر». The text is
+   all there; only the box is short. */
+.msg.user.fold:not(.unfolded) > .fold-body {
+  max-block-size: 15lh;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+.fold-toggle {
+  display: block;
+  min-height: 0;
+  margin-block-start: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: rgb(255 255 255 / .06);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 17px;
+  cursor: pointer;
+}
+.fold-toggle::before { content: attr(data-label); }
+.fold-toggle:hover { background: var(--surface-2); color: var(--fg); }
+.fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* A file's edits, BESIDE the transcript (marks.js openDiff). The transcript
+   gives up its inline-end half (left, in this RTL shell) and the panel sits
+   there; its block edges are copied from the transcript's box in JS. A narrow
+   pane has no room for two columns, so there the panel covers it instead. */
+.diff-open { position: relative; }
+.diff-open > .log { margin-inline-end: 50%; }
+.diff-side {
+  position: absolute;
+  inset-inline-end: 0;
+  inline-size: 50%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border-inline-start: 1px solid var(--border);
+  background: var(--bg);
+  outline: none;
+}
+.diff-side-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-block-end: 1px solid var(--border);
+  font-size: 13px;
+}
+.diff-side-file { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-side-close {
+  margin-inline-start: auto;
+  min-height: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.diff-side-close:hover, .diff-side-close:focus-visible { background: var(--surface-2); color: var(--fg); outline: none; }
+.diff-side-body { flex: 1 1 auto; min-block-size: 0; overflow: auto; padding: 8px; }
+.diff-side-edit + .diff-side-edit { margin-block-start: 10px; }
+@container (max-width: 640px) {
+  .diff-open > .log { margin-inline-end: 0; }
+  .diff-side { inline-size: 100%; border-inline-start: 0; }
+}
 }

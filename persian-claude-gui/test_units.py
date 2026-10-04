@@ -1758,6 +1758,44 @@ with tempfile.TemporaryDirectory() as tmp:
         conn.close()
         check("POST /api/attention answers with no tabs open and flashes nothing unmatched",
               attention.status == 200 and answer == {"ok": True, "flashed": 0})
+
+        # pcg-lw0: a live send's thumbnail. The route serves an image this
+        # process SENT and nothing else -- a real file it never sent is a 404.
+        with tempfile.TemporaryDirectory() as img_dir:
+            png = Path(img_dir) / "shot.png"
+            png.write_bytes(b"\x89PNG\r\n\x1a\nunit")
+            other = Path(img_dir) / "other.png"
+            other.write_bytes(b"\x89PNG\r\n\x1a\nnope")
+
+            def get_image(p: Path) -> tuple[int, str, bytes]:
+                c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+                c.request("GET", "/api/image?t=unit-token&path="
+                          + server.quote(str(p.resolve())))
+                r = c.getresponse()
+                out = (r.status, r.getheader("Content-Type") or "", r.read())
+                c.close()
+                return out
+
+            check("GET /api/image refuses an image the wrapper never sent",
+                  get_image(png)[0] == 404)
+            sent: list[str] = []
+            blocks = server.build_message_blocks("x", [str(png), str(other) + ".missing"], sent)
+            check("building the blocks reports exactly this message's images, registering none",
+                  blocks[0]["type"] == "image" and sent == [str(png.resolve())]
+                  and str(png.resolve()) not in server.SENT_IMAGES)
+            server.SENT_IMAGES.update(sent)      # what /api/message does once the CLI took it
+            status, ctype, data = get_image(png)
+            check("GET /api/image serves a sent image with its own type",
+                  status == 200 and ctype == "image/png" and data.endswith(b"unit"))
+            check("...and still refuses its neighbour", get_image(other)[0] == 404)
+            saved_cap = server.MAX_IMAGE_BYTES
+            server.MAX_IMAGE_BYTES = 4
+            try:
+                check("...and refuses it once it is bigger than an image may be",
+                      get_image(png)[0] == 404)
+            finally:
+                server.MAX_IMAGE_BYTES = saved_cap
+            server.SENT_IMAGES.discard(str(png.resolve()))
     finally:
         if httpd is not None:
             httpd.shutdown()

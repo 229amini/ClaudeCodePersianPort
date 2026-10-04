@@ -3512,9 +3512,17 @@ input.value = "";
   const canScroll = !!box && box.scrollHeight > box.clientHeight + 200;
   if (box) box.scrollTop = box.scrollHeight;
   await tick(0);
+  // Chromium's scroll anchoring can do this stick by itself: in the web
+  // harness it moved the box down by exactly the answer's growth, so the case
+  // passed with stickSoon()'s second write deleted (measured 2026-10-04: 0 px
+  // with anchoring, 526 px without). Off for this one case, so what is
+  // measured is the renderer's own stick, which is what the real window needs.
+  const anchor = box?.style.overflowAnchor ?? "";
+  if (box) box.style.overflowAnchor = "none";
   say(Array.from({ length: 14 }, (_, i) => "بند شمارهٔ " + (i + 1) + " از پاسخ بلند.").join("\n\n"));
   await tick(0);
   const gap = box ? Math.round(box.scrollHeight - box.clientHeight - box.scrollTop) : -1;
+  if (box) box.style.overflowAnchor = anchor;
   check("a whole answer landing at the bottom is followed to ITS bottom, not to the empty row it began as",
     canScroll && Math.abs(gap) <= 1,
     (canScroll ? "" : "NOT SCROLLABLE — the check proves nothing; ") + gap + " px left below the view");

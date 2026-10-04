@@ -337,10 +337,18 @@ def main() -> int:
     #   function tX(e,n){if(n===0)return`[Pasted text #${e}]`;return`[Pasted text #${e} +${n} lines]`}
     # The backreferences hold the id and the line count to the SAME two parameters, and the
     # short shape to the `===0` branch, so this is stricter than two loose substrings.
+    # 2.1.289 moved the label into a third parameter whose DEFAULT is the text, so a paste
+    # still mints the same two strings (the other caller is the "Team setup guide" chip):
+    #   function V7(e,n,r="Pasted text"){if(n===0)return`[${r} #${e}]`;return`[${r} #${e} +${n} lines]`}
+    # Either shape passes; in the new one the label is held to that default.
     cue = re.search(
         rb"function [A-Za-z_$][\w$]*\((?P<id>[A-Za-z_$][\w$]*),(?P<n>[A-Za-z_$][\w$]*)\)\{"
         rb"if\((?P=n)===0\)return`\[Pasted text #\$\{(?P=id)\}\]`;"
-        rb"return`\[Pasted text #\$\{(?P=id)\} \+\$\{(?P=n)\} lines\]`\}", data)
+        rb"return`\[Pasted text #\$\{(?P=id)\} \+\$\{(?P=n)\} lines\]`\}", data) or re.search(
+        rb"function [A-Za-z_$][\w$]*\((?P<id>[A-Za-z_$][\w$]*),(?P<n>[A-Za-z_$][\w$]*),"
+        rb"(?P<lbl>[A-Za-z_$][\w$]*)=\"Pasted text\"\)\{"
+        rb"if\((?P=n)===0\)return`\[\$\{(?P=lbl)\} #\$\{(?P=id)\}\]`;"
+        rb"return`\[\$\{(?P=lbl)\} #\$\{(?P=id)\} \+\$\{(?P=n)\} lines\]`\}", data)
     check(cue is not None, "cue() still mints two placeholder shapes",
           "the bundle's placeholder function changed shape; re-read it against composer.js")
     print("\n10. the five-hour warning fires where the binary's own does")
