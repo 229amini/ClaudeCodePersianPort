@@ -249,6 +249,24 @@ cwd), `rmtree` the temp dir, `rmtree` `server.transcript_dir(tmp)`. `smoke_test.
 `test_no_console.py` and `probe_queue.py` all do this — copy their `_cleanup` for any new probe,
 including one-off probes written inline in a session.
 
+## A fake model: driving a tool call without a paid turn (2026-10-04, CLI 2.1.289)
+
+Anything that needs the model to *call a tool* (a permission request, a diff card, a tool row)
+used to cost a subscription turn. It does not: the CLI honours `ANTHROPIC_BASE_URL`. Spawn it
+(or `server.py`, whose `claude` child inherits the env) with
+`ANTHROPIC_BASE_URL=http://127.0.0.1:<port>` and a dummy `ANTHROPIC_API_KEY`, and answer
+`POST /v1/messages?beta=true` (`stream: true`) with a canned SSE stream —
+`message_start`, `content_block_start` (a `tool_use` block with empty `input`),
+`content_block_delta` (`input_json_delta` carrying the input as JSON text), `content_block_stop`,
+`message_delta` (`stop_reason: "tool_use"`), `message_stop`. The CLI runs the tool and calls back
+with a `tool_result`; answer that with a text block and `end_turn`. Measured: every request went
+to the stub, `result` was `success` with `num_turns: 2`, and the CLI prints a cost (~$0.0002) that
+is list-price arithmetic on the stub's usage numbers, billed to no one. It also emits one
+`system/informational` warning about auto-mode classifier billing through a gateway — harmless.
+Two traps: the user's own `permissions.defaultMode` here is `auto`, which never asks the wrapper,
+so set posture `ask` via `/api/posture` first; and the same temp-cwd cleanup rule above applies.
+`probe_flash.py` is the worked example (the stub is the `FakeApi` class).
+
 ## A live SSE connection makes `--headless --dump-dom` never settle
 
 Measured 2026-09-09 while building `test_reload.py`. Chromium's `--dump-dom` prints the DOM once

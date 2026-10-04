@@ -5,7 +5,7 @@ writes a desktop shortcut, and ends with a live smoke test.
 
 ```powershell
 .\setup.ps1                        # normal
-.\setup.ps1 -Payload D:\usb        # offline: installers from a folder
+.\setup.ps1 -Payload D:\usb        # offline: python-3.12*-amd64.exe + claude.exe from a folder
 .\setup.ps1 -DeployRoot C:\tmp\x -ProjectDir ... -ShortcutDir ... -SkipSmokeTest   # testing
 ```
 
@@ -242,9 +242,7 @@ console should be English, that is a user decision to ask for — not a drive-by
 
 ## NOT verified anywhere — still needs a bare machine (M8)
 
-- the **`-Payload` offline** path. Note it covers **Python only**: Claude Code has no offline
-  installer, `install.ps1` downloads its binary from `downloads.claude.ai` and has an explicit
-  region check.
+- ~~the **`-Payload` offline** path~~ — executed 2026-10-04, see the end of this section.
 
 The **not-logged-in** flow is proven: re-run in the same not-logged-in sandbox right after the fix
 (2026-08-07), the real `smoke_test.py` failed, `setup.ps1` printed «آزمایش ناموفق بود» plus the
@@ -270,6 +268,19 @@ throwaway variable, not re-run in a Sandbox. Timing: **2 h 42 min**, almost all 
 238 MB `claude.exe` download through the Sandbox's NAT switch at ~25 KB/s — the Sandbox's
 network, not the installer (host adapter counters showed it moving the whole time). Budget
 for that, or pre-seed `.local\bin` in the `.wsb` if only the later steps are under test.
+
+**2026-10-04 — `-Payload` executed, offline Sandbox (`<Networking>Disable</Networking>`).**
+Until today `-Payload` covered Python only, so offline it could never get past step 3: the vendor
+`install.ps1` needs `downloads.claude.ai`. Now the folder carries **`claude.exe`** too, and step 3
+copies it to `%USERPROFILE%\.local\bin\claude.exe` — the same place the vendor installer puts it,
+so the PATH append and every later step are unchanged. It deliberately does **not** run
+`claude.exe install`: `install.ps1` calls it with a channel (`latest`), which resolves over the
+network. Result, current build, CLI 2.1.289 binary from the author PC: Python installed from the
+folder (exit 0), `claude.exe` copied, deploy, both shortcuts, `test_no_console` PASS, smoke
+«Not logged in» → the three Persian login steps → «نصب تمام شد». **18 minutes**, against 2 h 42
+min online. A copied binary has no vendor install metadata; the CLI ran the smoke turn fine, and
+whether its self-updater is happy once online is not measured. Not executed: `-Payload` pointing
+at a folder that does not exist (the warning path).
 
 ## The setup left a project in the sidebar every time (2026-08-23)
 

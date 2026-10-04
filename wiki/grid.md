@@ -240,6 +240,12 @@ flashes and stays highlighted until the window comes to the front.
   cause was a minimised window still reported foreground, so the foreground skip now ignores an
   iconic window (`IsIconic`). The permission-request path posts the same route from the same
   `flashTaskbar()`, so it was not driven separately (that needs a paid turn).
+- **Permission path verified, 2026-10-04, for free.** `probe_flash.py` points the real CLI at a
+  fake Messages API (`ANTHROPIC_BASE_URL`, `wiki/dev-environment.md` §"A fake model"), so the
+  "model" asks for a Write without a paid turn. Real server, real Edge app window (terminal
+  edition), posture «ask», window minimised: the page POSTed `/api/attention` while the Write
+  was still waiting on the person, and a taskbar grab showed the button lit. **4/4**, and
+  **3/4** with the `permission_request` call to `flashTaskbar()` disabled.
 - **A fresh Edge profile offers "Translate page from Persian?"** in the app window. Accepting it
   rewrites the live text nodes the renderer still writes into, so both `index.html` files carry
   `<meta name="google" content="notranslate">`; the bubble did not appear in the runs after it.

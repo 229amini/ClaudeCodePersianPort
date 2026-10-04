@@ -41,10 +41,9 @@ improvise it on site.
 - [ ] Prepare the offline payload folder: `python-3.12.10-amd64.exe` from
       `https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe`, plus the whole
       `persian-claude-gui/` folder. Fonts and `marked` are already vendored inside it.
-      **`-Payload` covers Python only.** Claude Code has no offline installer — its own
-      `install.ps1` downloads a binary from `downloads.claude.ai`. If that host is unreachable
-      (blocked network, or the region check in the vendor script), `claude` must already be on the
-      machine or the trip is wasted.
+      **Plus `claude.exe`** (since 2026-10-04): copy `%USERPROFILE%\.local\bin\claude.exe` from
+      any PC that has Claude Code. `setup.ps1 -Payload` copies it into place instead of running
+      the vendor `install.ps1`, which needs `downloads.claude.ai` and its region check.
 - [ ] Confirm the colleague's Claude account credentials are available — **login cannot be
       automated** and is the one manual step.
 - [ ] Know the installed `claude` version before you go (`claude --version` on the author PC is
@@ -71,7 +70,7 @@ which changed the window's own screen, not the installer:
 | not-logged-in (smoke test fails) | **executed and passed with the real smoke test** — 2026-08-07, after the fix below. Before it, the test passed while not logged in |
 | Python install (download → silent install → re-detect) | **executed and passed** — Run A, clean sandbox, 2026-08-06 |
 | Claude Code install (`irm claude.ai/install.ps1 \| iex`) | **executed and passed** — 2.1.223 installed, setup continued; `claude` was **not** on PATH afterwards and only the `.local\bin` fallback found it |
-| `-Payload` offline | never executed |
+| `-Payload` offline | **executed and passed** — 2026-10-04, Sandbox with networking disabled: Python and `claude.exe` both from the folder, then the not-logged-in branch |
 
 **2026-10-04 re-run, current build, clean Sandbox:** Python install, Claude Code install and
 not-logged-in all executed and passed again (smoke 15/16, only the login check failing). The
@@ -109,16 +108,18 @@ engine.
 
 **Run B — offline `-Payload`.** `clean-machine-offline.wsb` at the repo root is that file already:
 networking disabled, `payload\` mapped read-only as a second folder. Drop
-`python-3.12.10-amd64.exe` into `payload\` first (see `payload\README.txt`), then run from the
-sandbox:
+`python-3.12.10-amd64.exe` and `claude.exe` into `payload\` first (see `payload\README.txt`),
+then run from the sandbox:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Payload C:\Users\WDAGUtilityAccount\Desktop\payload
 ```
 
 - [ ] Python installs **from the folder**, no download attempted.
-- [ ] The claude step fails with the Persian network/region message — expected, and it must be that
-      message rather than a raw PowerShell error.
+- [x] Claude Code is copied **from the folder** («استفاده از فایل کلاد کد روی حافظه جانبی»),
+      no download attempted. (Before 2026-10-04 this step could only fail offline.)
+- [x] The rest runs offline: deploy, both shortcuts, `test_no_console` PASS, then the smoke test
+      fails («Not logged in») and the Persian login steps print. 2026-10-04: 18 min end to end.
 - [ ] Point `-Payload` at a folder that does not exist → the warning names the folder, instead of
       silently falling through to a download.
 

@@ -753,6 +753,15 @@ See `wiki/grid.md` §"What the user's v0.5.0 screenshot still found".
   step failed; setup now appends it to the user PATH. Not re-run in a Sandbox after the fix (a
   run takes ~2.7 h, nearly all of it the binary download) — `wiki/packaging.md`.
 
+**2026-10-04 (later) — `-Payload` executed, and the permission flash proven for free.**
+- **`-Payload` now carries `claude.exe`** beside the Python installer; `setup.ps1` copies it to
+  `.local\bin` instead of running the vendor installer. Run in a Sandbox with networking
+  disabled: every step passed through the not-logged-in branch, 18 min. `wiki/packaging.md`.
+- **A fake model costs nothing.** The CLI honours `ANTHROPIC_BASE_URL`; a stdlib stub that
+  answers `/v1/messages` with a canned `tool_use` drives any tool-call path with no paid turn.
+  `wiki/dev-environment.md` §"A fake model". First use: **`probe_flash.py`** — real server, real
+  Edge window, a live permission request flashed the taskbar (4/4; 3/4 with the call removed).
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -922,7 +931,7 @@ stub on the *target* machine (it is not on either author PC).
 | Dev run with window | same, without `--no-window` (launches Edge app-mode) | **yes** |
 | Full bootstrap | double-click `setup.bat` (→ `powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1`) | **yes** |
 | Bootstrap into a test location | `setup.ps1 -DeployRoot <dir> -ProjectDir <dir> -ShortcutDir <dir> -SkipSmokeTest` | **yes** |
-| Offline bootstrap | `setup.ps1 -Payload <usb-dir>` | yes, **untested branch** |
+| Offline bootstrap | `setup.ps1 -Payload <usb-dir>` (Python installer + `claude.exe`, `payload\README.txt`) | **yes** |
 | Run the wrapper | the desktop shortcut (silent `pythonw.exe server.py`), written by setup | **yes** |
 
 Two checks exist:
@@ -946,6 +955,7 @@ Two checks exist:
 | Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row. **16 checks**. Free. |
 | Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
 | App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: native (forced by `<html data-zoom-mode>`) leaves Ctrl+= / - / 0 to Edge; css (shipped since 2026-09-29) steps 80–150 %, clamps, shows a readout, remembers the level, picks the automatic level from the screen and window, and opens a kebab menu under its button at 125 % (M4). **9 checks**, two page loads. Free. |
+| Permission flash | `python persian-claude-gui\probe_flash.py` | Windows desktop only: the real CLI against a fake Messages API (no paid turn), the real Edge window of the terminal edition minimised, posture «ask», one message. The stub was asked, the window POSTed `/api/attention`, and the Write was still waiting on the person. Saves a taskbar grab to `%TEMP%\pcg-flash-taskbar.png` for a human look. **4 checks.** Free. |
 | Launcher (M7) | `python persian-claude-gui\test_no_console.py` | the server answers HTTP when run under **`pythonw.exe`** — the binary the shortcut uses and the one no other check here touches. Finds the port via `netstat` (there is no stdout), expects 403 on an unauthenticated `GET /`. Free, login-independent; `setup.ps1` runs it as step 5.5 and gates the smoke test on it. |
 | Column (v2.2) | `python persian-claude-gui\test_column.py` | drives the shipping `index.html` headlessly: a tool result's `⎿` branch and line count stay on one row, `Ctrl+O` opens/shuts every result at once, the checklist marks are the binary's `☐ ☑ ▸` and the directional glyphs flip under `data-mirror-glyphs`, a `compact_boundary` draws the divider from its own metadata, a subagent's steps render inside the `Agent` card, and a long paste is parked as a chip while what is *sent* is the expanded text, an assistant row carries no marker or gutter, and the user row is the site's bubble on the right, identical live and replayed. **29 checks.** Free, no CLI process, no login. |
 | Keys (v2.3) | `python persian-claude-gui\test_keys.py` | every chord the «کلید v2» column of `wiki/tui-keys.md` binds, across the five contexts the prompt owns (Global, Chat, Confirmation, Autocomplete, HistorySearch), dispatched at the real composer in the real `index.html` with the new routes stubbed in, plus `!`, `@`, `\`+Enter and `?` as characters rather than chords. Fails in both directions: a table chord with nothing behind it, or a scenario here for a chord the table never bound. **40 checks** at v2.3, grown to **60** at v2.4 with the whole `Confirmation` context (permission/plan/question Esc and shift+Tab semantics), **63** since the 2.1.284 keys. Free, no CLI process, no login. |
