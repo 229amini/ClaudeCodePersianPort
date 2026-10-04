@@ -295,6 +295,9 @@ These are choices, not oversights. `help.html` §«تفاوت با ترمینا�
    it to `chat:sendNow`. Decided 2026-09-29 for claude.ai/code parity: mid-turn it keeps the
    draft above the box until the turn ends. The TUI's other `chat:sendNow` chord,
    `ctrl+x ctrl+s`, IS bound, with the TUI's meaning (stop the turn, send now).
+8. **`ctrl+alt+f` toggles Focus view** (2026-10-04, `pcg-ahh.5`): the Claude Code VS Code
+   extension's chord for the same thing, and no TUI binding. It backs off while AltGr is held,
+   because on a Windows keyboard AltGr arrives as Ctrl+Alt and a layout may type with it.
 
 ## `~/.claude/keybindings.json`
 

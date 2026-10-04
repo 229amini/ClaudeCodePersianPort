@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.7.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.7.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.7.1"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.8.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -119,7 +119,7 @@ CLAUDE_ARGS = [
 
 
 def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
-               worktree: str | None = None) -> list[str]:
+               worktree: str | None = None, fork_at: str | None = None) -> list[str]:
     """The CLI argv for one process, minus the binary itself.
 
     Lifted out of ClaudeSession.start() so the flag combinations can be
@@ -131,6 +131,12 @@ def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
     args = list(CLAUDE_ARGS)
     if fork_id:
         args += ["--resume", fork_id, "--fork-session"]
+        # Fork FROM A MESSAGE (pcg-ahh.4): the copy keeps the history only up
+        # to and including that chain entry. Measured free on 2.1.289 with a
+        # bogus --model: the new transcript held the turns before the cut and
+        # nothing after it, and the source file was untouched.
+        if fork_at:
+            args += ["--resume-session-at", fork_at]
     elif resume_id:
         args += ["--resume", resume_id]
     if worktree:
@@ -872,7 +878,40 @@ def _normalize_transcript_event(event: dict) -> dict | None:
             if text is None:
                 return None
             message = {"content": [{"type": "text", "text": text}]}
-    return {"type": event["type"], "message": message, **_marks_of(event)}
+    normalized = {"type": event["type"], "message": message, **_marks_of(event)}
+    # An answered AskUserQuestion: the live stream carries {questions, answers}
+    # as the event's `tool_use_result` and the transcript writes the same
+    # object as `toolUseResult` (wiki/permission-transport.md). Passed on in
+    # the live spelling, and only this shape, so a replayed answer draws the
+    # Questions row instead of the model-facing English sentence (pcg-ahh.2).
+    result = event.get("toolUseResult")
+    if (event["type"] == "user" and isinstance(result, dict)
+            and isinstance(result.get("questions"), list)
+            and isinstance(result.get("answers"), dict)):
+        normalized["tool_use_result"] = {"questions": result["questions"],
+                                         "answers": result["answers"]}
+    return normalized
+
+
+def chain_entry(transcript: Path, entry_uuid: str) -> dict | None:
+    """The transcript record with this uuid, or None. A fork from a message
+    (pcg-ahh.4) needs the record itself: its parentUuid is where a fork that
+    leaves the message OUT is cut. Matched as raw text first, as session_meta
+    does, so a long transcript costs one json.loads."""
+    try:
+        with transcript.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if entry_uuid not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("uuid") == entry_uuid:
+                    return event
+    except OSError:
+        pass
+    return None
 
 
 def _marks_of(event: dict) -> dict:
@@ -2810,7 +2849,7 @@ class ClaudeSession:
             return dropped
 
     def start(self, resume_id: str | None = None,
-              fork_id: str | None = None) -> None:
+              fork_id: str | None = None, fork_at: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
         # A DELIBERATE respawn (a resume, a restart) kills whatever the old
@@ -2840,7 +2879,7 @@ class ClaudeSession:
         # a session started from scratch.
         self.session_id = None if fork_id else resume_id
         args = spawn_args(resume_id=resume_id, fork_id=fork_id,
-                          worktree=self.worktree)
+                          worktree=self.worktree, fork_at=fork_at)
 
         # No --settings: hooks supplied that way are ignored entirely by claude
         # 2.1.221 (wiki/permission-hook-broken.md). Approvals arrive in-band as
@@ -3893,7 +3932,8 @@ class Handler(BaseHTTPRequestHandler):
     @classmethod
     def open_tab(cls, cwd: Path, resume_id: str | None = None,
                  fork_id: str | None = None,
-                 worktree: str | None = None) -> str | None:
+                 worktree: str | None = None,
+                 fork_at: str | None = None) -> str | None:
         """Spawn one more conversation and make it active, or None at the cap.
 
         The boot tab comes through here too, so there is one spawn path rather
@@ -3914,7 +3954,7 @@ class Handler(BaseHTTPRequestHandler):
             # slow CLI launch cannot block the other tabs' endpoints.
             cls.sessions[tab] = session
             cls.active = tab
-        session.start(resume_id=resume_id, fork_id=fork_id)
+        session.start(resume_id=resume_id, fork_id=fork_id, fork_at=fork_at)
         return tab
 
     @classmethod
@@ -4805,17 +4845,38 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "session has no id yet"})
                 return
+            # Fork from a message (pcg-ahh.4): `at` names one by its own uuid.
+            # The copy keeps everything up to and including it, or with
+            # `before` everything BEFORE it -- the cut moves to its chain
+            # parent, and the window hands the message's text back to the
+            # prompt. Before the very first message there is nothing to keep,
+            # so that is a new conversation rather than a fork.
+            at = (body.get("at") or "").strip()
+            fork_at: str | None = None
+            fresh = False
+            if at:
+                transcript = (transcript_path(session.history_cwd, source)
+                              if session.history_cwd else None)
+                entry = chain_entry(transcript, at) if transcript else None
+                if entry is None or not MARK_ID_RE.match(at):
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such message"})
+                    return
+                fork_at = (entry.get("parentUuid") or None) if body.get("before") else at
+                fresh = fork_at is None
             # A branch of a worktree conversation stays in that worktree —
             # otherwise the copy would look at different files from the
             # conversation it copied.
-            new_tab = self.open_tab(session.cwd, fork_id=source,
-                                    worktree=session.worktree)
+            if fresh:
+                new_tab = self.open_tab(session.cwd, worktree=session.worktree)
+            else:
+                new_tab = self.open_tab(session.cwd, fork_id=source,
+                                        worktree=session.worktree, fork_at=fork_at)
             if new_tab is None:
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "too many tabs", "max_tabs": MAX_TABS})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
-                                            "forked_from": source})
+                                            "forked_from": source, "at": fork_at})
         elif parsed.path == "/api/session/delete":
             session_id = (body.get("session_id") or "").strip()
             if not session_id:
@@ -4843,6 +4904,51 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "session_id": session_id})
+        elif parsed.path == "/api/session/rename":
+            session_id = (body.get("session_id") or "").strip()
+            title = " ".join(str(body.get("title") or "").split())[:TITLE_MAX]
+            if not session_id or not title:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id or title"})
+                return
+            # A running conversation is renamed by its own CLI, which appends
+            # the custom-title line itself (wiki/control-protocol.md §4) -- two
+            # writers on one transcript is the corruption delete refuses.
+            live = tab_running(self.sessions, session_id)
+            if live is not None:
+                session = self.sessions[live]
+                session._titled = True     # the first-prompt title must not win later
+                try:
+                    session.control("rename_session", title=title)
+                except RuntimeError as exc:
+                    self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "title": title})
+                return
+            raw = (body.get("path") or "").strip()
+            cwd = self._cwd_for(raw, tab, (body.get("worktree") or "").strip())
+            if cwd is None:
+                return
+            transcript = transcript_path(cwd, session_id)
+            if transcript is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
+                return
+            # A closed one gets the very line the CLI would have written, so the
+            # CLI's own /resume list and this sidebar both read the new name.
+            record = json.dumps({"type": "custom-title", "customTitle": title,
+                                 "sessionId": session_id},
+                                ensure_ascii=False, separators=(",", ":"))
+            try:
+                with transcript.open("rb+") as handle:
+                    handle.seek(0, os.SEEK_END)
+                    if handle.tell():
+                        handle.seek(-1, os.SEEK_END)
+                        if handle.read(1) != b"\n":
+                            handle.write(b"\n")
+                    handle.write(record.encode("utf-8") + b"\n")
+            except OSError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "title": title})
         elif parsed.path == "/api/status":
             session = self._target(tab)
             if session is None:

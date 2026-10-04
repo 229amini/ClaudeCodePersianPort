@@ -183,7 +183,7 @@ owns (Ctrl+W, Ctrl+T, Ctrl+N) stay with the browser; Edge `--app` intercepts the
 ## 4. Known differences, will not build
 
 `/vim`, `/voice`, `/radio`, `/tui`, `/teleport`, `/desktop`, `/mobile`, `/remote-control`,
-`/ide`, `/chrome`, `/plugin` screens, `/update`, `/focus`, `/brief`, `#` memory
+`/ide`, `/chrome`, `/plugin` screens, `/update`, `/brief`, `#` memory
 shortcut, `auto` posture (measured: zero `can_use_tool`, `wiki/approval-postures.md`), `ultracode`
 (`wiki/control-protocol.md` §8), `ctrl+s` `chat:stash` (decided §8.7).
 `help.html` lists these under «تفاوت با ترمینال».
@@ -195,6 +195,10 @@ shortcut, `auto` posture (measured: zero `can_use_tool`, `wiki/approval-postures
 - **Esc-Esc rewind** — the plan said it "stays out unless the §5 probe finds a control
   subtype". The probe found two (§5.6). The exclusion is lifted; whether v2 *spends* a phase on
   it is the one scope question left open in §8.
+
+**`/focus` left it on 2026-10-04** (user request after comparing the window with the Claude Code
+VS Code extension, `pcg-ahh.5`): built as the window's own Focus view — every turn's steps behind
+one row, Ctrl+Alt+F or `/focus` — not the TUI's screen of the same name.
 
 ## 5. Measure first — ANSWERED 2026-09-05 on 2.1.261 (`pcg-qmy.2`)
 

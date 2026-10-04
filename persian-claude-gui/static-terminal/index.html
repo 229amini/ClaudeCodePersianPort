@@ -87,6 +87,11 @@
   </button>
   </div>
 
+  <!-- Search over every conversation's name and first prompt (js/chrome.js
+       renderSearch); its words come from strings.fa.js. -->
+  <input type="search" id="side-search" class="side-search" dir="auto" autocomplete="off"
+         spellcheck="false">
+
   <div class="side-scroll">
     <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
          /api/tabs by js/chrome.js; hidden until there is one. -->
@@ -232,6 +237,7 @@
       <!-- What KIND of action is asking (BRIDGEMIND-PORT.md §D10), js/perm.js
            permKind(): read before the tool name, which is English. -->
       <p class="perm-kind" dir="auto" hidden></p>
+      <p class="perm-count" hidden></p>
       <h2 class="perm-title"></h2>
       <p class="perm-body" dir="auto"></p>
       <!-- Which conversation is asking, when it is not the one on screen: one

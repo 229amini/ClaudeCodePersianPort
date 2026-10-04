@@ -117,6 +117,11 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
   Later the same day: what a v0.5.0 screenshot still found (the sidebar row hole, the
   statusLine row and sidebar quota removed, the transcript that stopped following) and the
   picker floor Edge failed by 2 px.
+- [parity-chrome.md](parity-chrome.md) §"VS Code extension parity" — **2026-10-04 (pcg-ahh):**
+  five gaps against the Claude Code VS Code extension, closed: session search and rename, the
+  Questions row and «۲ از ۵», «تأیید همه» instead of «خودکار», a new conversation from a message,
+  Focus view. The fork's measurement (`--resume-session-at`, free) is in
+  [cli-stream-json-findings.md](cli-stream-json-findings.md).
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
 ## §B-9 verification: all ten answered

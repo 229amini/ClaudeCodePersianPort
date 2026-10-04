@@ -275,6 +275,10 @@ window.FA = {
   continueSession: "ادامه",
   viewSession: "نمایش",
   deleteSession: "حذف",
+  renameSession: "تغییر نام",
+  searchSessions: "جستجوی گفتگوها",
+  searchResults: "نتیجه‌ها",
+  searchEmpty: "گفتگویی پیدا نشد",
   confirmDelete: "مطمئنید؟",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
   resumed: "گفتگو از سر گرفته شد",
@@ -450,6 +454,15 @@ window.FA = {
   askAnswered: "پاسخ داده شد",
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
+  questionsRow: "پرسش‌ها",
+  markFork: "گفتگوی تازه از اینجا",
+  markForkBefore: "گفتگوی تازه از پیش از این پیام، با همین متن در جای نوشتن",
+  forkDone: "گفتگوی تازه از همان نقطه — گفتگوی قبلی دست نخورده ماند",
+  forkFailed: "ساختن گفتگوی تازه از اینجا نشد",
+  focusSteps: "{n} مرحله",
+  focusOn: "نمای متمرکز روشن شد: مراحل کار هر نوبت پشت یک سطر رفت. همین دستور یا Ctrl+Alt+F برش می‌گرداند.",
+  focusOff: "نمای متمرکز خاموش شد: همهٔ مراحل کار دوباره دیده می‌شوند.",
+  permCount: "{i} از {n}",
   askHint: "با شماره یا ↑↓ انتخاب کنید · Space برای چندگزینه · Enter برای فرستادن",
 
   /* The conversation is filling up. Two actions, because the CLI's own advice
@@ -495,6 +508,7 @@ window.FA = {
   slPosturePlan: "حالت طرح روشن",
   slPostureAcceptEdits: "پذیرش خودکار ویرایش‌ها روشن",
   slPostureAuto: "حالت خودکار روشن",
+  slPostureAutoApprove: "تأیید همه روشن",
   slPostureBypass: "دور زدن اجازه‌ها",
   slPostureHint: "shift+tab برای تغییر",
 
@@ -641,6 +655,7 @@ window.FA = {
     keybindings: "باز کردن فایل کلیدها",
     memory: "باز کردن فایل حافظه — شخصی یا این پروژه",
     tasks: "نشان دادن کارهای پس‌زمینه",
+    focus: "فقط پیام‌ها و پاسخ‌ها؛ مراحل کار هر نوبت پشت یک سطر — Ctrl+Alt+F",
     split: "چند گفتگو کنار هم: ۱ یا ۲ یا ۴ ستون",
     bash: "اجرای یک دستور در پوشهٔ پروژه؛ با «!» هم می‌شود",
     model: "انتخاب مدل",
@@ -693,8 +708,8 @@ window.FA = {
   postureAskNote: "پیش از هر تغییری از شما می‌پرسد",
   postureAcceptEdits: "ویرایش آزاد",
   postureAcceptEditsNote: "ویرایش فایل‌ها را بی‌پرسش می‌پذیرد",
-  postureAutoApprove: "خودکار",
-  postureAutoApproveNote: "همه‌چیز را بی‌پرسش انجام می‌دهد",
+  postureAutoApprove: "تأیید همه",
+  postureAutoApproveNote: "هر درخواست را بی‌پرسش تأیید می‌کند و می‌شمارد",
   /* One line under every picker, because a list nobody told you how to answer
      is a list you answer with the mouse. */
   pickerHint: "با شماره یا ↑↓ و Enter انتخاب کنید · Esc برای بستن",
@@ -702,7 +717,7 @@ window.FA = {
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
-  autoWhyPosture: "سطح اجازه: خودکار",
+  autoWhyPosture: "سطح اجازه: تأیید همه",
   /* Message marks (js/marks.js, pcg-8ip — the same keys in both editions). */
   markJustNow: "همین حالا",
   markMinutesAgo: "{n} دقیقهٔ پیش",

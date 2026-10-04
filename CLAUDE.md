@@ -757,6 +757,21 @@ See `wiki/grid.md` §"What the user's v0.5.0 screenshot still found".
   flash on a live permission request, smoke back to 16/16 after the server change, a Sandbox
   re-run after the PATH fix, and `-Payload` (never executed anywhere).
 
+**2026-10-04 — five gaps against the VS Code extension, closed; terminal 0.8.0, web 1.7.1
+(`pcg-ahh`).** The user compared the app with the Claude Code VS Code extension (its docs; the
+marketplace is unreachable from the cloud) and picked five, built in order, terminal edition
+first:
+- **Session search and rename** in the sidebar. `POST /api/session/rename` goes through a running
+  CLI's `rename_session`, else appends the CLI's own `custom-title` record.
+- **The Questions row and «۲ از ۵».** Replay now carries `toolUseResult` for an answered
+  question: every replayed answer had been showing the model-facing English sentence.
+- **«تأیید همه», not «خودکار»** (both editions): the posture had the CLI's Auto mode's name.
+- **A new conversation from a message.** Measured free first: `--resume X --fork-session
+  --resume-session-at <uuid>` cuts the copy and leaves the source alone. Files are not rewound.
+- **Focus view** (`focus.js`, Ctrl+Alt+F or `/focus`): each turn's steps behind one row.
+Read `wiki/parity-chrome.md` §"VS Code extension parity" before touching any of it. New gate
+`test_parity.py` **28**, every section negative-tested.
+
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:
 `wiki/dev-environment.md` (**the repo moved machines — the interpreter path in older docs is
@@ -947,6 +962,7 @@ Two checks exist:
 | Layout control (2026-09-29) | `python persian-claude-gui\test_arrange.py` | terminal edition: the button beside «گفتگوی جدید» opens a panel with the open count; more panes are FILLED with the open conversations not on screen; fewer close nothing; a count with no room is disabled with the reason. **7 checks**, routes stubbed. Free. |
 | Composer bar (2026-09-29) | `python persian-claude-gui\test_bar.py` | BOTH editions: `bar.js` is one file in two places; the ◔ ring and the context/usage panel (categories, headroom, `/compact`, 5h/weekly/per-model limits, a login with none); the model and mode menus number their rows, check the current one and pick by digit; the effort slider posts a change; «+» opens the native file dialog, starts a slash command and toggles THAT MCP server; the model flyout and the mode menu's audit footer; and (terminal) the send/stop button and «بعداً بفرست». **46 checks** (18 web + 28 terminal), routes stubbed. Free. |
 | Message marks (2026-09-29) | `python persian-claude-gui\test_marks.py` | BOTH editions: `marks.js` is one file in two places; a message says when it was said from its OWN timestamp, and none of that is in its `textContent`; pins load by session id, mark their message and fill the rail («شروع گفتگو» then each pin); a pin click posts THIS message in THIS conversation and the rail follows the answer; a rail click jumps and flashes; copy writes the source text; a settled turn ends in ONE change card summed per file, every `+A −D` measured left to right; a replayed user turn is marked by its uuid; and (pcg-lw0) the row under a turn's last answer is drawn without a hover, a change row opens that file's edits in a panel measured BESIDE the transcript (Esc and ✕ close it), a replayed or live image is a 160 px thumbnail above its bubble, and a message over 15 lines is clipped behind «بیشتر». **50 checks** (25 per edition run, the identity check in each), routes stubbed. Free. |
+| VS Code parity (2026-10-04) | `python persian-claude-gui\test_parity.py` | terminal edition: the sidebar search (half-space, ي/ی, case, an archived project's conversation, Esc) and rename in place (the body posted, Esc posts nothing); «تأیید همه» everywhere the approve-all posture is named, both editions and both guides; a fork from an answer and from before a user message (the body, the cut column, the source untouched, the words back in the prompt); Focus view (one counted row per turn, the latest to-do list kept, a click opens one turn, AltGr ignored, `/focus` back off); «۱ از ۳» … on stacked permission requests. **28 checks**, routes stubbed. Free. |
 | Notifications (P5) | `python persian-claude-gui\test_notices.py` | terminal edition: which events are news (not replayed, not a stop, not the focused pane of a visible window), the bell count and colour, the panel, jump + flash, a closed conversation's disabled row. **16 checks**. Free. |
 | Changes panel (P8) | `python persian-claude-gui\test_changes.py` | terminal edition: the panel over the transcript, this conversation's files first, `.path` rows and a `+N −M` measured left to right, git's diff as the tool card's rows (rule 8), too-large / no-repo / no-git, the state line's count. **15 checks**, route stubbed. The server half is in `test_units.py` against a real temp repository. Free. |
 | App zoom (P9) | `python persian-claude-gui\test_zoom.py` | terminal edition: native (forced by `<html data-zoom-mode>`) leaves Ctrl+= / - / 0 to Edge; css (shipped since 2026-09-29) steps 80–150 %, clamps, shows a readout, remembers the level, picks the automatic level from the screen and window, and opens a kebab menu under its button at 125 % (M4). **9 checks**, two page loads. Free. |

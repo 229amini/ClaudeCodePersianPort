@@ -605,3 +605,49 @@ Gates:
 - `test_column`: 29;
 - negative-tested: an empty-thinking card, a leftover working line, a missing `task_progress`
   route and a missing Ctrl+Enter branch each fail a gate.
+
+## VS Code extension parity: five gaps closed (2026-10-04, pcg-ahh)
+
+After a feature-by-feature comparison with the Claude Code VS Code extension (its docs at
+code.claude.com/docs/en/vs-code; the marketplace is unreachable from the cloud container), the
+user picked five. Terminal edition unless noted. Gate: `test_parity.py` (28, each section
+negative-tested).
+
+1. **Session search and rename.** A field above the sidebar filters every project's conversations
+   (archived ones too) into one flat, newest-first list, each hit naming its project. Matching
+   folds ي/ی, ك/ک, the half-space and case — a Persian name typed on an Arabic layout must
+   still find itself. Rename is in the conversation's ⋯ menu, edited in place.
+   `POST /api/session/rename` asks a RUNNING CLI (`rename_session`, which writes the record
+   itself — two writers on one transcript is the corruption delete refuses) and otherwise appends
+   the same `{"type":"custom-title",…}` line the CLI would have, so `claude --resume` shows the
+   name too. Renaming a live session also sets `_titled`, or the first-prompt title would win
+   after the next result.
+2. **The Questions row, and «۲ از ۵».** An answered question's card shuts and one row stays
+   under it: each question, then the pick. Replay needed a server fix to show it at all: the
+   transcript writes the structured answer as `toolUseResult`, the live stream as the event's
+   `tool_use_result`, and `_normalize_transcript_event` dropped it — so every replayed answer had
+   been the model-facing English sentence. It is passed on now for that shape only. The line's
+   direction is the QUESTION's: both children carry their own `dir`, so `dir="auto"` on the line
+   read nothing and fell to LTR (a spec case caught it). Stacked permission requests count their
+   place in the run, «۲ از ۵», from the first that arrived while none was open.
+3. **«تأیید همه», not «خودکار»** (both editions). The window's approve-every-request posture had
+   the name of the CLI's Auto mode, which the window deliberately leaves out because it skips the
+   dialog — and the state line literally said «حالت خودکار روشن». The CLI's own `auto` echo keeps
+   that name; the posture got `slPostureAutoApprove`.
+4. **A new conversation from a message.** The fork button under a message (marks.js, shared;
+   the web edition passes no handler, so it draws none). From an answer the copy keeps everything
+   through it; from something the person said it keeps what came before, and the words go back
+   into the new prompt — the CLI's /rewind, without cutting the original. The CLI does the cut
+   (`--resume-session-at`, measured: `wiki/cli-stream-json-findings.md`); the window draws the
+   new column from the SOURCE transcript cut at the same uuid, because a forked CLI re-emits
+   nothing. The pane a message is drawn in names its conversation (`cells` hold no `data-tab`).
+   Before the first message there is nothing to keep, so that is a plain new conversation.
+   Files are not rewound.
+5. **Focus view** (`focus.js`, Ctrl+Alt+F or `/focus`). Each turn's process rows — runs,
+   helper cards, older to-do lists — fold behind its first one, which keeps its place and says
+   «۷ مرحله»; a click opens that turn in place. Nothing is moved or wrapped: the renderer's
+   polling fold compares `nextElementSibling`, so a marker element would have broken it; focus
+   only writes classes and one `data-focus-label`, repainted from scratch one frame after any
+   append. AltGr is Ctrl+Alt on a Windows keyboard, so the chord backs off when `AltGraph` is held.
+   The preference lives in `prefs.js`, i.e. for the life of the window (the port, and so the
+   origin, changes every run). `/focus` left V2-PLAN §4 the same day.
