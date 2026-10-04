@@ -943,6 +943,17 @@ ev = server._normalize_transcript_event({"type": "assistant", "uuid": "dcc1f12b-
     "timestamp": "2026-09-29T12:10:48.344Z", "message": {"content": [{"type": "text", "text": "x"}]}})
 check("history keeps each message's uuid and time for the marks",
       ev.get("uuid") == "dcc1f12b-6db3" and ev.get("timestamp") == "2026-09-29T12:10:48.344Z")
+# pcg-ahh.2: an answered question replays as the Questions row, so the
+# transcript's toolUseResult rides on in the live stream's spelling.
+_qs = [{"question": "کدام؟", "options": [{"label": "A"}]}]
+ev = server._normalize_transcript_event({"type": "user", "toolUseResult": {
+    "questions": _qs, "answers": {"کدام؟": "A"}, "extra": "dropped"},
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}})
+check("an answered question's structured result replays as tool_use_result",
+      ev.get("tool_use_result") == {"questions": _qs, "answers": {"کدام؟": "A"}})
+ev = server._normalize_transcript_event({"type": "user", "toolUseResult": {"stdout": "x"},
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}})
+check("...and any other tool's result does not", "tool_use_result" not in ev)
 
 # --- resume prefill ----------------------------------------------------------
 # After /api/session/resume the bar stayed blank until the first turn: every
@@ -1796,6 +1807,39 @@ with tempfile.TemporaryDirectory() as tmp:
             finally:
                 server.MAX_IMAGE_BYTES = saved_cap
             server.SENT_IMAGES.discard(str(png.resolve()))
+
+        # pcg-ahh.1: renaming a CLOSED conversation appends the CLI's own
+        # custom-title record, so the sidebar and `claude --resume` both read it.
+        proj = Path(tmp) / "proj"
+        proj.mkdir()
+        sid = str(uuid.uuid4())
+        folder = server.PROJECTS_DIR / str(proj).replace(":", "-").replace("\\", "-").replace("/", "-")
+        folder.mkdir()
+        jsonl = folder / f"{sid}.jsonl"
+        jsonl.write_text('{"type":"user","message":{"role":"user","content":"سلام"},'
+                         '"timestamp":"2026-10-04T10:00:00Z"}', encoding="utf-8")   # no final newline
+
+        def rename(body: dict) -> int:
+            c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+            c.request("POST", "/api/session/rename?t=unit-token",
+                      body=json.dumps(body), headers={"Content-Type": "application/json"})
+            r = c.getresponse()
+            r.read()
+            c.close()
+            return r.status
+
+        status = rename({"session_id": sid, "path": str(proj), "title": "  نام   تازه  "})
+        lines = jsonl.read_text(encoding="utf-8").splitlines()
+        check("POST /api/session/rename on a closed session appends one custom-title line",
+              status == 200 and len(lines) == 2
+              and json.loads(lines[1]) == {"type": "custom-title", "customTitle": "نام تازه",
+                                           "sessionId": sid})
+        check("...which the sidebar reads back as the title",
+              server.session_meta(jsonl)[1] == "نام تازه")
+        check("...and an empty name or an unknown session is refused, writing nothing",
+              rename({"session_id": sid, "path": str(proj), "title": "  "}) == 400
+              and rename({"session_id": str(uuid.uuid4()), "path": str(proj), "title": "x"}) == 404
+              and len(jsonl.read_text(encoding="utf-8").splitlines()) == 2)
     finally:
         if httpd is not None:
             httpd.shutdown()

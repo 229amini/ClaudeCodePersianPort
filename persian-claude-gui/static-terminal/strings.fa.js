@@ -275,6 +275,10 @@ window.FA = {
   continueSession: "ادامه",
   viewSession: "نمایش",
   deleteSession: "حذف",
+  renameSession: "تغییر نام",
+  searchSessions: "جستجوی گفتگوها",
+  searchResults: "نتیجه‌ها",
+  searchEmpty: "گفتگویی پیدا نشد",
   confirmDelete: "مطمئنید؟",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
   resumed: "گفتگو از سر گرفته شد",
@@ -450,6 +454,8 @@ window.FA = {
   askAnswered: "پاسخ داده شد",
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
+  questionsRow: "پرسش‌ها",
+  permCount: "{i} از {n}",
   askHint: "با شماره یا ↑↓ انتخاب کنید · Space برای چندگزینه · Enter برای فرستادن",
 
   /* The conversation is filling up. Two actions, because the CLI's own advice

@@ -872,7 +872,19 @@ def _normalize_transcript_event(event: dict) -> dict | None:
             if text is None:
                 return None
             message = {"content": [{"type": "text", "text": text}]}
-    return {"type": event["type"], "message": message, **_marks_of(event)}
+    normalized = {"type": event["type"], "message": message, **_marks_of(event)}
+    # An answered AskUserQuestion: the live stream carries {questions, answers}
+    # as the event's `tool_use_result` and the transcript writes the same
+    # object as `toolUseResult` (wiki/permission-transport.md). Passed on in
+    # the live spelling, and only this shape, so a replayed answer draws the
+    # Questions row instead of the model-facing English sentence (pcg-ahh.2).
+    result = event.get("toolUseResult")
+    if (event["type"] == "user" and isinstance(result, dict)
+            and isinstance(result.get("questions"), list)
+            and isinstance(result.get("answers"), dict)):
+        normalized["tool_use_result"] = {"questions": result["questions"],
+                                         "answers": result["answers"]}
+    return normalized
 
 
 def _marks_of(event: dict) -> dict:
@@ -4843,6 +4855,51 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "session_id": session_id})
+        elif parsed.path == "/api/session/rename":
+            session_id = (body.get("session_id") or "").strip()
+            title = " ".join(str(body.get("title") or "").split())[:TITLE_MAX]
+            if not session_id or not title:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id or title"})
+                return
+            # A running conversation is renamed by its own CLI, which appends
+            # the custom-title line itself (wiki/control-protocol.md §4) -- two
+            # writers on one transcript is the corruption delete refuses.
+            live = tab_running(self.sessions, session_id)
+            if live is not None:
+                session = self.sessions[live]
+                session._titled = True     # the first-prompt title must not win later
+                try:
+                    session.control("rename_session", title=title)
+                except RuntimeError as exc:
+                    self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "title": title})
+                return
+            raw = (body.get("path") or "").strip()
+            cwd = self._cwd_for(raw, tab, (body.get("worktree") or "").strip())
+            if cwd is None:
+                return
+            transcript = transcript_path(cwd, session_id)
+            if transcript is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "no such session"})
+                return
+            # A closed one gets the very line the CLI would have written, so the
+            # CLI's own /resume list and this sidebar both read the new name.
+            record = json.dumps({"type": "custom-title", "customTitle": title,
+                                 "sessionId": session_id},
+                                ensure_ascii=False, separators=(",", ":"))
+            try:
+                with transcript.open("rb+") as handle:
+                    handle.seek(0, os.SEEK_END)
+                    if handle.tell():
+                        handle.seek(-1, os.SEEK_END)
+                        if handle.read(1) != b"\n":
+                            handle.write(b"\n")
+                    handle.write(record.encode("utf-8") + b"\n")
+            except OSError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "title": title})
         elif parsed.path == "/api/status":
             session = self._target(tab)
             if session is None:

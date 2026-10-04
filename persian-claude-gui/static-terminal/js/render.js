@@ -1864,26 +1864,44 @@ export function renderQuestionBody(questions) {
   return frag;
 }
 
-/* The answer, keyed by question text exactly as the CLI stores it. An empty
-   `answers` is the skip case and says so rather than rendering nothing — a
-   blank card would read as a bug. */
-function renderAnswers(questions, answers) {
-  const frag = document.createDocumentFragment();
+/* The Questions row (pcg-ahh.2, after the VS Code extension): an answered
+   question's card shuts — its options are history now — and one row stays in
+   the open under it, saying what was asked and what was picked. The same
+   prose builders as the dialog and the card, so a header opening with a Latin
+   term reads the same in all three. Live and replayed alike: both carry the
+   structured result (server.py passes the transcript's toolUseResult on). */
+function questionsRow(body, questions, answers) {
+  const row = document.createElement("div");
+  row.className = "q-row";
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-label", FA.questionsRow);
+  row.append(label(FA.questionsRow, "q-row-head"));
   const asked = (questions ?? []).length ? questions : Object.keys(answers).map(
     (question) => ({ question }));
   for (const q of asked) {
     const value = answers[q.question];
-    const row = document.createElement("div");
-    row.className = "q-answer";
-    row.setAttribute("dir", "auto");
-    row.append(label((q.header || q.question || "") + ":", "q-header"));
-    row.append(label(
-      Array.isArray(value) ? value.join("، ") : (value || FA.askNoAnswer),
-      "q-picked"));
-    frag.append(row);
+    const line = document.createElement("div");
+    line.className = "q-answer";
+    const asked = questionProse(label("", "q-asked"), q.header || q.question || "");
+    const picked = document.createElement("bdi");
+    picked.className = "q-picked";
+    picked.textContent = Array.isArray(value) ? value.join("، ") : (value || FA.askNoAnswer);
+    line.append(asked, picked);
+    // The question decides the line, and the pick is isolated inside it: both
+    // children carry their own direction, so dir="auto" here would read
+    // nothing and fall to LTR (spec rule 2).
+    line.setAttribute("dir", asked.getAttribute("dir") === "rtl" ? "rtl" : "ltr");
+    row.append(line);
   }
-  if (!frag.childNodes.length) frag.append(label(FA.askSkipped, "meta"));
-  return frag;
+  if (!Object.keys(answers).length) row.append(label(FA.askSkipped, "meta"));
+  const details = body?.closest("details");
+  if (details) {
+    details.open = false;
+    details.after(row);
+  } else {
+    append(row);
+  }
+  return row;
 }
 
 /* --- a background agent reporting back ------------------------------------- */
@@ -2589,8 +2607,7 @@ export function renderEvent(ev) {
         const structured = ev.tool_use_result;
         if (structured && Array.isArray(structured.questions)
             && structured.answers && typeof structured.answers === "object") {
-          intoCard(body, renderAnswers(structured.questions,
-                                      structured.answers));
+          questionsRow(body, structured.questions, structured.answers);
           continue;
         }
         // The launch ack for a background agent. Its text is the CLI talking to
