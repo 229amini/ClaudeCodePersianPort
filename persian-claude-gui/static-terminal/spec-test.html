@@ -591,12 +591,17 @@ window.renderEvent({
   },
   message: { content: [{ type: "tool_result", tool_use_id: "spec13", content: "ok" }] },
 });
-const answer = specLog.querySelector("details.card.ask .q-answer");
-check("ask: the answer lands in the question's own card, keyed by question text",
+/* pcg-ahh.2: the answer is the Questions row right after the question's card,
+   which shuts (its options are history now) — the VS Code extension's row. */
+const askDone = specLog.querySelector("details.card.ask");
+const answer = askDone?.nextElementSibling?.matches(".q-row")
+  ? askDone.nextElementSibling.querySelector(".q-answer") : null;
+check("ask: the answer is a Questions row under the shut card, keyed by question text",
   answer?.querySelector(".q-picked")?.textContent === "Tea، قهوه" &&
-  answer?.querySelector(".q-header")?.textContent === "نوشیدنی:" &&
-  !specLog.querySelector("details.card.ask .tool-output"),
-  (answer?.querySelector(".q-picked")?.textContent ?? "NO ANSWER RENDERED"));
+  answer?.querySelector(".q-asked")?.textContent === "نوشیدنی" &&
+  askDone.open === false && !askDone.querySelector(".tool-output"),
+  (answer?.querySelector(".q-picked")?.textContent ?? "NO ANSWER RENDERED") +
+  " / card open " + askDone?.open);
 
 // Mixed script on one line: the Latin label must not drag the Persian header.
 check("ask: the answer row resolves RTL from its Persian header",
