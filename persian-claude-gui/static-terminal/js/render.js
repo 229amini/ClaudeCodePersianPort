@@ -2038,7 +2038,7 @@ export function resetStatus() {
 
    Driven by the WRAPPER's posture, with the CLI's own `permissionMode` as the
    fallback. The CLI cannot tell the two apart on its own — «محتاط» and
-   «خودکار» are both `default` down the pipe, and the difference is the
+   «تأیید همه» are both `default` down the pipe, and the difference is the
    wrapper's auto-approve flag (server.py POSTURES) — while a mode nobody here
    set (`bypassPermissions`, `auto`) only ever arrives as a mode. §8.4: a mode
    the window can receive but not set still needs a name on screen. */
@@ -2047,7 +2047,9 @@ const POSTURE_ROW = {
   ask:               { text: () => FA.slPostureAsk,         arrows: 1 },
   default:           { text: () => FA.slPostureAsk,         arrows: 1 },
   acceptEdits:       { text: () => FA.slPostureAcceptEdits, arrows: 2 },
-  autoApprove:       { text: () => FA.slPostureAuto,        arrows: 2 },
+  // The wrapper's own approve-all, named apart from the CLI's `auto` below:
+  // calling both «حالت خودکار» is the confusion pcg-ahh.3 removed.
+  autoApprove:       { text: () => FA.slPostureAutoApprove, arrows: 2 },
   auto:              { text: () => FA.slPostureAuto,        arrows: 2 },
   bypassPermissions: { text: () => FA.slPostureBypass,      arrows: 2, danger: true },
 };

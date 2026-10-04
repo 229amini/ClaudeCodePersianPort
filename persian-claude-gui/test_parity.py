@@ -5,6 +5,8 @@ VS Code extension: build the five gaps that matter most, in order.
 
   1. session search and rename (the sidebar);
   2. «۲ از ۵» on stacked permission requests (the Questions row is a spec case);
+  3. the window's approve-all posture is no longer named «خودکار», the name of
+     the CLI's own Auto mode, which it is not;
 
 Each later feature adds its section here. Free: no CLI, no login. Every route
 is stubbed inside the real index.html.
@@ -124,6 +126,9 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   edit2.value = "نه";
   edit2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await sleep(30);
+  // --- 3. the approve-all posture's names ---
+  out.postureNames = [FA.postureAutoApprove, FA.slPostureAutoApprove, FA.autoWhyPosture];
+  out.cliAuto = FA.slPostureAuto;
   out.escNoPost = calls.filter((c) => c.url.startsWith("/api/session/rename")).length === 1
     && !row2.querySelector(".sess-rename") && row2.querySelector(".sess")?.hidden === false;
   // --- 2. «N از M» on stacked permission requests ---
@@ -199,6 +204,18 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           and (m.get("reloaded") or 0) >= 2,
           f"{body}, /api/projects x{m.get('reloaded')}")
     check("Esc cancels the edit without a request", m.get("escNoPost"))
+
+    # 3. the approve-all posture
+    names = m.get("postureNames") or []
+    check("the approve-all posture, its state line and its audit note never say «خودکار»",
+          len(names) == 3 and all(n and "خودکار" not in n for n in names)
+          and m.get("cliAuto") not in names, f"{names}")
+    web = (HERE / "static" / "strings.fa.js").read_text(encoding="utf-8")
+    check("...in the web edition too", 'postureAutoApprove: "تأیید همه"' in web)
+    helps = [(HERE / d / "help.html").read_text(encoding="utf-8") for d in ("static", "static-terminal")]
+    check("both guides name it «تأیید همه» and say it is not the CLI's own Auto",
+          all("<b>تأیید همه</b>" in h and "<li><b>خودکار</b>" not in h
+              and "این حالت «خودکار» خود کلاد نیست" in h for h in helps))
 
     # 2. N of M
     check("a lone permission request shows no count", m.get("lone") == "", f"«{m.get('lone')}»")
