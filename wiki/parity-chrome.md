@@ -531,7 +531,7 @@ All the shared parts are in `marks.js`, so it stays one file.
   pane and a reload fold the same, a fade and the site's «بیشتر» chip. The web edition gained
   the fold and its two strings.
 
-Gate: `test_marks.py` **49** (was 29), each new check measured rather than read (the panel's
+Gate: `test_marks.py` **50** (25 per edition run; was 30), each new check measured rather than read (the panel's
 rect against the log's, the thumbnail's 160 px and its position above the bubble, the clip's
 `scrollHeight`). Negative-tested by sabotaging all four in `marks.js` at once: 8 checks fail.
 
