@@ -747,6 +747,11 @@ See `wiki/grid.md` §"What the user's v0.5.0 screenshot still found".
 - **The web spec's stick case was masked by Chromium scroll anchoring**; the case now turns
   anchoring off for itself and fails without the fix in both editions
   (`wiki/frontend-modules.md` §"Stick to what a row becomes").
+- **`setup.ps1` on a bare Windows Sandbox, current build:** Python install, Claude Code install
+  and the not-logged-in branch all executed and passed (smoke 15/16, only the login check). One
+  fix: the vendor installer leaves `.local\bin` off PATH, so the Persian "type `claude`" login
+  step failed; setup now appends it to the user PATH. Not re-run in a Sandbox after the fix (a
+  run takes ~2.7 h, nearly all of it the binary download) — `wiki/packaging.md`.
 
 Before touching anything, read `wiki/cli-stream-json-findings.md` — it holds the measured CLI
 contract and it already invalidates part of the plan. Then, by area:

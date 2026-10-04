@@ -259,6 +259,18 @@ run on a real machine that had neither Python nor Claude Code. Two limits on wha
 the build predates every `setup.ps1` change made after it, and `-Payload` offline was not the
 path used — that branch is still unexecuted anywhere.
 
+**2026-10-04 — the current `setup.ps1` (web 1.7.0 / terminal 0.7.0), bare Windows Sandbox.**
+Python install, Claude Code install (CLI 2.1.289), deploy, both shortcuts, `test_no_console`
+PASS, then the not-logged-in branch: smoke **15/16**, the only FAIL "the CLI actually
+answered", then the three Persian login steps and «نصب تمام شد». One defect found: the
+vendor installer leaves `%USERPROFILE%\.local\bin` off PATH (it says so in its own output),
+so login step 2 — "type `claude`" — failed in any new terminal. `setup.ps1` now appends that
+folder to the **user** PATH when `claude` was found only by the fallback; logic tested on a
+throwaway variable, not re-run in a Sandbox. Timing: **2 h 42 min**, almost all of it the
+238 MB `claude.exe` download through the Sandbox's NAT switch at ~25 KB/s — the Sandbox's
+network, not the installer (host adapter counters showed it moving the whole time). Budget
+for that, or pre-seed `.local\bin` in the `.wsb` if only the later steps are under test.
+
 ## The setup left a project in the sidebar every time (2026-08-23)
 
 `setup.ps1` ends in two checks that each spawn the server on a `tempfile.mkdtemp()` project —
