@@ -1778,13 +1778,23 @@ with tempfile.TemporaryDirectory() as tmp:
 
             check("GET /api/image refuses an image the wrapper never sent",
                   get_image(png)[0] == 404)
-            blocks = server.build_message_blocks("x", [str(png)])
-            check("sending an image registers it for its thumbnail",
-                  blocks[0]["type"] == "image" and str(png.resolve()) in server.SENT_IMAGES)
+            sent: list[str] = []
+            blocks = server.build_message_blocks("x", [str(png), str(other) + ".missing"], sent)
+            check("building the blocks reports exactly this message's images, registering none",
+                  blocks[0]["type"] == "image" and sent == [str(png.resolve())]
+                  and str(png.resolve()) not in server.SENT_IMAGES)
+            server.SENT_IMAGES.update(sent)      # what /api/message does once the CLI took it
             status, ctype, data = get_image(png)
             check("GET /api/image serves a sent image with its own type",
                   status == 200 and ctype == "image/png" and data.endswith(b"unit"))
             check("...and still refuses its neighbour", get_image(other)[0] == 404)
+            saved_cap = server.MAX_IMAGE_BYTES
+            server.MAX_IMAGE_BYTES = 4
+            try:
+                check("...and refuses it once it is bigger than an image may be",
+                      get_image(png)[0] == 404)
+            finally:
+                server.MAX_IMAGE_BYTES = saved_cap
             server.SENT_IMAGES.discard(str(png.resolve()))
     finally:
         if httpd is not None:
