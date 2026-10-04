@@ -23,7 +23,8 @@ import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { paintRing } from "./bar.js";
-import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel } from "./marks.js";
+import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
+         foldLong, openDiff } from "./marks.js";
 /* Nothing is imported from controls.js any more: everything that PAINTS is per
    cell and is reached through `state.cell.controls` (the APPLY table below). */
 /* Cyclic for the same reason chrome.js is: the agents drawer replays a
@@ -1060,15 +1061,23 @@ function loadPins(sid) {
 }
 
 /* The turn's edits, summed per file from the tool calls themselves, as one
-   card: «N فایل ویرایش شد  +A −D». A row opens that file's last edit. */
+   card: «N فایل ویرایش شد  +A −D». A row opens that file's edits in the side
+   panel (pcg-lw0), drawn from the same calls by the tool card's own renderer.
+   This is also the turn's END for the always-on action row, which is why that
+   mark comes before the early return. */
 function flushEdits() {
+  markTurnEnd(log);
   if (!state.turnEdits?.size) return;
   const files = [...state.turnEdits].map(([path, v]) => ({
     path, added: v.added, removed: v.removed,
-    open: () => {
-      for (let p = v.card; p; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
-      v.card.scrollIntoView({ block: "center" });
-    },
+    open: () => openDiff(v.card.closest(".log") ?? log, {
+      path, added: v.added, removed: v.removed,
+      // The diff alone: the panel's head already names the file.
+      nodes: () => v.edits.map((e) => {
+        const d = diffOf(e.name, e.input);
+        return d ? renderDiff(d) : renderToolDetail(e.name, e.input);
+      }),
+    }),
   }));
   state.turnEdits = new Map();
   append(changeCard(files));
@@ -1082,12 +1091,17 @@ export function endReplayMarks() {
 
 /* One user bubble, from every place one is drawn (the echo, a promoted queued
    message, a replayed turn): a new turn, so the last one's edits become its
-   card first — the same boundary live and in replay. */
+   card first — the same boundary live and in replay. `images` is a count, or
+   the images themselves (pcg-lw0): data: URLs from a replayed transcript,
+   /api/image URLs from a live send, drawn as thumbnails above the bubble. A
+   long message is folded (marks.js foldLong, ~15 lines). */
 function userBubble(text, images = 0, meta = {}) {
   flushEdits();
+  if (Array.isArray(images) && images.length) append(thumbs(images));
   const el = bubble("user");
   el.append(...renderMarkdown(text ?? "").childNodes);
-  if (images) el.append(label(`[${images} image]`, "meta"));
+  if (typeof images === "number" && images) el.append(label(`[${images} image]`, "meta"));
+  foldLong(el, text ?? "");
   markMessage(el, meta.uuid, meta.ts, text ?? "");
   return el;
 }
@@ -2038,7 +2052,9 @@ export function renderEvent(ev) {
               const was = state.turnEdits.get(file) ?? { added: 0, removed: 0 };
               state.turnEdits.set(file, { added: was.added + (d.added || 0),
                                           removed: was.removed + (d.removed || 0),
-                                          card: details });
+                                          card: details,
+                                          edits: [...(was.edits ?? []),
+                                                  { name: part.name, input: part.input }] });
             }
             // The call half of a [sentence][call] pair. Read off the summary
             // AFTER the body is filled and before any tool_progress elapsed
@@ -2098,6 +2114,12 @@ export function renderEvent(ev) {
       const content = typeof ev.message?.content === "string"
         ? [{ type: "text", text: ev.message.content }]
         : (ev.message?.content ?? []);
+      // The person's own images ride in the same message as base64 blocks
+      // (replay only — live they arrive on the echo): the first bubble of the
+      // message takes them as thumbnails (pcg-lw0).
+      let images = content
+        .filter((p) => p.type === "image" && p.source?.type === "base64" && p.source.data)
+        .map((p) => `data:${p.source.media_type || "image/png"};base64,${p.source.data}`);
       for (const part of content) {
         // Replayed history carries the user's own turns here. Live it does not
         // (we do not pass --replay-user-messages), so the composer echoes them
@@ -2131,7 +2153,8 @@ export function renderEvent(ev) {
           // A user turn materializing mid-batch (the CLI injecting a queued
           // message) is a boundary INSIDE the batch: the status line survives.
           resetTurn(state.outstanding.size > 0);
-          userBubble(said, 0, { uuid: ev.uuid, ts: ev.timestamp });
+          userBubble(said, images, { uuid: ev.uuid, ts: ev.timestamp });
+          images = [];
           continue;
         }
         if (part.type !== "tool_result") continue;
@@ -2175,6 +2198,12 @@ export function renderEvent(ev) {
         // writing `log` that leaves an empty .msg.assistant in the transcript
         // first (bubble() APPENDS) and then hangs the output off its parent.
         intoCard(body, out);
+      }
+      // Images sent with no words: the echo draws an empty bubble under its
+      // thumbnails, so the replay does too.
+      if (images.length) {
+        resetTurn(state.outstanding.size > 0);
+        userBubble("", images, { uuid: ev.uuid, ts: ev.timestamp });
       }
       return;
     }
@@ -2343,10 +2372,12 @@ export function renderEvent(ev) {
         // demonstrably working again.
         state.error = false;
         if (toQueue) {
-          queueSend(ev.uuid, ev.text ?? "", ev.images ?? 0, ev.timestamp);
+          queueSend(ev.uuid, ev.text ?? "", ev.image_urls?.length ? ev.image_urls : ev.images ?? 0,
+                    ev.timestamp);
         } else {
           resetTurn(queued);
-          userBubble(ev.text, ev.images, { uuid: ev.uuid, ts: ev.timestamp });
+          userBubble(ev.text, ev.image_urls?.length ? ev.image_urls : ev.images,
+                     { uuid: ev.uuid, ts: ev.timestamp });
         }
         // After the bubble, so the line reads as an answer to what was just
         // asked. resetTurn() above has already cleared any stale one. A batch

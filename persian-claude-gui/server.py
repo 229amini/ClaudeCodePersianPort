@@ -37,7 +37,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 COOKIE_NAME = "pcg_token"
 
@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.6.1"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.6.3"),
+    "web":      ("static",          "کلاد فارسی",            "1.7.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.7.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -1547,6 +1547,11 @@ IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 IMAGE_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                      ".gif": "image/gif", ".webp": "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# The images this process has sent the CLI, by resolved path (pcg-lw0). The
+# window's thumbnail of a live send is `GET /api/image?path=` and that route
+# serves these and nothing else: it is not a file server. A replayed turn
+# needs none of it -- the transcript carries the image itself.
+SENT_IMAGES: set[str] = set()
 # The CLI's own at-mention read cap, read out of the 2.1.263 bundle:
 # `the = 262144`, compared with `<=`. Past it the read hands back `null` and
 # says nothing at all — see save_pasted_file's docstring for why that makes
@@ -1667,6 +1672,7 @@ def build_message_blocks(text: str, attachments: list[str]) -> list[dict]:
             continue
         suffix = path.suffix.lower()
         if suffix in IMAGE_SUFFIXES and path.stat().st_size <= MAX_IMAGE_BYTES:
+            SENT_IMAGES.add(str(path.resolve()))
             blocks.append({
                 "type": "image",
                 "source": {
@@ -2195,7 +2201,11 @@ def flash_window(title: str) -> int:
         found: list[int] = []
 
         def visit(hwnd, _lparam):
-            if hwnd == foreground or not user32.IsWindowVisible(hwnd):
+            # A minimised window is not being looked at, even while Windows
+            # still reports it foreground (suspected cause of the one probe run
+            # in five that flashed nothing, 2026-10-04 -- unconfirmed).
+            if ((hwnd == foreground and not user32.IsIconic(hwnd))
+                    or not user32.IsWindowVisible(hwnd)):
                 return True
             cls = ctypes.create_unicode_buffer(64)
             user32.GetClassNameW(hwnd, cls, 64)
@@ -4077,6 +4087,14 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         elif parsed.path == "/api/tabs":
             self._send_json(HTTPStatus.OK, self.tabs_payload())
+        elif parsed.path == "/api/image":
+            key = params.get("path", [""])[0]
+            image = Path(key)
+            if key not in SENT_IMAGES or not image.is_file():
+                self._send(HTTPStatus.NOT_FOUND, b"not found", "text/plain; charset=utf-8")
+                return
+            self._send(HTTPStatus.OK, image.read_bytes(),
+                       IMAGE_MEDIA_TYPES.get(image.suffix.lower(), "application/octet-stream"))
         elif parsed.path == "/api/pins":
             sid = params.get("session", [""])[0]
             if not MARK_ID_RE.match(sid):
@@ -4339,6 +4357,11 @@ class Handler(BaseHTTPRequestHandler):
                                      .isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                 "text": echo_text,
                 "images": sum(1 for b in blocks if b["type"] == "image"),
+                # What the window draws as thumbnails (pcg-lw0); same order
+                # as the image blocks, which is the attachments' order.
+                "image_urls": [f"/api/image?path={quote(key)}" for key in
+                               (str(Path(a).resolve()) for a in attachments)
+                               if key in SENT_IMAGES],
             })
             # The TUI writes every prompt it sends to ~/.claude/history.jsonl,
             # so Up in the terminal and Up in the window walk one list. Written

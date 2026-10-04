@@ -61,6 +61,7 @@ import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
 import { initAgents, applyAgents, refreshAgents, resetAgents } from "./agents.js";
 import { api, token } from "./api.js";
+import { closeDiff } from "./marks.js";
 import { initNewSession, openNewSession, newSessionOpen } from "./newsession.js";
 import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 import { makeChanges } from "./changes.js";
@@ -834,6 +835,7 @@ function adoptFocusedScope() {
    and the server tab stays open — which is what makes `/split 1` and "put a
    fifth session on screen" safe. */
 function park(cell) {
+  closeDiff(cell.log);      // it showed the leaving conversation's edits (pcg-lw0)
   const tab = cell.tab;
   const entry = tab && tabs.get(tab);
   cell.tab = "";

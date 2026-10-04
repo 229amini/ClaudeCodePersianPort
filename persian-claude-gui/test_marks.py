@@ -16,7 +16,13 @@ what it changes:
   - a settled turn ends in one card, «N فایل ویرایش شد», summed per file from
     the tool calls, whose row opens that file's edit; a replay-shaped user turn
     is marked by ITS uuid;
-  - copy writes the message's source text.
+  - copy writes the message's source text;
+  - pcg-lw0: the row under a turn's LAST answer is drawn without a hover; a
+    change-card row opens that file's edits in a panel BESIDE the transcript
+    (measured: the transcript narrows, the panel sits on its inline-end side,
+    one block per edit, ✕ and Esc close it); a replayed turn's base64 image and
+    a live echo's image_urls draw as thumbnails ABOVE the bubble; a message
+    over 15 lines is clipped behind «بیشتر» and one of 15 is not.
 
 Free: no CLI, no login. Every route is stubbed inside the page.
 
@@ -143,16 +149,81 @@ const iso = (ms) => new Date(ms).toISOString();
       && charX(a.firstChild, 0) < charX(a.firstChild, 1)
       && charX(d.firstChild, 0) < charX(d.firstChild, 1);
   }) && (card?.querySelectorAll(".change-stat").length ?? 0) === 3;
-  const aCards = [...(log()?.querySelectorAll("details.card") ?? [])];
-  aCards.forEach((d) => { d.open = false; });
-  card?.querySelector(".change-row")?.click(); await sleep(30);
-  out.openedEdit = aCards.filter((d) => d.open).length;
+  // pcg-lw0: the settled turn's last answer carries its row without a hover.
+  const a1 = byUuid("u-a1");
+  const a1acts = a1?.querySelector(":scope > .msg-acts");
+  // Headless freezes CSS transitions (wiki/dev-environment.md), so read the
+  // value the fade ends on, not wherever it is stuck.
+  if (a1acts) a1acts.style.transition = "none";
+  out.turnLast = !!a1?.classList.contains("turn-last") && !user?.classList.contains("turn-last")
+    && !!a1acts && getComputedStyle(a1acts).opacity === "1"
+    && getComputedStyle(a1acts).position === "static";
+  // A row opens THAT file's edits beside the transcript.
+  const logBox = log();
+  const wideBefore = logBox.getBoundingClientRect().width;
+  card?.querySelector(".change-row")?.click(); await sleep(60);
+  const panel = logBox.parentElement.querySelector(":scope > .diff-side");
+  const lr = logBox.getBoundingClientRect(), pr = panel?.getBoundingClientRect();
+  out.diffOpen = !!panel && logBox.parentElement.classList.contains("diff-open")
+    && panel.previousElementSibling === logBox;
+  out.diffBeside = !!pr && pr.right <= lr.left + 1 && lr.width < wideBefore * 0.6
+    && Math.abs(pr.top - lr.top) <= 1 && Math.abs(pr.height - lr.height) <= 1
+    && pr.width > 100;
+  out.diffHead = (panel?.querySelector(".diff-side-file")?.textContent ?? "") + ":"
+    + (panel?.querySelector(".diff-side-head .change-stat")?.textContent ?? "");
+  out.diffEdits = panel?.querySelectorAll(".diff-side-edit").length ?? 0;
+  out.diffFocused = document.activeElement === panel;
+  panel?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await sleep(30);
+  out.diffEsc = !panel?.isConnected && !logBox.parentElement.classList.contains("diff-open")
+    && Math.abs(logBox.getBoundingClientRect().width - wideBefore) <= 1;
+  card?.querySelectorAll(".change-row")[1]?.click(); await sleep(40);
+  const panel2 = logBox.parentElement.querySelector(":scope > .diff-side");
+  out.diffSecond = (panel2?.querySelector(".diff-side-file")?.textContent ?? "") + ":"
+    + (panel2?.querySelectorAll(".diff-side-edit").length ?? 0);
+  panel2?.querySelector(".diff-side-close")?.click(); await sleep(30);
+  out.diffClosed = !panel2?.isConnected;
 
   // A replay-shaped user turn is marked by its own uuid, and starts a new turn.
   ev({ type: "user", uuid: "u-user2", timestamp: iso(NOW - 60e3),
        message: { content: [{ type: "text", text: "یک سؤال دیگر" }] } });
   await sleep(40);
   out.replayMarked = !!byUuid("u-user2")?.querySelector(".msg-acts");
+
+  // pcg-lw0: a replayed turn's own image, as a thumbnail above its bubble.
+  const PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  ev({ type: "user", uuid: "u-user3", timestamp: iso(NOW - 50e3), message: { content: [
+    { type: "image", source: { type: "base64", media_type: "image/png", data: PNG1 } },
+    { type: "text", text: "این تصویر را ببین" }] } });
+  await sleep(120);
+  const b3 = byUuid("u-user3"), row3 = b3?.previousElementSibling;
+  const img3 = row3?.querySelector("img.msg-image");
+  out.replayThumb = !!img3 && row3.classList.contains("msg-images")
+    && (img3.getAttribute("src") ?? "").startsWith("data:image/png;base64,")
+    && Math.round(img3.getBoundingClientRect().height) === 160
+    && row3.getBoundingClientRect().bottom <= b3.getBoundingClientRect().top + 0.5
+    && !/image/.test(b3.textContent);
+  // A live echo names the wrapper's /api/image route.
+  ev({ type: "wrapper", subtype: "user_echo", uuid: "u-user4", timestamp: iso(NOW - 40e3),
+       text: "و این یکی", images: 1, image_urls: ["/api/image?path=C%3A%5Ckar%5Cx.png"] });
+  await sleep(60);
+  const b4 = byUuid("u-user4");
+  out.liveThumb = b4?.previousElementSibling?.querySelector("img.msg-image")?.getAttribute("src")
+    === "/api/image?path=C%3A%5Ckar%5Cx.png" && !/\[1 image\]/.test(b4.textContent);
+  // Over 15 lines folds; exactly 15 does not.
+  const lines = (n) => Array.from({ length: n }, (_, i) => "سطر شمارهٔ " + (i + 1)).join("\n");
+  ev({ type: "user", uuid: "u-long", timestamp: iso(NOW - 30e3),
+       message: { content: [{ type: "text", text: lines(16) }] } });
+  ev({ type: "user", uuid: "u-15", timestamp: iso(NOW - 20e3),
+       message: { content: [{ type: "text", text: lines(15) }] } });
+  await sleep(60);
+  const long = byUuid("u-long"), fb = long?.querySelector(":scope > .fold-body");
+  const tog = long?.querySelector(":scope > .fold-toggle");
+  out.fold = !!fb && !!tog && fb.scrollHeight > fb.clientHeight + 4
+    && tog.dataset.label === FA.foldMore && !long.textContent.includes(FA.foldMore)
+    && !byUuid("u-15")?.classList.contains("fold");
+  tog?.click(); await sleep(20);
+  out.unfold = !!fb && fb.scrollHeight <= fb.clientHeight + 1 && tog.dataset.label === FA.foldLess;
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
   document.getElementById("probe-out").textContent =
@@ -202,8 +273,22 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("summed per file from the tool calls (two edits of a.js, one write)",
           m.get("cardRows") == "a.js:+3−1,b.md:+3−0", str(m.get("cardRows")))
     check("every «+A −D» draws left to right, sign before digits", m.get("statLtr"))
-    check("a row opens that file's edit", (m.get("openedEdit") or 0) >= 1, str(m.get("openedEdit")))
+    check("the row under a turn's last answer is drawn without a hover", m.get("turnLast"))
+    check("a change row opens a panel after the transcript, in the same pane", m.get("diffOpen"))
+    check("...BESIDE it: the transcript narrows and the panel takes its inline-end side",
+          m.get("diffBeside"))
+    check("...headed by the file and its +A −D", m.get("diffHead") == "a.js:+3−1",
+          str(m.get("diffHead")))
+    check("...one block per edit of that file, focused", m.get("diffEdits") == 2 and m.get("diffFocused"),
+          f"{m.get('diffEdits')} / {m.get('diffFocused')}")
+    check("Esc closes it and the transcript gets its width back", m.get("diffEsc"))
+    check("another row opens ITS file, and ✕ closes it",
+          m.get("diffSecond") == "b.md:1" and m.get("diffClosed"), str(m.get("diffSecond")))
     check("a replay-shaped user turn is marked by its own uuid", m.get("replayMarked"))
+    check("a replayed turn's image is a 160px thumbnail above its bubble", m.get("replayThumb"))
+    check("a live echo's image_urls draw the same row", m.get("liveThumb"))
+    check("a 16-line message is clipped behind «بیشتر»; a 15-line one is not", m.get("fold"))
+    check("«بیشتر» opens the whole message", m.get("unfold"))
     return out
 
 
