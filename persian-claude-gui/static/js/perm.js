@@ -143,6 +143,7 @@ export function makePerm(root, cell) {
     deny: $("perm-deny"),
     queue: [],
     current: null,
+    done: 0,             // answered in this run of stacked requests («۲ از ۵»)
   };
 
   function show(req) {
@@ -151,11 +152,29 @@ export function makePerm(root, cell) {
     // /api/tabs snapshot (see permSeen above).
     if (req.tab) permSeen.add(req.tab);
     if (!perm.current) nextPermission();
-    else repaintTabs();   // a second tab is waiting behind the open dialog
+    else {
+      repaintTabs();      // a second tab is waiting behind the open dialog
+      paintCount();
+    }
+  }
+
+  /* «۲ از ۵» when requests stack up (pcg-ahh.2, as the terminal edition's
+     perm.js): this one's place in the run, counted from the first request that
+     arrived while none was open. A lone request says nothing. */
+  function paintCount() {
+    const el = root.querySelector(".perm-count");
+    if (!el) return;
+    const total = perm.current ? perm.done + 1 + perm.queue.length : 0;
+    el.hidden = total < 2;
+    el.textContent = total < 2 ? "" : FA.permCount
+      .replace("{i}", (perm.done + 1).toLocaleString("fa-IR"))
+      .replace("{n}", total.toLocaleString("fa-IR"));
   }
 
   function nextPermission() {
     perm.current = perm.queue.shift() ?? null;
+    if (!perm.current) perm.done = 0;
+    paintCount();
     // Whichever tab was waiting is not any more, and another one may be now.
     repaintTabs();
     if (!perm.current) return;
@@ -337,6 +356,7 @@ export function makePerm(root, cell) {
     } catch (err) {
       console.error("permission respond failed", err);
     }
+    perm.done += 1;
     nextPermission();
   }
 
@@ -347,10 +367,12 @@ export function makePerm(root, cell) {
     if (perm.current && match(perm.current)) {
       perm.current = null;
       if (perm.dialog?.open) perm.dialog.close();
+      perm.done += 1;
       nextPermission();   // repaints
       return;
     }
     repaintTabs();        // a QUEUED request left; the dialog did not move
+    paintCount();
   }
 
   /* --- init ------------------------------------------------------------------ */

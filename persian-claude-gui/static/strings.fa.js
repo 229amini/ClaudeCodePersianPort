@@ -164,6 +164,10 @@ window.FA = {
   continueSession: "ادامه",
   viewSession: "نمایش",
   deleteSession: "حذف",
+  renameSession: "تغییر نام",
+  searchSessions: "جستجوی گفتگوها",
+  searchResults: "نتیجه‌ها",
+  searchEmpty: "گفتگویی پیدا نشد",
   confirmDelete: "مطمئنید؟",
   deleteFailed: "حذف ناموفق بود",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
@@ -267,6 +271,15 @@ window.FA = {
   askAnswered: "پاسخ داده شد",
   askSkipped: "بدون پاسخ رد شد",
   askNoAnswer: "—",
+  questionsRow: "پرسش‌ها",
+  markFork: "گفتگوی تازه از اینجا",
+  markForkBefore: "گفتگوی تازه از پیش از این پیام، با همین متن در جای نوشتن",
+  forkDone: "گفتگوی تازه از همان نقطه — گفتگوی قبلی دست نخورده ماند",
+  forkFailed: "ساختن گفتگوی تازه از اینجا نشد",
+  focusSteps: "{n} مرحله",
+  focusOn: "نمای متمرکز روشن شد: مراحل کار هر نوبت پشت یک سطر رفت. همین دستور یا Ctrl+Alt+F برش می‌گرداند.",
+  focusOff: "نمای متمرکز خاموش شد: همهٔ مراحل کار دوباره دیده می‌شوند.",
+  permCount: "{i} از {n}",
 
   /* The conversation is filling up. Two actions, because the CLI's own advice
      is «/compact or /clear» and they mean different things: compact keeps the
@@ -387,6 +400,7 @@ window.FA = {
   splitLabel: "چند گفتگو کنار هم",
   splitOptionTitle: "نمایش {n} گفتگو در یک پنجره",
   cmdSplitDesc: "چند گفتگو کنار هم: ۱ یا ۲ یا ۴",
+  cmdFocusDesc: "فقط پیام‌ها و پاسخ‌ها؛ مراحل کار هر نوبت پشت یک سطر — Ctrl+Alt+F",
   cmdSplitUsage: "این دستور فقط ۱ یا ۲ یا ۴ را می‌پذیرد",
   cmdSplitDone: "چیدمان به {n} ستون تغییر کرد",
   /* ۴ is NOT four columns — it is a 2×2 grid, and the terminal edition's own

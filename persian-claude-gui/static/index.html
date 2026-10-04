@@ -38,6 +38,11 @@
     <span id="btn-new-label"></span>
   </button>
 
+  <!-- Search over every conversation's name and first prompt (js/chrome.js
+       renderSearch); its words come from strings.fa.js. -->
+  <input type="search" id="side-search" class="side-search" dir="auto" autocomplete="off"
+         spellcheck="false">
+
   <div class="side-scroll">
     <!-- Conversations running RIGHT NOW, one `claude` process each. Drawn from
          /api/tabs by js/chrome.js; hidden until there is one. -->
@@ -184,6 +189,7 @@
        by hand in js/chrome.js, since a non-modal dialog fires no `cancel`. -->
   <dialog class="perm">
     <form method="dialog" class="perm-form">
+      <p class="perm-count" hidden></p>
       <h2 class="perm-title"></h2>
       <p class="perm-body" dir="auto"></p>
       <!-- Which conversation is asking, when it is not the one on screen: one
