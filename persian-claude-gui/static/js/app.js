@@ -50,6 +50,7 @@ import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
   setChrome, refreshProjects, backfillTab,
 } from "./chrome.js";
+import { initFocus } from "./focus.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
 import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
@@ -781,6 +782,7 @@ setTabBridge({
 });
 
 initChrome();
+initFocus();   // pcg-ahh.5: Focus view, the window's own preference
 
 /* The first column. Here rather than at the top of the file for the reason the
    load-order note gives: this is where initComposer()/initControls() used to

@@ -15,7 +15,7 @@ import { renderMarkdown, pathEl, linesAuto, fillInline, autoDir } from "./bidi.j
    through the renderer. Only hoisted function declarations cross this edge, and
    only at event time — never while the modules are still evaluating. */
 import {
-  setChrome, refreshProjects, setCurrentSession,
+  setChrome, refreshProjects, setCurrentSession, forkFrom,
 } from "./chrome.js";
 /* The permission dialog moved out of chrome.js at MA4-T1: it is per cell, and
    the sidebar is not. Same cycle rules -- nothing crosses at evaluation time. */
@@ -23,6 +23,7 @@ import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { paintRing } from "./bar.js";
+import { scheduleFocus } from "./focus.js";
 import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
          foldLong, openDiff, closeDiff } from "./marks.js";
 /* Nothing is imported from controls.js any more: everything that PAINTS is per
@@ -151,6 +152,7 @@ function append(el, { stick = true } = {}) {
   const wasAtBottom = stick && !bulk && atBottom();
   toolHome(el).append(el);
   if (wasAtBottom) stickSoon(log);
+  scheduleFocus(log);   // Focus view folds the new row too (focus.js)
   return el;
 }
 
@@ -1022,8 +1024,15 @@ const pinsAsked = new Set();       // session ids already fetched
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 function markMessage(el, uuid, ts, text) {
+  // A fork from an answer keeps it; from something the person said it keeps
+  // what came BEFORE, and the words go back into the new prompt (pcg-ahh.4,
+  // the terminal edition's same call). This conversation is never cut.
+  const mine = el.classList.contains("user");
   decorate(el, { uuid, ts, text, pinned: !!uuid && pinned.has(uuid),
-                 onPin: uuid ? (on) => togglePin(el, uuid, text, on) : null });
+                 onPin: uuid ? (on) => togglePin(el, uuid, text, on) : null,
+                 onFork: uuid ? () => forkFrom({ el, uuid, before: mine, text: mine ? text : "" })
+                   : null,
+                 forkTitle: mine ? FA.markForkBefore : FA.markFork });
   if (uuid) marked.set(uuid, el);
 }
 
@@ -1604,26 +1613,44 @@ export function renderQuestionBody(questions) {
   return frag;
 }
 
-/* The answer, keyed by question text exactly as the CLI stores it. An empty
-   `answers` is the skip case and says so rather than rendering nothing — a
-   blank card would read as a bug. */
-function renderAnswers(questions, answers) {
-  const frag = document.createDocumentFragment();
+/* The Questions row (pcg-ahh.2, after the VS Code extension; the terminal
+   edition's render.js has the same function): an answered question's card
+   shuts — its options are history now — and one row stays in the open under
+   it, saying what was asked and what was picked. The same prose builders as
+   the dialog and the card. Live and replayed alike: both carry the structured
+   result (server.py passes the transcript's toolUseResult on). */
+function questionsRow(body, questions, answers) {
+  const row = document.createElement("div");
+  row.className = "q-row";
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-label", FA.questionsRow);
+  row.append(label(FA.questionsRow, "q-row-head"));
   const asked = (questions ?? []).length ? questions : Object.keys(answers).map(
     (question) => ({ question }));
   for (const q of asked) {
     const value = answers[q.question];
-    const row = document.createElement("div");
-    row.className = "q-answer";
-    row.setAttribute("dir", "auto");
-    row.append(label((q.header || q.question || "") + ":", "q-header"));
-    row.append(label(
-      Array.isArray(value) ? value.join("، ") : (value || FA.askNoAnswer),
-      "q-picked"));
-    frag.append(row);
+    const line = document.createElement("div");
+    line.className = "q-answer";
+    const said = questionProse(label("", "q-asked"), q.header || q.question || "");
+    const picked = document.createElement("bdi");
+    picked.className = "q-picked";
+    picked.textContent = Array.isArray(value) ? value.join("، ") : (value || FA.askNoAnswer);
+    line.append(said, picked);
+    // The question decides the line, and the pick is isolated inside it: both
+    // children carry their own direction, so dir="auto" here would read
+    // nothing and fall to LTR (spec rule 2).
+    line.setAttribute("dir", said.getAttribute("dir") === "rtl" ? "rtl" : "ltr");
+    row.append(line);
   }
-  if (!frag.childNodes.length) frag.append(label(FA.askSkipped, "meta"));
-  return frag;
+  if (!Object.keys(answers).length) row.append(label(FA.askSkipped, "meta"));
+  const details = body?.closest("details");
+  if (details) {
+    details.open = false;
+    details.after(row);
+  } else {
+    append(row);
+  }
+  return row;
 }
 
 /* --- a background agent reporting back ------------------------------------- */
@@ -2165,8 +2192,7 @@ export function renderEvent(ev) {
         const structured = ev.tool_use_result;
         if (structured && Array.isArray(structured.questions)
             && structured.answers && typeof structured.answers === "object") {
-          intoCard(body, renderAnswers(structured.questions,
-                                      structured.answers));
+          questionsRow(body, structured.questions, structured.answers);
           continue;
         }
         // The launch ack for a background agent. Its text is the CLI talking to

@@ -70,6 +70,8 @@ let lastSession = null;   // newest OTHER session here: {id, path, label}
 const expanded = new Set();   // lowercased project paths open in the sidebar
 let autoExpanded = null;      // the project `expanded` was last auto-opened for
 let lastProjects = [];        // what /api/projects last answered, for a repaint
+let searchQuery = "";        // the sidebar's search field (renderSearch)
+const TITLE_MAX = 60;         // server.py TITLE_MAX
 
 /* The renderer owns the session id as of every system/init, but the sidebar
    owns the highlight, so the value lives here. `undefined` keeps the old value
@@ -491,6 +493,7 @@ let archOpen = false;   // the «بایگانی» section, collapsed by default
 
 function renderProjects(projects) {
   ui.projects.replaceChildren();
+  if (searchQuery.trim()) return void renderSearch(projects);
   // Open the active project when you ARRIVE at it, not on every refresh. Any
   // event redraws the sidebar, so the unconditional add used to undo the user's
   // collapse a moment after they clicked — the active project could never be
@@ -715,6 +718,7 @@ function sessionRow(sess, projPath, isCurrent) {
   // refuses it anyway (it adopts the tab instead).
   const liveTab = openTabs.find((t) => t.session_id === sess.session_id)?.tab;
   li.dataset.live = String(!!liveTab);
+  li.dataset.session = sess.session_id;
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -764,6 +768,11 @@ function sessionRow(sess, projPath, isCurrent) {
       text: FA.viewSession,
       run: () => replaySession(sess.session_id, projPath, sess.worktree),
     },
+    {
+      icon: SVG.rename,
+      text: FA.renameSession,
+      run: () => startSessionRename(li, btn, sess, projPath),
+    },
     ...(isCurrent ? [] : [null, {
       icon: SVG.trash,
       text: FA.deleteSession,
@@ -778,6 +787,127 @@ function sessionRow(sess, projPath, isCurrent) {
   ]));
   return li;
 }
+
+/* A conversation's name, edited where it is read (pcg-ahh.1, the VS Code
+   extension's Rename; the terminal edition's chrome.js has the same function).
+   The field stands in for the row's button; blur and Esc cancel. The server
+   writes the CLI's own custom-title record, through the CLI itself when the
+   conversation is running, so `claude --resume` shows the same name. */
+function startSessionRename(li, btn, sess, projPath) {
+  if (li.querySelector(".sess-rename")) return;
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "proj-rename sess-rename";
+  field.setAttribute("dir", "auto");
+  field.maxLength = TITLE_MAX;
+  field.value = sess.title || sess.preview || "";
+  field.setAttribute("aria-label", FA.renameSession);
+  btn.hidden = true;
+  li.prepend(field);
+  field.focus();
+  field.select();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    field.remove();
+    btn.hidden = false;
+  };
+  field.addEventListener("blur", close);
+  field.addEventListener("keydown", async (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      return;
+    }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const title = field.value.trim();
+    close();
+    if (!title || title === (sess.title || sess.preview)) return;
+    try {
+      await api("/api/session/rename", { session_id: sess.session_id, title,
+                                         path: projPath, worktree: sess.worktree });
+    } catch {
+      return;   // the old name stays, which is the truth
+    }
+    loadProjects();
+  });
+}
+
+/* --- searching the conversations (pcg-ahh.1) --------------------------------
+
+   One field above the lists. While it holds text the sidebar is ONE flat list
+   of the conversations whose name or first prompt contains it, in every
+   project (archived ones too), newest first. ي/ی, ك/ک, the half-space and
+   case fold, so a name typed on an Arabic layout still finds itself. */
+function foldText(s) {
+  return String(s ?? "").toLowerCase()
+    .replace(/[\u200c\u200d\u200e\u200f]/g, "")
+    .replace(/\u064a/g, "\u06cc").replace(/\u0643/g, "\u06a9");
+}
+
+export function sessionMatches(sess, query) {
+  const q = foldText(query).trim();
+  if (!q) return true;
+  return foldText(sess.title).includes(q) || foldText(sess.preview).includes(q);
+}
+
+function renderSearch(projects) {
+  const hits = [];
+  for (const proj of projects) {
+    for (const sess of proj.sessions ?? []) {
+      if (sessionMatches(sess, searchQuery)) hits.push([sess, proj.path]);
+    }
+  }
+  hits.sort((a, b) => (b[0].modified ?? 0) - (a[0].modified ?? 0));
+  const head = document.createElement("h3");
+  head.className = "side-title";
+  head.textContent = `${FA.searchResults} (${hits.length.toLocaleString("fa-IR")})`;
+  ui.projects.append(head);
+  const ul = document.createElement("ul");
+  ul.className = "proj-sessions search-hits";
+  if (!hits.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.setAttribute("dir", "auto");
+    li.textContent = FA.searchEmpty;
+    ul.append(li);
+  }
+  for (const [sess, path] of hits) {
+    const row = sessionRow(sess, path,
+      path.toLowerCase() === currentCwd.toLowerCase() && sess.session_id === currentSession);
+    // Which project it is in: the flat list has no project row above it.
+    const where = document.createElement("bdi");
+    where.className = "sess-proj";
+    where.textContent = displayName(path);
+    where.title = path;
+    row.querySelector(".sess")?.append(where);
+    ul.append(row);
+  }
+  ui.projects.append(ul);
+}
+
+function wireSearch() {
+  const field = document.getElementById("side-search");
+  if (!field) return;
+  field.placeholder = FA.searchSessions;
+  field.setAttribute("aria-label", FA.searchSessions);
+  field.addEventListener("input", () => {
+    searchQuery = field.value;
+    renderProjects(lastProjects);
+  });
+  field.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !field.value) return;
+    e.preventDefault();
+    e.stopPropagation();
+    field.value = "";
+    searchQuery = "";
+    renderProjects(lastProjects);
+  });
+}
+wireSearch();
 
 /* --- session hover preview -------------------------------------------------- */
 
@@ -1182,6 +1312,49 @@ async function switchProject(folder, worktree) {
 /* The one failure a user can actually cause here: six conversations already
    open. The server answers 409 with `max_tabs`; api() throws with the status in
    its message, which is the same shape agents.js reads a 404 out of. */
+/* A new conversation from one message (pcg-ahh.4, the VS Code extension's
+   «Fork conversation from here»; the terminal edition's chrome.js has the
+   same function). The server spawns the copy with the CLI's own
+   --resume-session-at; the conversation it came from is never cut. A forked
+   CLI does not re-emit what it kept, so the new conversation is drawn from the
+   source transcript, cut at the same message: through it for an answer,
+   before it for something the person said — whose words then go back into
+   the new prompt to be changed and sent again. */
+export async function forkFrom({ el, uuid, before = false, text = "" }) {
+  // The pane the message is drawn in names the conversation it belongs to.
+  const tab = tabBridge?.cells?.().find((c) => c.root?.contains(el))?.tab;
+  const entry = tab ? openTabEntry(tab) : null;
+  if (!entry?.session_id || !uuid) return void bubble("error", FA.forkFailed);
+  let data;
+  try {
+    data = await api("/api/session/fork", { tab, at: uuid, before });
+  } catch (err) {
+    return void bubble("error", /-> 409$/.test(err?.message ?? "") ? FA.maxTabs : FA.forkFailed);
+  }
+  let events = [];
+  if (data.at) {
+    try {
+      const history = await api("/api/session?id=" + encodeURIComponent(entry.session_id)
+                                + "&cwd=" + encodeURIComponent(entry.cwd || "")
+                                + worktreeQuery(entry.worktree));
+      const all = history.events ?? [];
+      const at = all.findIndex((ev) => ev.uuid === uuid);
+      events = at < 0 ? [] : all.slice(0, before ? at : at + 1);
+    } catch (err) {
+      events = [];   // the copy exists; only its picture of the past is missing
+    }
+  }
+  await switchToTab(data.tab);
+  renderInto(data.tab, events);
+  if (tabBridge?.active?.() === data.tab) {
+    bubble("assistant", FA.forkDone).classList.add("meta");
+    if (text) {
+      tabBridge?.cells?.().find((c) => c.tab === data.tab)?.composer?.restoreDraft(text);
+    }
+  }
+  refreshProjects();
+}
+
 function reportOpenFailure(err) {
   const message = err?.message ?? "";
   // 400 reaches here from one place only: a worktree was asked for in a folder

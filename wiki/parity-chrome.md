@@ -651,3 +651,12 @@ negative-tested).
    append. AltGr is Ctrl+Alt on a Windows keyboard, so the chord backs off when `AltGraph` is held.
    The preference lives in `prefs.js`, i.e. for the life of the window (the port, and so the
    origin, changes every run). `/focus` left V2-PLAN §4 the same day.
+
+**Ported to the web edition the same day (`pcg-cpn`, web 1.8.0).** All five, on the same routes.
+What differed: the web sidebar has no `countPill` (the result count is in the heading's text),
+its ⋯ button has no `kebab-btn` class (the gate finds it by its accessible name), it has no
+terminal state line (so no `slPostureAutoApprove`), and `/focus` is one of the composer's
+`LOCAL_VERBS` rather than a command-table entry. `focus.js` stopped importing `prefs.js`, which
+the web edition does not have, and is now byte-identical in both trees; it reads and writes the
+same sessionStorage key and JSON value `prefs.js` used, so a terminal window that had the view on
+keeps it across the change.

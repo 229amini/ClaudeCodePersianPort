@@ -120,7 +120,8 @@ especially the §B-9 verification answers, which are pinned to a specific `claud
 - [parity-chrome.md](parity-chrome.md) §"VS Code extension parity" — **2026-10-04 (pcg-ahh):**
   five gaps against the Claude Code VS Code extension, closed: session search and rename, the
   Questions row and «۲ از ۵», «تأیید همه» instead of «خودکار», a new conversation from a message,
-  Focus view. The fork's measurement (`--resume-session-at`, free) is in
+  Focus view; ported to the web edition the same day (`pcg-cpn`). The fork's measurement
+  (`--resume-session-at`, free) is in
   [cli-stream-json-findings.md](cli-stream-json-findings.md).
 - [log.md](log.md) — running session log: what was verified, decided, or discovered, with dates.
 
