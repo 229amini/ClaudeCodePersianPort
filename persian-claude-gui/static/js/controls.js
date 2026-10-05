@@ -4,7 +4,7 @@
 
    CAPABILITY MIRROR. Nothing here is hardcoded about the CLI. The model list,
    its display names, descriptions and effort support all arrive in the
-   `initialize` reply (wiki/control-protocol.md §1) and are account- and
+   `initialize` reply and are account- and
    plan-specific — a hardcoded list would ship a wrong picker to every user on
    a different plan. If `initialize` says nothing, the chip stays hidden.
 
@@ -14,7 +14,7 @@
 "use strict";
 
 import { api } from "./api.js";
-/* A leaf too: the composer bar's popovers (COMPOSER-BAR.md). Only the effort
+/* A leaf too: the composer bar's popovers. Only the effort
    slider comes from it here; the other menus stay the in-cell .menu-popup,
    which test_layout/test_split measure staying inside its own cell. */
 import { openSlider } from "./bar.js";
@@ -359,7 +359,7 @@ export function makeControls(root, cell) {
      the SAME pickPosture(), so both of the pill's load-bearing properties are
      inherited by construction — the chip still moves only when the server's
      `wrapper/posture` event arrives, and `plan` still exits on its own when the
-     engine leaves it (wiki/approval-postures.md).
+     engine leaves it.
 
      No posture confirmed yet means the conversation has not answered; there is
      nothing to cycle FROM, and starting at POSTURES[0] would be this window
@@ -442,7 +442,7 @@ export function makeControls(root, cell) {
     ui.menu.style.right = Math.min(Math.max(0, offset), slack) + "px";
   }
 
-  /* After claude.ai/code (COMPOSER-BAR.md): a title row, then numbered rows
+  /* After claude.ai/code: a title row, then numbered rows
      with a ✓ on the current one. The digit is the row's place in the list,
      never part of its text, and a key while the menu is open. */
   const MENU_TITLES = { model: FA.barModel, posture: FA.barMode,

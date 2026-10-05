@@ -21,7 +21,7 @@ window.FA = {
 
   thinking: "فکر",
 
-  /* The working line (CLAUDE-AI-PARITY.md P2), after claude.ai/code's
+  /* The working line, after claude.ai/code's
      «3m 51s · 117.6k tokens · 1 running task · Almost done thinking…»: what
      it is doing, and the chip for the background helpers still going. */
   pulseStart: "در حال کار…",
@@ -71,7 +71,7 @@ window.FA = {
     Agent: "عامل پس‌زمینه",
   },
 
-  /* A run of steps is ONE line (CLAUDE-AI-PARITY.md P2), in the site's own
+  /* A run of steps is ONE line, in the site's own
      vocabulary (wiki/claude-ai-code-reference.md §"Tool line vocabulary"):
      one part per kind in order of first use, past tense, one file named and
      several counted, «(N failed)» when a step failed. */
@@ -116,7 +116,7 @@ window.FA = {
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
   agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
-  /* The Background tasks panel (CLAUDE-AI-PARITY.md P3), after claude.ai/code's. */
+  /* The Background tasks panel, after claude.ai/code's. */
   tasksTitle: "کارهای پس‌زمینه",
   tasksRunning: "در حال اجرا",
   tasksNone: "کاری در حال اجرا نیست",

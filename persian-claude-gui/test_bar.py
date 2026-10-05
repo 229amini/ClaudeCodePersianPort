@@ -1,4 +1,4 @@
-r"""Composer bar gate (COMPOSER-BAR.md), BOTH editions.
+r"""Composer bar gate, BOTH editions.
 
 The user's request, 2026-09-29, with five claude.ai/code screenshots: its
 composer bar in both editions. What can go wrong is quiet — a menu that opens
@@ -156,7 +156,7 @@ const NOW = Date.now();
   out.effortPost = since(mark).filter((c) => c.url === "/api/effort").map((c) => c.body.level).join();
   pop()?.hidePopover(); await sleep(20);
 
-  // claude.ai's model shape (CLAUDE-AI-PARITY.md P1): the newest of each
+  // claude.ai's model shape: the newest of each
   // family, then «More models ›» with the rest; and the mode menu's footer is
   // what «خودکار» approved, opening its list. bar.js menus only — the web
   // edition's in-cell menu is its own (P4).
@@ -213,7 +213,7 @@ const NOW = Date.now();
   pop()?.querySelectorAll(".bar-row")[1]?.click(); await sleep(40);
   out.slash = q(".input")?.value ?? "";
 
-  // The button at the end of the box (pcg-368.6), terminal edition: send, or
+  // The button at the end of the box, terminal edition: send, or
   // stop while a turn runs with nothing to send; mid-turn «بعداً بفرست».
   out.actBox = !!q(".comp-act.send");
   if (out.actBox) {

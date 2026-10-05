@@ -132,7 +132,7 @@ SH = SHELL[EDITION]
 
 # What check() asserts per window size. Named so the PASS line cannot drift from
 # the acceptance bar the MA3 design set (>= 12). BOTH editions now have a visible
-# split control (TERMINAL-REDESIGN.md §3), so the two checks it brings with it are
+# split control, so the two checks it brings with it are
 # no longer web-only.
 # Terminal: the two split-control checks became three grid checks (§D6).
 CHECKS = 24 if EDITION == "web" else 25
@@ -175,7 +175,7 @@ window.fetch = async (url, opts) => {
 };
 
 // `#grid .cell`, not `> .cell`: the terminal edition draws rows of panes
-// (BRIDGEMIND-PORT.md §D6), so a pane is a grandchild of #grid there.
+// so a pane is a grandchild of #grid there.
 const CELLS = () => [...document.querySelectorAll("#grid .cell")];
 const PARTS = %PARTS%;
 %OPENMENU%
@@ -352,7 +352,7 @@ async function layoutCase(which) {
     home: r.classList.contains("home")}));
   // The digit badge is the cell's, not its conversation's: with nothing open
   // it is the ONLY thing saying which Alt+N reaches this blank column.
-  // The digit shows while Alt is held (BRIDGEMIND-PORT.md §D5), so that is
+  // The digit shows while Alt is held, so that is
   // the state it is measured in.
   document.body.classList.add("alt-held");
   out.homeBadges = CELLS().map((r) => box(r.querySelector(".cell-badge")));
@@ -431,7 +431,7 @@ async function layoutCase(which) {
     return cell.h ? Math.round((100 * log.h) / cell.h) : 0;
   });
 
-  /* --- (e) the chrome a RESUMED session carries (pcg-6nf.11) ----------------
+  /* --- (e) the chrome a RESUMED session carries ----------------
      Every state above has an EMPTY status line, which is why the 53% at 366x286
      the density fix was signed off on was never the number the user saw. A
      resumed session names all of it at once - model, folder, mode, context,
@@ -479,7 +479,7 @@ async function layoutCase(which) {
   });
 
 
-  /* --- (f) the slash popup in a SHORT column (pcg-6nf.10) -------------------
+  /* --- (f) the slash popup in a SHORT column -------------------
      The picker menu was fixed by sliding its anchor down (controls.js
      positionMenu); this list is anchored by composer.js and had only the 140px
      floor under its cap, which in a quarter of a ~1050x710 window asks for more
@@ -963,10 +963,10 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
         say(f"the asking column's dialog left cell index {mid['focused']} focused, not 1")
     if mid["runStatus"] != "running":
         say(f"a running turn read {mid['runStatus']!r} once a dialog pulled focus "
-            "into another column (pcg-0o7)")
+            "into another column")
     if mid["markerIn"] != [False, True, False, False]:
         say(f"the focused conversation's next line landed in columns {mid['markerIn']}"
-            " - `log` was restored to the column the keyboard had left (pcg-0o7)")
+            " - `log` was restored to the column the keyboard had left")
     # 7. Alt+N
     if m["altFocused"] != 2:
         say(f"Alt+3 marked cell index {m['altFocused']} focused, not 2")
@@ -1053,7 +1053,7 @@ def main() -> int:
     checks = 0
     # ONE server for the whole run - seven headless pages against it. This used
     # to be a server per window size, because the fourth page against one
-    # server always wedged (pcg-4hg, 2026-09-07). The cause was the harness,
+    # server always wedged. The cause was the harness,
     # not the browser: nobody drained the server's stdout, so its own [http]
     # request log filled the pipe buffer and the server blocked inside write().
     # boot_server() drains it - see its docstring for the measurement.

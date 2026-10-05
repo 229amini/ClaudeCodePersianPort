@@ -99,7 +99,7 @@ const KEY_SHEET = [
    true.
 
    v2.4 is where these stopped being "click the chip that already does it": the
-   chips are gone (V2-PLAN §2) and the pickers ARE the commands now (§3.3,
+   chips are gone and the pickers ARE the commands now (§3.3,
    "pickers behind commands"). Each entry answers with false when there is
    nothing to offer — no model list yet, a model with no effort levels — and a
    verb that answers false falls through to the CLI as ordinary text, exactly
@@ -150,7 +150,7 @@ export function makeComposer(root, cell) {
   const composer = $("composer");
   const sendBtn = $("send");
   const stopBtn = $("stop");
-  /* The invitation to type, by state (BRIDGEMIND-PORT.md §D10): idle it
+  /* The invitation to type, by state: idle it
      carries the one key a Persian writer needs every line (Shift+Space), and
      while a turn runs it says what a send will do now - queue - and how to
      stop. The rest of the old hint row lives behind `?`. */
@@ -200,7 +200,7 @@ export function makeComposer(root, cell) {
   }
 
 
-  /* THE ACTION BUTTON (pcg-368.6), after claude.ai/code: one button at the end
+  /* THE ACTION BUTTON, after claude.ai/code: one button at the end
      of the box. Stop ⊙ only while a turn runs AND there is nothing to send —
      the one moment «send» has nothing to do; otherwise send ↵, dim while the
      box is empty. The site's split, measured off the user's screenshots. */
@@ -560,7 +560,7 @@ export function makeComposer(root, cell) {
     button.className = "ctx-btn " + cls;
     button.setAttribute("dir", "auto");
     button.append(label(text, "ctx-btn-text"));
-    // v2.5: the notice is a one-line warning row now (V2-PLAN §3.4), so the
+    // v2.5: the notice is a one-line warning row now, so the
     // per-action explanation moves to the hover. The node stays — it is what
     // the spec harness reads — and the title is where a line-long row can still
     // say «خلاصه می‌شود و همین گفتگو ادامه پیدا می‌کند» without becoming a card.
@@ -597,13 +597,13 @@ export function makeComposer(root, cell) {
     });
   }
 
-  /* --- long pastes, parked as chips (V2-PLAN §3.1) ----------------------------
+  /* --- long pastes, parked as chips ----------------------------
 
      Forty lines of log pasted into the box buries the sentence around them and
      pushes the composer over half the window. The TUI's answer is to keep the
      text and put a placeholder in the input — «[Pasted text #1 +39 lines]» — and
      to expand it again on send. This is that, with the numbers lifted from the
-     binary rather than chosen (V2-PLAN §3.6). Read out of 2.1.261 at the
+     binary rather than chosen. Read out of 2.1.261 at the
      construction site, chunk `.../input`:
 
        var o9 = 800;                                   // the character threshold
@@ -767,7 +767,7 @@ export function makeComposer(root, cell) {
 
   /* Both lists that open UPWARD out of the prompt - «/» commands and `@` files -
      shared this one line: `max-height: max(140, box.top - 16)`. Two defects in
-     it, and this is the one place to fix them both (pcg-6nf.10).
+     it, and this is the one place to fix them both.
 
      It measured against the WINDOW, so with four columns a bottom-row list was
      capped by everything above the window's own top rather than by its own
@@ -1054,7 +1054,7 @@ export function makeComposer(root, cell) {
      so the window offers the files the terminal offers. Two measured quirks live
      here: the first query after a spawn comes back empty because the index warms
      on demand, so the menu asks again; and what is inserted is `@path` as TEXT —
-     the CLI expands it itself (wiki/cli-stream-json-findings.md §5.2). */
+     the CLI expands it itself. */
   const filePopup = $("file-popup");
   let fileMatches = [];
   let fileIndex = 0;
@@ -1649,7 +1649,7 @@ export function makeComposer(root, cell) {
       await attachBytes([...(e.dataTransfer?.files ?? [])]);
     });
 
-    /* --- the composer bar's «+» and ◔ (COMPOSER-BAR.md) -----------------------
+    /* --- the composer bar's «+» and ◔ -----------------------
 
        «+»: the native file dialog (/api/attach/pick, the web edition's
        paperclip route: real paths, no base64 through the page), the slash

@@ -62,7 +62,7 @@
      claude.ai's warm graphite; THIS edition is a terminal rendition, and a
      default Windows Terminal ground is #0c0c0c — so the neutral is the more
      faithful one here. Coral is unchanged (assets/make_icon.py).
-     BridgeMind port P1 (BRIDGEMIND-PORT.md §D2, 2026-09-24): a darker GROUND
+     BridgeMind port P1: a darker GROUND
      behind cards instead of one flat sheet with hairlines. The sidebar and every
      pane are cards on --ground, one --gap apart; the composer and the
      permission card are one step lighter again (--raise).
@@ -139,7 +139,7 @@
      retune the WIDTH and body.app's shorthand must not be restated three
      times — the track ORDER is the decision (§1) and it is written once. */
   --side-w: 264px;
-  /* ...and the width it collapses to (TERMINAL-REDESIGN.md §1). 48px is one
+  /* ...and the width it collapses to. 48px is one
      comfortable touch/click target plus its gutter — the mark, «+», the split
      segments, one dot per conversation and the help link all fit a single
      column at this width and nothing in it needs to wrap. */
@@ -227,7 +227,7 @@ body {
    4, so do not "fix" this back on its authority.
    Both panes are still pinned by `grid-column` rather than by flipping
    `direction` anywhere, which would re-order every inline child of the shell
-   (wiki/rtl-rendering-notes.md). The sidebar's own inner direction is
+  The sidebar's own inner direction is
    untouched.
    spec-test.html has no .app class and keeps the stacked layout above. */
 body.app {
@@ -292,12 +292,12 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-head .mark { color: var(--accent); flex: none; }
 .brand { font-weight: var(--wt-title); font-size: .95rem; }
 
-/* «گفتگوی جدید» and the layout button share a row (pcg-7bi); the row carries
+/* «گفتگوی جدید» and the layout button share a row; the row carries
    the margins the new-chat button used to. */
 .side-actions { display: flex; gap: 6px; margin: 2px 10px 10px; }
 .side-actions .new-chat { flex: 1; margin: 0; }
 
-/* Searching the conversations (pcg-ahh.1): a quiet field under the actions,
+/* Searching the conversations: a quiet field under the actions,
    the same ground and border language as the composer, no icon. */
 .side-search {
   display: block;
@@ -364,7 +364,7 @@ body.rail .layout-btn { inline-size: auto; }
 .new-chat:hover { background: var(--surface-2); }
 .new-chat svg { color: var(--accent); flex: none; }
 
-/* THE BELL (BRIDGEMIND-PORT.md §D9). An icon button in the head; the count is a
+/* THE BELL. An icon button in the head; the count is a
    small pill on it, faint while the news is only answers and in the waiting
    colour while any unread notice is a conversation asking for you. */
 .bell-btn {
@@ -386,7 +386,7 @@ body.rail .layout-btn { inline-size: auto; }
 .bell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .bell-btn + .rail-toggle { margin-inline-start: 0; }
 
-/* The layout panel (pcg-7bi) wears the bell panel's box; inside, the counts
+/* The layout panel wears the bell panel's box; inside, the counts
    are the new-session page's own segmented buttons. */
 .layout-panel { padding: 10px 12px 12px; }
 .layout-panel h2 { margin: 0 0 2px; font-size: var(--fs-ui); font-weight: var(--wt-title); }
@@ -589,8 +589,7 @@ body.rail .layout-btn { inline-size: auto; }
   --dot-size: 10px;
   line-height: 1;
 }
-/* No colour for [data-current]: the status palette decides (BRIDGEMIND-PORT.md
-   §D2), and the row's own tint already says which one is current. */
+/* No colour for [data-current]: the status palette decides, and the row's own tint already says which one is current. */
 /* Working: it breathes rather than blinks, and the tokens layer's
    reduced-motion rule stops it outright. Shares the agents strip's keyframes —
    same meaning, same motion. */
@@ -815,7 +814,7 @@ body.rail .layout-btn { inline-size: auto; }
   white-space: nowrap;
   /* 0 1 auto, not 1: a Latin name resolves LTR, so in a box as wide as the
      row its `start` was the row's far LEFT edge — «system32» hugged the pill
-     while every Persian name sat at the right (pcg-84j). A box the size of
+     while every Persian name sat at the right. A box the size of
      its text sits at the row's start instead and still ellipses when long.
      (`text-align: match-parent` would say this, but Chromium resolves it as
      the name's OWN start: measured, still left. Never `right`: spec traps.) */
@@ -951,7 +950,7 @@ body.rail .layout-btn { inline-size: auto; }
   opacity: .75;
 }
 
-/* --- the rail (TERMINAL-REDESIGN.md §1) --------------------------------------
+/* --- the rail --------------------------------------
 
    The sidebar's second width. `body.rail` is written by js/app.js and follows
    the split: at 2 or 4 columns the tree was spending ~120px per column on
@@ -1166,7 +1165,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
 .divider:focus-visible { outline: none; }
 .divider.dragging::before { transition: none; }
 
-/* --- the new-session page (BRIDGEMIND-PORT.md §D8) ---------------------------
+/* --- the new-session page ---------------------------
    A full-stage view over the grid: #grid is display:none while it is open, so
    the conversations keep running and keep their scroll. One centred card on
    the ground, the same card language as the panes. */
@@ -1282,7 +1281,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
   color: var(--fg);
 }
 .ns-slot-n { color: var(--fg-faint); min-inline-size: 1em; }
-/* With more than one conversation a row is its own small form (pcg-6aj):
+/* With more than one conversation a row is its own small form:
    centred rather than on the baseline, because a select has no text line to
    share with the numbers beside it. */
 .ns-preview:has(.ns-slot-folder) .ns-slot { align-items: center; flex-wrap: wrap; }
@@ -1483,7 +1482,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
   font-size: .74em;
 }
 
-/* THE PANE HEADER'S CONTROLS (BRIDGEMIND-PORT.md §D5): ⋯ ⤢ ✕ at the row's
+/* THE PANE HEADER'S CONTROLS: ⋯ ⤢ ✕ at the row's
    END. Quiet at rest, full on pane hover or when the keyboard is in the pane;
    never display:none, so Tab still reaches them. */
 .pane-actions {
@@ -1565,7 +1564,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 /* With several panes the TUI's banner is enough; its tips are the `?` sheet. */
 #grid:not([data-split="1"]) .wel-tips { display: none; }
 
-/* THE ACTION BUTTON at the end of the box (pcg-368.6), after claude.ai/code:
+/* THE ACTION BUTTON at the end of the box, after claude.ai/code:
    one quiet square-cornered button — send ↵, or stop ⊙ while a turn runs and
    the box is empty. Muted until it has something to do. */
 .comp-line { position: relative; }
@@ -1736,7 +1735,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
    padding, above).
 
    Kept: the three hint columns (`/`, `@`, `?`) and the key-outside-the-sentence
-   rule they are built under (wiki/tui-strings.md §5). Only the chrome went. */
+   rule they are built under. Only the chrome went. */
 .welcome {
   line-height: 1.9;
 }
@@ -1871,7 +1870,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 }
 .log > * { flex: none; }
 
-/* A RUN OF STEPS IS ONE LINE (CLAUDE-AI-PARITY.md P2), measured off
+/* A RUN OF STEPS IS ONE LINE, measured off
    claude.ai/code (wiki/claude-ai-code-reference.md §3, "Expanded run"): shut,
    a muted sentence and a chevron; open, the steps in one bordered box, a row
    per step on hairlines, no icons, each row opening again onto its detail. */
@@ -1919,9 +1918,9 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .log .run details.card > summary::before,
 .log .run details.card > summary::after { content: none; }
 
-/* A long message of yours: the message-marks block below (pcg-lw0). */
+/* A long message of yours: the message-marks block below. */
 
-/* THE CHANGES PANEL (BRIDGEMIND-PORT.md §D12): in the pane, in place of the
+/* THE CHANGES PANEL: in the pane, in place of the
    transcript while it is open. Rows are the sidebar's density; a row opens to
    the same .diff box a tool card uses (spec rule 8 covers both). */
 .cell.changes-open > .log,
@@ -2023,7 +2022,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 /* §D11.4, NOT switched on: `.log.cv` would let the browser skip laying out
    rows that are off screen. It stays behind a class nothing sets until
    stick-to-bottom, /export and find-in-page are shown to still work with it
-   on Windows Edge (wiki/grid.md). */
+   on Windows Edge. */
 .log.cv > * { content-visibility: auto; contain-intrinsic-size: auto 120px; }
 
 .msg {
@@ -2033,8 +2032,8 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   overflow-wrap: anywhere;
 }
 
-/* YOUR MESSAGE IS A BUBBLE (CLAUDE-AI-PARITY.md P2), measured off
-   claude.ai/code (wiki/claude-ai-code-reference.md §1): a faint fill, 8×12
+/* YOUR MESSAGE IS A BUBBLE, measured off
+   claude.ai/code: a faint fill, 8×12
    padding, 10px radius, no border — on the RIGHT of the column whatever the
    language, the side the web edition already uses. The TUI's dimmed prompt
    echo it replaces read as the same colour as everything else around it.
@@ -2061,7 +2060,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   position: relative;
 }
 
-/* No ⏺ and no gutter (CLAUDE-AI-PARITY.md P2): the site's answer is plain
+/* No ⏺ and no gutter: the site's answer is plain
    prose on the column, and a coral dot beside an English paragraph that
    starts at the other edge of an RTL column was the "scattered" row. */
 
@@ -2325,7 +2324,7 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
   opacity: 1;
 }
 
-/* THE ONE OPEN QUESTION IN THE PLAN (V2-PLAN.md §8.9). `⎿`, `⏵` and `▸` are
+/* THE ONE OPEN QUESTION IN THE PLAN. `⎿`, `⏵` and `▸` are
    directional shapes carrying no Unicode mirroring property, so nothing flips
    them: in an RTL column a result branch drawn `⎿` hangs off the LEFT of a row
    whose text runs from the right, pointing away from the thing it connects.
@@ -2343,7 +2342,7 @@ html[data-mirror-glyphs="on"] .glyph.mirror {
 }
 
 /* A tool row is where the work happened, not what it said: muted, as
-   claude.ai draws «Ran 3 commands» (pcg-els). The answer is the bright text. */
+   claude.ai draws «Ran 3 commands». The answer is the bright text. */
 .tool-verb { color: var(--fg-muted); }
 
 /* The `⎿` branch: how much output the row has, before you open it (render.js
@@ -2598,7 +2597,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    model, by a summary of itself — the reader is still looking at it, so the
    line has to be a real break in the column rather than another muted row.
    The rules are drawn with `border`, not with `─` characters: the glyph table
-   (wiki/tui-strings.md §1) says so, because a repeated box-drawing character
+   says so, because a repeated box-drawing character
    at a proportional width is a ragged line, not a rule. */
 .divider {
   align-self: stretch;
@@ -3106,7 +3105,7 @@ button.round {
 .opt[aria-selected="true"] .opt-title { color: var(--accent); font-weight: var(--wt-title); }
 
 /* The digit is chrome the renderer places, never text inside the label
-   (V2-PLAN §8.2). It is a Latin-ordered token in an RTL row, so it is
+  It is a Latin-ordered token in an RTL row, so it is
    isolated and given a fixed column of its own — otherwise «۱.» and «۲.»
    sit at different distances from their labels. */
 .opt-num,
@@ -3214,7 +3213,7 @@ button.round {
 .proj-sessions li:has(.kebab-menu:popover-open) .sess-act { opacity: 1; width: 30px; }
 
 /* --- statusline -------------------------------------------------------------- */
-/* Three lines, in the TUI's own order (V2-PLAN §3.4): the machine's own
+/* Three lines, in the TUI's own order: the machine's own
    statusLine script first, then the `⏵⏵` posture row that replaced the pill,
    then everything the four chips used to say. A column of rows rather than one
    wrapping row, because the posture line is a sentence and must not be broken
@@ -3227,7 +3226,7 @@ button.round {
   padding: 4px 14px 7px;
   color: var(--fg-muted);
   /* §2.4: .74em/1.6 -> .72em/1.45. Every row still ships — the clamp below is
-     a HEIGHT, never a `display: none` (pcg-6nf.11) — they are simply set
+     a HEIGHT, never a `display: none` — they are simply set
      tighter, which is where a quarter-window column's density comes from. */
   font-size: .72em;
   line-height: 1.45;
@@ -3325,7 +3324,7 @@ button.round {
 }
 .statusline .sl-custom span:not(:empty) { padding-block: 1px; }
 
-/* THE STATE LINE (BRIDGEMIND-PORT.md §D5): one line that never wraps. The
+/* THE STATE LINE: one line that never wraps. The
    posture sentence keeps its size; the tail - the TUI's "shift+tab" hint -
    is the part that gives up characters when a quarter-window pane is narrow. */
 .statusline .sl-state {
@@ -3364,7 +3363,7 @@ body.rail .side-zoom { display: none; }
   font-size: var(--fs-meta);
   line-height: var(--lh-ui);
 }
-/* «۲ از ۵»: stacked requests (pcg-ahh.2), at the title's far end. `.perm p`
+/* «۲ از ۵»: stacked requests, at the title's far end. `.perm p`
    below is (1,0,1), so this says `.perm .perm-count` to win its margin. */
 .perm .perm-count {
   float: inline-end;
@@ -3386,7 +3385,7 @@ body.rail .side-zoom { display: none; }
    approving a write here and approving one in a project you are not looking at. */
 /* `.perm .perm-source`, not `.perm-source`: `.perm p` above is (1,0,1) and
    would beat a bare id on display and margin — the trap the kebab row already
-   taught this file (wiki/rtl-rendering-notes.md). */
+   taught this file. */
 .perm .perm-source {
   display: flex;
   align-items: center;
@@ -3546,7 +3545,7 @@ body.rail .side-zoom { display: none; }
   /* #stage is a flex column: without `flex: none` a queue several messages deep
      is crushed instead of scrolling — the `.log > * { flex: none }` family,
      which has now cost this project three separate defects
-     (wiki/rtl-rendering-notes.md). The cap is what makes the scroll reachable. */
+    The cap is what makes the scroll reachable. */
   flex: none;
   max-block-size: 22vh;
   overflow-y: auto;
@@ -3585,7 +3584,7 @@ body.rail .side-zoom { display: none; }
 /* A bare icon button has to opt OUT of the generic filled `button` rules
    explicitly, and the opt-out must be declared BEFORE the :hover of the same
    specificity or hover stops repainting it — the ⋯ menu learned this the hard
-   way (wiki/rtl-rendering-notes.md). */
+   way. */
 .queued-act {
   flex: none;
   min-width: 22px;
@@ -3669,7 +3668,7 @@ div.ag-row { cursor: default; }
 /* This is a <button>, so the generic filled `button:hover` (0,1,1) outranks
    `.ag-row`'s background (0,1,0) and would paint the row coral. Same
    specificity, declared later: the opt-out that the ⋯ menu learned the hard
-   way (wiki/rtl-rendering-notes.md). */
+   way. */
 button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); color: var(--fg); }
 
 .ag-dot {
@@ -3759,7 +3758,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
                                   over-constrain the box, and Chromium's tie-break keeps whichever
                                   one maps to the browser's physical right, so one property alone
                                   (no `auto`) never even moves the drawer - measured, not assumed
-                                  (wiki/editions.md). test_layout.py asserts drawer n sidebar = 0. */
+                                 test_layout.py asserts drawer n sidebar = 0. */
   inline-size: min(44rem, 64vw);
   /* The UA popover sheet sets `height: fit-content`, and an absolutely
      positioned box with a non-auto height ignores its own `inset-block-end`.
@@ -3778,7 +3777,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 }
 #agent-drawer:popover-open { display: flex; flex-direction: column; }
 
-/* THE BACKGROUND TASKS PANEL (CLAUDE-AI-PARITY.md P3), after claude.ai/code's:
+/* THE BACKGROUND TASKS PANEL, after claude.ai/code's:
    a full-height column at the stage side (inline-END = physical left, away
    from the sidebar, for the drawer's reason above), cards on a quiet surface.
    Same [popover] rules as the drawer: display only on :popover-open, the
@@ -4087,7 +4086,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      - the key hint under the prompt. It is a reminder, and `?` still opens the
        whole sheet.
      - the status stack's HEIGHT, not its rows: it is clamped to two lines and
-       scrolls (pcg-6nf.11). Hiding every row but the posture line was the
+       scrolls. Hiding every row but the posture line was the
        cheaper diff and the wrong one - see the block itself.
      - the prompt's own growth: a message may still be several lines, it just
        may no longer eat the transcript to be so. */
@@ -4158,7 +4157,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* --- the composer bar (COMPOSER-BAR.md, js/bar.js) --------------------------
    The same block in both editions. Tokens the web edition lacks fall back.
    `inset: auto` because the UA [popover] sheet's `inset: 0` over-constrains a
-   box placed by `left`/`top` (wiki/editions.md). */
+   box placed by `left`/`top`. */
 @layer components {
 .bar-pop {
   position: fixed;

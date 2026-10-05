@@ -4,7 +4,7 @@
 
    CAPABILITY MIRROR. Nothing here is hardcoded about the CLI. The model list,
    its display names, descriptions and effort support all arrive in the
-   `initialize` reply (wiki/control-protocol.md §1) and are account- and
+   `initialize` reply and are account- and
    plan-specific — a hardcoded list would ship a wrong picker to every user on
    a different plan. If `initialize` says nothing, the chip stays hidden.
 
@@ -17,7 +17,7 @@ import { api } from "./api.js";
 /* A leaf, like api.js: the numbered list every v2.4 dialog is made of. Sharing
    it with chrome.js costs no import edge in either direction. */
 import { optionList, dialogHint } from "./choice.js";
-/* Two more leaves: the composer bar's popovers (COMPOSER-BAR.md) and the
+/* Two more leaves: the composer bar's popovers and the
    screen-px -> CSS-px conversion they are placed with under app zoom. */
 import { openMenu, openSlider } from "./bar.js";
 import { cssPx } from "./prefs.js";
@@ -76,7 +76,7 @@ export function makeControls(root, cell) {
   const ui = {
     /* v2.4: one inline dialog, in the flow above the prompt, for every picker —
        `/model`, `/effort`, `/output-style`, `/permissions` and the audit list.
-       The composer chips it replaced are gone (V2-PLAN §2); the state below did
+       The composer chips it replaced are gone; the state below did
        not move, and v2.5's status line reads the same fields.
 
        The chip classes are still looked up because spec-test.html keeps a stub
@@ -302,7 +302,7 @@ export function makeControls(root, cell) {
      — and for the two modes the wrapper can receive but never sets
      (`bypassPermissions`, `auto`). The status line used to name those
      (`s.posture ?? s.mode`, §8.4); since it stopped repeating the bar
-     (CLAUDE-AI-PARITY.md P1), the chip is the one place left to say them. */
+    the chip is the one place left to say them. */
   let cliMode = null;
   const CLI_MODES = {
     default: () => POSTURES.find((p) => p.key === "ask"),
@@ -386,7 +386,7 @@ export function makeControls(root, cell) {
      the SAME pickPosture(), so both of the pill's load-bearing properties are
      inherited by construction — the chip still moves only when the server's
      `wrapper/posture` event arrives, and `plan` still exits on its own when the
-     engine leaves it (wiki/approval-postures.md).
+     engine leaves it.
 
      No posture confirmed yet means the conversation has not answered; there is
      nothing to cycle FROM, and starting at POSTURES[0] would be this window
@@ -506,7 +506,7 @@ export function makeControls(root, cell) {
 
   /* --- init ------------------------------------------------------------------ */
 
-  /* --- the composer bar (COMPOSER-BAR.md) -------------------------------------
+  /* --- the composer bar -------------------------------------
 
      The chips open claude.ai-style popovers over the SAME state and the same
      write paths the numbered pickers use: nothing here is a second source of

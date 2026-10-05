@@ -1,6 +1,6 @@
 /* ============================================================================
    Window preferences: app zoom and where this window remembers things
-   (BRIDGEMIND-PORT.md §D13).
+  
 
    Built so a measurement on the target machine swaps ONE value here, not a
    design. Both constants wait on the Windows probe (probe_edge.py):

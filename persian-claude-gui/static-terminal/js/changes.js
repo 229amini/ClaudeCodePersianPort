@@ -1,5 +1,5 @@
 /* ============================================================================
-   The Changes panel (BRIDGEMIND-PORT.md §D12): what is different in this
+   The Changes panel: what is different in this
    pane's folder, from git itself, one click from the conversation.
 
    One per pane, built by app.js makeCell() into the pane's own `.changes`

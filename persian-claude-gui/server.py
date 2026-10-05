@@ -131,7 +131,7 @@ def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
     args = list(CLAUDE_ARGS)
     if fork_id:
         args += ["--resume", fork_id, "--fork-session"]
-        # Fork FROM A MESSAGE (pcg-ahh.4): the copy keeps the history only up
+        # Fork FROM A MESSAGE: the copy keeps the history only up
         # to and including that chain entry. Measured free on 2.1.289 with a
         # bogus --model: the new transcript held the turns before the cut and
         # nothing after it, and the source file was untouched.
@@ -159,14 +159,14 @@ CONTROL_ALLOWED = frozenset({
     # own. It COSTS A TURN: the CLI asks the model and there is no free refusal
     # path, which is why the window says so before it sends.
     "side_question",
-    # The composer bar's «+ → اتصال‌ها» (COMPOSER-BAR.md). `mcp_status` only
+    # The composer bar's «+ → اتصال‌ها». `mcp_status` only
     # reads. `mcp_toggle {serverName, enabled}` is PERSISTENT, measured
     # 2026-09-29: it writes projects/<cwd>/disabledMcpServers into
     # ~/.claude.json, exactly as the TUI's own /mcp does, and the menu says so.
     "mcp_status", "mcp_toggle",
-    # The Background tasks panel's stop square (CLAUDE-AI-PARITY.md P3):
+    # The Background tasks panel's stop square:
     # `{task_id}` stops one helper this session launched, the TUI's own
-    # kill in /tasks (wiki/cli-stream-json-findings.md §5.10).
+    # kill in /tasks.
     "stop_task",
 })
 # `apply_flag_settings` is deliberately NOT in that list even though the effort
@@ -667,7 +667,7 @@ CLI_ENVELOPE_RE = re.compile(r"^\s*<[a-z][a-z-]+>")
 # -- whereas the wrapper's own shell rows park all three tags in a SINGLE
 # message (`bash_message()`). Both are envelope-shaped, so CLI_ENVELOPE_RE
 # dropped them and a session started in the real TUI replayed with no shell
-# rows at all (pcg-5g2). They are real things the person did, so like
+# rows at all. They are real things the person did, so like
 # `<task-notification>` they jump the filter rather than pass it, and the pair
 # is rejoined into the one-message shape `splitBashBlocks()` already parses:
 # its regex is anchored on `<bash-input>`, so a lone stdout record left on its
@@ -750,7 +750,7 @@ def session_meta(path: Path) -> tuple[str | None, str | None, float | None]:
 
     `rename_session` persists a title by APPENDING
     {"type":"custom-title","customTitle":…} to the session's own transcript --
-    the only place it lands (wiki/control-protocol.md §4). The last such line
+    the only place it lands. The last such line
     wins, so the file has to be read to the end; json.loads runs only on the
     lines that can possibly matter, because a long transcript is thousands of
     lines and the sidebar re-reads every session on each refresh.
@@ -830,7 +830,7 @@ def _normalize_transcript_event(event: dict) -> dict | None:
     """One transcript line -> the `{type, message}` shape the renderer wants,
     or None to drop it. Shared by `read_session()` and the per-agent
     transcript view (`read_agent_events()`) — an agent's own `.jsonl` is
-    written in the identical record format (wiki/background-agents.md), so
+    written in the identical record format, so
     the normalisation is the same; only the caller-side `isSidechain` check
     differs, because an agent file is entirely sidechain by definition.
 
@@ -881,9 +881,9 @@ def _normalize_transcript_event(event: dict) -> dict | None:
     normalized = {"type": event["type"], "message": message, **_marks_of(event)}
     # An answered AskUserQuestion: the live stream carries {questions, answers}
     # as the event's `tool_use_result` and the transcript writes the same
-    # object as `toolUseResult` (wiki/permission-transport.md). Passed on in
+    # object as `toolUseResult`. Passed on in
     # the live spelling, and only this shape, so a replayed answer draws the
-    # Questions row instead of the model-facing English sentence (pcg-ahh.2).
+    # Questions row instead of the model-facing English sentence.
     result = event.get("toolUseResult")
     if (event["type"] == "user" and isinstance(result, dict)
             and isinstance(result.get("questions"), list)
@@ -895,7 +895,7 @@ def _normalize_transcript_event(event: dict) -> dict | None:
 
 def chain_entry(transcript: Path, entry_uuid: str) -> dict | None:
     """The transcript record with this uuid, or None. A fork from a message
-    (pcg-ahh.4) needs the record itself: its parentUuid is where a fork that
+    needs the record itself: its parentUuid is where a fork that
     leaves the message OUT is cut. Matched as raw text first, as session_meta
     does, so a long transcript costs one json.loads."""
     try:
@@ -1004,8 +1004,7 @@ def agent_file_path(cwd: Path, session_id: str, agent_id: str, suffix: str) -> P
 
 
 def _xml_unescape(text: str) -> str:
-    """task-notification content escapes &, < and > (wiki/background-agents
-    .md) — undo it before a tag's value reaches a caller."""
+    """task-notification content escapes &, < and > — undo it before a tag's value reaches a caller."""
     return (text.replace("&lt;", "<").replace("&gt;", ">")
                 .replace("&quot;", '"').replace("&apos;", "'")
                 .replace("&amp;", "&"))
@@ -1124,8 +1123,7 @@ def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
 
 def _scan_notification(event: dict, registry: dict) -> None:
     """A `<task-notification>` block, as either a `queue-operation` record
-    or the `user` message the CLI auto-submits from it (wiki/background-
-    agents.md) — both carry the same tags, and the same task-id can appear
+    or the `user` message the CLI auto-submits from it — both carry the same tags, and the same task-id can appear
     twice, so this always overwrites rather than appending.
 
     A task-id with no matching registry entry is a background COMMAND
@@ -1172,7 +1170,7 @@ def _scan_agent_line(line: str, registry: dict, pending: dict) -> None:
     which nothing ever marks that agent completed and the panel reports it
     running forever. json.loads once, then dispatch on `type` plus the SHAPE
     of `message.content`: a bare string is the auto-submitted notification, a
-    list is tool_result parts (wiki/background-agents.md).
+    list is tool_result parts.
     """
     if not any(marker in line for marker in _AGENT_MARKERS):
         return
@@ -1277,7 +1275,7 @@ def _enrich_agent_meta(folder: Path | None, entry: dict) -> None:
 def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int]:
     """Replayable events from one agent's own transcript, same `{type,
     message}` shape as `read_session()` — the file is the identical record
-    format (wiki/background-agents.md), but every line is `isSidechain:
+    format, but every line is `isSidechain:
     true` (the file IS the sidechain), so that flag is not a drop signal
     here the way it is for the main transcript.
 
@@ -1586,7 +1584,7 @@ IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 IMAGE_MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                      ".gif": "image/gif", ".webp": "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
-# The images this process has sent the CLI, by resolved path (pcg-lw0). The
+# The images this process has sent the CLI, by resolved path. The
 # window's thumbnail of a live send is `GET /api/image?path=` and that route
 # serves these and nothing else: it is not a file server. Added only after the
 # CLI took the message, and re-checked when served (the path must still resolve
@@ -1952,7 +1950,7 @@ def run_shell(command: str, cwd: Path) -> dict:
             "stderr": _clip(done.stderr or "")}
 
 
-# The Changes panel (BRIDGEMIND-PORT.md §D12). Read-only git, in the
+# The Changes panel. Read-only git, in the
 # SESSION's folder (history_cwd: the worktree when it has one) -- the path to
 # look at never comes from the request, the same key-not-path rule as
 # open_known_file. `core.quotepath=off` is what keeps a Persian filename from
@@ -2144,7 +2142,7 @@ def edit_externally(text: str) -> tuple[str, bool]:
     return edited, changed
 
 
-# --- the shell's window-local commands (V2-PLAN §3.5) ------------------------
+# --- the shell's window-local commands ------------------------
 
 # `/config`, `/permissions`, `/hooks`, `/memory`, `/keybindings`. The TUI opens
 # an editor for every one of these; so does the window, through the file
@@ -2688,7 +2686,7 @@ class PermissionBroker:
             # differently». The deny reply is the ONE place a sentence from the
             # user can ride back to the model on this pipe -- can_use_tool's
             # allow reply carries `updatedInput` and nothing else
-            # (wiki/permission-transport.md), which is also why «approve WITH
+            # which is also why «approve WITH
             # this feedback» cannot be a wire feature.
             if isinstance(feedback, str) and feedback.strip():
                 entry["feedback"] = feedback.strip()
@@ -2882,7 +2880,7 @@ class ClaudeSession:
                           worktree=self.worktree, fork_at=fork_at)
 
         # No --settings: hooks supplied that way are ignored entirely by claude
-        # 2.1.221 (wiki/permission-hook-broken.md). Approvals arrive in-band as
+        # 2.1.221. Approvals arrive in-band as
         # `can_use_tool` control requests instead -- see
         # _answer_control_request() and wiki/permission-transport.md. The user's
         # own ~/.claude/settings.json keeps applying, untouched.
@@ -3019,7 +3017,7 @@ class ClaudeSession:
                 continue
 
             # INBOUND control_request: the CLI asking us something. Today that
-            # is only can_use_tool -- the approval path (wiki/permission-transport.md).
+            # is only can_use_tool -- the approval path.
             # Answered off-thread because the broker blocks on the user, and
             # blocking here would freeze the whole event pump.
             if etype == "control_request":
@@ -3138,7 +3136,7 @@ class ClaudeSession:
 
         Only after the first result: on a session with no messages yet the CLI
         writes the title nowhere at all and the rename is silently lost
-        (wiki/control-protocol.md §4). The ack means nothing either way, so the
+       The ack means nothing either way, so the
         sidebar reads the title back out of the transcript.
         """
         if self._titled or not self._first_prompt:
@@ -4280,7 +4278,7 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/history":
             # Up/Down and Ctrl+R walk this. Shared with the real TUI: same file,
             # same shape, filtered to this project the way the terminal filters
-            # it (wiki/cli-stream-json-findings.md §5.8).
+            # it.
             #
             # session.cwd, NOT history_cwd: history.jsonl is keyed by the
             # process's working directory, and a worktree tab still RUNS in the
@@ -4400,12 +4398,12 @@ class Handler(BaseHTTPRequestHandler):
                 "type": "wrapper", "subtype": "user_echo",
                 "uuid": command_uuid,
                 # The transcript stamps this message too; the window shows
-                # the same moment live and after a reload (pcg-8ip).
+                # the same moment live and after a reload.
                 "timestamp": datetime.datetime.now(datetime.timezone.utc)
                                      .isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                 "text": echo_text,
                 "images": sum(1 for b in blocks if b["type"] == "image"),
-                # What the window draws as thumbnails (pcg-lw0): this send's
+                # What the window draws as thumbnails: this send's
                 # own image blocks, in their order.
                 "image_urls": [f"/api/image?path={quote(key)}" for key in image_paths],
             })
@@ -4832,7 +4830,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "session_id": session_id})
         elif parsed.path == "/api/session/fork":
             # `/branch`: keep this conversation and continue a COPY of it.
-            # Measured (V2-PLAN §5.5): --fork-session gives a new session id and
+            # Measured: --fork-session gives a new session id and
             # a second transcript in the same project folder, so the sidebar
             # lists both with no new code. Unlike a resume there is nothing to
             # adopt -- forking a session that is open is the normal case, and
@@ -4845,7 +4843,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "session has no id yet"})
                 return
-            # Fork from a message (pcg-ahh.4): `at` names one by its own uuid.
+            # Fork from a message: `at` names one by its own uuid.
             # The copy keeps everything up to and including it, or with
             # `before` everything BEFORE it -- the cut moves to its chain
             # parent, and the window hands the message's text back to the
@@ -4911,7 +4909,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "missing session_id or title"})
                 return
             # A running conversation is renamed by its own CLI, which appends
-            # the custom-title line itself (wiki/control-protocol.md §4) -- two
+            # the custom-title line itself -- two
             # writers on one transcript is the corruption delete refuses.
             live = tab_running(self.sessions, session_id)
             if live is not None:

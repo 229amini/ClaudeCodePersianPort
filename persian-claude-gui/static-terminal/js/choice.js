@@ -84,7 +84,7 @@ export function optionList(options, { onPick, onCancel, onKey } = {}) {
     const title = span("opt-title", option.title ?? "", "auto");
     if (option.esc) {
       // The TUI appends a bold `(esc)` as its own node rather than writing it
-      // into the label (wiki/tui-strings.md §2). So does this: it is a key
+      // into the label. So does this: it is a key
       // name, and a key name inside an RTL sentence has to be isolated.
       title.append(" ", span("opt-esc", "(Esc)", "ltr"));
     }

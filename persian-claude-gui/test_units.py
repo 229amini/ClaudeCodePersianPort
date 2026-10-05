@@ -587,7 +587,7 @@ with tempfile.TemporaryDirectory() as tmp:
                           "2026-08-09T10:08:00.000Z", as_queue_op=False)
     queue_op = _notification("aaaa1111", "toolu_Q", "Agent finished",
                              "2026-08-09T10:07:59.000Z", as_queue_op=True)
-    # A skill load (pcg-e5q): the CLI injects the whole SKILL.md as ordinary
+    # A skill load: the CLI injects the whole SKILL.md as ordinary
     # BLOCK-shaped content under isMeta:true -- shape modelled on the real
     # line in a04d070b-7743-41f0-9b4c-9c34756e0a78.jsonl. The CLI's own UI
     # never shows this; replaying it was one giant user bubble.
@@ -677,7 +677,7 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         server.PROJECTS_DIR = old_projects_dir
 
-print("read_session: the interactive CLI's `!` lines replay as shell rows (pcg-5g2)")
+print("read_session: the interactive CLI's `!` lines replay as shell rows")
 # A session started in the REAL TUI (not the wrapper) writes a `!` command and
 # its output as TWO CONSECUTIVE bare-string user records -- shape copied
 # verbatim from 328615cf-5f5c-4404-8de1-e7a41b02fc78.jsonl, CLI 2.1.259. Both
@@ -802,7 +802,7 @@ with tempfile.TemporaryDirectory() as tmp:
 print("read_agent_events: isMeta lines are dropped before normalisation, same as read_session")
 with tempfile.TemporaryDirectory() as tmp:
     agent_file = Path(tmp) / "agent-meta.jsonl"
-    # Shape modelled on the real skill-load line (pcg-e5q) -- block content
+    # Shape modelled on the real skill-load line -- block content
     # under isMeta:true, which _normalize_transcript_event() cannot filter
     # because it discards the isMeta flag on its way out.
     skill_meta = _line({
@@ -919,7 +919,7 @@ with tempfile.TemporaryDirectory() as tmp:
         server.NAMES_FILE = old_names
         server.RECENTS_FILE, server.ARCHIVED_FILE, server.PINNED_FILE = olds
 
-print("pins: a message pinned by its own uuid, per conversation (pcg-8ip)")
+print("pins: a message pinned by its own uuid, per conversation")
 with tempfile.TemporaryDirectory() as tmp:
     old_pins = server.PINS_FILE
     try:
@@ -1028,7 +1028,7 @@ try:
     # TWO usage events, cost before context: get_context_usage after a turn is
     # tens of seconds on a machine with a large ~/.claude, and one merged patch
     # meant the fast, always-available cost and quota numbers waited for it --
-    # and were dropped entirely when it never came (wiki/control-protocol.md §9).
+    # and were dropped entirely when it never came.
     # The statusline runs between them, on the fast half, and once more when
     # the slow half names a context window it did not have.
     check("usage, then the statusline, then the slow context, then the bar again",
@@ -2160,7 +2160,7 @@ check("and only once — the next message must not re-send them",
 print("permission feedback: option 3 says what to do instead, and the model reads it")
 # V2-PLAN §3.3's third option is «no, and tell Claude what to do differently».
 # The deny reply's `message` is the only field on this pipe that carries a
-# sentence back to the model (wiki/permission-transport.md), so the note has to
+# sentence back to the model, so the note has to
 # arrive as the broker's `reason` or it is a text box that goes nowhere.
 fb_hub = _Hub()
 fb_broker = server.PermissionBroker(fb_hub)
@@ -2339,7 +2339,7 @@ with tempfile.TemporaryDirectory() as tmp:
     server.worktree_path(repo, "agent-2").mkdir(parents=True)
     check("and skips the ones that exist", server.resolve_worktree(repo, "auto")
           == ("agent-3", None))
-    # M5 (BRIDGEMIND-PORT.md §D8): the CLI makes the folder only after spawn,
+    # M5: the CLI makes the folder only after spawn,
     # so a second quick "auto" must not get agent-3 again off the disk alone.
     check("a name handed out is not handed out twice before its folder exists",
           server.resolve_worktree(repo, "auto") == ("agent-4", None))
@@ -2427,12 +2427,12 @@ with tempfile.TemporaryDirectory() as tmp:
          server.PINNED_FILE, server.NAMES_FILE) = _saved_paths
 
 print("CONTROL_ALLOWED: /btw is reachable, a settings blob still is not")
-check("side_question is whitelisted (V2-PLAN §3.5)",
+check("side_question is whitelisted",
       "side_question" in server.CONTROL_ALLOWED)
 check("apply_flag_settings is still NOT — that is the whole point of a whitelist",
       "apply_flag_settings" not in server.CONTROL_ALLOWED)
 
-print("list_changes / file_changes: the Changes panel's git (BRIDGEMIND-PORT.md §D12)")
+print("list_changes / file_changes: the Changes panel's git")
 with tempfile.TemporaryDirectory() as tmp:
     plain = Path(tmp) / "plain"
     plain.mkdir()

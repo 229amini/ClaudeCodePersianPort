@@ -173,7 +173,7 @@ def main() -> int:
         for hwnd in windows:
             user32.PostMessageW(hwnd, 0x0010, 0, 0)     # WM_CLOSE
         # taskkill /T: a plain kill orphans the claude child, and Windows will
-        # not delete a folder that is a live process's cwd (wiki/dev-environment.md).
+        # not delete a folder that is a live process's cwd.
         subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
         try:
             proc.wait(timeout=10)

@@ -254,7 +254,7 @@ function queueStreamText(el, target, text) {
   });
 }
 
-/* PROGRESSIVE MARKDOWN WHILE STREAMING (BRIDGEMIND-PORT.md §D11.5).
+/* PROGRESSIVE MARKDOWN WHILE STREAMING.
    Text up to the last blank line OUTSIDE a code fence is a run of finished
    blocks: each is rendered once through renderMarkdown() - so it gets
    applyDirection and token isolation like any settled answer - and frozen.
@@ -320,7 +320,7 @@ function endStreamPaint(el) {
   el.classList.remove("streaming");
 }
 
-/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every step between two
+/* A RUN IS ONE LINE. Every step between two
    sentences joins one run, and the run is ONE shut row that says what happened
    the way claude.ai/code says it — «یک فرمان اجرا شد، 5.png خوانده شد ‹». A
    lone call is a run too: the site draws «Used …: read documentation ›» for
@@ -522,7 +522,7 @@ function closeCycle(card, summary, id) {
   const open = state.cycle;
   state.cycle = null;
   const rep = state.repeat;
-  // Every call lives in a run now (CLAUDE-AI-PARITY.md P2), so the pair's
+  // Every call lives in a run now, so the pair's
   // second half is the RUN — and only a run holding exactly this one step:
   // a cycle that made two calls, or thought between them, is not the loop
   // this folds and fails safe by not matching.
@@ -585,7 +585,7 @@ function closeCycle(card, summary, id) {
    for, which is the last place anyone would look. */
 /* The `⎿` branch. In the TUI it is a line under the tool row carrying the first
    few lines of the output and «… +N lines (ctrl+o to expand)»; here the card is
-   shut by default (V2-PLAN §3.1) so there are no lines on screen to be "+N
+   shut by default so there are no lines on screen to be "+N
    more" than — the count is the whole output, and the key that opens it is in
    the tooltip and in the composer hint.
 
@@ -614,11 +614,11 @@ function intoCard(body, el) {
 
 /* One user row, from every place one is drawn (the echo, a promoted queued
    message, a replayed turn). A long one is folded (marks.js foldLong, ~15
-   lines). `images` is a count, or the images themselves (pcg-lw0): data: URLs
+   lines). `images` is a count, or the images themselves: data: URLs
    from a replayed transcript, /api/image URLs from a live send, drawn as the
    site's thumbnail row above the bubble. A bare count keeps the old label. */
 function userRow(text, images = 0, meta = {}) {
-  // A new turn: the last one's edits become its card first (pcg-8ip). The
+  // A new turn: the last one's edits become its card first. The
   // same boundary live and in replay, so both draw the card in one place.
   flushEdits();
   if (Array.isArray(images) && images.length) append(thumbs(images));
@@ -692,7 +692,7 @@ function loadPins(sid) {
 
 /* The turn's edits, summed per file from the tool calls themselves, as one
    card: «N فایل ویرایش شد  +A −D» (claude.ai/code's end-of-turn card). A row
-   opens that file's edits in the side panel (pcg-lw0), drawn from the same
+   opens that file's edits in the side panel, drawn from the same
    calls by the tool card's own renderer. This is also the turn's END for the
    always-on action row, which is why that mark comes before the early return. */
 function flushEdits() {
@@ -924,7 +924,7 @@ export function resetTurn(keepPulse = false) {
 
    While the turn runs `order: 1` pins it last (a flex reorder, so nothing
    appended after it can race it and no DOM move is needed). When the turn ends
-   it is REMOVED: claude.ai/code leaves nothing there (CLAUDE-AI-PARITY.md P2),
+   it is REMOVED: claude.ai/code leaves nothing there,
    and the CLI's own «✻ Worked for 1m 45s» record was the one line per turn
    the user read as noise.
 
@@ -1216,7 +1216,7 @@ function queueRowEl(uuid, entry) {
   autoDir(text);
   row.append(text);
 
-  /* The four actions claude.ai/code puts under a queued message (pcg-e11):
+  /* The four actions claude.ai/code puts under a queued message:
      copy it, take it back into the prompt to edit (↺ - what ✕ used to do
      here), delete it, and send it now. «الان بفرست» is Stop: since
      2026-08-31 an interrupt keeps the queue, so the running turn ends and
@@ -1412,7 +1412,7 @@ export function newRenderScope(background = false,
    focus: showPermission() focuses the dialog it opens, `focusin` fires
    synchronously, and app.js focusCell() would stash and adopt scopes in the
    middle of the swap - which the finally below then undoes under the new
-   focus (pcg-0o7). focusCell() reads this and waits until the swap is over. */
+   focus. focusCell() reads this and waits until the swap is over. */
 let targetDepth = 0;
 
 export function inRenderTarget() {
@@ -1466,7 +1466,7 @@ const TOOL_ICONS = {
 
 /* A TUI glyph standing in the same gutter the stroke icons use, so the column
    keeps ONE rail whether a row is drawn with an icon or with the terminal's own
-   character (wiki/tui-strings.md §1). `mirror` marks the directional ones —
+   character. `mirror` marks the directional ones —
    `⎿` and `▸` carry no Unicode mirroring property and will not flip on their
    own in an RTL column, so the flip is a class the shell can switch off
    (V2-PLAN §8.9, still open). */
@@ -1977,7 +1977,7 @@ function renderTodos(items) {
     li.dataset.status = item.status ?? "pending";
     li.setAttribute("dir", "auto");
     // The TUI's own checklist marks, counted in the binary
-    // (wiki/tui-strings.md §1): ☐ pending, ☑ done, ▸ running. V2-PLAN §3.1
+    //: ☐ pending, ☑ done, ▸ running. V2-PLAN §3.1
     // writes the done box as ☒; the build has ☑ and §3.6's rule is that the
     // binary wins. `▸` is directional and mirrors with the rest of them.
     const done = item.status === "completed";
@@ -2024,7 +2024,7 @@ function renderRaw(event) {
 
 /* Percent of the five-hour window at which the CLI itself starts saying so.
    `var Obo=0.95` in the 2.1.261 bundle, the default branch of the per-plan
-   table beside it. Lifted, not chosen (V2-PLAN §3.6), and gated. */
+   table beside it. Lifted, not chosen, and gated. */
 const QUOTA_WARN_AT = 95;
 
 /* Everything in the statusline except the folder belongs to ONE conversation:
@@ -2042,8 +2042,8 @@ export function resetStatus() {
 }
 
 /* The TUI's own posture row — `⏵⏵ accept edits on (shift+tab to cycle)`,
-   translated (wiki/tui-strings.md §4). v2.5 draws it INSTEAD of the pill the
-   composer row used to carry (V2-PLAN §3.4), which is why it also carries the
+   translated. v2.5 draws it INSTEAD of the pill the
+   composer row used to carry, which is why it also carries the
    key: the affordance left with the chip and the sentence has to replace it.
 
    Driven by the WRAPPER's posture, with the CLI's own `permissionMode` as the
@@ -2083,10 +2083,10 @@ export function setStatus(patch) {
   if (!state.cell || !statusline) return;
   statusline.replaceChildren();
   const s = state.status;
-  // The composer bar's ◔ (COMPOSER-BAR.md): the same figure, as a ring.
+  // The composer bar's ◔: the same figure, as a ring.
   const ring = state.cell.root?.querySelector(".bar-ring");
   if (ring) paintRing(ring, s.context);
-  // Which conversation this transcript is, for the pins (pcg-8ip). A cell's
+  // Which conversation this transcript is, for the pins. A cell's
   // log shows one conversation after another (app.js placeIn), so the stamp
   // follows whatever is in it now — a fresh one with no id yet included.
   const sid = s.sessionId || "";
@@ -2097,7 +2097,7 @@ export function setStatus(patch) {
   }
 
   // NO line for the machine's own statusLine output any more (user decision,
-  // 2026-09-29). It was drawn first, as the TUI does (V2-PLAN §3.4 row 1), but
+  // 2026-09-29). It was drawn first, as the TUI does, but
   // in this window everything it said is already on screen, better drawn: the
   // folder is the pane header, the model, effort and context are the composer
   // bar, the quota is the bar's ◔ panel. A row repeating all of it in mono was
@@ -2106,7 +2106,7 @@ export function setStatus(patch) {
 
   /* THE STATE LINE, since CLAUDE-AI-PARITY.md P1: only what the composer bar
      cannot say. The posture, the model and the context used to open this line
-     (BRIDGEMIND-PORT.md §D5), and the bar under the prompt now says all three
+    and the bar under the prompt now says all three
      — two rows naming the same mode and model was the duplication the user
      reported. What is left is news: the quota nearly spent, files changed. The
      line is absent when it has nothing to say. */
@@ -2327,14 +2327,14 @@ export function renderEvent(ev) {
         // what the turn ran under, not us reading back our own write.
         toChrome("outputStyle", ev.output_style);
         // …and into the status line, which is where the style chip's text went
-        // (V2-PLAN §3.4). setStatus writes the TAB's own status object, so a
+        // setStatus writes the TAB's own status object, so a
         // background conversation records its style without painting it.
         if (ev.output_style) setStatus({ style: ev.output_style });
       } else if (ev.subtype === "compact_boundary") {
         renderCompactBoundary(ev.compact_metadata);
       } else if (ev.subtype === "task_progress" || ev.subtype === "task_started") {
         // A background helper's own running report — tokens, tool uses, the
-        // tool it is on (wiki/cli-stream-json-findings.md §5.10). Chrome for
+        // tool it is on. Chrome for
         // the tasks panel (agents.js), never a transcript row.
         noteTaskProgress(ev);
       } else if (ev.subtype === "status" && ev.permissionMode) {
@@ -2380,7 +2380,7 @@ export function renderEvent(ev) {
         state.thinkingText += delta.thinking;
         // Most thoughts carry no text at all — signature only (620 of 755 in a
         // real session) — and neither the CLI nor claude.ai draws anything for
-        // one (wiki/tui-transcript.md §1). No card until there is a word.
+        // one. No card until there is a word.
         if (!state.thinkingBody && !state.thinkingText.trim()) return;
         if (!state.thinkingBody) {
           state.thinkingPeek = label("", "tool-target");
@@ -2487,7 +2487,7 @@ export function renderEvent(ev) {
                 title: /^(Bash|PowerShell)$/.test(part.name) ? part.input?.description : "",
               },
             });
-            // The turn's change card (pcg-8ip): this conversation's own edits,
+            // The turn's change card: this conversation's own edits,
             // not a helper's (those render inside its Agent card).
             if (typeof file === "string" && file && !ev.parent_tool_use_id) {
               state.turnEdits ??= new Map();   // any scope shape, harness ones too
@@ -2560,7 +2560,7 @@ export function renderEvent(ev) {
       // normalised (and envelope-filtered) by read_session before it gets
       // here — but that guarantee is replay-only. Whether a live
       // <task-notification> can ever arrive on stdout as a bare string is
-      // unmeasured (wiki/background-agents.md); if it ever does, wrap it the
+      // unmeasured; if it ever does, wrap it the
       // same way server.py's _normalize_transcript_event does so the loop
       // below iterates block parts, never the string's own characters.
       const content = typeof ev.message?.content === "string"
@@ -2568,7 +2568,7 @@ export function renderEvent(ev) {
         : (ev.message?.content ?? []);
       // The person's own images ride in the same message as base64 blocks
       // (replay only — live they arrive on the echo): the first bubble of the
-      // message takes them as thumbnails (pcg-lw0).
+      // message takes them as thumbnails.
       let images = sidechain ? [] : content
         .filter((p) => p.type === "image" && p.source?.type === "base64" && p.source.data)
         .map((p) => `data:${p.source.media_type || "image/png"};base64,${p.source.data}`);
@@ -2662,7 +2662,7 @@ export function renderEvent(ev) {
     }
 
     case "result": {
-      // No context estimate here on purpose (pcg-3nm). The per-model usage
+      // No context estimate here on purpose. The per-model usage
       // map this event carries is cumulative across the WHOLE session (main
       // loop, subagents, sidechains, compaction) and keyed in insertion
       // order, not by which model is actually running the turn — picking an
@@ -2855,7 +2855,7 @@ export function renderEvent(ev) {
         const card = state.toolCards.get(ev.tool_use_id);
         // A question was answered, not "allowed" — same event, different act.
         // So is an accepted plan: nothing was run, a plan was kept, which is
-        // why the TUI writes «Plan saved!» there (wiki/tui-strings.md §2).
+        // why the TUI writes «Plan saved!» there.
         const note = label(
           ev.tool_name === "AskUserQuestion" ? FA.askAnswered
             : ev.decision !== "allow" ? FA.permDenied
@@ -2879,7 +2879,7 @@ export function renderEvent(ev) {
         }
       } else if (ev.subtype === "init_info") {
         // Everything the CLI can do, answered at spawn and free
-        // (wiki/control-protocol.md §1). Richer than system/init.
+        // Richer than system/init.
         toChrome("initInfo", ev.info);
         // The spawn value for the style, so the status line is not blank until
         // the user changes something (§3.4: it replaces a chip that was
@@ -2915,7 +2915,7 @@ export function renderEvent(ev) {
         for (const key of ["context", "cost", "quota"]) {
           if (typeof ev[key] === "number") patch[key] = ev[key];
         }
-        // The composer bar's panel (COMPOSER-BAR.md). `limits` may be null:
+        // The composer bar's panel. `limits` may be null:
         // a login with no plan limits, which the panel says out loud.
         if ("limits" in ev) patch.limits = ev.limits;
         if (ev.context_detail && typeof ev.context_detail === "object") {

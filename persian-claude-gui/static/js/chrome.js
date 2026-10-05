@@ -836,7 +836,7 @@ function startSessionRename(li, btn, sess, projPath) {
   });
 }
 
-/* --- searching the conversations (pcg-ahh.1) --------------------------------
+/* --- searching the conversations --------------------------------
 
    One field above the lists. While it holds text the sidebar is ONE flat list
    of the conversations whose name or first prompt contains it, in every
@@ -1155,7 +1155,7 @@ function renderInto(tab, events, resumedNote = false) {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
-    state.turnEdits = new Map();   // this render's own turns only (pcg-8ip)
+    state.turnEdits = new Map();   // this render's own turns only
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
     // times, about a view that is not on screen yet. The answer is only needed
@@ -1169,7 +1169,7 @@ function renderInto(tab, events, resumedNote = false) {
   });
 }
 
-/* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT (pcg-1ug).
+/* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT.
 
    A conversation's rows have two sources and only one of them survives a
    reload. Live events are published to the hub, which replays its whole

@@ -1,5 +1,5 @@
 /* ============================================================================
-   The new-session page (BRIDGEMIND-PORT.md §D8).
+   The new-session page.
 
    "Four at once" in one action: which folder, how many conversations, sharing
    the folder or each in a git worktree of its own, an optional task sent to
@@ -8,12 +8,12 @@
 
    The folder and isolation fields set EVERY conversation at once; with more
    than one, each preview row has its own folder and its own «شاخهٔ جدا», so
-   one launch can put a builder in each of two repos (pcg-6aj). `model.slots`
+   one launch can put a builder in each of two repos. `model.slots`
    is the truth that launches; the two fields only write into it.
 
    Imports only the two leaf modules. Everything it needs from the grid comes
    through the bridge app.js hands in (`initNewSession`) - app.js is the entry
-   module and nothing may import it (wiki/frontend-modules.md).
+   module and nothing may import it.
 
    Every request here is one the window already makes elsewhere: open a
    project, close a tab, set a posture, send a message. No new route.
@@ -289,7 +289,7 @@ async function pickFolder(slot) {
     if (picked) {
       const known = model.projects.find((p) => samePath(p.path, picked));
       // The server says whether it is a repo; it used to be taken for none,
-      // so a picked repo could never get a branch of its own (pcg-h9p).
+      // so a picked repo could never get a branch of its own.
       if (known) known.git = known.git || !!got.git;
       else model.projects.unshift({ path: picked, git: !!got.git });
       if (slot === null) setAllPath(picked);

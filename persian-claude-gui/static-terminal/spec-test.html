@@ -364,7 +364,7 @@ check("tool cards cannot be flex-shrunk out of existence",
    must be the file name — a full Windows path wraps and the row stops being
    one line, which is the whole point of the rail. */
 const sum9 = card9?.querySelector("summary");
-/* Every step lives inside a run now (CLAUDE-AI-PARITY.md P2), and a shut run
+/* Every step lives inside a run now, and a shut run
    renders nothing — a height read there is 0 and passes for the wrong reason.
    So the run is opened first, and the row's own padding is taken out: what is
    measured is the text, which must be one line. */
@@ -1095,7 +1095,7 @@ check("escaping raw HTML left fenced and inline code untouched",
   (codeMsg.querySelector("pre code")?.textContent.trim() ?? "no fence") + " / " +
   (codeMsg.querySelector("p code")?.textContent ?? "no span"));
 
-/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every call between two
+/* A RUN IS ONE LINE. Every call between two
    sentences joins one run, whose line says what happened in the site's words —
    one part per kind in order of first use, one file named, several counted.
    The steps must still all be inside: a run that DROPPED a card would read the
@@ -1141,7 +1141,7 @@ check("a sentence between calls ends the run; a lone call is a one-line run",
   (lone?.className ?? "-") + " / «" + runText(lone) + "»");
 
 /* MCP calls: the site says «used N tools», so the forty-character
-   mcp__server__tool identifier (pcg-9jx) never reaches the line at all. */
+   mcp__server__tool identifier never reaches the line at all. */
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "دوباره." }] } });
 for (let i = 0; i < 2; i++) {
   window.renderEvent({
@@ -1195,7 +1195,7 @@ const flushFrame = () => {
 /* Interleaved thinking joins the run as a step and is NOT counted — the line
    reports what happened. And a thought with no text (signature only: 620 of
    755 in a real session) draws nothing at all, the CLI's rule and the site's
-   (wiki/tui-transcript.md §1): that was the «در حال فکر کردن» ladder. */
+  : that was the «در حال فکر کردن» ladder. */
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "شروع." }] } });
 const thought = (t) => window.renderEvent(
   { type: "stream_event", event: { type: "content_block_delta", delta: { thinking: t } } });
@@ -1308,7 +1308,7 @@ check("the working line counts in Persian digits, the CLI's own tokens",
   pulseText.replace(/\s+/g, " ").trim() || "empty");
 
 // The command closes and the line GOES: claude.ai/code leaves nothing where the
-// working line was (CLAUDE-AI-PARITY.md P2) — no «✻ … — ۴۲ ثانیه» record.
+// working line was — no «✻ … — ۴۲ ثانیه» record.
 doneCmd("cmd-solo");
 check("a finished turn leaves no working line behind",
   !pulse.isConnected && specLog.querySelectorAll(".pulse").length === 0 &&
@@ -1439,7 +1439,7 @@ check("an unarmed delete row is legible, and arming is what changes",
   "idle " + idleFg + " on " + idleBg + ", armed on " + armedBg);
 kb.remove();
 
-/* --- background agents (wiki/background-agents.md) --------------------------
+/* --- background agents --------------------------
    A helper the CLI dispatched with the `Agent` tool, the ack that comes back
    immediately, and the <task-notification> it auto-submits when it finishes.
    All three arrive on paths that already existed — an assistant tool_use and
@@ -1583,7 +1583,7 @@ window.renderEvent({
     "</task-notification>" }] },
 });
 // It is a step of the run it lands in: the site's «finished a background
-// command» on the run's own line (CLAUDE-AI-PARITY.md P2).
+// command» on the run's own line.
 const bgRun = specLog.lastElementChild;
 const bgStep = bgRun?.querySelector(":scope > .card-body > :last-child");
 check("a background command's notification is a one-line step, counted on its run",
@@ -1621,7 +1621,7 @@ check("the live stream spells the same flag isSynthetic, and it is obeyed too",
   !specLog.textContent.includes("nor this one"),
   specLog.childElementCount + " vs " + beforeSynth);
 
-/* The third injected `user` shape, measured on 2.1.240 (pcg-9dj probe): a
+/* The third injected `user` shape, measured on 2.1.240: a
    synchronous Agent spawn echoes the AGENT's prompt as a live `user` event
    carrying parent_tool_use_id and neither meta flag. Rendered, it is a phantom
    English user bubble mid-turn — and it would resetTurn() under a running
@@ -1637,7 +1637,7 @@ check("a subagent's sidechain prompt echo renders nothing",
   !specLog.textContent.includes("single word PING"),
   specLog.childElementCount + " vs " + beforeSide);
 
-/* BACKGROUND TASKS (CLAUDE-AI-PARITY.md P3). The strip above the composer is
+/* BACKGROUND TASKS. The strip above the composer is
    the site's «N running task» chip and nothing else; the chip opens the panel,
    whose cards carry the CLI's own task_progress numbers. Painted from a
    synthetic /api/agents payload through the shipping builder
@@ -2316,7 +2316,7 @@ ctx.hidden = true;
    Parity with the TUI, and it has to run through the pill's own path: the chip
    moves only when the SERVER echoes the change back, because an optimistic
    permission control that looks engaged and is not is the exact defect class
-   this project exists to avoid (wiki/approval-postures.md). So the assertions
+   this project exists to avoid. So the assertions
    are what went on the wire, that focus stayed in the box, and — the load-
    bearing one — that pressing it twice does NOT advance twice. */
 window.renderEvent({ type: "wrapper", subtype: "posture", posture: "ask",
@@ -2916,7 +2916,7 @@ check("the row's ✕ asks the CLI to drop that one message, by uuid",
   JSON.parse(qPosts[0].body ?? "{}").uuid === "q-fa",
   qPosts.map((p) => p.url + " " + p.body).join(" | ") || "nothing sent");
 
-/* The four actions under a queued message, after claude.ai/code (pcg-e11):
+/* The four actions under a queued message, after claude.ai/code:
    copy, ↺ back into the prompt, ✕ delete, «الان بفرست». The requests go out
    synchronously on click; a stub that never answers keeps the HTTP reply out
    of it, so what is asserted is the CLI's own `cancelled` event arriving

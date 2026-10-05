@@ -1,4 +1,4 @@
-r"""Message marks gate (pcg-8ip), BOTH editions.
+r"""Message marks gate, BOTH editions.
 
 The user's request, 2026-09-29, after claude.ai/code: under each message on
 hover, copy / pin / when it was said; a rail of the pinned messages at the top
@@ -152,7 +152,7 @@ const iso = (ms) => new Date(ms).toISOString();
   // pcg-lw0: the settled turn's last answer carries its row without a hover.
   const a1 = byUuid("u-a1");
   const a1acts = a1?.querySelector(":scope > .msg-acts");
-  // Headless freezes CSS transitions (wiki/dev-environment.md), so read the
+  // Headless freezes CSS transitions, so read the
   // value the fade ends on, not wherever it is stuck.
   if (a1acts) a1acts.style.transition = "none";
   out.turnLast = !!a1?.classList.contains("turn-last") && !user?.classList.contains("turn-last")

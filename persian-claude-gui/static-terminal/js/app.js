@@ -176,7 +176,7 @@ function makeCell(root) {
   return cell;
 }
 
-/* THE PANE HEADER'S THREE CONTROLS (BRIDGEMIND-PORT.md §D5): ⋯ the pane's
+/* THE PANE HEADER'S THREE CONTROLS: ⋯ the pane's
    menu, ⤢ fullscreen, ✕ take it off screen. Wired here and not in chrome.js
    because two of the three act on the grid, which this module owns. */
 function initPaneHeader(cell) {
@@ -257,7 +257,7 @@ function takeOffScreen(cell) {
   else blank(cell);
 }
 
-/* --- THE GRID THAT FITS N (BRIDGEMIND-PORT.md §D6) ---------------------------
+/* --- THE GRID THAT FITS N ---------------------------
 
    The number of panes is the number of conversations on screen, 1 to
    MAX_PANES. layoutFor() picks the column count whose panes read best (a pane
@@ -582,7 +582,7 @@ export function setSplit(n, keepRail) {
   return true;
 }
 
-/* --- the rail (TERMINAL-REDESIGN.md §1) --------------------------------------
+/* --- the rail --------------------------------------
 
    The sidebar has two widths: the tree (272px) and a 48px rail carrying the
    mark, «+», the split segments stacked, one status dot per open conversation
@@ -625,7 +625,7 @@ function toggleRail() {
 
 export const tabs = new Map();   // tab -> {node, scope, chrome, cell}
 let tabList = [];                // the server's own view, for the sidebar
-let layoutPanel = null;          // the layout control's panel (pcg-7bi), below
+let layoutPanel = null;          // the layout control's panel, below
 // Finished turns a BACKGROUND tab collected since it was last on screen.
 // tab -> count; the entry is dropped the moment the tab becomes visible.
 const unread = new Map();
@@ -714,7 +714,7 @@ function noteTabEvent(ev, tab) {
   }
   // A turn that finished in a conversation nobody is looking at. NOT a replayed
   // one: an SSE backlog replay re-runs every finished turn through the renderer
-  // (wiki/frontend-modules.md), so counting those would have a reload invent a
+  // so counting those would have a reload invent a
   // dozen new messages. And not a stop either — whoever pressed it knows.
   if (ev.type === "result" && !cellOf(tab) && !ev.replayed
       && ev.terminal_reason !== "aborted_streaming") {
@@ -836,7 +836,7 @@ function adoptFocusedScope() {
    and the server tab stays open — which is what makes `/split 1` and "put a
    fifth session on screen" safe. */
 function park(cell) {
-  closeDiff(cell.log);      // it showed the leaving conversation's edits (pcg-lw0)
+  closeDiff(cell.log);      // it showed the leaving conversation's edits
   const tab = cell.tab;
   const entry = tab && tabs.get(tab);
   cell.tab = "";
@@ -940,7 +940,7 @@ function placeIn(cell, tab) {
   /* A conversation whose rows this window has never seen. The hub replays only
      what it published, and a resumed session's transcript was fetched by the
      client and published nowhere -- so a reloaded window opens on an empty
-     column with the greeting over it (pcg-1ug). Here, at the one point every
+     column with the greeting over it. Here, at the one point every
      placement routes through, and only for a column that has nothing to show:
      chrome.js backfillTab decides the rest. */
   if (wantsTransport && !cell.log.childElementCount) backfillTab(tab);
@@ -1100,7 +1100,7 @@ async function loadTabs() {
   applyTabs(data);
 }
 
-/* --- the layout survives a reload (pcg-6nf.8) --------------------------------
+/* --- the layout survives a reload --------------------------------
 
    How many columns are on screen, and which conversation is in each one, is a
    fact about THIS WINDOW: the server has no cell index and no split count, and
@@ -1237,7 +1237,7 @@ function fitsPanes(n, box) {
   return !!layoutFor(n, W, H, gapPx(), true);
 }
 
-/* --- the layout control (pcg-7bi) --------------------------------------------
+/* --- the layout control --------------------------------------------
    How many of the OPEN conversations are on screen. More panes take the open
    conversations not yet shown, in the sidebar's order; fewer send the rest
    back to the sidebar, still running (setSplit parks them). Sizes stay
@@ -1329,7 +1329,7 @@ if (layoutBtn) {
   });
 }
 
-/* The new-session page's view of the grid (BRIDGEMIND-PORT.md §D8). Handed in,
+/* The new-session page's view of the grid. Handed in,
    because newsession.js may not import this module. */
 function stageBox() {       // CSS px, as gridBox()
   const r = document.getElementById("stage")?.getBoundingClientRect();
@@ -1515,7 +1515,7 @@ window.addEventListener("blur", () => document.body.classList.remove("alt-held")
    (js/choice.js carries the same trap for the numbered dialogs). */
 const DIGIT_CODES = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"];
 
-/* THE WINDOW'S PANE KEYS (BRIDGEMIND-PORT.md §D7), in one table so a chord the
+/* THE WINDOW'S PANE KEYS, in one table so a chord the
    Windows measurement (M1) rules out is one line here and one row in
    wiki/tui-keys.md. All are Alt + `e.code`, in CAPTURE, and swallowed, so the
    prompt's own arrow handling (history) never sees an Alt+arrow. */

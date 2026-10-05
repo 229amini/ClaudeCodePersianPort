@@ -1,4 +1,4 @@
-"""The Windows measurements the BridgeMind port waits on (BRIDGEMIND-PORT.md §D13).
+"""The Windows measurements the BridgeMind port waits on.
 
     python persian-claude-gui\\probe_edge.py            random port, like the app
     python persian-claude-gui\\probe_edge.py --port 8765 a fixed port (M2's control)

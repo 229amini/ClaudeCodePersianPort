@@ -130,7 +130,7 @@ SHELL = {
             '                           .length,'
             '            clipped: clipped()};'
             '}'),
-        # Phase 3 (TERMINAL-REDESIGN.md §1). The split4 block above has already
+        # Phase 3. The split4 block above has already
         # collapsed the sidebar - that IS the rule, the width follows the split
         # - so this seeds four conversations in four different states so there
         # are dots to measure, reads the rail, then presses the toggle and
@@ -171,7 +171,7 @@ SCROLLERS = SH["scrollers"]
 # one, since its rows carry the CLI's own descriptions.
 #
 # v2.4 moved every picker out of a popup hanging off a chip and into a numbered
-# list in the flow (V2-PLAN 3.3). The measurement is the same measurement: full
+# list in the flow. The measurement is the same measurement: full
 # width, on screen, rows at their natural height. What it can no longer be is
 # the 201px column of the original report, because nothing positions it by hand
 # any more - which is the point of keeping the gate pointed at the new shape
@@ -252,10 +252,10 @@ const SCROLLERS = new Set(%SCROLLERS%);
      content: "npm ERR! could not resolve dependency @scope/some-very-long-package-name@1.2.3"}]}});
   await sleep(250);
 
-  // The composer row (pcg-tda): whatever is left on it must sit inside the
+  // The composer row: whatever is left on it must sit inside the
   // composer box at one line of height. Before the fix the row could not wrap
   // and the last controls were pushed out of the box. v2.4 took four chips off
-  // it (V2-PLAN §2), so the count is smaller and the rule is unchanged.
+  // it, so the count is smaller and the rule is unchanged.
   const compNow = box(document.querySelector(".comp-box"));
   const chips = [...document.querySelector("%CHIPROW%").children]
     .filter((c) => !c.hidden && getComputedStyle(c).display !== "none" &&
@@ -298,7 +298,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
     // .sess-act is `display: none` until li:hover / li:focus-within, and a
     // display:none element measures 0x0 - so a synthetic click would put the
     // menu at the window corner and this would look like a positioning bug
-    // that is really a probe artifact (wiki/dev-environment.md).
+    // that is really a probe artifact.
     btn.style.display = "inline-flex";
     // The terminal edition collapses it to zero WIDTH instead (a transparent
     // 30px button held a hole at the end of every row); hover gives it back.
@@ -352,7 +352,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
   let split4 = null;
   %SPLIT4%
 
-  // Phase 3 (TERMINAL-REDESIGN.md §1): the sidebar's width follows the split,
+  // Phase 3: the sidebar's width follows the split,
   // so the block above already collapsed it. This measures what a 4-up
   // actually ships with — the rail — and then presses the toggle, which is the
   // override the same section promises.
@@ -516,7 +516,7 @@ def main() -> int:
                     failures.append(f"{where}: {name} is above the window (y={rect['y']})")
             if m["clipped"]:
                 failures.append(f"{where}: content wider than its box - {m['clipped'][:4]}")
-            # The composer row (pcg-tda): every visible chip must sit inside
+            # The composer row: every visible chip must sit inside
             # the composer box at one line of height. Before the fix the row
             # could not wrap and the last chips were pushed out of the box. The
             # count AND the row it is read from are per-edition (SHELL above) -
@@ -588,7 +588,7 @@ def main() -> int:
             # not a weaker assertion. Checked at the widest size only - the two
             # narrow breakpoints only change the track's width, and every
             # off-window assertion above already covers what they can break.
-            # BridgeMind port P1 (BRIDGEMIND-PORT.md §D3): both are cards on a
+            # BridgeMind port P1: both are cards on a
             # ground now, so each sits one gutter (--gap, 8px) in from its edge -
             # still an exact position, not a looser one.
             if EDITION == "terminal" and (width, height) == SIZES[0]:
@@ -608,7 +608,7 @@ def main() -> int:
                                     f"left edge (x={stage['x']})")
                 # F5: the drawer's insets follow the sidebar's side, and one
                 # property alone never moves a [popover] - the opposite inset
-                # must be `auto` (wiki/editions.md).
+                # must be `auto`.
                 drawer = m.get("drawer")
                 if not drawer:
                     failures.append(f"{where}: the agent drawer probe did not run")

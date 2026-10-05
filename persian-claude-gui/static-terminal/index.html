@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- data-mirror-glyphs: the plan's one open question (V2-PLAN.md §8.9). `⎿`,
+<!-- data-mirror-glyphs: the plan's one open question. `⎿`,
      `⏵` and `▸` are directional shapes with no Unicode mirroring property, so
      in an RTL column they point away from what they connect unless something
      flips them. "on" is the plan's recommendation and can be judged by looking
@@ -36,7 +36,7 @@
       <path d="M6.9 16.6h4"/>
     </svg>
     <span class="brand" id="brand"></span>
-    <!-- THE BELL (BRIDGEMIND-PORT.md §D9): unread notices from conversations
+    <!-- THE BELL: unread notices from conversations
          you are not looking at. Its panel is built by js/notices.js. -->
     <button type="button" id="btn-bell" class="bell-btn" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
@@ -46,7 +46,7 @@
       </svg>
       <span class="bell-count" hidden></span>
     </button>
-    <!-- THE RAIL TOGGLE (TERMINAL-REDESIGN.md §1). The sidebar has two widths
+    <!-- THE RAIL TOGGLE. The sidebar has two widths
          and the width FOLLOWS THE SPLIT — `/split 2|4` collapses it to 48px so
          the columns get the ~120px it was spending on empty tree, `/split 1`
          opens it again. This button overrides that until the next split
@@ -72,7 +72,7 @@
     </svg>
     <span id="btn-new-label"></span>
   </button>
-  <!-- THE LAYOUT (pcg-7bi): how many of the OPEN conversations sit side by
+  <!-- THE LAYOUT: how many of the OPEN conversations sit side by
        side, and making them the same size again. Since the new-session page
        replaced «۱ | ۲ | ۴» (P4) only `/split` and Alt keys reached this, and
        that page opens NEW conversations — so the two sit together here. Not in
@@ -113,7 +113,7 @@
       <span id="btn-help-label"></span>
     </a>
     <!-- The app zoom level, only in prefs.js's CSS zoom mode and only when it
-         is not 100% (BRIDGEMIND-PORT.md §D13). -->
+         is not 100%. -->
     <div id="side-zoom" class="side-zoom" hidden></div>
     <!-- Which build is running. server.py substitutes {{VERSION}} into every
          .html it serves, so this and the window title cannot disagree with the
@@ -137,14 +137,14 @@
      avoid (MA3-T0 turned every one of them into a class). -->
 <div id="stage">
   <div id="grid" data-split="1"></div>
-  <!-- The new-session page (BRIDGEMIND-PORT.md §D8); js/newsession.js fills it.
+  <!-- The new-session page; js/newsession.js fills it.
        While it is open #grid is hidden, never destroyed. -->
   <section id="new-session" class="ns" hidden></section>
 </div>
 
 <template id="cell-tpl">
   <section class="cell">
-  <!-- THE IDENTITY ROW (TERMINAL-REDESIGN.md §2.1). Reading right -> left under
+  <!-- THE IDENTITY ROW. Reading right -> left under
        dir="rtl", which is DOM order: the cell's own digit (Alt+N names it), the
        status dot, the session TITLE, then the project as a muted chip. The mono
        full path left this bar — it is the «پوشه» item of the status line below
@@ -170,7 +170,7 @@
   </header>
 
   <main class="log" aria-live="polite" aria-label="گفتگو"></main>
-  <!-- THE CHANGES PANEL (BRIDGEMIND-PORT.md §D12), js/changes.js. While it is
+  <!-- THE CHANGES PANEL, js/changes.js. While it is
        open the transcript above is hidden, never removed. -->
   <section class="changes" hidden></section>
 
@@ -179,7 +179,7 @@
        prints when it opens is a bordered box — `✻ Welcome to Claude Code`
        and its version, read out of the 2.1.261 bundle — followed by the
        folder it is working in and the composer's own footer hints
-       (wiki/tui-strings.md §5). Every card this replaced pressed something
+      Every card this replaced pressed something
        that is still one click away in the sidebar.
 
        Visibility is driven by whether #log has children (js/chrome.js). -->
@@ -218,7 +218,7 @@
   <div class="context-notice" hidden></div>
 
   <!-- v2.4: the dialogs are INLINE, in the flow, immediately above the prompt —
-       which is where the Ink TUI draws its confirmation too (V2-PLAN §3.3).
+       which is where the Ink TUI draws its confirmation too.
        They are still <dialog> elements, opened with show() rather than
        showModal(): no backdrop, no focus trap, no modal semantics, but the
        `open` property and the CSS the whole file already keys on stay exactly
@@ -234,7 +234,7 @@
 
   <dialog class="perm">
     <form class="perm-form">
-      <!-- What KIND of action is asking (BRIDGEMIND-PORT.md §D10), js/perm.js
+      <!-- What KIND of action is asking, js/perm.js
            permKind(): read before the tool name, which is English. -->
       <p class="perm-kind" dir="auto" hidden></p>
       <p class="perm-count" hidden></p>
@@ -254,7 +254,7 @@
         <span class="perm-remember-label"></span>
       </label>
       <!-- «اجازه می‌دهید ادامه دهد؟» — the TUI's own question, above the
-           numbered options it answers (wiki/tui-strings.md permission.proceed). -->
+           numbered options it answers. -->
       <p class="perm-proceed" dir="auto"></p>
       <div class="perm-opts"></div>
       <!-- Option 3 is «no, and tell Claude what to do differently»: this is
@@ -317,7 +317,7 @@
         <textarea class="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
                   autocomplete="off" spellcheck="false" aria-label="پیام"></textarea>
 
-        <!-- ONE BUTTON AT THE END OF THE BOX (CLAUDE-AI-PARITY.md, pcg-368.6),
+        <!-- ONE BUTTON AT THE END OF THE BOX,
              after claude.ai/code: send ↵, or — while a turn runs and the box
              is empty — stop ⊙. With text mid-turn, hovering send offers
              «بفرست» / «بعداً بفرست» (Ctrl+Enter). Esc still reaches stop
@@ -353,9 +353,9 @@
              itself never left js/controls.js.
 
              The audit count of «خودکار» lives in the mode menu's footer
-             (CLAUDE-AI-PARITY.md P1): claude.ai's bar carries the mode alone. -->
+            : claude.ai's bar carries the mode alone. -->
 
-        <!-- THE COMPOSER BAR (COMPOSER-BAR.md, 2026-09-29). User decision: the
+        <!-- THE COMPOSER BAR. User decision: the
              claude.ai/code bar in this edition too — «+», the mode, then the
              model, effort and the context ring at the far end. Each opens a
              js/bar.js popover; `/model`, `/effort`, `/permissions` and
@@ -395,13 +395,13 @@
 
 <!-- The TUI's `?` table, translated: every chord the window binds, built from
      the one list js/composer.js dispatches from, so the sheet cannot describe a
-     key the page does not have (V2-PLAN §3.2). -->
+     key the page does not have. -->
 <dialog id="keys">
   <h2 id="keys-title"></h2>
   <div id="keys-body"></div>
   <menu>
     <!-- The TUI's own footer here is «esc to close · esc again quits»; only
-         the first half means anything in a window (V2-PLAN §8.5). -->
+         the first half means anything in a window. -->
     <span id="keys-esc" class="meta"></span>
     <button type="button" id="keys-close" class="ghost"></button>
   </menu>

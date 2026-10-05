@@ -128,7 +128,7 @@ export function dismissTabPermissions(tab) {
 
 /* --- one dialog ------------------------------------------------------------ */
 
-/* The eyebrow's category (BRIDGEMIND-PORT.md §D10). By tool name, because
+/* The eyebrow's category. By tool name, because
    that is all a `can_use_tool` request says about what it will do. */
 const KIND = {
   Edit: "edit", Write: "edit", MultiEdit: "edit", NotebookEdit: "edit",
@@ -238,7 +238,7 @@ export function makePerm(root, cell) {
     if (perm.remember) perm.remember.checked = false;
     paintOptions(questions);
     /* show(), not showModal(): v2.4 puts the dialog IN THE FLOW above the prompt,
-       where the Ink TUI draws it (V2-PLAN §3.3). `open` still reads true, the CSS
+       where the Ink TUI draws it. `open` still reads true, the CSS
        is unchanged, and what is given up — the backdrop and the focus trap — is
        exactly what made it a modal rather than a row. */
     if (!perm.dialog.open) perm.dialog.show();
@@ -249,17 +249,17 @@ export function makePerm(root, cell) {
     (questions ? perm.ask?.querySelector("input") : perm.list?.el)?.focus();
   }
 
-  /* The three options, in the TUI's own order (wiki/tui-strings.md §2). Option 2
+  /* The three options, in the TUI's own order. Option 2
      exists ONLY when a remember scope applies, which is why the digit cannot be
      part of the label — «۳.» is the refusal whether or not «۲.» was drawn
-     (V2-PLAN §8.2). */
+    */
   function permOptions(req) {
     const tool = req?.tool_name ?? "?";
     const rows = [{ key: "allow", title: FA.permYes }];
     if (rememberable(req)) {
       // No directory in the wording: v1's remember scope is THIS PROJECT, THIS
       // SESSION, and naming a path would describe a scope the window does not
-      // implement (V2-PLAN §8.1).
+      // implement.
       rows.push({ key: "remember", title: FA.permYesRemember.replace("{tool}", tool) });
     }
     rows.push({ key: "deny", title: FA.permNoFeedback, esc: true });
@@ -298,7 +298,7 @@ export function makePerm(root, cell) {
   }
 
   /* The two Confirmation-context keys the list itself does not own
-     (wiki/tui-keys.md). Tab is `confirm:nextField` — here there are exactly two
+    Tab is `confirm:nextField` — here there are exactly two
      fields, the options and the note — and shift+tab is the TUI's «approve with
      this feedback». */
   function permListKey(e) {
@@ -315,7 +315,7 @@ export function makePerm(root, cell) {
 
   /* «shift+tab to approve with this feedback», as far as this pipe allows it.
      `can_use_tool`'s ALLOW reply carries `updatedInput` and nothing else
-     (wiki/permission-transport.md), so there is no field a note can ride in
+    so there is no field a note can ride in
      alongside an approval — inventing one would be a sentence the model never
      sees. The tool is approved and the note is handed to the composer instead,
      where the person can read it, edit it and send it as the next message —
@@ -407,7 +407,7 @@ export function makePerm(root, cell) {
         box.type = q.multiSelect ? "checkbox" : "radio";
         box.name = "ask-" + index;
         // The RAW label, never the rendered one: this value is the wire format
-        // the CLI matches the answer against (wiki/permission-transport.md).
+        // the CLI matches the answer against.
         box.value = option.label ?? "";
         row.append(box);
         /* Numbered like every other v2.4 dialog (V2-PLAN §3.3, «options
@@ -464,7 +464,7 @@ export function makePerm(root, cell) {
     return answers;
   }
 
-  /* AskUserQuestion's own Confirmation keys (wiki/tui-keys.md). The native
+  /* AskUserQuestion's own Confirmation keys. The native
      radio/checkbox behaviour would cover the arrows and Space on a real key
      press, but it is a DEFAULT ACTION — it does not run for a synthetic event,
      so a gate could never see it, and «the browser probably does this» is not a

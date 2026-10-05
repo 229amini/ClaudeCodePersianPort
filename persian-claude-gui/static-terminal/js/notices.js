@@ -1,5 +1,5 @@
 /* ============================================================================
-   The notification centre (BRIDGEMIND-PORT.md §D9).
+   The notification centre.
 
    With up to six conversations running, "which one needs me?" is the question
    the window has to answer without being asked. A notice is made when a turn
@@ -86,7 +86,7 @@ export function togglePanel() {
    panel hangs off the bell's row with its right edge on the sidebar's left
    edge. In the rail the same rule puts it just past the 48px strip. Physical
    insets on purpose, with the opposite one `auto` - the UA [popover] sheet's
-   `inset: 0` over-constrains the box otherwise (wiki/editions.md). */
+   `inset: 0` over-constrains the box otherwise. */
 function place() {
   const side = document.getElementById("sidebar")?.getBoundingClientRect();
   const at = bell.getBoundingClientRect();

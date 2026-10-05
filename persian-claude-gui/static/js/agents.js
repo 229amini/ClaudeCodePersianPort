@@ -5,7 +5,7 @@
    `Agent` tool with run_in_background). Everything here MIRRORS what the server
    read out of the transcript — the wrapper invents no agent state of its own,
    and the «در انتظار N عامل» line counts the registry rather than scraping the
-   CLI's English notice (wiki/background-agents.md).
+   CLI's English notice.
 
    Cyclic with render.js, exactly like chrome.js and for the same reason: the
    drawer replays an agent's own transcript through the SHIPPING renderer (plan
@@ -139,7 +139,7 @@ function taskChip(count) {
    what it is doing, «عامل · ۱ دقیقه», the model, tokens, tool uses and the
    current step, «دیدن گزارش», a stop square — then «پایان‌یافته N ‹» folded,
    with a wipe for that list. The numbers are the CLI's own `system/task_progress`
-   (wiki/cli-stream-json-findings.md §5.10); nothing here is estimated. */
+  nothing here is estimated. */
 
 /* The CLI's running report for one helper. Live only — a reload replays the
    hub's backlog, which carries these too, so the panel comes back filled. */
@@ -546,7 +546,7 @@ function closeDrawer() {
    `reset` — the one choke point every session swap goes through (project
    switch, new chat and resume all restart the CLI through it). State surviving
    a swap is this project's known defect family. */
-/* `/tasks` (V2-PLAN §3.5): the TUI's «show me the background work» opens the
+/* `/tasks`: the TUI's «show me the background work» opens the
    panel. False when there is nothing to show, so the caller says so in its
    own words rather than opening an empty box. */
 export function unfoldAgents() {

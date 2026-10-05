@@ -8,7 +8,7 @@ an event alone is not proof, see the not-logged-in note below) and a wrong token
 is rejected with 403. Costs one real CLI turn against the logged-in subscription.
 
 The same turn also verifies the Phase-4 capability mirror, because these are
-exactly the claims whose acks lie (wiki/control-protocol.md): `set_model`
+exactly the claims whose acks lie: `set_model`
 answers "success" with an empty body, so only the NEXT turn's system/init proves
 it took; `rename_session` writes nothing on a session with no messages, so only
 a transcript read proves it; and a permission mode the engine refuses still

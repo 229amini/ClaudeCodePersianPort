@@ -148,7 +148,7 @@ function statusBlock(arg, cell) {
     [FA.slMode, postureText(s.posture ?? s.mode)],
     [FA.slEffort, s.effort && effortLabel(s.effort)],
     [FA.slStyle, s.style && styleLabel(s.style)],
-    // What left the status line for this block (BRIDGEMIND-PORT.md §D5).
+    // What left the status line for this block.
     [FA.slContext, typeof s.context === "number" && Math.round(s.context) + "%"],
     [FA.slCost, typeof s.cost === "number" && "$" + s.cost.toFixed(4)],
     [FA.slQuota, typeof s.quota === "number" && Math.round(s.quota) + "%"],
@@ -163,7 +163,7 @@ function statusBlock(arg, cell) {
 
    §3.3's one row that does not render into the column: the sidebar already
    lists every session, so the command moves the KEYBOARD there rather than
-   building a second list beside it (V2-PLAN §8.11B). */
+   building a second list beside it. */
 function resumeList() {
   if (!focusSessions()) return false;   // nothing to resume: not our command
   note(FA.cmdResumeHint);

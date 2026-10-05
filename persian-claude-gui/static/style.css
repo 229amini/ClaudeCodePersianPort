@@ -337,7 +337,7 @@ pre, code, .path, .diff, .tool-output, .mono {
    is what the reader sees; `data-busy` is the server's coarser answer and
    survives only as what paints before this window has learned anything.
 
-   SHAPE, NOT ONLY HUE (pcg-973). At 7px a coral dot and an amber one are the
+   SHAPE, NOT ONLY HUE. At 7px a coral dot and an amber one are the
    same dot to a colour-blind reader, so the shape carries the state and the
    colour agrees with it — the terminal edition's ● ◉ ⊘ ○, drawn here with the
    box because these dots are empty spans, not glyphs:
@@ -469,7 +469,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   white-space: nowrap;
   /* 0 1 auto, not 1: a Latin name resolves LTR, so in a box as wide as the
      row its `start` was the row's far LEFT edge — «system32» hugged the pill
-     while every Persian name sat at the right (pcg-84j). A box the size of
+     while every Persian name sat at the right. A box the size of
      its text sits at the row's start instead and still ellipses when long.
      (`text-align: match-parent` would say this, but Chromium resolves it as
      the name's OWN start: measured, still left. Never `right`: spec traps.) */
@@ -493,7 +493,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 }
 .proj-rename:focus-visible { outline: none; }   /* the accent border is the focus */
 
-/* Searching the conversations (pcg-ahh.1): a quiet field above the lists. */
+/* Searching the conversations: a quiet field above the lists. */
 .side-search {
   display: block;
   box-sizing: border-box;
@@ -1030,7 +1030,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 /* Chat sidedness follows the RTL shell: the user sits on the right (start) in
    a filled bubble; the assistant reads as plain text on the page, claude.ai-
    style. Alignment is layout only — never a substitute for `dir` on the text. */
-/* The site's bubble, measured (wiki/claude-ai-code-reference.md §1). */
+/* The site's bubble, measured. */
 .msg.user {
   align-self: flex-start;
   background: rgb(255 255 255 / .05);
@@ -1222,7 +1222,7 @@ details.card[open] {
 /* A run of consecutive tool calls, folded into one row. The summary is the
    only part that is chrome; everything inside is the ordinary cards, so the
    body gives them back the gutter the rail needs and nothing else. */
-/* A RUN OF STEPS IS ONE LINE (CLAUDE-AI-PARITY.md P2), measured off
+/* A RUN OF STEPS IS ONE LINE, measured off
    claude.ai/code (wiki/claude-ai-code-reference.md §3, "Expanded run"): shut,
    a muted sentence and a chevron; open, the steps in one bordered box, a row
    per step on hairlines, no icons, each row opening again onto its detail. */
@@ -2073,7 +2073,7 @@ button.round {
   overflow-y: auto;
 }
 
-/* «۲ از ۵»: stacked requests (pcg-ahh.2), at the title's far end. */
+/* «۲ از ۵»: stacked requests, at the title's far end. */
 .perm .perm-count {
   float: inline-end;
   margin: 2px 0 0;
@@ -2094,7 +2094,7 @@ button.round {
    approving a write here and approving one in a project you are not looking at. */
 /* `.perm .perm-source`, not `.perm-source`: `.perm p` above is (1,0,1) and
    would beat a bare class on display and margin — the trap the kebab row
-   already taught this file (wiki/rtl-rendering-notes.md). */
+   already taught this file. */
 .perm .perm-source {
   display: flex;
   align-items: center;
@@ -2245,7 +2245,7 @@ button.round {
   /* #stage is a flex column: without `flex: none` a queue several messages deep
      is crushed instead of scrolling — the `.log > * { flex: none }` family,
      which has now cost this project three separate defects
-     (wiki/rtl-rendering-notes.md). The cap is what makes the scroll reachable. */
+    The cap is what makes the scroll reachable. */
   flex: none;
   max-block-size: 22vh;
   overflow-y: auto;
@@ -2284,7 +2284,7 @@ button.round {
 /* A bare icon button has to opt OUT of the generic filled `button` rules
    explicitly, and the opt-out must be declared BEFORE the :hover of the same
    specificity or hover stops repainting it — the ⋯ menu learned this the hard
-   way (wiki/rtl-rendering-notes.md). */
+   way. */
 .queued-x {
   flex: none;
   min-width: 22px;
@@ -2354,7 +2354,7 @@ div.ag-row { cursor: default; }
 /* This is a <button>, so the generic filled `button:hover` (0,1,1) outranks
    `.ag-row`'s background (0,1,0) and would paint the row coral. Same
    specificity, declared later: the opt-out that the ⋯ menu learned the hard
-   way (wiki/rtl-rendering-notes.md). */
+   way. */
 button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); color: var(--fg); }
 
 .ag-dot {
@@ -2455,7 +2455,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 }
 #agent-drawer:popover-open { display: flex; flex-direction: column; }
 
-/* THE BACKGROUND TASKS PANEL (CLAUDE-AI-PARITY.md P3), after claude.ai/code's:
+/* THE BACKGROUND TASKS PANEL, after claude.ai/code's:
    a full-height column at the stage side (inline-END = physical left, away
    from the sidebar, for the drawer's reason above), cards on a quiet surface.
    Same [popover] rules as the drawer: display only on :popover-open, the
@@ -2642,7 +2642,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .q-answer { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .q-picked { font-weight: 600; color: var(--accent); }
 
-/* The Questions row (pcg-ahh.2): once a question is answered its card shuts
+/* The Questions row: once a question is answered its card shuts
    and this stays in the open, one line per question — asked, then picked. */
 .q-row {
   display: grid;
@@ -2780,7 +2780,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* --- the composer bar (COMPOSER-BAR.md, js/bar.js) --------------------------
    The same block in both editions. Tokens the web edition lacks fall back.
    `inset: auto` because the UA [popover] sheet's `inset: 0` over-constrains a
-   box placed by `left`/`top` (wiki/editions.md). */
+   box placed by `left`/`top`. */
 @layer components {
 .bar-pop {
   position: fixed;

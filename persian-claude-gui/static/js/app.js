@@ -331,7 +331,7 @@ function noteTabEvent(ev, tab) {
   }
   // A turn that finished in a conversation nobody is looking at. NOT a replayed
   // one: an SSE backlog replay re-runs every finished turn through the renderer
-  // (wiki/frontend-modules.md), so counting those would have a reload invent a
+  // so counting those would have a reload invent a
   // dozen new messages. And not a stop either — whoever pressed it knows.
   if (ev.type === "result" && !cellOf(tab) && !ev.replayed
       && ev.terminal_reason !== "aborted_streaming") {
@@ -411,7 +411,7 @@ function adoptFocusedScope() {
    and the server tab stays open -- which is what makes `/split 1` and "put a
    fifth session on screen" safe. */
 function park(cell) {
-  closeDiff(cell.log);      // it showed the leaving conversation's edits (pcg-lw0)
+  closeDiff(cell.log);      // it showed the leaving conversation's edits
   const tab = cell.tab;
   const entry = tab && tabs.get(tab);
   cell.tab = "";
@@ -513,7 +513,7 @@ function placeIn(cell, tab) {
   /* A conversation whose rows this window has never seen. The hub replays only
      what it published, and a resumed session's transcript was fetched by the
      client and published nowhere -- so a reloaded window opens on an empty
-     column with the greeting over it (pcg-1ug). Here, at the one point every
+     column with the greeting over it. Here, at the one point every
      placement routes through, and only for a column that has nothing to show:
      chrome.js backfillTab decides the rest. */
   if (wantsTransport && !cell.log.childElementCount) backfillTab(tab);
@@ -672,7 +672,7 @@ async function loadTabs() {
   applyTabs(data);
 }
 
-/* --- the layout survives a reload (pcg-6nf.8) --------------------------------
+/* --- the layout survives a reload --------------------------------
 
    How many columns are on screen, and which conversation is in each one, is a
    fact about THIS WINDOW: the server has no cell index and no split count, and

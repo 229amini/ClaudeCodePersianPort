@@ -27,7 +27,7 @@ What it asserts:
   5. js/choice.js is a leaf — it imports nothing — because three unrelated
      owners (the confirmation, the pickers, the audit trail) share it, and a
      leaf is the only shape that cannot deepen the module cycle
-     (wiki/frontend-modules.md).
+    
   6. The digit is never part of a label (§8.2) and the remember scope never
      names a directory (§8.1) — the two wording rules the plan wrote down
      because both are easy to undo by accident while translating.
@@ -141,7 +141,7 @@ def main() -> int:
                if v not in body]
     check(not missing, "/model, /effort, /output-style and /permissions open the pickers",
           f"unmapped: {missing}")
-    # 2026-09-29 (COMPOSER-BAR.md): the chips are back as a claude.ai-style bar,
+    # 2026-09-29: the chips are back as a claude.ai-style bar,
     # user decision, and their popovers are placed by js/bar.js — one place,
     # zoom-correct. What must stay gone is controls.js positioning a menu by
     # hand itself: a DEFINITION of any of these, not a call into bar.js.
@@ -169,7 +169,7 @@ def main() -> int:
     check(all(labels.values()), "the option labels are in strings.fa.js",
           f"missing: {[k for k, v in labels.items() if not v]}")
     numbered = [k for k, v in labels.items() if v and re.match(r"^[0-9\u06f0-\u06f9]", v)]
-    check(not numbered, "no label carries its own number (V2-PLAN §8.2)", f"{numbered}")
+    check(not numbered, "no label carries its own number", f"{numbered}")
     escaped = [k for k, v in labels.items() if v and ("esc" in v.lower())]
     check(not escaped, "and none of them carries its own «(esc)»", f"{escaped}")
     # The digit and the (esc) are elements, which is the only way they keep

@@ -1,5 +1,5 @@
 /* ============================================================================
-   The composer bar's popovers, after claude.ai/code (COMPOSER-BAR.md).
+   The composer bar's popovers, after claude.ai/code.
 
    ONE FILE, BOTH EDITIONS: static/js/bar.js and static-terminal/js/bar.js are
    byte-identical, and test_bar.py says so. A LEAF: it imports nothing. What it

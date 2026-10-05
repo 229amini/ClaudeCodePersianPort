@@ -102,7 +102,7 @@ window.fetch = async (url) => {
   const stat = row?.querySelector(".diff-stat");
   out.stat = stat ? stat.textContent + "/" + getComputedStyle(stat).direction : "";
   // Geometry, not text: a textContent check passed while a count drew as
-  // «1- 2+» once (wiki/rtl-rendering-notes.md). The plus must sit LEFT of the 1.
+  // «1- 2+» once. The plus must sit LEFT of the 1.
   const at = (el, i) => { const r = document.createRange(); r.setStart(el, i); r.setEnd(el, i + 1);
                           return r.getBoundingClientRect().left; };
   const addNode = stat?.querySelector(".d-add")?.firstChild;
@@ -216,7 +216,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
 def main() -> int:
     if EDITION != "terminal":
-        print("SKIP - the Changes panel is the terminal edition's (BRIDGEMIND-PORT.md §D0)")
+        print("SKIP - the Changes panel is the terminal edition's")
         return 0
     edge = find_edge()
     write_probe()

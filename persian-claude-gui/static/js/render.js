@@ -244,7 +244,7 @@ function endStreamPaint(el) {
   el.classList.remove("streaming");
 }
 
-/* A RUN IS ONE LINE (CLAUDE-AI-PARITY.md P2). Every step between two
+/* A RUN IS ONE LINE. Every step between two
    sentences joins one run, and the run is ONE shut row that says what happened
    the way claude.ai/code says it — «یک فرمان اجرا شد، 5.png خوانده شد ‹». A
    lone call is a run too: the site draws «Used …: read documentation ›» for
@@ -446,7 +446,7 @@ function closeCycle(card, summary, id) {
   const open = state.cycle;
   state.cycle = null;
   const rep = state.repeat;
-  // Every call lives in a run now (CLAUDE-AI-PARITY.md P2), so the pair's
+  // Every call lives in a run now, so the pair's
   // second half is the RUN — and only a run holding exactly this one step:
   // a cycle that made two calls, or thought between them, is not the loop
   // this folds and fails safe by not matching.
@@ -1071,7 +1071,7 @@ function loadPins(sid) {
 
 /* The turn's edits, summed per file from the tool calls themselves, as one
    card: «N فایل ویرایش شد  +A −D». A row opens that file's edits in the side
-   panel (pcg-lw0), drawn from the same calls by the tool card's own renderer.
+   panel, drawn from the same calls by the tool card's own renderer.
    This is also the turn's END for the always-on action row, which is why that
    mark comes before the early return. */
 function flushEdits() {
@@ -1101,7 +1101,7 @@ export function endReplayMarks() {
 /* One user bubble, from every place one is drawn (the echo, a promoted queued
    message, a replayed turn): a new turn, so the last one's edits become its
    card first — the same boundary live and in replay. `images` is a count, or
-   the images themselves (pcg-lw0): data: URLs from a replayed transcript,
+   the images themselves: data: URLs from a replayed transcript,
    /api/image URLs from a live send, drawn as thumbnails above the bubble. A
    long message is folded (marks.js foldLong, ~15 lines). */
 function userBubble(text, images = 0, meta = {}) {
@@ -1205,7 +1205,7 @@ export function newRenderScope(background = false,
    focus: showPermission() focuses the dialog it opens, `focusin` fires
    synchronously, and app.js focusCell() would stash and adopt scopes in the
    middle of the swap - which the finally below then undoes under the new
-   focus (pcg-0o7). focusCell() reads this and waits until the swap is over. */
+   focus. focusCell() reads this and waits until the swap is over. */
 let targetDepth = 0;
 
 export function inRenderTarget() {
@@ -1826,10 +1826,10 @@ export function setStatus(patch) {
   if (!state.cell || !statusline) return;
   statusline.replaceChildren();
   const s = state.status;
-  // The composer bar's ◔ (COMPOSER-BAR.md): the same figure, as a ring.
+  // The composer bar's ◔: the same figure, as a ring.
   const ring = state.cell.root?.querySelector(".bar-ring");
   if (ring) paintRing(ring, s.context);
-  // Which conversation this transcript is, for the pins (pcg-8ip). A cell's
+  // Which conversation this transcript is, for the pins. A cell's
   // log shows one conversation after another, so the stamp follows it.
   const sid = s.sessionId || "";
   if (log && log.dataset.sid !== sid) {
@@ -1975,7 +1975,7 @@ export function renderEvent(ev) {
         state.thinkingText += delta.thinking;
         // Most thoughts carry no text at all — signature only (620 of 755 in a
         // real session) — and neither the CLI nor claude.ai draws anything for
-        // one (wiki/tui-transcript.md §1). No card until there is a word.
+        // one. No card until there is a word.
         if (!state.thinkingBody && !state.thinkingText.trim()) return;
         if (!state.thinkingBody) {
           state.thinkingPeek = label("", "tool-target");
@@ -2073,7 +2073,7 @@ export function renderEvent(ev) {
             });
             body.append(renderToolDetail(part.name, part.input));
             state.toolCards.set(part.id, body);
-            // The turn's change card (pcg-8ip): this conversation's own edits.
+            // The turn's change card: this conversation's own edits.
             if (typeof file === "string" && file && !ev.parent_tool_use_id) {
               state.turnEdits ??= new Map();   // any scope shape, harness ones too
               const was = state.turnEdits.get(file) ?? { added: 0, removed: 0 };
@@ -2135,7 +2135,7 @@ export function renderEvent(ev) {
       // normalised (and envelope-filtered) by read_session before it gets
       // here — but that guarantee is replay-only. Whether a live
       // <task-notification> can ever arrive on stdout as a bare string is
-      // unmeasured (wiki/background-agents.md); if it ever does, wrap it the
+      // unmeasured; if it ever does, wrap it the
       // same way server.py's _normalize_transcript_event does so the loop
       // below iterates block parts, never the string's own characters.
       const content = typeof ev.message?.content === "string"
@@ -2143,7 +2143,7 @@ export function renderEvent(ev) {
         : (ev.message?.content ?? []);
       // The person's own images ride in the same message as base64 blocks
       // (replay only — live they arrive on the echo): the first bubble of the
-      // message takes them as thumbnails (pcg-lw0).
+      // message takes them as thumbnails.
       let images = content
         .filter((p) => p.type === "image" && p.source?.type === "base64" && p.source.data)
         .map((p) => `data:${p.source.media_type || "image/png"};base64,${p.source.data}`);
@@ -2235,7 +2235,7 @@ export function renderEvent(ev) {
     }
 
     case "result": {
-      // No context estimate here on purpose (pcg-3nm). The per-model usage
+      // No context estimate here on purpose. The per-model usage
       // map this event carries is cumulative across the WHOLE session (main
       // loop, subagents, sidechains, compaction) and keyed in insertion
       // order, not by which model is actually running the turn — picking an
@@ -2451,7 +2451,7 @@ export function renderEvent(ev) {
         }
       } else if (ev.subtype === "init_info") {
         // Everything the CLI can do, answered at spawn and free
-        // (wiki/control-protocol.md §1). Richer than system/init.
+        // Richer than system/init.
         toChrome("initInfo", ev.info);
         if (Array.isArray(ev.info?.commands)) {
           toChrome("slash", ev.info.commands);
@@ -2480,7 +2480,7 @@ export function renderEvent(ev) {
         for (const key of ["context", "cost", "quota"]) {
           if (typeof ev[key] === "number") patch[key] = ev[key];
         }
-        // The composer bar's panel (COMPOSER-BAR.md). `limits` may be null:
+        // The composer bar's panel. `limits` may be null:
         // a login with no plan limits, which the panel says out loud.
         if ("limits" in ev) patch.limits = ev.limits;
         if (ev.context_detail && typeof ev.context_detail === "object") {

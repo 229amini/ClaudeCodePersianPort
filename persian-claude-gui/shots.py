@@ -3,7 +3,7 @@
     python persian-claude-gui/shots.py <label> [scene ...]
 
 Writes shots/<label>/<scene>-<W>x<H>.png (git-ignored). This is the visual half of
-every BridgeMind-port phase exit (BRIDGEMIND-PORT.md §D14): the numeric gates
+every BridgeMind-port phase exit: the numeric gates
 passed through a whole redesign while the screen stayed cluttered, so a phase is
 not done until these have been looked at next to the reference screenshots in
 ref/ (also git-ignored - the reference is a commercial product and this repo is

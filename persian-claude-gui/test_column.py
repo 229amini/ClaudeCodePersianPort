@@ -96,7 +96,7 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
   await sleep(60);
 
   const bubbles = [...log.querySelectorAll(":scope > .msg.assistant")];
-  // Every step lives in a run (CLAUDE-AI-PARITY.md P2); open it so the step's
+  // Every step lives in a run; open it so the step's
   // row has a box to measure.
   const run = log.querySelector(":scope > details.run");
   if (run) run.open = true;
@@ -250,7 +250,7 @@ const result = (id, content, extra = {}) => window.renderEvent({ type: "user",
      still outstanding parks in the strip instead of the transcript.
 
      Everything read here is computed style or geometry. A pill, a colour and a
-     gutter are all invisible to textContent (wiki/rtl-rendering-notes.md). */
+     gutter are all invisible to textContent. */
   const rowShape = (el) => {
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
@@ -421,7 +421,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           + (" / RAW TAGS IN THE COLUMN" if m.get("replayRawTags") else ""))
 
     # CLAUDE-AI-PARITY.md P2: your message is the site's bubble, measured
-    # (wiki/claude-ai-code-reference.md §1): a faint fill, 10px radius, 8×12
+    #: a faint fill, 10px radius, 8×12
     # padding, on the RIGHT of the column. Computed style and geometry
     # throughout — a fill and a side are invisible to textContent.
     live = m.get("liveShape") or {}
@@ -444,7 +444,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     # The reload backfill re-renders a user row from /api/session on every
     # reload, and a replayed turn drifting from a live one is this project's
-    # most repeated defect (wiki/frontend-modules.md).
+    # most repeated defect.
     check("a replayed user row is the same row as a live one, to the pixel",
           bool(live) and live == replay,
           "identical" if live and live == replay

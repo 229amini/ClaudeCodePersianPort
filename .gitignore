@@ -10,8 +10,7 @@ persian-claude-gui/pins.json
 persian-claude-gui/setup-log.txt
 persian-claude-gui/run.vbs
 
-# Offline install payload — the folder and its README are tracked so
-# clean-machine-offline.wsb has something to map; the installers are not.
+# Offline install payload: the folder and its README are tracked; the installers are not.
 payload/*.exe
 
 # Python
@@ -34,12 +33,10 @@ desktop.ini
 .beads.gate.lock
 
 # probe_v21.py's machine-readable dump. Regenerated on every run and specific to
-# the machine and CLI build it ran on; the reviewed answers live in
-# wiki/cli-stream-json-findings.md, which IS committed.
+# the machine and CLI build it ran on.
 persian-claude-gui/probe_v21_findings.json
 
-# BridgeMind port (BRIDGEMIND-PORT.md §D14): shot sets and the reference
-# screenshots stay local - ref/ holds a commercial product's UI and this repo is public.
+# Local screenshot sets stay out of the repo.
 persian-claude-gui/shots/
 ref/
 persian-claude-gui/static*/_shot_probe.html

@@ -268,7 +268,7 @@ export function makePerm(root, cell) {
         box.type = q.multiSelect ? "checkbox" : "radio";
         box.name = "ask-" + index;
         // The RAW label, never the rendered one: this value is the wire format
-        // the CLI matches the answer against (wiki/permission-transport.md).
+        // the CLI matches the answer against.
         box.value = option.label ?? "";
         row.append(box);
         const stack = document.createElement("span");

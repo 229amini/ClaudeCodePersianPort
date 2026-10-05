@@ -99,7 +99,7 @@ SCENARIOS = {
     ("HistorySearch", "Tab"): ("searchTab", "so does Tab"),
     ("HistorySearch", "Enter"): ("searchEnter", "Enter puts it there and sends"),
     # v2.4, the confirmation. Every one of these is answered with the keyboard
-    # alone, which is the phase's exit criterion (M8-acceptance.md §6).
+    # alone, which is the phase's exit criterion.
     ("Confirmation", "1"): ("permOne", "1 approves this call and nothing more"),
     ("Confirmation", "3"): ("permThree", "3 refuses it"),
     ("Confirmation", "4"): ("permFour", "4 refuses it and stops the turn (window-only)"),
@@ -288,7 +288,7 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
   out.pickerEsc = !picker.open;
 
 
-  /* --- the confirmation, v2.4 (V2-PLAN §3.3) ------------------------------ */
+  /* --- the confirmation, v2.4 ------------------------------ */
   const perm = document.querySelector(".perm");
   const feedback = document.querySelector(".perm-feedback");
   const askPerm = (id, tool, toolInput) => window.renderEvent({
@@ -302,8 +302,8 @@ const openCount = (sel) => cards(sel).filter((c) => c.open).length;
 
   askPerm("k-one");
   await sleep(20);
-  // Three numbered rows, the digit drawn as its own element (V2-PLAN §8.2) and
-  // the `(esc)` on the refusal drawn as its own too (wiki/tui-strings.md §2).
+  // Three numbered rows, the digit drawn as its own element and
+  // the `(esc)` on the refusal drawn as its own too.
   out.permNumbered = perm.open && opts().length === 4
     && opts()[0].querySelector(".opt-num")?.textContent === "\u06f1."
     && opts()[2].querySelector(".opt-num")?.textContent === "\u06f3."

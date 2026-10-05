@@ -244,8 +244,8 @@ const cellCount = () => document.querySelectorAll("#grid .cell").length;
   out.clearOpened = since(mark).filter((c) => c.url.startsWith("/api/project/open"))
     .map((c) => c.body.path).join();
 
-  // 9. A folder and a branch per conversation (pcg-6aj), and a picked repo
-  //    that can take a branch (pcg-h9p).
+  // 9. A folder and a branch per conversation, and a picked repo
+  //    that can take a branch.
   await open();
   count(2).click(); await sleep(20);
   const rows = () => [...page.querySelectorAll(".ns-slot-folder")];
@@ -358,7 +358,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('rowFolders')} / {m.get('rowGit')}")
     check("rows that differ leave both isolation radios unchecked",
           m.get("mixedRadios") == "false,false", str(m.get("mixedRadios")))
-    check("a folder picked for one row is a repo when the server says so (pcg-h9p)",
+    check("a folder picked for one row is a repo when the server says so",
           m.get("pickedRow") == "C:/kar/tazeh/on" and m.get("topAfterPick") == "C:/kar/mokhzan",
           f"{m.get('pickedRow')}, top {m.get('topAfterPick')}")
     check("launch opens each conversation in its own folder, branched as its row says",
@@ -372,7 +372,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
 def main() -> int:
     if EDITION != "terminal":
-        print("SKIP - the new-session page is the terminal edition's (BRIDGEMIND-PORT.md §D0)")
+        print("SKIP - the new-session page is the terminal edition's")
         return 0
     edge = find_edge()
     write_probe()

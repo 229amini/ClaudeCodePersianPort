@@ -16,7 +16,7 @@ window.FA = {
 
   thinking: "فکر",
 
-  /* The working line (CLAUDE-AI-PARITY.md P2), after claude.ai/code's
+  /* The working line, after claude.ai/code's
      «3m 51s · 117.6k tokens · 1 running task · Almost done thinking…»: what
      it is doing, and the chip for the background helpers still going. */
   pulseStart: "در حال کار…",
@@ -30,7 +30,7 @@ window.FA = {
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
   elapsedMinSec: "{m} دقیقه و {s} ثانیه",
-  /* The TUI's own «esc to interrupt» (wiki/tui-strings.md §4). The working
+  /* The TUI's own «esc to interrupt». The working
      line's tooltip since CLAUDE-AI-PARITY.md P2: the site prints no such
      suffix, and 2.1.284's normal spinner does not either. */
   spinnerInterrupt: "Esc برای توقف",
@@ -44,13 +44,13 @@ window.FA = {
      expand)» there because it shows the first few lines and hides the rest;
      v2 shows none of them until ctrl+o, so the count is the whole output and
      the «+» would be a lie about what is already on screen
-     (wiki/tui-strings.md §3, V2-PLAN §3.1). */
+    */
   toolResultLines: "{n} سطر",
   expandHint: "(ctrl+o برای باز کردن)",
 
   /* The CLI compacted the conversation to make room. Its own banner string is
      «Conversation compacted»; the numbers come from compact_metadata
-     (wiki/cli-stream-json-findings.md §5.9). */
+    */
   compacted: "گفتگو فشرده شد",
   compactedTokens: "{before} ← {after} توکن",
 
@@ -62,7 +62,7 @@ window.FA = {
   pastePlaceholderShort: "[متن چسبانده‌شده #{n}]",
   pasteDrop: "حذف متن چسبانده‌شده",
 
-  /* `!` bash mode (V2-PLAN §3.2). The command runs in the project folder and
+  /* `!` bash mode. The command runs in the project folder and
      its output goes into the conversation with the next message — the same
      thing the TUI does with it, so the row says what ran and what came back
      and nothing else. */
@@ -92,7 +92,7 @@ window.FA = {
   /* The TUI's own footer under the same table is «esc to close · esc again
      quits». Only the first half survives here: a window is closed from its
      close button, so «خروج دوباره» would name a key that does nothing
-     (V2-PLAN §8.5). */
+    */
   keysEscHint: "Esc برای بستن",
   keySend: "فرستادن پیام",
   keyNewline: "سطر تازه",
@@ -142,7 +142,7 @@ window.FA = {
     Agent: "عامل پس‌زمینه",
   },
 
-  /* A run of steps is ONE line (CLAUDE-AI-PARITY.md P2), in the site's own
+  /* A run of steps is ONE line, in the site's own
      vocabulary (wiki/claude-ai-code-reference.md §"Tool line vocabulary"):
      one part per kind in order of first use, past tense, one file named and
      several counted, «(N failed)» when a step failed. */
@@ -181,7 +181,7 @@ window.FA = {
   historyEarlier: "نمایش پیام‌های قبلی ({n})",
   /* §D13: the app zoom readout, only when the window zooms itself. */
   sideZoom: "بزرگ‌نمایی {n}٪",
-  /* The Changes panel (BRIDGEMIND-PORT.md §D12): what git sees different in
+  /* The Changes panel: what git sees different in
      this pane's folder. */
   paneChanges: "تغییرات این پوشه",
   slChanges: "{n} فایل تغییر کرد",
@@ -220,7 +220,7 @@ window.FA = {
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
   agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
-  /* The Background tasks panel (CLAUDE-AI-PARITY.md P3), after claude.ai/code's. */
+  /* The Background tasks panel, after claude.ai/code's. */
   tasksTitle: "کارهای پس‌زمینه",
   tasksRunning: "در حال اجرا",
   tasksNone: "کاری در حال اجرا نیست",
@@ -299,7 +299,7 @@ window.FA = {
      what a conversation is called before it has said anything: it has no title
      yet because the title is made from the first message. */
   openSessions: "گفتگوهای باز",
-  // The open row's state in words (BRIDGEMIND-PORT.md §D4). Idle has none:
+  // The open row's state in words. Idle has none:
   // silence is the idle state.
   rowState: { running: "در حال کار", waiting: "منتظر شما", error: "خطا" },
   projSessionCount: "{n} گفتگو",
@@ -330,11 +330,11 @@ window.FA = {
   // The composer's placeholder while no conversation is open at all: there is
   // nothing to send to, so the box says what to do instead of failing a send.
   composerBlank: "برای شروع، گفتگویی باز کنید",
-  // The prompt's placeholder by state (BRIDGEMIND-PORT.md §D10): the only key
+  // The prompt's placeholder by state: the only key
   // hint left under the prompt is the one a Persian writer needs every line.
   phIdle: "پیام خود را بنویسید — نیم‌فاصله: Shift+Space",
   phBusy: "در حال کار — پیام بعدی در صف می‌ماند · Esc برای توقف",
-  /* The button at the end of the box (pcg-368.6), after claude.ai/code's
+  /* The button at the end of the box, after claude.ai/code's
      «Send» / «Queue for later»: mid-turn a message either goes now, into the
      running turn, or waits here until that turn is over. */
   sendNow: "بفرست",
@@ -375,10 +375,10 @@ window.FA = {
   openInExplorer: "باز کردن پوشه پروژه",
   archiveSection: "بایگانی",
   chooseProject: "انتخاب پروژه",
-  /* The empty state is the TUI's welcome box now (V2-PLAN §2): the greeting,
+  /* The empty state is the TUI's welcome box now: the greeting,
      its four action cards and their strings are gone. What the terminal
      prints is its own name, its version, the folder, and the three hints it
-     keeps under an empty prompt (wiki/tui-strings.md §5). */
+     keeps under an empty prompt. */
   welcomeTitle: "خوش آمدید به کلاد فارسی — ترمینال",
   welcomeCwd: "پوشه:",
   welcomeNoProject: "هنوز پروژه‌ای باز نیست",
@@ -397,10 +397,10 @@ window.FA = {
   permDenied: "رد شد",
 
   /* v2.4: the three numbered options, translated from the TUI's own labels
-     (wiki/tui-strings.md §2). NONE of them carries its number — the digit is
+    NONE of them carries its number — the digit is
      drawn by js/choice.js, because in RTL a digit glued to the front of a
      Persian run is reordered by the bidi algorithm, and because «۲» only
-     exists when a remember scope applies (V2-PLAN §8.2). The `(esc)` on the
+     exists when a remember scope applies. The `(esc)` on the
      third one is drawn the same way, for the same reason.
 
      «{tool}» and no directory: the remember scope here is THIS PROJECT, THIS
@@ -410,7 +410,7 @@ window.FA = {
   permYes: "بله",
   permYesRemember: "بله، و دیگر برای {tool} نپرس",
   permNoFeedback: "نه، و بگو طور دیگری انجام دهد",
-  /* Option 4, the window's own (BRIDGEMIND-PORT.md §D10): refuse AND stop the
+  /* Option 4, the window's own: refuse AND stop the
      turn, for when the answer is "not this, and not anything else either".
      The TUI has three options; wiki/tui-keys.md lists this as a deviation. */
   permNoStop: "نه، و کار را متوقف کن",
@@ -438,7 +438,7 @@ window.FA = {
   /* What the tool card says once the plan is accepted. «اجازه داده شد» is the
      answer to a request to run something; a plan that was accepted is not run,
      it is kept — which is why the TUI writes «Plan saved!» here and not its
-     own approval word (wiki/tui-strings.md §2). */
+     own approval word. */
   planSaved: "طرح ذخیره شد",
 
   /* AskUserQuestion. Not an approval — the model is asking something and waits
@@ -497,7 +497,7 @@ window.FA = {
   slEffort: "تفکر",
   slStyle: "لحن",
 
-  /* The `⏵⏵` posture row (V2-PLAN §3.4), which replaces the pill the composer
+  /* The `⏵⏵` posture row, which replaces the pill the composer
      row used to carry. These are the TUI's OWN status-line sentences
      (wiki/tui-strings.md §4 `posture.*`), not the picker's short titles: the
      picker names a choice you are making, this line reports a mode you are
@@ -549,16 +549,16 @@ window.FA = {
      than describing them. Each column carries the same digit in its topbar, and
      the badge's tooltip is what says what that digit is for. */
   /* ...and the sidebar's three-segment control, which is the way in for a
-     reader who will never type `/split` (TERMINAL-REDESIGN.md §3). Same two
+     reader who will never type `/split`. Same two
      strings as the web edition's window bar, deliberately: it is the same
      control saying the same thing about the same window. */
-  // The grid that fits N (BRIDGEMIND-PORT.md §D6).
+  // The grid that fits N.
   dividerLabel: "جداکنندهٔ قاب‌ها — بکشید، یا با پیکان جابه‌جا کنید؛ دوبار کلیک: هم‌اندازه",
   paneEqualize: "هم‌اندازه کردن قاب‌ها",
   openInNewPane: "باز کردن در قاب تازه",
   noRoomForPane: "جا برای قاب دیگری نیست؛ گفتگو در همین قاب باز شد و قبلی در فهرست کنار است.",
 
-  /* The new-session page (BRIDGEMIND-PORT.md §D8). One action for "N at once":
+  /* The new-session page. One action for "N at once":
      which folder, how many, shared or a worktree each, an optional task.
      «جفت» is a builder and a reviewer in the same folder; the reviewer is put
      in plan posture, so the CLI itself refuses its edits, and its task opens
@@ -604,7 +604,7 @@ window.FA = {
   nsStepFailed: "گفتگو باز شد، ولی کار مشترک یا سطح اجازه‌اش فرستاده نشد",
   presetReviewerBrief: "تو بازبین هستی: هیچ فایلی را تغییر نده. کار گفتگوی دیگر را در همین پوشه بخوان و گزارش بده.",
 
-  /* The notification centre (BRIDGEMIND-PORT.md §D9): what happened in a
+  /* The notification centre: what happened in a
      conversation you were not looking at. */
   bellTitle: "اعلان‌ها",
   bellUnread: "اعلان‌ها — {n} خوانده‌نشده",
@@ -616,7 +616,7 @@ window.FA = {
     failed: "خطا داد",
   },
   noticeClosed: "این گفتگو بسته شده است",
-  /* The rail (TERMINAL-REDESIGN.md §1). One button, two words, and which one it
+  /* The rail. One button, two words, and which one it
      says is the ACTION it will take — not the state it is in: a control named
      after its own state is read as a label and pressed by accident. It follows
      the split on its own, so most readers never press it. */

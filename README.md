@@ -233,14 +233,11 @@ claude -p                                     the real CLI: same ~/.claude,
 
 ### Rendering rules
 
-Bidirectional text is the most frequent source of defects here, so the rules are written down.
-[`claude-persian-rtl-spec.md`](claude-persian-rtl-spec.md) is binding for anything that renders
-text. The shell is `<html dir="rtl" lang="fa">` and every block that holds content sets its own
+Bidirectional text is the most frequent source of defects here. The shell is `<html dir="rtl" lang="fa">` and every block that holds content sets its own
 direction. A block's direction is decided by counting its strong letters, not by its first
 character, so a Persian paragraph that opens with an English word stays right to left. Inline
 code and paths are isolated left to right, and <kbd>Shift</kbd>+<kbd>Space</kbd> inserts
-U+200C. [`wiki/rtl-rendering-notes.md`](wiki/rtl-rendering-notes.md) records each trap together
-with the defect that exposed it.
+U+200C.
 
 ### Security
 
@@ -276,8 +273,6 @@ persian-claude-gui/
   static-terminal/       terminal edition, same layout
   setup.bat, setup.ps1   Windows bootstrap
   run_spec_test.py, test_*.py, smoke_test.py   checks
-wiki/                    the measured CLI contract and the RTL notes
-claude-persian-rtl-spec.md   binding rendering rules
 ```
 
 All user-visible text lives in `strings.fa.js`, one per edition.
@@ -290,16 +285,14 @@ About twenty headless checks load each edition's shipping `index.html` in a Chro
 parity (`test_parity.py`), keys, strings and more, plus `test_units.py` for the server. They
 cost nothing and need no login. On Windows they use Edge; elsewhere, point `PCG_BROWSER` at a
 Chromium binary. One check, `smoke_test.py`, drives a real CLI turn and **uses one turn of your
-subscription**. The full table is in [`CLAUDE.md`](CLAUDE.md).
+subscription**.
 
 ### Contributing and feedback
 
 Bug reports and ideas are welcome in English or Persian:
 [open an issue](https://github.com/229amini/ClaudeCodePersianPort/issues/new/choose). If you
 work in another right-to-left language (Arabic, Hebrew, Urdu), reports on how the same problems
-show up for you are especially useful. For code, see [CONTRIBUTING.md](CONTRIBUTING.md); `wiki/`
-holds the measured CLI contract and the RTL traps, several of which fail without any error
-message.
+show up for you are especially useful. For code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

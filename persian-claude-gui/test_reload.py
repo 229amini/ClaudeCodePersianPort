@@ -14,7 +14,7 @@ off disk, and loads the real index.html against it TWICE: the transcript has to
 be there both times.
 
 Free: no CLI turn is spent. An idle `--resume` emits no inference-shaped events
-and costs no tokens (wiki/cli-stream-json-findings.md), and the session it
+and costs no tokens, and the session it
 resumes is a two-line transcript this file writes into a throwaway project
 folder and deletes again - the author's own history is never touched.
 
@@ -63,7 +63,7 @@ SAID = "پیامی که روی دیسک نوشته شده"
 ANSWERED = "پاسخی که باید پس از بارگذاری دوباره دیده شود"
 
 # The setup pair, three per page load, and - terminal only - the rail on the
-# reload (TERMINAL-REDESIGN.md §1); the web edition has no rail to restore.
+# reload; the web edition has no rail to restore.
 CHECKS = 2 + 2 * 3 + (1 if EDITION == "terminal" else 0)
 
 
@@ -111,7 +111,7 @@ const log = () => cell().querySelector(".log");
 # deferred module, so app.js sees the stub rather than the real constructor.
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
-# Phase 3 (TERMINAL-REDESIGN.md §1): the sidebar's rail state rides in the same
+# Phase 3: the sidebar's rail state rides in the same
 # `pcg.layout` record as the split, so it has to come back the same way. Each
 # load here is a fresh browser process and sessionStorage dies with the last
 # one, so the second load is handed the record the first one would have
@@ -195,7 +195,7 @@ def main() -> int:
                 continue
             if not m["rows"]:
                 bad.append(f"{where}: the column is empty - the transcript on "
-                           "disk was never fetched (pcg-1ug)")
+                           "disk was never fetched")
             if m["home"]:
                 bad.append(f"{where}: the home greeting is showing over an open "
                            "conversation")
@@ -211,7 +211,7 @@ def main() -> int:
         # Leave no project behind: server.py lists every ~/.claude/projects entry
         # whose recorded cwd still exists, so a temp workdir that outlives this
         # gate shows up in the window's sidebar as a "pcg-reload-…" project
-        # forever (wiki/dev-environment.md). taskkill /T because a plain kill
+        # forever. taskkill /T because a plain kill
         # orphans the claude child, and Windows will not delete a folder that is
         # some process's cwd. Off Windows (the Linux cloud container) the same
         # tree is the server and its direct claude child.

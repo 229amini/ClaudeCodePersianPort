@@ -1,4 +1,4 @@
-The offline install payload (M8-acceptance.md §0).
+The offline install payload: setup.ps1 -Payload <this folder>.
 
 Put two files here:
 
@@ -13,9 +13,7 @@ Put two files here:
     Windows x64). setup.ps1 copies it to the same place on the target. The CLI
     updates itself later, once it is online.
 
-Neither file is committed -- .gitignore keeps *.exe out. This folder is
-committed only so clean-machine-offline.wsb has something to map; an absent
-HostFolder stops Windows Sandbox from starting at all.
+Neither file is committed -- .gitignore keeps *.exe out.
 
 The app itself still needs the internet to talk to Claude, and logging in
 needs it once. -Payload is for a machine where the DOWNLOADS are blocked

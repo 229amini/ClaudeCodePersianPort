@@ -68,7 +68,7 @@ def one_send(blocks: list[dict], token: str) -> tuple[list[dict], float, list[di
         except Exception:
             pass
         # Leave no project behind: the sidebar lists every ~/.claude/projects entry
-        # whose cwd still exists (wiki/dev-environment.md).
+        # whose cwd still exists.
         transcripts = transcript_dir(tmp)
         for _ in range(20):
             shutil.rmtree(tmp, ignore_errors=True)

@@ -14,7 +14,7 @@ Answers `pcg-52w`, and re-answers it after every CLI upgrade. What it pins:
 4. `cancel_async_message` against a uuid that was never enqueued -> cancelled=false.
 
 Free because the payload is `/recap`, which is a LOCAL command that refuses on a
-session with nothing in it (wiki/parity-chrome.md). The proof that it stayed free
+session with nothing in it. The proof that it stayed free
 is printed at the end: `result.total_cost_usd` must be 0.
 
     C:\Python314\python.exe persian-claude-gui\probe_queue.py

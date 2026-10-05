@@ -202,7 +202,7 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
 def main() -> int:
     if EDITION != "terminal":
-        print("SKIP - the bell is the terminal edition's (BRIDGEMIND-PORT.md §D0)")
+        print("SKIP - the bell is the terminal edition's")
         return 0
     edge = find_edge()
     write_probe()

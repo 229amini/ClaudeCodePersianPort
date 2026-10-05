@@ -20,7 +20,7 @@ What it holds (measured 2026-09-06, CLI 2.1.263):
    refused BEFORE a tab exists.
 
 An SSE connection is held open throughout: the idle watchdog kills the server
-about ten seconds after the last client leaves (wiki/dev-environment.md).
+about ten seconds after the last client leaves.
 """
 import atexit
 import json

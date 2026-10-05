@@ -1,12 +1,12 @@
 /* ============================================================================
-   Message marks, after claude.ai/code (pcg-8ip).
+   Message marks, after claude.ai/code.
 
    ONE FILE, BOTH EDITIONS: static/js/marks.js and static-terminal/js/marks.js
    are byte-identical (test_marks.py says so). A LEAF: it imports nothing; the
    renderer hands in what it knows and gets elements back.
 
      decorate()    under a message, on hover: ⧉ copy, the pin, a fork from
-                   here when the edition offers one (pcg-ahh.4), and when it
+                   here when the edition offers one, and when it
                    was said («۹ دقیقهٔ پیش», the exact moment on hover)
      paintRail()   the pinned messages as dashes at the top of the transcript;
                    hovering lists «شروع گفتگو» and each pin, a click goes there
@@ -14,10 +14,10 @@
                    per file that opens its own edit
      markTurnEnd() the strip ALWAYS drawn under the last message of a turn
                    (pcg-lw0; the site's action row, not hover-only)
-     thumbs()      a user turn's images, a row above its bubble (pcg-lw0)
-     foldLong()    a user message over ~15 lines clipped, «بیشتر» (pcg-lw0)
+     thumbs()      a user turn's images, a row above its bubble
+     foldLong()    a user message over ~15 lines clipped, «بیشتر»
      openDiff()    a change-card row's edits in a panel BESIDE the transcript
-                   (pcg-lw0); the transcript reflows narrower, ✕ / Esc close
+                  the transcript reflows narrower, ✕ / Esc close
 
    Every word the strip and the rail draw is CSS `content: attr(data-…)`, not
    a text node (the fold toggle's rule, render.js): a message's textContent is
@@ -114,7 +114,7 @@ export function decorate(msg, { uuid, ts, text, pinned = false, onPin, onFork, f
     pin.addEventListener("click", () => onPin(!msg.classList.contains("is-pinned")));
     acts.append(pin);
   }
-  // A new conversation from this point (pcg-ahh.4). Only where the edition
+  // A new conversation from this point. Only where the edition
   // hands in a handler, and only for a message with its own uuid — that is
   // what the CLI cuts the copy at.
   if (uuid && onFork) {
@@ -246,7 +246,7 @@ export function changeCard(files) {
   return card;
 }
 
-/* --- 4. the always-on row under a turn's last message (pcg-lw0) --------------
+/* --- 4. the always-on row under a turn's last message --------------
 
    The site draws copy · pin · time under the LAST message of every finished
    turn, muted and in flow, where everything else gets it on hover only. Called
@@ -263,7 +263,7 @@ export function markTurnEnd(log) {
   last.classList.add("turn-last");
 }
 
-/* --- 5. a user turn's images (pcg-lw0) ---------------------------------------
+/* --- 5. a user turn's images ---------------------------------------
 
    `srcs` are data: URLs (a replayed transcript carries the image itself) or the
    wrapper's /api/image route (a live send names a file the server read). The
@@ -309,7 +309,7 @@ export function foldLong(msg, text) {
   paint(false);
 }
 
-/* --- 7. a file's edits, beside the transcript (pcg-lw0) ----------------------
+/* --- 7. a file's edits, beside the transcript ----------------------
 
    The site opens a change-card row as a panel at the side of the transcript,
    which reflows narrower. Here it is the turn's OWN edits of that file — the

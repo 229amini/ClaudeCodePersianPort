@@ -9,38 +9,32 @@ the Vazirmatn fonts are vendored under `persian-claude-gui/static/` because the 
 may be offline or locked down. A PR that adds a package manager is a PR that breaks the
 one machine this exists for.
 
-**`claude-persian-rtl-spec.md` is binding** for anything that renders text — its base
-CSS, its 7 numbered rules, its 12 test cases. When you touch rendering, cite the rule
-number in the commit message or the code comment ("spec rule 4"), don't paraphrase the
-spec into prose. Its closing list names the traps that look like fixes and aren't
-(`text-align: right` without `direction`, reversing strings in JS, a manual direction
-toggle, expecting the font to fix direction).
+**BiDi discipline** for anything that renders text. `run_spec_test.py` is the gate.
+Traps that look like fixes and aren't: `text-align: right` without `direction`, reversing
+strings in JS, a manual direction toggle, expecting the font to fix direction.
 
-Two project deltas the spec doesn't cover: the shell is `<html dir="rtl" lang="fa">`, so
-"never global `dir=rtl`" survives only by discipline — every content-bearing element
-carries its own direction. And Windows paths anywhere in the chrome (statusline, titles,
-folder picker, session previews, tool params) use `.path` (LTR + isolate + `<bdi>`); the
-spec's cases are message-focused and will not catch a regression there.
+The shell is `<html dir="rtl" lang="fa">`, so every content-bearing element carries its
+own direction. Windows paths anywhere in the chrome (statusline, titles, folder picker,
+session previews, tool params) use `.path` (LTR + isolate + `<bdi>`).
 
-**Read the `wiki/` page for the area first.** Several of them document failure modes that
-produce no error at all — `permission-transport.md` and `control-protocol.md` describe
-requests that answer a cheerful `success` while doing nothing.
+**Control requests can lie.** Several answer a cheerful `success` while doing nothing;
+prove a change by what the CLI does next, not by the ack.
 
 ## Running it
 
 ```powershell
-C:\Python314\python.exe persian-claude-gui\server.py --cwd <project> --no-window
+<python> persian-claude-gui\server.py --cwd <project> --no-window
 ```
 
-Use your own interpreter path — `python` on PATH is the Windows Store alias stub, and the
-absolute path in the docs is this machine's. Set `PYTHONIOENCODING=utf-8` first or Persian
+Use your own interpreter's absolute path — `python` on PATH may be the Windows Store alias
+stub. Set `PYTHONIOENCODING=utf-8` first or Persian
 mojibakes in the console.
 
 ## Which check gates what
 
 | You touched | Run | Cost |
 |---|---|---|
-| anything in `static/` | `python persian-claude-gui\run_spec_test.py` — must print `PASS — 20/20` | free |
+| anything in `static/` | `python persian-claude-gui\run_spec_test.py` — must print `PASS` | free |
 | `transcript_path()`, session delete, replay | `python persian-claude-gui\test_transcript_path.py` | free |
 | the transport, control requests, the capability mirror | `python persian-claude-gui\smoke_test.py` | **one real subscription turn** |
 | `setup.ps1` / the shortcut | `setup.ps1 -DeployRoot <tmp> -ProjectDir <tmp> -ShortcutDir <tmp> -SkipSmokeTest`, twice — it must stay idempotent | free |
@@ -53,7 +47,7 @@ There is no CI, on purpose: the CLI can't run in a CI container, so only
 
 ## Three encoding traps that corrupt Persian silently
 
-From `wiki/packaging.md`; all three fail quietly, none of them raises:
+All three fail quietly, none of them raises:
 
 1. **`setup.ps1` must stay UTF-8 *with* BOM.** Windows PowerShell 5.1 reads a BOM-less
    script as the system ANSI codepage and every Persian string in it becomes mojibake.

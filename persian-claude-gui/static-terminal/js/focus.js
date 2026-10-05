@@ -1,5 +1,5 @@
 /* ============================================================================
-   Focus view (pcg-ahh.5), after the Claude Code VS Code extension's.
+   Focus view, after the Claude Code VS Code extension's.
 
    What you said and what Claude answered, and nothing of how it got there:
    every turn's process rows — the tool runs, a helper's card, the earlier

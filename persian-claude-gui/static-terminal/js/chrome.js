@@ -512,7 +512,7 @@ export function setChrome(cwd, cell = null) {
    line below the project — which is also the surface `/resume` now moves
    focus into (§3.3).
 
-   The three hints are the TUI's composer footer (wiki/tui-strings.md §5), and
+   The three hints are the TUI's composer footer, and
    they name keys this page really binds: `/` opens the slash popup, `@` the
    file menu, `?` the key sheet (js/composer.js). */
 const WELCOME_TIPS = [
@@ -597,7 +597,7 @@ let archOpen = false;   // the «بایگانی» section, collapsed by default
 
 function renderProjects(projects) {
   // The sidebar repaints on every event, and `/resume` puts the KEYBOARD in it
-  // (V2-PLAN §3.5): a rebuild mid-browse threw focus to <body> the way the
+  //: a rebuild mid-browse threw focus to <body> the way the
   // agents strip used to. Same fix as agents.js paint() — remember which
   // session owned focus, hand it back to that session's new row.
   const focusedSession = ui.projects.contains(document.activeElement)
@@ -1224,7 +1224,7 @@ function showPreview(row, sess, items) {
   card.hidden = false;
   // Fixed positioning in px, deliberately not logical properties: the anchor is
   // a measured rect, and the sidebar sits on the RIGHT edge of the window
-  // (TERMINAL-REDESIGN.md §1), so the card opens inward — leftward — clamped so
+  // so the card opens inward — leftward — clamped so
   // a row near the bottom or the start edge never opens offscreen.
   // All in CSS px: rects and innerWidth are SCREEN px under app zoom, so they
   // are converted on the way in (prefs.js cssPx); offset* never needed it and
@@ -1400,14 +1400,14 @@ async function replaySession(sessionId, projPath, worktree) {
    whether the closing «گفتگو از سر گرفته شد» line is added. */
 export function renderInto(tab, events, resumedNote = false) {
   const all = events ?? [];
-  // A long history renders its TAIL (BRIDGEMIND-PORT.md §D11.3): a
+  // A long history renders its TAIL: a
   // two-thousand-event transcript is seconds of layout nobody asked for.
   const from = all.length > HISTORY_TAIL_OVER ? chunkStart(all, all.length) : 0;
   tabBridge?.renderIn(tab, (node) => {
     node.replaceChildren();
     resetTurn();
     state.toolCards.clear();
-    state.turnEdits = new Map();   // this render's own turns only (pcg-8ip)
+    state.turnEdits = new Map();   // this render's own turns only
     if (from > 0) node.append(earlierRow(tab, all, from, node));
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
@@ -1475,7 +1475,7 @@ function earlierRow(tab, events, from, node) {
   return row;
 }
 
-/* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT (pcg-1ug).
+/* A RELOADED WINDOW REPAINTS ITS TRANSCRIPT.
 
    A conversation's rows have two sources and only one of them survives a
    reload. Live events are published to the hub, which replays its whole
@@ -1694,7 +1694,7 @@ export function initChrome() {
     document.getElementById("btn-help").href =
       "/static/help.html?t=" + encodeURIComponent(token);
 
-    // «+ گفتگوی تازه» opens the new-session page (BRIDGEMIND-PORT.md §D8);
+    // «+ گفتگوی تازه» opens the new-session page;
     // the project row's «+» stays the one-click path, and `/clear` is
     // newChatHere() below.
     ui.btnNew.addEventListener("click", () => tabBridge?.newSession?.());

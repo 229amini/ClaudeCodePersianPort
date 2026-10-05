@@ -483,13 +483,13 @@ export function makeComposer(root, cell) {
      positionMenu() reads: the gap it hangs above the prompt with, the breathing
      room it keeps at the column's edge, and the shortest list still worth
      opening. Local rather than imported - composer.js has no edge on
-     controls.js in this edition (wiki/frontend-modules.md) and one popup is not
+     controls.js in this edition and one popup is not
      worth making one. */
   const POP_GAP = 8;
   const POP_EDGE = 8;
   const POP_MIN = 140;
 
-  /* Same trap as the picker menu, and now the same TWO answers to it (pcg-6nf.10).
+  /* Same trap as the picker menu, and now the same TWO answers to it.
      This opens upward out of the composer, so its 40cqh is only real when the
      composer is at the bottom of its column: in the home state it sits mid-column
      and the top rows were clipped instead of scrolling. Measured against the
@@ -1190,7 +1190,7 @@ export function makeComposer(root, cell) {
       }
     };
 
-    /* --- the composer bar's «+» and ◔ (COMPOSER-BAR.md) -----------------------
+    /* --- the composer bar's «+» and ◔ -----------------------
        «+» is what the paperclip was (the native file dialog, real paths), the
        slash popup, and this machine's MCP servers with a switch each; Ctrl+U
        opens the dialog, as in claude.ai/code. ◔ opens the context window by

@@ -144,7 +144,7 @@ def checks(native: dict, css: dict) -> list[tuple[str, bool, str]]:
 
 def main() -> int:
     if EDITION != "terminal":
-        print("SKIP - app zoom is the terminal edition's (BRIDGEMIND-PORT.md §D0)")
+        print("SKIP - app zoom is the terminal edition's")
         return 0
     edge = find_edge()
     write_probe()

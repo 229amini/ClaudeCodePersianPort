@@ -2,7 +2,7 @@
 `claude` native binary, so `wiki/tui-keys.md` and `wiki/tui-strings.md` are regenerable
 rather than transcribed by hand.
 
-Why this exists (V2-PLAN.md §3.6): "Lift the defaults from the binary, not from memory."
+Why this exists: "Lift the defaults from the binary, not from memory."
 v2 draws the TUI with the DOM, so every key and every word it shows has to come from the
 same build the engine talks to. A table typed from memory drifts the moment the binary
 self-updates — and it does, silently (2.1.259 -> 2.1.260 overnight, 2026-09-04).

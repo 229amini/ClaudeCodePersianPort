@@ -345,7 +345,7 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
      timer forward instantly but does NOT wait on a FileReader, so a sleep here
      buys real time only by accident. It did: 25 x sleep(10) ran out before the
      reader answered, and «an image still posts» failed with called=False
-     (pcg-l2i). Each poll is now a real request to the server instead, and
+    Each poll is now a real request to the server instead, and
      virtual time holds still while a request is out, so the reader gets the
      real milliseconds the old loop only pretended to give it.)
 

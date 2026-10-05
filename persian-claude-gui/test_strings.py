@@ -268,7 +268,7 @@ def main() -> int:
     answered = window_verbs | lifecycle | arg_verbs
     check(len(answered) > 15, f"the window answers {len(answered)} verbs itself",
           f"window={sorted(window_verbs)} lifecycle={sorted(lifecycle)} arg={sorted(arg_verbs)}")
-    check("help" in window_verbs, "/help is one of them now (V2-PLAN §8.11A)")
+    check("help" in window_verbs, "/help is one of them now")
 
     order = re.search(r"const HELP_ORDER = \[(.*?)\];", commands, re.S)
     listed = set(re.findall(r'"([a-z-]+)"', order.group(1))) if order else set()
