@@ -1,9 +1,9 @@
-# Launch plan — کلاد فارسی (bead `pcg-coj`)
+# Launch plan: کلاد فارسی (bead `pcg-coj`)
 
 This file is written **for a Claude session running on the owner's Windows PC** (the Claude
 desktop app with Claude in Chrome, or computer use), where the owner is logged in to each site.
 It is the whole plan: the order, the rules, and every post's text. The texts in §4 were reviewed
-by the owner on 2026-10-04 — post them as written; if a site forces a change (a length limit, a
+by the owner on 2026-10-04 and rewritten on 2026-10-05 without em dashes or filler. Post them as written; if a site forces a change (a length limit, a
 flair, a rule), show the owner the changed text first.
 
 Repository: https://github.com/229amini/ClaudeCodePersianPort
@@ -23,7 +23,7 @@ Latest release: `v1.8.0` (web) / `terminal-v0.8.0` (terminal), both live.
    no direct messages to strangers, no comment-spam in other threads.
 4. **Read each community's rules first** (subreddit sidebar/wiki, group pinned message, HN
    guidelines). If self-promotion is not allowed there, or the rules are unclear, say so and skip
-   it — do not look for a way around the rule.
+   it. Do not look for a way around the rule.
 5. **Never ask anyone for upvotes or stars on Hacker News or Reddit**, and never ask the owner's
    friends to vote. Both sites penalise vote solicitation. (Asking for feedback and a ⭐ on
    Telegram/X/LinkedIn, as the texts do, is fine.)
@@ -39,8 +39,8 @@ Latest release: `v1.8.0` (web) / `terminal-v0.8.0` (terminal), both live.
 
 - [ ] `git pull` on `main`, so `docs/launch/` and `docs/screenshots/` are present.
 - [ ] **Before/after image** (the single strongest asset). Ask the owner to take one screenshot
-      of Persian in a Windows terminal running `claude` — e.g. ask it
-      «فایل D:\projects\app\style.css را عوض کن و بگو چه کردی» — so the broken rendering shows.
+      of Persian in a Windows terminal running `claude`, for example by asking it
+      «فایل D:\projects\app\style.css را عوض کن و بگو چه کردی», so the broken rendering shows.
       Then put it side by side with `docs/screenshots/terminal-conversation.png` (left: «قبل»,
       right: «بعد»). On Windows this needs no install: PowerShell with `System.Drawing` can
       paste two PNGs onto one canvas. Save as `docs/launch/before-after.png`; show it to the
@@ -54,12 +54,12 @@ Latest release: `v1.8.0` (web) / `terminal-v0.8.0` (terminal), both live.
 |---|---|---|---|---|
 | 1 | Owner's Telegram channel + approved groups | 4.1 Persian | before-after.png | Claude, after "yes" |
 | 1 | Telegram (English-speaking groups, if any) | 4.2 English | before-after.png | Claude, after "yes" |
-| 1 | X — Persian thread | 4.3 | before-after.png on tweet 1 | Claude, after "yes" |
+| 1 | X, Persian thread | 4.3 | before-after.png on tweet 1 | Claude, after "yes" |
 | 1 | LinkedIn | 4.4 | terminal-conversation.png | Claude, after "yes" |
 | 2 | Virgool article | 4.5 | cover: terminal-conversation.png; before-after.png after the first paragraph | Claude, after "yes" |
-| 3 (weekday, ~08:00–10:00 US Eastern) | Hacker News — Show HN | 4.6 | none (HN has no images) | **HUMAN submits**; Claude may post the first comment after "yes" |
+| 3 (weekday, 08:00 to 10:00 US Eastern) | Hacker News, Show HN | 4.6 | none (HN has no images) | **HUMAN submits**; Claude may post the first comment after "yes" |
 | 3 | Reddit r/ClaudeAI, then r/ClaudeCode | 4.7 | terminal-conversation.png | Claude, after "yes", only if each sub's rules allow it |
-| 5+ | awesome-claude-code | 4.8 | — | **HUMAN only** (the list requires a person to submit; no PRs, no CLI) |
+| 5+ | awesome-claude-code | 4.8 | none | **HUMAN only** (the list requires a person to submit; no PRs, no CLI) |
 
 After each post, for the first two hours: check for replies every ~20 minutes, draft answers for
 the owner (Persian where the question is Persian), post only the ones the owner approves. Early
@@ -72,192 +72,192 @@ summarise new issues for the owner (they will be fixed in a coding session).
 
 ## 4. The texts
 
-### 4.1 Telegram — Persian (fits a 1024-character photo caption)
+### 4.1 Telegram, Persian (fits a 1024-character photo caption)
 
 ```
-**کلاد فارسی** — Claude Code، بالاخره به فارسیِ درست
+**کلاد فارسی**: Claude Code به فارسی، روی ویندوز
 
-اگر با Claude Code در ترمینال ویندوز فارسی نوشته باشید، می‌دانید چه می‌شود: حروف جدا از هم، جمله‌ای که برعکس خوانده می‌شود، اسم فایلی که وسط جمله تکه‌تکه می‌شود، و نیم‌فاصله‌ای که اصلاً تایپ نمی‌شود.
+اگر در ترمینال ویندوز با Claude Code فارسی نوشته باشید، نتیجه را دیده‌اید: حروف از هم جدا می‌شوند، جمله برعکس خوانده می‌شود، اسم فایل وسط جمله تکه‌تکه می‌شود و نیم‌فاصله تایپ نمی‌شود.
 
-کلاد فارسی همان Claude Code رسمی را اجرا می‌کند، در پنجره‌ای که فارسی را درست نشان می‌دهد:
+کلاد فارسی همان Claude Code رسمی را اجرا می‌کند و خروجی‌اش را در پنجره‌ای نشان می‌دهد که فارسی را درست می‌چیند:
 
-▫️ همه‌چیز فارسی و راست‌به‌چپ؛ دکمه‌ها، منوها، پرسش اجازه و راهنما
-▫️ فارسی و انگلیسی در یک خط، درست و خوانا
+▫️ دکمه‌ها، منوها، پرسش اجازه و راهنما، همه فارسی و راست‌به‌چپ
+▫️ فارسی و انگلیسی در یک خط، به ترتیب درست
 ▫️ نیم‌فاصله با Shift+Space
-▫️ پیش از هر تغییر، به فارسی اجازه می‌گیرد و نشان می‌دهد دقیقاً چه می‌کند
+▫️ پیش از هر تغییر به فارسی اجازه می‌گیرد و خود تغییر را نشان می‌دهد
 ▫️ چند گفتگو کنار هم، جستجوی گفتگوها و نمای متمرکز
-▫️ نصب با یک دوبار-کلیک
+▫️ نصب با دوبار کلیک
 
-رایگان و متن‌باز · ویندوز ۱۰ و ۱۱ · با همان حساب Claude خودتان
+رایگان و متن‌باز، برای ویندوز ۱۰ و ۱۱، با همان حساب Claude خودتان.
 
 📥 دانلود و راهنمای نصب:
 https://github.com/229amini/ClaudeCodePersianPort
 
-🙏 تازه منتشر شده و بیشتر از هر چیز به نظر شما نیاز دارد. هر جا حرفی به‌هم ریخت یا امکانی کم بود، در گیت‌هاب بگویید؛ فرم‌ها فارسی‌اند. اگر به کارتان آمد، ⭐ بدهید و برای دوستی که با Claude Code کار می‌کند بفرستید.
+هر جا حرفی به‌هم ریخت یا امکانی کم بود، در گیت‌هاب بنویسید. فرم‌ها فارسی‌اند. اگر به کارتان آمد، ⭐ بدهید و برای کسی بفرستید که با Claude Code کار می‌کند.
 
 #کلاد_فارسی #ClaudeCode #برنامه_نویسی
 ```
 
-### 4.2 Telegram — English (fits a 1024-character photo caption)
+### 4.2 Telegram, English (fits a 1024-character photo caption)
 
 ```
-**Claude Persian** — Claude Code, finally in proper Persian
+**Claude Persian**: Claude Code in Persian, on Windows
 
-If you've typed Persian into Claude Code in a Windows terminal, you've seen it: letters that don't join, sentences that read backwards, file names chopped up mid-sentence, and no way to type a half-space (ZWNJ).
+Type Persian into Claude Code in a Windows terminal and you get letters that don't join, sentences that read backwards, file names cut up mid-sentence, and no way to type a half-space (ZWNJ).
 
-Claude Persian runs the official Claude Code CLI, unchanged, inside a window that renders Persian correctly:
+Claude Persian runs the official Claude Code CLI, unchanged, and shows it in a window that renders Persian correctly:
 
-▫️ Fully Persian, right-to-left interface: buttons, menus, permission prompts, help
-▫️ Persian and English on one line, in the right order
-▫️ Half-space with Shift+Space
-▫️ Asks permission in Persian before every change, showing the exact edit
+▫️ Persian, right-to-left interface: buttons, menus, permission prompts, help
+▫️ Persian and English on one line, in reading order
+▫️ Half-space on Shift+Space
+▫️ Asks permission in Persian before each change and shows the exact edit
 ▫️ Conversations side by side, search, Focus view
-▫️ One double-click to install
+▫️ Installs with a double-click
 
-Free and open source · Windows 10/11 · your own Claude account
+Free and open source. Windows 10 and 11. Uses your own Claude account.
 
 📥 Download and install guide:
 https://github.com/229amini/ClaudeCodePersianPort
 
-🙏 It's brand new and feedback matters most: open an issue in English or Persian. If it helps you, a ⭐ and a share go a long way.
+Bug reports and ideas are welcome on GitHub, in English or Persian. If it helps you, star it and pass it to someone who uses Claude Code.
 
 #ClaudeCode #Persian #OpenSource
 ```
 
-### 4.3 X — Persian thread (four tweets, each under 280)
+### 4.3 X, Persian thread (four tweets, each under 280)
 
 ```
-۱/ اگر با Claude Code در ترمینال ویندوز فارسی نوشته باشید، این‌ها را دیده‌اید: حروف جدا، جملهٔ برعکس، اسم فایلی که وسط جمله تکه‌تکه می‌شود، و نیم‌فاصله‌ای که تایپ نمی‌شود.
+۱/ اگر در ترمینال ویندوز با Claude Code فارسی نوشته باشید، این‌ها را دیده‌اید: حروف جدا، جملهٔ برعکس، اسم فایلی که وسط جمله تکه‌تکه می‌شود، و نیم‌فاصله‌ای که تایپ نمی‌شود.
 
-مشکل از شما نیست؛ ترمینال ویندوز برای فارسی ساخته نشده. برای همین «کلاد فارسی» را ساختم 🧵
+علتش ترمینال ویندوز است که متن دوجهته را مرتب نمی‌کند. برای همین «کلاد فارسی» را ساختم 🧵
 ```
 ```
-۲/ کلاد فارسی همان Claude Code رسمی را اجرا می‌کند، بدون هیچ تغییری، ولی در پنجره‌ای که فارسی را درست نشان می‌دهد.
+۲/ کلاد فارسی همان Claude Code رسمی را بدون تغییر اجرا می‌کند و خروجی‌اش را در پنجره‌ای نشان می‌دهد که فارسی را درست می‌چیند.
 
-همان حساب، همان تنظیمات، همان مهارت‌ها. فقط نمایش عوض شده.
+حساب، تنظیمات و مهارت‌ها همان‌هایی است که دارید. فقط صفحهٔ نمایش عوض شده.
 ```
 ```
-۳/ چه دارد:
-▫️ همه‌چیز فارسی و راست‌به‌چپ
-▫️ فارسی و انگلیسی در یک خط، درست
+۳/ امکاناتش:
+▫️ رابط فارسی و راست‌به‌چپ
+▫️ فارسی و انگلیسی در یک خط، به ترتیب درست
 ▫️ نیم‌فاصله با Shift+Space
-▫️ پیش از هر تغییر، به فارسی اجازه می‌گیرد
+▫️ پیش از هر تغییر به فارسی اجازه می‌گیرد
 ▫️ چند گفتگو کنار هم و نمای متمرکز
-▫️ نصب با یک دوبار-کلیک
+▫️ نصب با دوبار کلیک
 ```
 ```
 ۴/ رایگان و متن‌باز، برای ویندوز ۱۰ و ۱۱:
 https://github.com/229amini/ClaudeCodePersianPort
 
-تازه منتشر شده و نظر شما مهم‌ترین چیز است. اگر به کارتان آمد، ریتوییت کنید تا به دست بقیه هم برسد 🙏
+اگر جایی به‌هم ریخت یا امکانی کم بود، در گیت‌هاب بنویسید. اگر به کارتان آمد، بازنشرش کنید تا به دست بقیه هم برسد.
 ```
 
-### 4.4 LinkedIn — Persian
+### 4.4 LinkedIn, Persian
 
 ```
-یک پروژهٔ متن‌باز منتشر کردم: «کلاد فارسی» 🎉
+یک پروژهٔ متن‌باز منتشر کردم: «کلاد فارسی».
 
-Claude Code در ترمینال ویندوز فارسی را درست نشان نمی‌دهد: حروف جدا می‌شوند، خطِ فارسی و انگلیسی به‌هم می‌ریزد و نیم‌فاصله تایپ نمی‌شود. «کلاد فارسی» همان Claude Code رسمی را در پنجره‌ای کاملاً فارسی و راست‌به‌چپ اجرا می‌کند؛ با نصب یک‌کلیکی، اجازه گرفتن به فارسی پیش از هر تغییر، و چند گفتگو کنار هم.
+Claude Code در ترمینال ویندوز فارسی را درست نشان نمی‌دهد. حروف از هم جدا می‌شوند، خطی که فارسی و انگلیسی دارد به‌هم می‌ریزد و نیم‌فاصله تایپ نمی‌شود. «کلاد فارسی» همان Claude Code رسمی را در پنجره‌ای فارسی و راست‌به‌چپ اجرا می‌کند. با دوبار کلیک نصب می‌شود، پیش از هر تغییر به فارسی اجازه می‌گیرد و چند گفتگو را کنار هم نشان می‌دهد.
 
-رایگان و متن‌باز است و منتظر نظر شما هستم:
+رایگان و متن‌باز است. اگر با Claude Code کار می‌کنید، امتحانش کنید و نظرتان را بگویید:
 https://github.com/229amini/ClaudeCodePersianPort
 
 #هوش_مصنوعی #متن_باز #ClaudeCode
 ```
 
-### 4.5 Virgool — article
+### 4.5 Virgool, article
 
-Title: **چرا ترمینال ویندوز فارسی را خراب می‌کند — و چطور Claude Code را فارسی کردم**
+Title: **ترمینال ویندوز و فارسی: چطور Claude Code را فارسی کردم**
 
 ```
-اگر برنامه‌نویس هستید و با Claude Code کار می‌کنید، احتمالاً یک بار هم که شده در ترمینال ویندوز فارسی نوشته‌اید و نتیجه را دیده‌اید: حروفی که به هم نمی‌چسبند، جمله‌ای که از آخر به اول خوانده می‌شود، اسم فایلی که وسط جمله تکه‌تکه و جابه‌جا می‌شود، و نیم‌فاصله‌ای که اصلاً راهی برای تایپش نیست.
+اگر با Claude Code کار می‌کنید و یک بار در ترمینال ویندوز فارسی نوشته باشید، نتیجه را دیده‌اید: حروفی که به هم نمی‌چسبند، جمله‌ای که از آخر به اول خوانده می‌شود، اسم فایلی که وسط جمله تکه‌تکه و جابه‌جا می‌شود، و نیم‌فاصله‌ای که راهی برای تایپش نیست.
 
-اول بگویم: مشکل از شما نیست، از Claude هم نیست. مشکل از جایی است که متن در آن نمایش داده می‌شود.
+علت این خرابی جایی است که متن در آن نمایش داده می‌شود، یعنی خود ترمینال.
 
 ## ترمینال برای فارسی ساخته نشده
 
-ترمینال یک شبکه از خانه‌های هم‌اندازه است؛ هر حرف یک خانه. فارسی اما خطی پیوسته است: شکل هر حرف به حروف کناری‌اش بستگی دارد، و جهتش راست‌به‌چپ است. وقتی فارسی و انگلیسی در یک خط کنار هم می‌آیند، باید الگوریتمی به اسم «دوجهته» (BiDi) ترتیب نمایش را درست کند.
+ترمینال شبکه‌ای از خانه‌های هم‌اندازه است و هر حرف یک خانه می‌گیرد. خط فارسی پیوسته است: شکل هر حرف به حروف کناری‌اش بستگی دارد و جهتش راست‌به‌چپ است. وقتی فارسی و انگلیسی در یک خط کنار هم می‌آیند، الگوریتمی به اسم «دوجهته» (BiDi) باید ترتیب نمایش را درست کند.
 
-ترمینال‌های ویندوز این الگوریتم را ندارند. Claude Code هم رابط ترمینالی‌اش را خودش می‌کشد و مکان‌نما و عرض خانه‌ها را خودش حساب می‌کند. نتیجه این است که حتی ترمینال‌هایی که شکل حروف فارسی را درست می‌کنند، باز هم ترتیب خط را به‌هم می‌ریزند. یعنی این مشکل از داخل ترمینال حل‌شدنی نیست.
+ترمینال‌های ویندوز این الگوریتم را ندارند. Claude Code هم رابط ترمینالی‌اش را خودش می‌کشد و جای مکان‌نما و عرض خانه‌ها را خودش حساب می‌کند. برای همین ترمینال‌هایی که شکل حروف فارسی را درست می‌کنند، باز هم ترتیب خط را به‌هم می‌ریزند. این مشکل از داخل ترمینال حل نمی‌شود.
 
-## راه‌حل: همان Claude Code، در جای دیگر
+## همان Claude Code، در جای دیگر
 
-تنها موتور متنی در ویندوز که فارسی را بی‌نقص می‌چیند، موتور مرورگر است. پس به‌جای عوض کردن Claude Code، جایی را عوض کردم که نمایش داده می‌شود.
+در ویندوز، موتور مرورگر تنها موتور متنی است که فارسی را درست می‌چیند. پس به‌جای عوض کردن Claude Code، جایی را عوض کردم که خروجی‌اش نمایش داده می‌شود.
 
-«کلاد فارسی» یک پنجرهٔ بدون نوار آدرس (Edge) است که زیرش همان Claude Code رسمی، بدون هیچ تغییری، اجرا می‌شود. همان حساب، همان تنظیمات، همان مهارت‌ها و هوک‌ها. گفتگوهایی که اینجا شروع می‌کنید با claude --resume در ترمینال هم باز می‌شوند. سرور کوچکی که بینشان پیام جابه‌جا می‌کند فقط با پایتونِ خالص نوشته شده و فقط روی خود کامپیوتر شما کار می‌کند.
+«کلاد فارسی» یک پنجرهٔ Edge بدون نوار آدرس است که زیرش همان Claude Code رسمی، بدون هیچ تغییری، اجرا می‌شود. حساب، تنظیمات، مهارت‌ها و هوک‌ها همان‌هایی است که دارید، و گفتگویی که اینجا شروع کنید با claude --resume در ترمینال هم باز می‌شود. سرور کوچکی که بین این دو پیام جابه‌جا می‌کند با پایتون خالص نوشته شده و فقط روی کامپیوتر خودتان کار می‌کند.
 
-## دو درسی که گران تمام شد
+## دو چیزی که در ساختنش یاد گرفتم
 
-اول: «مسیر فایل وسط جملهٔ فارسی». جمله‌ای مثل «فایل D:\projects\app\style.css را عوض کردم» اگر به حال خودش رها شود، بخش‌هایش جابه‌جا می‌شوند. هر مسیر، کد، آدرس و شمارهٔ نسخه باید جداگانه «قرنطینه» شود تا جهت جمله را به‌هم نزند.
+اول، مسیر فایل وسط جملهٔ فارسی. جمله‌ای مثل «فایل D:\projects\app\style.css را عوض کردم» اگر به حال خودش رها شود، بخش‌هایش جابه‌جا می‌شوند. هر مسیر، کد، آدرس و شمارهٔ نسخه باید جداگانه از بقیهٔ جمله جدا (isolate) شود تا جهت جمله را به‌هم نزند.
 
-دوم: «اولین کلمه تصمیم می‌گیرد». مرورگر جهت یک پاراگراف را از اولین حرفش حدس می‌زند. پاراگراف فارسی‌ای که با یک کلمهٔ انگلیسی شروع شود، کل پاراگراف را چپ‌به‌راست می‌کند. برای همین برنامه حروف فارسی و انگلیسی هر بند را می‌شمارد و بعد تصمیم می‌گیرد.
+دوم، اولین حرف. مرورگر جهت یک پاراگراف را از اولین حرفش حدس می‌زند، پس پاراگراف فارسی‌ای که با یک کلمهٔ انگلیسی شروع شود چپ‌به‌راست نمایش داده می‌شود. برنامه به‌جای این حدس، حروف فارسی و انگلیسی هر بند را می‌شمارد و بعد جهت را تعیین می‌کند.
 
-## چه چیزی می‌گیرید
+## امکانات
 
-- همه‌چیز فارسی و راست‌به‌چپ: دکمه‌ها، منوها، پرسش اجازه، راهنما
+- دکمه‌ها، منوها، پرسش اجازه و راهنما، همه فارسی و راست‌به‌چپ
 - نیم‌فاصله با Shift+Space
-- پیش از هر تغییر، به فارسی اجازه می‌گیرد و دقیقاً نشان می‌دهد چه می‌کند
+- پیش از هر تغییر به فارسی اجازه می‌گیرد و خود تغییر را نشان می‌دهد
 - چند گفتگو کنار هم، جستجوی گفتگوها، و «گفتگوی تازه از اینجا» زیر هر پیام
-- نصب با یک دوبار-کلیک؛ اگر پایتون یا Claude Code نباشد، خودش نصبشان می‌کند
+- نصب با دوبار کلیک؛ اگر پایتون یا Claude Code نصب نباشد، نصب‌کننده نصبشان می‌کند
 
 ## نصب
 
 ۱. از صفحهٔ پروژه آخرین نسخه را دانلود کنید.
 ۲. روی persian-claude-gui\setup.bat دوبار کلیک کنید.
-۳. از میان‌بر «کلاد فارسی» روی دسکتاپ بازش کنید.
+۳. میان‌بر «کلاد فارسی» را از دسکتاپ باز کنید.
 
 پیش‌نیاز: ویندوز ۱۰ یا ۱۱، و یک حساب Claude که Claude Code با آن کار کند.
 
 https://github.com/229amini/ClaudeCodePersianPort
 
-## نظر شما
+## بازخورد
 
-پروژه رایگان و متن‌باز است و تازه منتشر شده. هر جا حرفی به‌هم ریخت، دکمه‌ای گم بود یا امکانی کم داشتید، در گیت‌هاب بگویید؛ فرم‌ها فارسی‌اند. اگر به کارتان آمد، برای دوستی که با Claude Code کار می‌کند بفرستید.
+پروژه رایگان و متن‌باز است. هر جا حرفی به‌هم ریخت، دکمه‌ای پیدا نشد یا امکانی کم بود، در گیت‌هاب بنویسید. فرم‌ها فارسی‌اند. اگر به کارتان آمد، برای کسی بفرستید که با Claude Code کار می‌کند.
 
-این پروژه مستقل است و وابسته به Anthropic نیست.
+این پروژه مستقل است و به Anthropic وابسته نیست.
 ```
 
-### 4.6 Hacker News — Show HN (HUMAN submits)
+### 4.6 Hacker News, Show HN (HUMAN submits)
 
-- Title: `Show HN: Claude Persian – a right-to-left front-end for Claude Code on Windows`
+- Title: `Show HN: Claude Persian, a right-to-left front-end for Claude Code on Windows`
 - URL: `https://github.com/229amini/ClaudeCodePersianPort`
 - First comment (the owner's own, right after submitting):
 
 ```
-I built this for a Persian-speaking colleague who uses Claude Code but shouldn't have to fight a terminal.
+I built this for a Persian-speaking colleague who uses Claude Code every day and should not have to fight a terminal to do it.
 
-The problem: a terminal is a grid of fixed cells. Persian is cursive, joined, and right-to-left, and mixed Persian/English lines need Unicode BiDi reordering. Windows terminals don't do BiDi, and Claude Code's TUI (Ink) does its own cursor and cell-width math, so mixed lines come out scrambled and there's no way to type a ZWNJ (half-space). A BiDi-capable terminal fixes glyph shaping but not the layout, so that doesn't help either.
+A terminal is a grid of fixed cells. Persian is cursive, joined and right-to-left, and a line that mixes Persian with English needs Unicode BiDi reordering. Windows terminals don't reorder, and Claude Code's TUI (Ink) computes its own cursor position and cell widths, so mixed lines come out scrambled and there is no way to type a ZWNJ (the Persian half-space). A BiDi-capable terminal fixes the glyph shapes and leaves the line order broken.
 
-The fix: don't render in a terminal. A browser engine is the one text renderer on Windows that shapes Persian correctly, so the app is a chrome-less Edge window over the real, unmodified CLI:
+So the app doesn't render in a terminal. A browser engine is the one text renderer on Windows that shapes Persian correctly, and the app is an Edge window with no browser UI on top of the real, unmodified CLI:
 
-- Python stdlib server (no npm, no build step, no CDN), bound to 127.0.0.1 with a per-run token
+- a Python stdlib server (no npm, no build step, no CDN), bound to 127.0.0.1 with a per-run token
 - one long-lived `claude -p` per conversation, talking stream-json over stdin/stdout
-- permission prompts arrive in-band as control requests and are shown as a Persian dialog
-- history replay reads the CLI's own transcripts, so `claude --resume` sees the same conversations
+- permission prompts arrive in-band as control requests and show as a Persian dialog
+- history is replayed from the CLI's own transcripts, so `claude --resume` sees the same conversations
 
-The interesting part was BiDi discipline: file paths, code spans and URLs inside Persian sentences each need to be isolated, or they drift and reverse. There's a written spec and a headless test suite that checks direction and layout, not just text content.
+Most of the work went into BiDi discipline. File paths, code spans and URLs inside Persian sentences each have to be isolated or they drift and reverse, and a paragraph's direction is decided by counting strong letters rather than trusting the first one. There is a written spec and a headless test suite that checks direction and layout, not only text content.
 
-Independent project, not affiliated with Anthropic. Happy to answer questions about RTL rendering.
+Independent project, not affiliated with Anthropic. I can answer questions about RTL rendering.
 ```
 
-### 4.7 Reddit — r/ClaudeAI and r/ClaudeCode (only if each sub's rules allow)
+### 4.7 Reddit, r/ClaudeAI and r/ClaudeCode (only if each sub's rules allow)
 
 - Title: `I built a right-to-left Persian front-end for Claude Code, because Windows terminals can't render Persian`
 - Flair: the sub's showcase / "built with Claude" flair, if it has one.
 
 ```
-Persian (Farsi) in Claude Code on a Windows terminal is basically unreadable: letters don't join, mixed Persian/English lines come out in the wrong order, and you can't type a half-space. It's not Claude's fault — Windows terminals have no BiDi support.
+Persian (Farsi) in Claude Code on a Windows terminal is hard to read: letters don't join, mixed Persian/English lines come out in the wrong order, and you can't type a half-space. The cause is the terminal. Windows terminals don't reorder bidirectional text.
 
-So I wrapped the official CLI (unchanged — same account, settings, skills, hooks) in a chrome-less Edge window that renders Persian properly:
+So I wrapped the official CLI, unchanged (same account, settings, skills and hooks), in an Edge window with no browser UI that renders Persian properly:
 
-- fully right-to-left Persian UI, including permission prompts
+- a fully right-to-left Persian UI, including permission prompts
 - mixed Persian/English lines in the correct order
 - several conversations side by side, conversation search, fork from any message, Focus view
-- one double-click install on Windows
+- a one double-click install on Windows
 
 Free, MIT, no telemetry, binds to localhost only: https://github.com/229amini/ClaudeCodePersianPort
 
-If you work in an RTL language (Arabic, Hebrew, Urdu…) I'd love to hear whether the same problems hit you. Not affiliated with Anthropic.
+If you work in another RTL language (Arabic, Hebrew, Urdu), I'd like to hear whether the same problems hit you. Not affiliated with Anthropic.
 ```
 
 ### 4.8 awesome-claude-code (HUMAN only)

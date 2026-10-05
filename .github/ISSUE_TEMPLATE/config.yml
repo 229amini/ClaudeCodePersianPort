@@ -2,4 +2,4 @@ blank_issues_enabled: true
 contact_links:
   - name: راهنمای فارسی داخل برنامه
     url: https://github.com/229amini/ClaudeCodePersianPort/blob/main/persian-claude-gui/static/help.html
-    about: پیش از گزارش، دکمهٔ «راهنما» در خود برنامه را ببینید — بیشتر پرسش‌ها آنجا جواب دارند.
+    about: پیش از گزارش، دکمهٔ «راهنما» در خود برنامه را ببینید. جواب بیشتر پرسش‌ها آنجاست.

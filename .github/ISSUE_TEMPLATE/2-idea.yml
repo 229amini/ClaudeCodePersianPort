@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        هر نظری خوش آمد است — حتی «این قسمت گیجم کرد». این برنامه با بازخورد کاربران فارسی‌زبان جلو می‌رود.
+        هر نظری به کار می‌آید، حتی «این قسمت گیجم کرد».
         You can also write in English.
   - type: textarea
     id: idea
