@@ -10,7 +10,7 @@
 
     Usage:
         .\setup.ps1                       # normal, downloads what it needs
-        .\setup.ps1 -Payload D:\usb       # offline: installers from a folder
+        .\setup.ps1 -Payload D:\usb       # offline: python-3.12.*-amd64.exe + claude.exe from a folder
         .\setup.ps1 -DeployRoot C:\tmp\x  # install somewhere else (testing)
         .\setup.ps1 -SkipSmokeTest        # skip the paid round-trip
 #>
@@ -164,24 +164,39 @@ if ($claude) {
     Log "  claude => $claude ($ver)"
 } else {
     Note "کلاد کد نصب نیست — در حال نصب"
-    # Run the vendor installer in a CHILD powershell, never Invoke-Expression.
-    # IEX executes in *this* scope, and claude.ai/install.ps1 (read 2026-08-05)
-    # both calls `exit 1` on every failure path — verified to terminate the
-    # calling script outright, catch block and all — and sets
-    # `Set-StrictMode -Version Latest`, which would then govern every later step
-    # here. A child process can leak neither.
-    # EAP is dropped to Continue only around the call: PowerShell 5.1 turns a
-    # native command's stderr into a *terminating* NativeCommandError when EAP
-    # is Stop, so `2>&1` on a failing installer would kill setup.ps1 too.
-    $eap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex" 2>&1 |
-        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray; Log "  claude-install: $_" }
-    $installCode = $LASTEXITCODE
-    $ErrorActionPreference = $eap
-    Log "  claude installer exit $installCode"
-    if ($installCode -ne 0) {
-        Die "نصب کلاد کد ناموفق بود (کد $installCode). اینترنت را بررسی کنید — ممکن است این سرویس در کشور شما در دسترس نباشد. گزارش کامل: $LogFile"
+    # Offline: claude.exe is one self-contained binary, so installing it is a copy
+    # into the same folder the vendor installer uses. Not `claude.exe install`:
+    # that subcommand resolves a release channel over the network.
+    $offlineClaude = if ($Payload) { Join-Path $Payload 'claude.exe' }
+    if ($offlineClaude -and (Test-Path $offlineClaude)) {
+        Note "استفاده از فایل کلاد کد روی حافظه جانبی"
+        $local = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+        try {
+            New-Item -ItemType Directory -Force -Path (Split-Path $local) | Out-Null
+            Copy-Item -Path $offlineClaude -Destination $local -Force
+        } catch { Log "  claude copy failed: $($_.Exception.Message)"; Die "کپی کلاد کد از پوشه آفلاین ناموفق بود. گزارش کامل: $LogFile" }
+        Log "  claude copied from $offlineClaude"
+    } else {
+        if ($Payload) { Warn "فایل کلاد کد در پوشه آفلاین نبود" }
+        # Run the vendor installer in a CHILD powershell, never Invoke-Expression.
+        # IEX executes in *this* scope, and claude.ai/install.ps1 (read 2026-08-05)
+        # both calls `exit 1` on every failure path — verified to terminate the
+        # calling script outright, catch block and all — and sets
+        # `Set-StrictMode -Version Latest`, which would then govern every later step
+        # here. A child process can leak neither.
+        # EAP is dropped to Continue only around the call: PowerShell 5.1 turns a
+        # native command's stderr into a *terminating* NativeCommandError when EAP
+        # is Stop, so `2>&1` on a failing installer would kill setup.ps1 too.
+        $eap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex" 2>&1 |
+            ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray; Log "  claude-install: $_" }
+        $installCode = $LASTEXITCODE
+        $ErrorActionPreference = $eap
+        Log "  claude installer exit $installCode"
+        if ($installCode -ne 0) {
+            Die "نصب کلاد کد ناموفق بود (کد $installCode). اینترنت را بررسی کنید — ممکن است این سرویس در کشور شما در دسترس نباشد. گزارش کامل: $LogFile"
+        }
     }
     $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
     if (-not $claude) {
