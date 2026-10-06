@@ -346,7 +346,7 @@ window.FA = {
   paneMenu: "کارهای این قاب",
   paneZoom: "تمام‌صفحه",
   paneUnzoom: "خروج از تمام‌صفحه",
-  paneClose: "برداشتن از صفحه — گفتگو باز می‌ماند",
+  paneClose: "بستن گفتگو",
   paneModel: "مدل: {name}",
   paneEffort: "میزان تفکر…",
   paneStyle: "لحن پاسخ…",

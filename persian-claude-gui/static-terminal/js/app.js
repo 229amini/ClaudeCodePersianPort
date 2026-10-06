@@ -194,7 +194,7 @@ function initPaneHeader(cell) {
   const [, menu] = kebabMenu(() => paneMenuItems(cell), menuBtn);
   cell.root.append(menu);               // a popover: its parent only owns its lifetime
   q("pane-zoom").addEventListener("click", () => toggleZoom(cell));
-  q("pane-close").addEventListener("click", () => takeOffScreen(cell));
+  q("pane-close").addEventListener("click", (e) => closePane(cell, e.currentTarget));
   // An empty pane's one button opens the new-session page (§D8). In the home
   // state (one pane, nothing open) it is the whole page; in an empty pane of a
   // grid it asks for exactly one conversation, placed HERE.
@@ -249,12 +249,31 @@ function toggleZoom(cell) {
   if (on) focusCell(cells.indexOf(cell), { focusInput: true });
 }
 
-/* ✕ on a pane: the conversation leaves the screen and stays open (§D5) -
-   the sidebar still lists it, one click brings it back. */
-function takeOffScreen(cell) {
+/* ✕ on a pane CLOSES its conversation and, in a grid, the pane with it
+   (pcg-99u, user decision 2026-10-06; it used to only take it off screen,
+   which read as "the ✕ does nothing"). The transcript stays in the sidebar's
+   history. A conversation still working asks first: the button arms with
+   «مطمئنید؟» and a second press within three seconds closes it. */
+function closePane(cell, btn) {
+  const tab = cell.tab;
+  const s = cell === focusedCell() ? state : scopeOf(cell);
+  const disarm = () => {
+    delete btn.dataset.armed;
+    btn.title = FA.paneClose;
+    btn.setAttribute("aria-label", FA.paneClose);
+  };
+  if (tab && s?.outstanding?.size && btn.dataset.armed !== "true") {
+    btn.dataset.armed = "true";
+    btn.title = FA.confirmDelete;
+    btn.setAttribute("aria-label", FA.confirmDelete);
+    setTimeout(disarm, 3000);
+    return;
+  }
+  disarm();
   if (zoomed) toggleZoom(null);
   if (cells.length > 1) removeCell(cell);
-  else blank(cell);
+  if (tab) closeTab(tab);
+  else if (cells.length === 1) blank(cell);
 }
 
 /* --- THE GRID THAT FITS N ---------------------------
@@ -473,13 +492,13 @@ function removeCell(cell) {
   const at = cells.indexOf(cell);
   if (at < 0 || cells.length < 2) return;
   if (zoomed) toggleZoom(null);
+  stashFocusedScope();   // applyFocus below re-adopts it (pcg-v27)
   park(cell);
   cell.perm.retire();
   cells.splice(at, 1);
   cell.root.remove();
   if (at < focused || focused >= cells.length) focused = Math.max(0, focused - 1);
   document.getElementById("grid").dataset.split = String(cells.length);
-  applyRail(cells.length);
   arrangeGrid();
   saveLayout();
   applyFocus({ focusInput: false });
@@ -490,13 +509,7 @@ function removeCell(cell) {
    places the conversation in the focused pane instead - never a silent drop. */
 function addPane() {
   if (cells.length >= MAX_PANES) return false;
-  let { W, H } = gridBox();
-  // Going from one pane to two collapses the sidebar to the rail (§1), so the
-  // room the new layout will really have is the tree's width more.
-  if (railOverride === null && !document.body.classList.contains("rail")) {
-    const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
-    W += Math.max(0, side - 48);
-  }
+  const { W, H } = gridBox();
   if (!layoutFor(cells.length + 1, W, H, gapPx(), true)) return false;
   setSplit(cells.length + 1);
   focusCell(cells.length - 1);
@@ -548,20 +561,13 @@ function addCell() {
    columns' tabs — the server tab stays open and the sidebar still lists it,
    because a layout key must never close a conversation — and hands any
    permission those columns were asking to a dialog that still exists. */
-export function setSplit(n, keepRail) {
+export function setSplit(n) {
   const grid = document.getElementById("grid");
   const tpl = document.getElementById("cell-tpl");
   if (!grid || !tpl) return false;      // spec-test.html: no grid, not our verb
   const want = Math.max(1, Math.min(MAX_PANES, Math.round(Number(n)) || 1));
-  // The sidebar's width follows the split, and a split change expires whatever
-  // the toggle last said (§1). BEFORE the columns are stamped, so the track
-  // and the column count change in one layout rather than two — the same
-  // ordering §9 flags for restoreLayout, applied at the source instead.
-  // keepRail is restoreLayout's: the override it just read out of storage IS
-  // the memory of a press, so this call must not expire it.
-  if (!keepRail) railOverride = null;
   if (zoomed) toggleZoom(null);   // a layout change ends fullscreen
-  applyRail(want);
+  stashFocusedScope();   // applyFocus below re-adopts it (pcg-v27)
   while (cells.length > want) {
     const cell = cells[cells.length - 1];
     park(cell);                          // its transcript goes back to its buffer
@@ -591,18 +597,14 @@ export function setSplit(n, keepRail) {
    the rail, which is finally past the 496px wiki/grid.md records as the width
    that first broke this shell.
 
-   So the width FOLLOWS THE SPLIT rather than being a preference the reader has
-   to find: `/split 2|4` collapses, `/split 1` opens. The toggle in the head is
-   the override, and it lasts until the next split change — the layout the user
-   just asked for wins over a press they made three layouts ago.
+   It used to FOLLOW THE SPLIT (2+ panes collapsed it). User decision
+   2026-10-06 (pcg-12k): a layout change never moves the sidebar; only its own
+   toggle does, and the choice is remembered with the layout. Everything
+   downstream reads `body.rail`, which is also the only thing CSS can see. */
+let railOn = false;
 
-   `null` means "no press to honour"; a boolean is the toggle's answer. It is
-   never read anywhere else: everything downstream reads `body.rail`, which is
-   also the only thing CSS can see. */
-let railOverride = null;
-
-function applyRail(split) {
-  const rail = railOverride ?? split !== 1;
+function applyRail() {
+  const rail = railOn;
   document.body.classList.toggle("rail", rail);
   const btn = document.getElementById("btn-rail");
   if (!btn) return;                     // spec-test.html has no sidebar
@@ -618,8 +620,8 @@ function applyRail(split) {
 }
 
 function toggleRail() {
-  railOverride = !document.body.classList.contains("rail");
-  applyRail(cells.length);
+  railOn = !railOn;
+  applyRail();
   saveLayout();
 }
 
@@ -820,7 +822,14 @@ function scopeOf(cell) {
 /* `state` mirrors the FOCUSED column's scope (routeEvent above says why). These
    two are the only places that mirror is opened and closed: everything else
    either renders through withRenderTarget, which does its own save/restore, or
-   reads `state` and means the focused conversation. */
+   reads `state` and means the focused conversation.
+
+   EVERY ADOPT NEEDS A STASH FIRST (pcg-v27). The focused conversation renders
+   into `state` directly, so its scope object is stale until stashed; an adopt
+   without one rolls `state` back to that copy. setSplit and removeCell did
+   exactly that on every layout change: a running turn lost its pulse (whose
+   500 ms timer kept painting a line nothing could ever settle - "24 minutes,
+   running a tool" with nothing running) and its uuid ledger with it. */
 function stashFocusedScope() {
   const scope = scopeOf(focusedCell());
   if (scope) Object.assign(scope, state);
@@ -889,6 +898,8 @@ function blank(cell) {
    column, so a tab already placed elsewhere is taken out of that column first
    rather than drawn twice. */
 function placeIn(cell, tab) {
+  // The re-adopt below reads the scope back (pcg-v27): it must be current.
+  if (cell === focusedCell()) stashFocusedScope();
   const entry = tabEntry(tab);
   if (cell.tab !== tab) cell.changes?.close();   // it was about the last one
   const holder = cellOf(tab);
@@ -1124,11 +1135,7 @@ function saveLayout() {
       { v: 2, split: cells.length, cells: cells.map((one) => one.tab || ""),
         // The dividers' positions (§D6); a v1 record simply has none.
         rows: fractions?.rows, rowH: fractions?.rowH,
-        // The EFFECTIVE width, not the override: a boolean that disagrees with
-        // the saved split is itself the record that the toggle was pressed, so
-        // one field carries both facts and an older record simply reads as
-        // "follow the split" (§1).
-        rail: document.body.classList.contains("rail") });
+        rail: railOn });
 }
 
 /* ONCE per page load, and it says how many conversations it actually put back.
@@ -1144,17 +1151,13 @@ function restoreLayout(alive) {
   const saved = readPref(LAYOUT_KEY);
   if (!saved || !Array.isArray(saved.cells)) return 0;
   // §9: the class goes on BEFORE setSplit, or a restored 4-up is laid out
-  // twice — once against a 272px sidebar and again against 48. A stored value
-  // that disagrees with the stored split is the toggle's press; one that
-  // agrees needs no override, so a record written before this existed (no
-  // `rail` key at all) restores as plain follow-the-split.
-  const rail = !!saved.rail;
-  if (rail !== (saved.split !== 1)) railOverride = rail;
-  document.body.classList.toggle("rail", rail);
+  // twice — once against a 272px sidebar and again against 48.
+  railOn = !!saved.rail;
+  applyRail();
   if (Array.isArray(saved.rows) && Array.isArray(saved.rowH)) {
     fractions = { rows: saved.rows, rowH: saved.rowH };   // kept if the shape matches
   }
-  setSplit(saved.split, true);
+  setSplit(saved.split);
   let placed = 0;
   for (const [at, tab] of saved.cells.entries()) {
     // POSITIONAL: cell 2 gets what was in cell 2. A conversation the server no
@@ -1220,20 +1223,17 @@ setTabBridge({
   // is the entry module and its body runs last.
   focused: focusedCell,
   cells: () => cells,
-  split: setSplit,
+  // Every layout pick (/split, pane keys, the rail's segments) fills the new
+  // panes the way the layout panel does (pcg-cm1); setSplit alone left them blank.
+  split: (n) => arrange(n),
   addPane,
   newSession: (opts) => openNewSession(opts),
 });
 
-/* Would n panes fit `box`, with the sidebar at the width n panes will give
-   it: more than one collapses it to the rail (§1) unless a press says not. */
+/* Would n panes fit `box`. The sidebar keeps its width (pcg-12k). */
 function fitsPanes(n, box) {
   if (n <= 1) return true;
-  let { W, H } = box;
-  if (railOverride === null && !document.body.classList.contains("rail")) {
-    const side = cssPx(document.getElementById("sidebar")?.getBoundingClientRect().width ?? 0);
-    W += Math.max(0, side - 48);
-  }
+  const { W, H } = box;
   return !!layoutFor(n, W, H, gapPx(), true);
 }
 
@@ -1243,10 +1243,11 @@ function fitsPanes(n, box) {
    back to the sidebar, still running (setSplit parks them). Sizes stay
    draggable at the dividers; «هم‌اندازه» is `equalize`, Alt+= on the keys. */
 function arrange(n) {
-  if (!setSplit(n)) return;
+  if (!setSplit(n)) return false;
   const free = tabList.map((t) => t.tab).filter((one) => !cellOf(one));
   for (const cell of cells) if (!cell.tab && free.length) placeIn(cell, free.shift());
   paintTabs();
+  return true;
 }
 
 const layoutBtn = document.getElementById("btn-layout");
@@ -1404,7 +1405,7 @@ if (document.getElementById("grid")) {
   addCell();
   arrangeGrid();
   document.getElementById("btn-rail")?.addEventListener("click", toggleRail);
-  applyRail(1);   // names the toggle before anything has changed the split
+  applyRail();   // names the toggle
 } else cells.push(makeCell(document.body));
 
 setPermFocus(focusedCell);

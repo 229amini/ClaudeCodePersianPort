@@ -130,12 +130,12 @@ SHELL = {
             '                           .length,'
             '            clipped: clipped()};'
             '}'),
-        # Phase 3. The split4 block above has already
-        # collapsed the sidebar - that IS the rule, the width follows the split
-        # - so this seeds four conversations in four different states so there
-        # are dots to measure, reads the rail, then presses the toggle and
-        # reads it again. setOpenTabs() is chrome.js's own paint entry: no
-        # server, no tab machinery, exactly what /api/tabs would have driven.
+        # Phase 3, amended 2026-10-06 (pcg-12k): the split4 block above must
+        # NOT have collapsed the sidebar - only its toggle moves it. This seeds
+        # four conversations in four different states so there are dots to
+        # measure, reads the still-open tree, presses the toggle, reads the
+        # rail, presses again and reads the tree. setOpenTabs() is chrome.js's
+        # own paint entry: no server, exactly what /api/tabs would have driven.
         rail_test=(
             'if (split4) {'
             '  const CH = await import("/static/js/chrome.js");'
@@ -144,7 +144,12 @@ SHELL = {
             '    {t1: {running: true}, t2: {unread: 3}, t3: {error: true}});'
             '  await sleep(150);'
             '  const tg = document.getElementById("btn-rail");'
-            '  rail = {on: document.body.classList.contains("rail"),'
+            '  const kept = {on: document.body.classList.contains("rail"),'
+            '                side: box(document.getElementById("sidebar")),'
+            '                close: box(document.querySelector("#open-tabs .tab-close"))};'
+            '  tg.click();'
+            '  await sleep(200);'
+            '  rail = {kept, on: document.body.classList.contains("rail"),'
             '          side: box(document.getElementById("sidebar")),'
             '          dots: [...document.querySelectorAll("#open-tabs .tab-dot")].map(box),'
             '          toggle: box(tg), name: tg.getAttribute("aria-label") || "",'
@@ -156,10 +161,6 @@ SHELL = {
             '                 side: box(document.getElementById("sidebar")),'
             '                 name: tg.getAttribute("aria-label") || "",'
             '                 expanded: tg.getAttribute("aria-expanded")};'
-            # ...and back to what a 4-up actually ships with, so the boxes at
-            # the foot of the probe are not read against a hand-opened tree.
-            '  tg.click();'
-            '  await sleep(150);'
             '}')),
 }
 SH = SHELL[EDITION]
@@ -696,19 +697,26 @@ def main() -> int:
                           f"picker {s4['menu']['w']}x{s4['menu']['h']}, "
                           f"prompt {s4['comp']['w']}px")
 
-            # THE RAIL (TERMINAL-REDESIGN.md §1, Phase 3). A 4-up is what the
-            # rail exists for, so it is measured in the 4-up the block above
-            # just built: the pane collapses because the SPLIT changed, every
-            # affordance left on it still has a box inside the window, and the
-            # toggle - the promised override - opens it again.
+            # THE RAIL (TERMINAL-REDESIGN.md §1, Phase 3; amended pcg-12k). A
+            # 4-up must leave the sidebar where the user put it; the toggle
+            # collapses it to a rail on which every affordance still has a box
+            # inside the window, and the toggle opens it again.
             if EDITION == "terminal" and (width, height) == SIZES[0]:
                 r = m.get("rail")
                 if not r:
                     failures.append(f"{where}: the rail pass did not run")
                 else:
+                    kept = r.get("kept") or {}
+                    if kept.get("on") is not False or kept.get("side", {}).get("w", 0) <= 56:
+                        failures.append(f"{where} (rail): /split 4 collapsed the sidebar "
+                                        f"by itself ({kept})")
+                    # pcg-u4z: the open row's ✕ inherited .sess-act's `width: 0`.
+                    if kept.get("close", {}).get("w", 0) < 20:
+                        failures.append(f"{where}: an open conversation's ✕ is "
+                                        f"{kept.get('close')} - it cannot be clicked")
                     if not r["on"]:
-                        failures.append(f"{where} (rail): /split 4 did not collapse the "
-                                        "sidebar - the width does not follow the split")
+                        failures.append(f"{where} (rail): the toggle did not collapse "
+                                        "the sidebar")
                     if r["side"]["w"] > 56:
                         failures.append(f"{where} (rail): the sidebar is {r['side']['w']}px "
                                         "wide, not a rail")

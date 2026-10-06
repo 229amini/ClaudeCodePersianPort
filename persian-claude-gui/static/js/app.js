@@ -188,6 +188,9 @@ export function setSplit(n) {
   const tpl = document.getElementById("cell-tpl");
   if (!grid || !tpl) return false;      // spec-test.html: no grid, not our verb
   const want = n === 2 ? 2 : n === 4 ? 4 : 1;
+  // applyFocus below re-adopts the focused scope; without this stash it rolled
+  // a running turn back and orphaned its pulse (pcg-v27).
+  stashFocusedScope();
   while (cells.length > want) {
     const cell = cells[cells.length - 1];
     park(cell);                          // its transcript goes back to its buffer
@@ -464,6 +467,8 @@ function blank(cell) {
    column, so a tab already placed elsewhere is taken out of that column first
    rather than drawn twice. */
 function placeIn(cell, tab) {
+  // The re-adopt below reads the scope back (pcg-v27): it must be current.
+  if (cell === focusedCell()) stashFocusedScope();
   const entry = tabEntry(tab);
   const holder = cellOf(tab);
   if (holder && holder !== cell) blank(holder);

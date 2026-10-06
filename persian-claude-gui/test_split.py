@@ -591,6 +591,34 @@ async function layoutCase(which) {
   APP.focusCell(0);
   await sleep(80);
 
+  /* --- pcg-v27: a layout change while the focused conversation works -------
+     setSplit re-adopted the focused scope without stashing `state` first, so
+     the running turn's pulse was dropped from `state` while its timer kept
+     painting it: a working line that counted forever and that no result could
+     settle. One pane fewer, then one more - the focused column stays put. */
+  const v27 = APP.cells[0].tab;
+  // Column 1 only: earlier steps leave other columns mid-turn on purpose.
+  const v27before = CELLS()[0].querySelectorAll(".pulse").length;
+  // Where the keyboard really is: in the focused column's own prompt. Left in
+  // another column (the dialog above), arrangeGrid's refocus moves focus and
+  // that stash hides the defect.
+  APP.cells[0].composer.focus();
+  await sleep(30);
+  APP.routeEvent({type: "wrapper", subtype: "user_echo", tab: v27,
+                  text: "\\u06a9\\u0627\\u0631", uuid: "u-v27"});
+  await sleep(60);
+  APP.setSplit(APP.cells.length - 1);
+  await sleep(120);
+  APP.setSplit(APP.cells.length + 1);
+  await sleep(120);
+  out.v27 = {before: v27before, pulses: CELLS()[0].querySelectorAll(".pulse").length,
+             status: rowOf(v27)?.dataset.status ?? ""};
+  APP.routeEvent({type: "result", tab: v27, subtype: "success", is_error: false});
+  APP.routeEvent({type: "command_lifecycle", tab: v27, command_uuid: "u-v27",
+                  state: "completed"});
+  await sleep(80);
+  out.v27.after = CELLS()[0].querySelectorAll(".pulse").length;
+
   /* --- shrinking parks, it never closes ------------------------------------ */
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t4",
     request_id: "r2", tool_name: "Bash", tool_input: {command: "dir"}});
@@ -967,6 +995,14 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
     if mid["markerIn"] != [False, True, False, False]:
         say(f"the focused conversation's next line landed in columns {mid['markerIn']}"
             " - `log` was restored to the column the keyboard had left")
+    # 6c. pcg-v27: a layout change mid-turn keeps the turn, and its end settles it
+    v27 = m["v27"]
+    if v27["pulses"] != 1 or v27["status"] != "running":
+        say(f"a layout change mid-turn left {v27['pulses']} working lines and the "
+            f"row {v27['status']!r} (want 1 and 'running')")
+    if v27["after"] != 0:
+        say(f"{v27['after']} working line(s) still counting after the turn ended - "
+            f"the layout change orphaned the pulse ({v27})")
     # 7. Alt+N
     if m["altFocused"] != 2:
         say(f"Alt+3 marked cell index {m['altFocused']} focused, not 2")
