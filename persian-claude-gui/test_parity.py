@@ -292,6 +292,43 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   ask("p4"); await sleep(30);
   out.fresh = countText();
   await esc();
+  // --- 3. pcg-rf8: the compact box ---
+  const comp = () => getComputedStyle(document.querySelector("#grid .cell .composer")).display;
+  routeEvent({ tab: "t1", type: "wrapper", subtype: "permission_request", request_id: "d1",
+    tool_name: "Bash", tool_use_id: "ud1",
+    tool_input: { command: "npm test", description: "Run the tests" } });
+  await sleep(40);
+  out.descInHead = dlg().querySelector(".perm-tool .perm-desc")?.textContent ?? "";
+  out.descInBox = !!dlg().querySelector(".perm-params")?.textContent.includes("Run the tests");
+  out.compWhileOpen = comp();
+  await esc();
+  out.compAfter = comp();
+  // One question at a time, header tabs, a pick moves on, Enter fills the
+  // unanswered one before it sends.
+  const sets = () => [...dlg().querySelectorAll(".ask-q")];
+  const shownAt = () => sets().findIndex((s) => !s.hidden);
+  const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent("keydown",
+    { key: k, code: /\d/.test(k) ? "Digit" + k : k, bubbles: true, cancelable: true }));
+  const responds = () => calls.filter((c) => c.url.startsWith("/api/permission/respond"));
+  routeEvent({ tab: "t1", type: "wrapper", subtype: "permission_request", request_id: "q1",
+    tool_name: "AskUserQuestion", tool_use_id: "uq1", tool_input: { questions: [
+      { question: "کدام رنگ؟", header: "رنگ", multiSelect: false,
+        options: [{ label: "سرخ" }, { label: "سبز" }] },
+      { question: "کدام اندازه؟", header: "اندازه", multiSelect: false,
+        options: [{ label: "کوچک" }, { label: "بزرگ" }] }] } });
+  await sleep(40);
+  out.tabs = [...dlg().querySelectorAll(".ask-tab")].map((t) => t.textContent);
+  out.shown0 = shownAt();
+  key("1"); await sleep(200);
+  out.shownAfterPick = shownAt();
+  out.tab0Answered = dlg().querySelectorAll(".ask-tab")[0]?.dataset.answered;
+  dlg().querySelectorAll(".ask-tab")[0].click(); await sleep(30);
+  const before = responds().length;
+  key("Enter"); await sleep(40);
+  out.enterMovedOn = shownAt() === 1 && responds().length === before;
+  key("2"); await sleep(200);
+  key("Enter"); await sleep(60);
+  out.answers = responds().length === before + 1 ? responds().at(-1).body.answers : null;
   document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
  } catch (err) {
   document.getElementById("probe-out").textContent =
@@ -407,6 +444,22 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"{m.get('count1')!r} {m.get('count2')!r} {m.get('count3')!r}")
     check("...the run ends with the last one, and the next request starts alone",
           m.get("closed") and m.get("fresh") == "", f"closed {m.get('closed')}, «{m.get('fresh')}»")
+    # 3. pcg-rf8: the compact box, after the VS Code extension
+    check("a shell call's description sits in the header, not in the command box",
+          m.get("descInHead") == "Run the tests" and m.get("descInBox") is False,
+          f"head {m.get('descInHead')!r}, in box {m.get('descInBox')}")
+    check("the prompt is hidden while a request is open and back after it",
+          m.get("compWhileOpen") == "none" and m.get("compAfter") not in (None, "none"),
+          f"{m.get('compWhileOpen')!r} -> {m.get('compAfter')!r}")
+    check("two questions are two header tabs, one question on screen",
+          m.get("tabs") == ["رنگ", "اندازه"] and m.get("shown0") == 0, f"{m.get('tabs')} {m.get('shown0')}")
+    check("picking an answer moves to the next question and marks its tab",
+          m.get("shownAfterPick") == 1 and m.get("tab0Answered") == "true",
+          f"shown {m.get('shownAfterPick')}, answered {m.get('tab0Answered')!r}")
+    check("Enter with a question still open goes to it instead of sending",
+          m.get("enterMovedOn") is True)
+    check("...and sends both answers once both are given",
+          m.get("answers") == {"کدام رنگ؟": "سرخ", "کدام اندازه؟": "بزرگ"}, str(m.get("answers")))
     return out
 
 

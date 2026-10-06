@@ -109,7 +109,7 @@
 /* The agents drawer's render seam has no window alias (nothing else needs one),
    so the harness imports it. Module scripts execute in document order, so
    js/app.js has already evaluated this module — the import reuses it. */
-import { withRenderTarget, newRenderScope, state, renderUnifiedDiff } from "/static/js/render.js";
+import { withRenderTarget, questionOption, newRenderScope, state, renderUnifiedDiff } from "/static/js/render.js";
 /* The tab registry and the synchronous half of a switch. Importing the ENTRY
    module is safe from here and only from here: nothing in the module tree may
    import app.js (its body runs last — see the load-order note there), but this
@@ -399,6 +399,16 @@ check("the CLI's English interrupt note never becomes a user bubble",
   specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
   specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
 
+/* `/compact` answers on the live stream as a user turn reading
+   «<local-command-stdout>Compacted </local-command-stdout>», with no
+   isSynthetic. The CLI talking to itself is never the person (CLI_SELF). */
+window.renderEvent({ type: "user", message: { content: [
+  { type: "text", text: "<local-command-stdout>Compacted </local-command-stdout>" },
+] } });
+check("the CLI's own <local-command-stdout> never becomes a user bubble",
+  specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
+  specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
+
 /* Case 10 is the moment of consent, and it is now a real diff: the person
    approving an Edit sees the change, not two blobs to compare by eye. The BiDi
    contract is unchanged — the box is LTR, the Persian line inside it is not. */
@@ -577,6 +587,13 @@ check("ask: the transcript shows the options, not raw JSON",
   [...(askCard?.children ?? [])].length === 2 &&
   askCard.textContent.includes("Tea") && !askCard.textContent.includes("{"),
   askCard?.textContent.trim() ?? "no question card");
+
+/* An option whose description has no letters («-», «42»): dir="auto" had
+   nothing to read past the isolated label and the row fell LTR. */
+const neutralOpt = questionOption(document.createElement("li"),
+  { label: "کوچک", description: "-" }, "q-label", "q-desc");
+check("ask: a Persian option with a letterless description stays RTL",
+  neutralOpt.getAttribute("dir") === "rtl", neutralOpt.getAttribute("dir"));
 
 /* The ANSWERED state, which is what the transcript keeps forever. The answer
    does not ride on the tool_result part — it arrives as `tool_use_result` on
@@ -1278,6 +1295,11 @@ check("the pulse is pinned last while the turn runs, though it was appended firs
 // claude.ai/code): the tool_use above made it «running a tool»; a thought and
 // then prose move it on, and the settled line below still wears the verb.
 const phaseAfterTool = pulse?.querySelector(".pulse-verb")?.textContent;
+// pcg-r82: WHICH tool, not «a tool». The target is measured, not read: it is a
+// Latin command in an RTL line, so its own direction must be LTR (rule 2).
+const phaseTarget = pulse?.querySelector(".pulse-verb .pulse-target");
+const phaseTargetText = phaseTarget?.textContent ?? "";
+const phaseTargetDir = phaseTarget ? getComputedStyle(phaseTarget).direction : "no target";
 window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
   delta: { type: "thinking_delta", thinking: "hmm" } } });
 const phaseThinking = pulse?.querySelector(".pulse-verb")?.textContent;
@@ -1285,8 +1307,11 @@ window.renderEvent({ type: "stream_event", event: { type: "content_block_delta",
   delta: { type: "text_delta", text: "باشه" } } });
 const phaseWriting = pulse?.querySelector(".pulse-verb")?.textContent;
 window.renderEvent({ type: "assistant", message: { content: [{ type: "text", text: "باشه" }] } });
+check("the live line names the running tool and its target, LTR-isolated",
+  !!phaseTargetText && phaseAfterTool === window.STRINGS.pulseTools.Bash + phaseTargetText &&
+  phaseTargetDir === "ltr", phaseAfterTool + " / " + phaseTargetDir);
 check("the live line names the phase: a tool, then thinking, then writing",
-  phaseAfterTool === window.STRINGS.pulsePhases.tools &&
+  phaseAfterTool.startsWith(window.STRINGS.pulseTools.Bash) &&
   phaseThinking === window.STRINGS.pulsePhases.thinking &&
   phaseWriting === window.STRINGS.pulsePhases.writing,
   [phaseAfterTool, phaseThinking, phaseWriting].join(" → "));

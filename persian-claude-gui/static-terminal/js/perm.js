@@ -210,6 +210,9 @@ export function makePerm(root, cell) {
     paintPermSource(perm.current.tab);
     perm.dialog.classList.toggle("asking", !!questions);
     const planning = perm.current.tool_name === PLAN_TOOL;
+    // A plan keeps its title and body; a permission's header is one line,
+    // kind + tool (style.css, pcg-rf8).
+    perm.dialog.classList.toggle("planning", planning);
     const kind = root.querySelector(".perm-kind");
     if (kind) {
       kind.textContent = questions ? "" : FA.permKind?.[permKind(perm.current.tool_name)] ?? "";
@@ -233,7 +236,28 @@ export function makePerm(root, cell) {
     } else {
       perm.ask?.replaceChildren();
       perm.tool?.replaceChildren(label(perm.current.tool_name ?? "?", "mono"));
-      renderParams(perm.current.tool_name, perm.current.tool_input ?? {});
+      // A shell call's own one-line description rides in the header, where
+      // the extension puts it, and the box below holds the command alone.
+      const input = { ...(perm.current.tool_input ?? {}) };
+      if (permKind(perm.current.tool_name) === "shell" && input.command
+          && typeof input.description === "string" && input.description) {
+        const desc = label(input.description, "perm-desc");
+        desc.setAttribute("dir", "auto");
+        perm.tool?.append(desc);
+        delete input.description;
+      } else if (permKind(perm.current.tool_name) === "edit"
+                 && typeof input.file_path === "string" && input.file_path) {
+        // An edit's file rides in the header too (the extension's
+        // permissionPath), so the box below is the diff alone. LTR-isolated in
+        // an RTL row: when the row runs out, the ellipsis eats the folder end
+        // and the file name stays.
+        const path = label(input.file_path, "perm-desc perm-path");
+        path.setAttribute("dir", "ltr");
+        path.title = input.file_path;
+        perm.tool?.append(path);
+        delete input.file_path;
+      }
+      renderParams(perm.current.tool_name, input);
     }
     if (perm.remember) perm.remember.checked = false;
     paintOptions(questions);
@@ -241,12 +265,21 @@ export function makePerm(root, cell) {
        where the Ink TUI draws it. `open` still reads true, the CSS
        is unchanged, and what is given up — the backdrop and the focus trap — is
        exactly what made it a modal rather than a row. */
+    // The box is in flow under the transcript, so opening it shortens the
+    // transcript from below: a reader at the bottom had the newest row cut
+    // off behind it (flow audit 2026-10-07). Keep them at the bottom.
+    const logEl = root.querySelector?.(".log, #log");
+    const stuck = !!logEl && logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 80;
     if (!perm.dialog.open) perm.dialog.show();
+    if (stuck) logEl.scrollTop = logEl.scrollHeight;
     // A question has no unsafe answer, so focus goes to its first option. A
     // permission focuses the LIST, whose highlight starts on «۱. بله» — the
     // digit, not the highlight, is what actually answers it, and Esc is still
     // one key away from the safe reply.
-    (questions ? perm.ask?.querySelector("input") : perm.list?.el)?.focus();
+    // preventScroll: focusing the list scrolled the box itself, and in a short
+    // pane that took the header - WHAT is being approved - out of view.
+    (questions ? perm.ask?.querySelector("input") : perm.list?.el)?.focus({ preventScroll: true });
+    perm.dialog.scrollTop = 0;
   }
 
   /* The three options, in the TUI's own order. Option 2
@@ -360,7 +393,9 @@ export function makePerm(root, cell) {
     // `activeTabId()` is empty until /api/tabs has answered — before that this
     // window does not know which conversation it is showing, and guessing
     // "another one" would be a false alarm on the very first request.
-    const active = activeTabId();
+    // The conversation THIS cell shows, not the focused one: in a split, a pane
+    // answering for its own conversation is not "another" one.
+    const active = cell?.tab || activeTabId();
     const other = !!tab && !!active && tab !== active;
     perm.source.hidden = !other;
     if (!other) return;
@@ -380,10 +415,32 @@ export function makePerm(root, cell) {
      semantics and the checked state for free. */
   function renderQuestions(questions) {
     const frag = document.createDocumentFragment();
+    /* ONE QUESTION AT A TIME (pcg-rf8, after the VS Code extension's
+       navigationBar): two or more questions get a row of their headers as
+       tabs and only the active one is drawn, so a six-pane window shows the
+       whole of it without scrolling. Every set stays in the DOM, hidden, so
+       collectAnswers() still reads them all. */
+    const nav = questions.length > 1 ? document.createElement("div") : null;
+    if (nav) {
+      nav.className = "ask-nav";
+      nav.setAttribute("role", "tablist");
+      frag.append(nav);
+    }
     questions.forEach((q, index) => {
       const set = document.createElement("fieldset");
       set.className = "ask-q";
       set.dataset.question = q.question ?? "";
+      set.hidden = index > 0;
+      if (nav) {
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "ask-tab";
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(index === 0));
+        questionProse(tab, q.header || FA.askTabN.replace("{n}", (index + 1).toLocaleString("fa-IR")));
+        tab.addEventListener("click", () => askGo(index));
+        nav.append(tab);
+      }
 
       /* The prose — header, question, and each option below — goes through
          render.js's builders, which are the ONE implementation of the BiDi
@@ -392,7 +449,8 @@ export function makePerm(root, cell) {
          backticks and its neutral characters («/price-photo/») reordered against
          the Persian around them: the scrambled question that was reported. This
          file keeps the chrome — the fieldset, the inputs, the free-text box. */
-      if (q.header) {
+      // With tabs the header IS the tab; a lone question keeps it as a legend.
+      if (q.header && !nav) {
         set.append(questionProse(document.createElement("legend"), q.header));
       }
       const text = document.createElement("p");
@@ -471,7 +529,7 @@ export function makePerm(root, cell) {
      promise this project keeps anywhere else. Bound explicitly, and
      preventDefault stops the native move from happening twice. */
   function askOptionRows(from) {
-    const set = from?.closest?.(".ask-q") ?? perm.ask?.querySelector(".ask-q");
+    const set = from?.closest?.(".ask-q") ?? askSets().find((one) => !one.hidden);
     return [set, [...(set?.querySelectorAll(".ask-opt input") ?? [])]];
   }
 
@@ -504,6 +562,51 @@ export function makePerm(root, cell) {
     if (!box) return;
     box.checked = box.type === "checkbox" ? (toggle ? !box.checked : true) : true;
     box.focus();
+    askPicked(box);
+  }
+
+  /* The tabbed questions (renderQuestions). */
+  function askSets() {
+    return [...(perm.ask?.querySelectorAll(".ask-q") ?? [])];
+  }
+
+  function askAnswered(set) {
+    return !!set.querySelector("input:checked") || !!set.querySelector(".ask-free")?.value.trim();
+  }
+
+  function askGo(index) {
+    const sets = askSets();
+    if (!sets[index]) return;
+    sets.forEach((set, at) => { set.hidden = at !== index; });
+    perm.ask.querySelectorAll(".ask-tab").forEach((tab, at) => {
+      tab.setAttribute("aria-selected", String(at === index));
+      tab.dataset.answered = String(askAnswered(sets[at]));
+    });
+    sets[index].querySelector("input")?.focus();
+  }
+
+  /* A single choice answers its question: move to the next unanswered one,
+     the way the extension does. A checkbox never advances - more may follow. */
+  function askPicked(box) {
+    const sets = askSets();
+    const at = sets.indexOf(box.closest(".ask-q"));
+    const tab = perm.ask?.querySelectorAll(".ask-tab")[at];
+    if (tab) tab.dataset.answered = "true";
+    if (box.type !== "radio") return;
+    const next = askNextOpen(at);
+    const req = perm.current;
+    if (next >= 0) setTimeout(() => { if (perm.current === req) askGo(next); }, 120);
+  }
+
+  /* The first unanswered question after `from`, wrapping round to `from`
+     itself last; -1 when none. */
+  function askNextOpen(from) {
+    const sets = askSets();
+    for (let step = 1; step <= sets.length; step++) {
+      const at = (from + step) % sets.length;
+      if (!askAnswered(sets[at])) return at;
+    }
+    return -1;
   }
 
   /* The dialog and the tool card render parameters with the SAME function
@@ -624,9 +727,14 @@ export function makePerm(root, cell) {
     // (reported 2026-08-31). Only ask mode populates .perm-ask, so a plain
     // permission never reaches this handler.
     perm.ask?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.target?.classList?.contains("ask-tab")) {
         e.preventDefault();
-        resolvePermission("allow");
+        // A question still unanswered behind another tab comes first: Enter
+        // on the first of two must not send the second away blank.
+        const at = askSets().findIndex((set) => !set.hidden);
+        const next = askSets().length > 1 ? askNextOpen(at) : -1;
+        if (next >= 0) askGo(next);
+        else resolvePermission("allow");
         return;
       }
       // Inside the free-text box every other key is a character the person is
@@ -634,6 +742,10 @@ export function makePerm(root, cell) {
       // is claimed there, which is what the 2026-08-31 fix is.
       if (e.target?.classList?.contains("ask-free")) return;
       askKeys(e);
+    });
+    // A pointer pick advances the tabs exactly as a key pick does.
+    perm.ask?.addEventListener("change", (e) => {
+      if (e.target?.matches?.(".ask-opt input")) askPicked(e.target);
     });
   }
 

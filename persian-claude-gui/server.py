@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.8.1"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.8.1"),
+    "web":      ("static",          "کلاد فارسی",            "1.9.1"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.9.1"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -485,14 +485,36 @@ def list_sessions(cwd: Path) -> list[dict]:
     return _sessions_in(folder) if folder else []
 
 
+# session_meta() reads a transcript end to end, and the sidebar asks for every
+# session of every project on each refresh. Measured 2026-10-06 on a machine
+# with 1452 transcripts (1.8 GB): 1.8 s per /api/projects with the disk cache
+# warm, all of it under the GIL, so every open conversation's events stalled
+# behind it. Keyed on (mtime_ns, size): an append changes both. The lock makes
+# a second caller wait for the first scan and then read its answers, instead of
+# both doing it.
+_META_CACHE: dict[str, tuple[int, int, tuple]] = {}
+_META_LOCK = threading.Lock()
+
+
+def _cached_meta(transcript: Path, stat: os.stat_result) -> tuple:
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    with _META_LOCK:
+        hit = _META_CACHE.get(str(transcript))
+        if hit is None or hit[:2] != stamp:
+            hit = (*stamp, session_meta(transcript))
+            _META_CACHE[str(transcript)] = hit
+    return hit[2]
+
+
 def _sessions_in(folder: Path) -> list[dict]:
     sessions = []
     for transcript in folder.glob("*.jsonl"):
         try:
-            mtime = transcript.stat().st_mtime
+            stat = transcript.stat()
         except OSError:
             continue
-        preview, title, spoken = session_meta(transcript)
+        mtime = stat.st_mtime
+        preview, title, spoken = _cached_meta(transcript, stat)
         sessions.append({
             "session_id": transcript.stem,
             # When the conversation last SAID something, not when the file was
@@ -3059,6 +3081,8 @@ class ClaudeSession:
                 if event.get("state") in LIFECYCLE_TERMINAL:
                     with self._outstanding_lock:
                         self._outstanding.pop(event.get("command_uuid"), None)
+                elif event.get("state") == "started":
+                    self._turn_began()
 
             if etype == "assistant" and not event.get("parent_tool_use_id"):
                 self._note_usage(event.get("message") or {})
@@ -3070,6 +3094,7 @@ class ClaudeSession:
                             name == self.model or "window" not in self._sl):
                         self._sl["window"] = size
             if etype == "system" and event.get("subtype") == "init":
+                self._turn_began()   # for a CLI with no lifecycle channel
                 self.session_id = event.get("session_id")
                 self.model = event.get("model")
                 self._sl["version"] = event.get("claude_code_version")
@@ -3567,6 +3592,31 @@ class ClaudeSession:
         timer.daemon = True   # never hold the process open for this
         timer.start()
 
+    def _turn_began(self) -> None:
+        """A turn STARTED: silence stops being evidence, so stop watching it.
+
+        The watchdog is armed by a `result` and by an interrupt, and until
+        2026-10-06 only send_blocks() disarmed it -- which covers a message
+        sent AFTER the result and nothing else. A message sent while a turn was
+        running (queued, or kept alive across a stop: `cancel_queued` is false)
+        starts with the watchdog its predecessor's result armed still live, and
+        the first tool call that ran quiet for five seconds cleared the ledger
+        under it: the window dropped its working line and its stop button with
+        the turn still running, for the rest of that turn. Reported from a
+        session that sent mid-turn and pressed stop as a habit, with tool calls
+        running for minutes.
+
+        `started` on the lifecycle channel is the CLI saying it has work; a
+        `system/init` says the same for a build that has no such channel. The
+        turn this opens ends in a `result`, which arms the watchdog again.
+
+        Residual, accepted: a stop pressed in the instant before one of these
+        two lines arrives is disarmed by it, and then relies on the aborted
+        `result` to re-arm -- which every measured stop has produced.
+        """
+        with self._outstanding_lock:
+            self._idle_deadline = 0.0
+
     def _touch_idle(self) -> None:
         """Any byte from the CLI means it is alive: push the deadline out.
 
@@ -3731,7 +3781,21 @@ class ClaudeSession:
         # or reconnects later gets it out of Hub history instead of guessing.
         if self.broker:
             self.broker.publish_posture()
-        self.publish_effort()
+        # Which model the FIRST turn will run on: the settings' own, resolved
+        # against the catalogue (the same rule the statusLine payload uses).
+        # Without it the chip named models[0] -- «Default», Opus -- on a
+        # machine whose settings.json said "fable[1m]", until system/init
+        # corrected it one paid turn later (measured 2026-10-06).
+        try:
+            reply = self.control("get_settings", timeout=10.0)
+        except RuntimeError:
+            return   # the process went away; nothing to report
+        effective = ((reply.get("response") or {}).get("effective") or {})             if reply.get("subtype") == "success" else {}
+        model = resolve_model(effective.get("model"), info.get("models"))
+        if model and generation == self._generation:
+            self.hub.publish({"type": "wrapper", "subtype": "model", "model": model})
+        level = effective.get("effortLevel")
+        self.publish_effort(level if isinstance(level, str) else None)
 
     # --- reasoning effort ---------------------------------------------------
     #
@@ -5076,6 +5140,9 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
         print(f"[server] listening: {url}", flush=True)
 
     remember_recent(cwd)
+    # Fill _META_CACHE while Edge is still starting, so the sidebar's first
+    # /api/projects waits on a scan already under way instead of starting one.
+    threading.Thread(target=list_projects, daemon=True).start()
     threading.Thread(target=idle_watchdog,
                      args=(hub, Handler.sessions, httpd, 30.0),
                      daemon=True).start()

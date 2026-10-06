@@ -47,14 +47,50 @@ export function fmtTokens(n) {
 
 let open = null;   // the one popover this module has on screen
 
+/* A chip is a TOGGLE: the press that finds its popover open closes it. Light
+   dismiss already does the closing — a press on the chip is a press outside
+   the popover — and then the chip's own click handler opened a fresh one, so
+   the button could never shut what it opened. The press itself is the only
+   moment that still knows the popover was open; a click with no press before
+   it (a key, a script) finds it open and closes it here. */
+const watched = new WeakSet();
+let pressedOpen = null;   // the anchor whose popover was open when a press began
+
+function showing(anchor) {
+  return !!open?.isConnected && open.anchor === anchor && open.matches(":popover-open");
+}
+
+function toggledShut(anchor) {
+  if (!watched.has(anchor)) {
+    watched.add(anchor);
+    anchor.addEventListener("pointerdown", () => {
+      pressedOpen = showing(anchor) ? anchor : null;
+      // A press dragged off the chip never clicks; forget it once the click
+      // that would have read it has had its turn.
+      document.addEventListener("pointerup", () => setTimeout(() => { pressedOpen = null; }),
+                                { once: true });
+    });
+  }
+  const was = pressedOpen === anchor;
+  pressedOpen = null;
+  if (showing(anchor)) { close(); return true; }
+  return was;
+}
+
 function place(pop, anchor, toCss) {
   const r = anchor.getBoundingClientRect();
   const a = { top: toCss(r.top), bottom: toCss(r.bottom),
               left: toCss(r.left), right: toCss(r.right) };
   const vw = toCss(innerWidth), vh = toCss(innerHeight);
   const w = pop.offsetWidth, h = pop.offsetHeight;
-  // Lined up with the anchor's start edge: its RIGHT edge in this RTL shell.
-  const left = Math.max(EDGE, Math.min(a.right - w, vw - w - EDGE));
+  // Lined up with the anchor's OUTER edge, so the popover opens over the bar
+  // it belongs to: a chip in the end half of its row (the model, at the left
+  // of this RTL bar) shares its left edge, one in the start half its right.
+  // Always the right edge hung a left-hand chip's menu off the far side of it,
+  // against the window's edge or over the next pane.
+  const host = anchor.parentElement?.getBoundingClientRect() ?? r;
+  const atEnd = r.left + r.right < host.left + host.right;
+  const left = Math.max(EDGE, Math.min(atEnd ? a.left : a.right - w, vw - w - EDGE));
   const above = a.top - GAP - h;
   const top = above >= EDGE ? above : Math.min(a.bottom + GAP, vh - h - EDGE);
   pop.style.left = left + "px";
@@ -67,6 +103,7 @@ function popover(anchor, cls, label, build, toCss = (v) => v) {
   close();
   const pop = el("div", "bar-pop " + cls);
   pop.popover = "auto";
+  pop.anchor = anchor;
   pop.setAttribute("role", "dialog");
   pop.setAttribute("aria-label", label);
   document.body.append(pop);
@@ -130,6 +167,7 @@ function menuRow(row, digit) {
    `footer`: {title, onClick} — one row under a rule that is not a choice (the
    mode menu's count of what «خودکار» approved, which opens that list). */
 export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, footer }) {
+  if (toggledShut(anchor)) return null;
   const pick = (row) => {
     close();
     anchor.focus();
@@ -160,7 +198,8 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
       b.classList.add("bar-more");
       b.setAttribute("aria-haspopup", "menu");
       b.setAttribute("aria-expanded", "false");
-      b.querySelector(".bar-row-digit").textContent = "‹";
+      const chevron = b.querySelector(".bar-row-digit");
+      chevron.textContent = "‹";
       const openFlyout = () => {
         if (flyout) return;
         flyout = el("div", "bar-pop bar-flyout");
@@ -173,15 +212,21 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
         b.after(flyout);
         b.setAttribute("aria-expanded", "true");
         // Beside the menu, on the side the chevron points to (the start of an
-        // RTL row is its right, so «‹» opens leftward), lined up with the row.
-        const rr = b.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+        // RTL row is its right, so «‹» opens leftward; no room there, the other
+        // side and the chevron says so). BOTTOM edges together, as claude.ai:
+        // the menu sits above its chip, so a list hung from the row's top grew
+        // down over the bar and the prompt.
+        const pr = pop.getBoundingClientRect();
         const w = flyout.offsetWidth, h = flyout.offsetHeight;
         const vw = toCss ? toCss(innerWidth) : innerWidth;
         const vh = toCss ? toCss(innerHeight) : innerHeight;
         const cv = toCss ?? ((v) => v);
         let left = cv(pr.left) - GAP / 2 - w;
-        if (left < EDGE) left = Math.min(cv(pr.right) + GAP / 2, vw - w - EDGE);
-        const top = Math.max(EDGE, Math.min(cv(rr.top) - 4, vh - h - EDGE));
+        if (left < EDGE) {
+          left = Math.min(cv(pr.right) + GAP / 2, vw - w - EDGE);
+          chevron.textContent = "›";
+        }
+        const top = Math.max(EDGE, Math.min(cv(pr.bottom) - h, vh - h - EDGE));
         flyout.style.left = left + "px";
         flyout.style.top = top + "px";
         flyout.addEventListener("keydown", (e) => {
@@ -254,6 +299,7 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
    value all come with it. `change`, not `input`: dragging across three stops
    is one decision, not three writes. */
 export function openSlider(anchor, { title, levels, current, label, onPick, toCss }) {
+  if (toggledShut(anchor)) return null;
   const { pop } = popover(anchor, "bar-slider", title, (box) => {
     const head = el("div", "bar-head");
     const now = el("span", "bar-slider-now", label(current));
@@ -440,6 +486,7 @@ function paintUsage(box, { detail, context, limits, onCompact }) {
    again and resolves with the same shape — the panel paints at once and then
    repaints with fresher numbers, never waits on the slow context call. */
 export function openUsage(anchor, { data, refresh, onCompact, toCss }) {
+  if (toggledShut(anchor)) return null;
   const state = { ...data, onCompact };
   const { pop, relayout } = popover(anchor, "bar-usage", FA.barUsage, (box) => {
     paintUsage(box, state);
@@ -472,6 +519,7 @@ export function paintRing(button, pct) {
    is PERSISTENT for this folder — the CLI writes disabledMcpServers, as its
    own /mcp does — and the note under the list says so. */
 export function openPlus(anchor, { onFiles, onSlash, loadServers, onToggle, toCss }) {
+  if (toggledShut(anchor)) return null;
   const { pop, relayout } = popover(anchor, "bar-menu bar-plus", FA.barPlus, (box) => {
     const row = (title, hint, run) => {
       const b = el("button", "bar-row");

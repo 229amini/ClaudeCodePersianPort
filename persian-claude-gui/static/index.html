@@ -189,26 +189,31 @@
        by hand in js/chrome.js, since a non-modal dialog fires no `cancel`. -->
   <dialog class="perm">
     <form method="dialog" class="perm-form">
-      <p class="perm-count" hidden></p>
-      <h2 class="perm-title"></h2>
+      <!-- One line: title, tool, «۲ از ۵». Never shrinks (style.css). -->
+      <div class="perm-head">
+        <h2 class="perm-title"></h2>
+        <div class="perm-tool"></div>
+        <p class="perm-count" hidden></p>
+      </div>
       <p class="perm-body" dir="auto"></p>
       <!-- Which conversation is asking, when it is not the one on screen: one
            dialog serves every open tab (js/chrome.js). -->
       <p class="perm-source meta" dir="auto" hidden></p>
-      <div class="perm-tool"></div>
       <pre class="perm-params"></pre>
       <!-- AskUserQuestion renders here instead of .perm-params: the CLI routes
            the model's question over the same can_use_tool pipe, so it arrives as
            a "permission" but is nothing of the sort (js/chrome.js). -->
       <div class="perm-ask"></div>
-      <label class="perm-remember-row">
-        <input type="checkbox" class="perm-remember">
-        <span class="perm-remember-label"></span>
-      </label>
-      <menu>
-        <button value="deny" class="ghost perm-deny"></button>
-        <button value="allow" class="perm-allow"></button>
-      </menu>
+      <div class="perm-foot">
+        <label class="perm-remember-row">
+          <input type="checkbox" class="perm-remember">
+          <span class="perm-remember-label"></span>
+        </label>
+        <menu>
+          <button value="deny" class="ghost perm-deny"></button>
+          <button value="allow" class="perm-allow"></button>
+        </menu>
+      </div>
     </form>
   </dialog>
 

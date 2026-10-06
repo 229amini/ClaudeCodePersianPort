@@ -166,6 +166,18 @@ const metaSaid = (text) => [...log.querySelectorAll(".msg")]
   out.slOrder = [...statusline.children].map((el) => el.className);
   out.slCustom = statusline.querySelector(".sl-custom")?.textContent ?? "";
   out.slText = statusline.textContent;
+  // Its [BADGES] are the one part that is drawn: a mode, not a meter.
+  window.renderEvent({ type: "wrapper", subtype: "statusline", segments: [
+    { text: "~/kar " }, { text: "[PONYTAIL]" }, { text: " Opus 5.5 " },
+    { text: "[████░░░░] 36k/1m" }, { text: " [CAVEMAN:lite]" }] });
+  await sleep(40);
+  const badges = [...statusline.querySelectorAll(".sl-badge")];
+  out.badges = badges.map((b) => b.textContent).join("|");
+  out.badgeDir = badges[0] ? getComputedStyle(badges[0]).direction : "none";
+  out.badgeRest = statusline.textContent;
+  window.renderEvent({ type: "wrapper", subtype: "statusline",
+    segments: [{ text: "KHATE KHODAM" }] });
+  await sleep(40);
   out.slPostureRows = statusline.querySelectorAll(".sl-posture").length;
   out.chipAfterInit = document.querySelector(".posture-chip-name")?.textContent ?? "";
   out.faAcceptEdits = FA.postureAcceptEdits;
@@ -536,6 +548,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("the machine's own statusLine output is not repeated under the bar",
           m.get("slCustom") == "" and "KHATE KHODAM" not in m.get("slText", ""),
           m.get("slCustom", "") or "not drawn")
+    check("its [BADGES] are drawn as LTR chips, and nothing else of it is",
+          m.get("badges") == "PONYTAIL|CAVEMAN:lite" and m.get("badgeDir") == "ltr"
+          and "36k" not in m.get("badgeRest", "") and "kar" not in m.get("badgeRest", ""),
+          f"{m.get('badges')} / {m.get('badgeDir')} / «{m.get('badgeRest')}»")
 
     text = m.get("slText", "")
     check("the status line repeats neither the mode nor the model the bar shows",

@@ -146,10 +146,20 @@ export function makeControls(root, cell) {
         ?? models[0] ?? null;
   }
 
+  /* The CLI's «Default (recommended)» is an alias, not a model: it resolves to
+     one the list already names (default -> claude-opus-5-5, which is «Opus
+     5.5»), and claude.ai shows that name. DISPLAY ONLY: `chosen` and set_model
+     keep the CLI's own values. An alias with no twin in the list is itself. */
+  function twinOf(entry) {
+    if (entry?.value !== "default") return entry;
+    return models.find((m) => m.value !== "default"
+                              && m.resolvedModel === entry.resolvedModel) ?? entry;
+  }
+
   function paintModel() {
     if (!ui.modelChip) return;
     ui.modelChip.hidden = !models.length;
-    const entry = modelEntry();
+    const entry = twinOf(modelEntry());
     ui.modelName.textContent = entry?.displayName ?? resolved ?? FA.modelDefault;
     ui.modelChip.title = entry?.description ?? "";
     // The effort chip belongs to the model: switching to Haiku must retire it.
@@ -517,8 +527,8 @@ export function makeControls(root, cell) {
 
     ui.modelChip.addEventListener("click", (e) => {
       e.stopPropagation();
-      const current = modelEntry();
-      toggleMenu("model", models.map((m) => ({
+      const current = twinOf(modelEntry());
+      toggleMenu("model", models.filter((m) => twinOf(m) === m).map((m) => ({
         key: m.value,
         title: m.displayName || m.value,
         note: m.description || "",

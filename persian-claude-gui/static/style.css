@@ -69,6 +69,8 @@
   --border: #3e3d39;
   --accent: #d97757;
   --accent-strong: #c4633f;
+  /* A FILL under white text: #b5552f is 4.9:1 against #fff, --accent 3.1:1. */
+  --accent-fill: #b5552f;
   --accent-soft: rgb(217 119 87 / .13);
   --danger: #e5695a;
   /* The amber the context meter already warned in, promoted to a token:
@@ -761,7 +763,14 @@ pre, code, .path, .diff, .tool-output, .mono {
 .cell > .perm {
   flex: 0 1 auto;
   min-block-size: 0;
-  max-block-size: 50cqh;
+  /* pcg-rf8: no cap - the prompt is hidden while the box is open and the
+     transcript gives way instead; half the pane cut the options off. */
+  max-block-size: none;
+}
+.cell:has(.perm[open]) .composer { display: none; }
+.cell:has(.perm[open]) .log { min-height: 48px; }
+@container (max-height: 360px) {
+  .perm-params { max-height: 4.6em; }
 }
 
 /* The popups are anchored to the prompt and open UPWARD, so their cap is the
@@ -1458,6 +1467,10 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    appended — that turn's own closing line, kept in the history.
    `flex: none` for the same reason every card carries it: .log is a scrolling
    flex column and an automatic minimum size crushes its entries. */
+/* The running tool's target on the working line: one row, never a wrap — a
+   long command ends in an ellipsis and its title holds the rest. */
+.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.pulse-target { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 .pulse {
   align-self: stretch;
   max-width: none;
@@ -1624,12 +1637,12 @@ button {
   padding: 0 16px;
   border-radius: var(--radius);
   border: 1px solid transparent;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   cursor: pointer;
   transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
 }
-button:hover { background: var(--accent-strong); }
+button:hover { background: color-mix(in srgb, var(--accent-fill) 88%, #000); }
 button[disabled] { opacity: .45; cursor: not-allowed; }
 
 button.ghost {
@@ -2056,6 +2069,10 @@ button.round {
    flex column, and without it the dialog would be squeezed instead of
    pushing the prompt down. No ::backdrop rule: a non-modal dialog never
    paints one. */
+/* COMPACT (pcg-rf8, 2026-10-06), after the VS Code extension's
+   permissionRequestContainer: 10px padding, ONE header line (title, tool,
+   «۲ از ۵»), the checkbox and the two buttons on ONE row, read at a glance.
+   It takes the prompt's place while it is open (.cell rules above). */
 .perm {
   position: static;
   flex: none;
@@ -2063,30 +2080,74 @@ button.round {
   border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--fg);
-  padding: 20px;
-  max-width: min(560px, 92vw);
+  padding: 10px 12px;
+  max-width: none;
   margin: 0 max(20px, calc((100% - 50rem) / 2)) 10px;
   font: inherit;
-  line-height: var(--lh-fa);
-  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
-  max-height: 52vh;
-  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.55;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .35);
 }
+/* THE EXTENSION'S STACK (permissionRequestContainer, measured from its CSS
+   2026-10-06; the terminal edition's .perm is the same): the box never scrolls
+   as a whole. Header, options and buttons keep their size; only what is being
+   approved (.perm-params) and a question's options (.ask-q) give way and
+   scroll inside themselves, with a hairline at the edge content hides behind. */
+/* `width: auto`: a <dialog> is `fit-content` by default, which drew the box
+   narrower than the prompt it replaces and pinned it to one side. */
+.perm[open] { display: flex; flex-direction: column; overflow: hidden; width: auto; align-self: stretch; }
+/* The focused button's ring sits ON its border, not 2px outside it: the
+   offset ring around a ghost button read as two borders. */
+.perm menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.perm[open]:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.perm-form {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;   /* last resort: a pane too short even for the shrunk boxes */
+}
+.perm-form > * { flex: none; }
+.perm-form > .perm-params { flex: 0 1 auto; min-height: 3.2em; }
+.perm-form > .perm-ask { flex: 0 1 auto; min-height: 0; flex-direction: column; }
 
-/* «۲ از ۵»: stacked requests, at the title's far end. */
+/* The header is ONE line: title, tool, «۲ از ۵» at the end. */
+.perm-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .perm .perm-count {
-  float: inline-end;
-  margin: 2px 0 0;
+  flex: none;
+  margin: 0;
+  margin-inline-start: auto;
   color: var(--fg-muted);
   font-size: .78rem;
   font-variant-numeric: tabular-nums;
 }
-.perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: 700; }
-.perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
+.perm h2 { flex: none; margin: 0; font-size: 14px; font-weight: 700; }
+.perm p { margin: 0 0 6px; color: var(--fg-muted); font-size: .92em; }
+/* «کلاد می‌خواهد این ابزار را اجرا کند:» says what the header already says. */
+.perm .perm-body { display: none; }
+.perm.asking h2 { display: none; }
 
 .perm-tool {
+  flex: 0 1 auto;
+  min-width: 0;
   font-weight: 700;
-  margin-block-end: 8px;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perm-tool .perm-path { font-family: "Cascadia Code", "Consolas", ui-monospace, monospace; }
+.perm-tool .mono {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  font-size: .92em;
+}
+.perm-tool .perm-desc {
+  margin-inline-start: 6px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: .92em;
 }
 
 /* Which conversation is asking, when it is not the one on screen. Sits between
@@ -2100,51 +2161,71 @@ button.round {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-block: -.4em .8em;
-  padding: 6px 10px;
+  margin-block: 4px 2px;
+  padding: 0 8px;
   border-inline-start: 2px solid var(--accent);
-  border-radius: 6px;
-  background: var(--bg-side);
+  font-size: .85em;
 }
 
 /* Tool parameters are model-supplied text: paths, but also file CONTENT the
    user is about to approve. The box stays LTR so paths and code keep their
    order; each line inside gets dir="auto" so Persian content is readable at the
    moment of consent (spec rule 8, render.js renderParamRows). */
+.perm-params { --sbg: var(--bg-side); }
+.perm .ask-q { --sbg: var(--surface); }
+.perm-params,
+.perm .ask-q {
+  background:
+    linear-gradient(var(--sbg) 30%, transparent) top / 100% 12px no-repeat local,
+    linear-gradient(transparent, var(--sbg) 70%) bottom / 100% 12px no-repeat local,
+    linear-gradient(var(--fg-muted), var(--fg-muted)) top / 100% 1px no-repeat scroll,
+    linear-gradient(var(--fg-muted), var(--fg-muted)) bottom / 100% 1px no-repeat scroll,
+    var(--sbg);
+}
 .perm-params {
-  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 12px;
-  margin: 0 0 14px;
-  max-height: 30vh;
+  padding: 6px 8px;
+  margin: 6px 0 0;
+  max-height: min(30vh, 20cqb);
   overflow: auto;
   white-space: pre-wrap;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .perm-params .path { background: none; padding: 0; }
 /* The value boxes come from the shared builder and bring their own background;
    inside the dialog's box that would be a box in a box. */
 .perm-params .tool-output { background: none; padding: 0; max-height: none; }
 
+/* The checkbox and the two buttons share the last row. */
+.perm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin-block-start: 8px; }
 .perm-remember-row {
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 8px;
-  margin-block-end: 16px;
+  min-width: 0;
+  min-height: 28px;
   cursor: pointer;
-  font-size: .92em;
+  font-size: .88em;
   color: var(--fg-muted);
 }
-.perm-remember-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.perm-remember-row input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent-fill); }
+/* A consent sentence wraps, never ellipsizes: «…دوباره نپرس» cut to «نپ» was
+   the clipped checkbox text in the 2026-10-06 audit. */
+.perm-remember-label { min-width: 0; line-height: 1.4; }
 
 .perm menu {
   display: flex;
+  flex: none;
   gap: 8px;
-  justify-content: flex-start;   /* RTL start = right edge */
   margin: 0;
+  margin-inline-start: auto;
   padding: 0;
 }
+/* The global 44px button floor would make this row the tallest thing here;
+   28px is the extension's row and over the 24px pointer floor (WCAG 2.5.8). */
+.perm menu button { min-height: 28px; padding: 4px 16px; font-size: 14px; }
 
 /* --- diffs -------------------------------------------------------------------
    .diff already carries direction:ltr + isolate + monospace + its own scroll box
@@ -2571,60 +2652,150 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    So the tool name, the raw params and the "don't ask again" checkbox all go —
    there is no tool to remember and nothing to approve. */
 .perm-ask { display: none; }
-.perm.asking .perm-ask { display: block; }
+.perm.asking .perm-ask { display: flex; }
+.perm-ask > .ask-nav { flex: none; }
 .perm.asking .perm-tool,
 .perm.asking .perm-params,
 .perm.asking .perm-remember-row { display: none; }
 
+/* The question's header tabs (perm.js renderQuestions), the extension's
+   navigationBar: one question on screen at a time (pcg-rf8). */
+.ask-nav {
+  display: flex;
+  gap: 14px;
+  margin: 0 0 6px;
+  border-block-end: 1px solid var(--border);
+  overflow: hidden;
+}
+.ask-tab {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 18ch;
+  min-height: 0;
+  padding: 2px 2px 4px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+  font-size: .85em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ask-tab:hover { background: none; color: var(--fg); }
+.ask-tab[aria-selected="true"] { border-block-end-color: var(--accent); }
+.ask-tab[data-answered="true"] { color: var(--fg-muted); font-weight: 400; }
+.ask-tab[data-answered="true"]::after { content: " ✓"; }
+
 .ask-q {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin: 0 0 12px;
-  padding: 10px 12px 12px;
+  border: 0;
+  margin: 0;
+  padding: 0;
   min-inline-size: 0;   /* a fieldset defaults to min-content and would not shrink */
 }
+/* The one part of a question that gives way: tabs above and buttons below stay
+   put, the options scroll (the extension's questionsContainer). */
+.perm .ask-q:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-height: 4.5em;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.perm .ask-q > * { flex: none; }
 .ask-q legend {
-  padding-inline: 6px;
-  font-size: .8em;
-  font-weight: 700;
+  padding: 0;
+  font-size: .85em;
+  font-weight: 600;
   color: var(--fg-muted);
 }
 .perm .ask-text {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: var(--fg);
   font-size: 1em;
-  font-weight: 600;
+  font-weight: 700;
 }
-.ask-hint { display: block; margin-block-end: 8px; font-size: .8em; color: var(--fg-muted); }
+.ask-hint { display: block; margin-block-end: 4px; font-size: .85em; color: var(--fg-muted); }
 
+/* The extension's option row: the whole row is the hit target, hover is a
+   ghost fill, the keyboard's row gets a 2px bar on its start edge, and the
+   radio is its own 16px ring with an 8px dot (the terminal edition's too). */
 .ask-opt {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
   cursor: pointer;
 }
-.ask-opt:hover { background: var(--bg-side); }
-/* :has() lets the whole row show the checked state — this is Edge/Chromium
-   only, so no fallback is owed. */
-.ask-opt:has(input:checked) { border-color: var(--accent); background: var(--bg-side); }
-.ask-opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ask-opt input { margin-block-start: 2px; width: 16px; height: 16px; accent-color: var(--accent); }
-.ask-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-opt:hover { background: var(--surface-2); }
+/* :has() lets the whole row show the state — Edge/Chromium only, no fallback owed. */
+.ask-opt:has(input:focus-visible) {
+  background: var(--surface-2);
+  box-shadow: inset -2px 0 0 var(--accent);   /* RTL: the right edge is the start */
+}
+.ask-opt .opt-num {
+  flex: none;
+  min-inline-size: 1.9ch;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+.ask-opt input {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 4px 0 0;
+  border: 1.5px solid var(--fg-muted);
+  border-radius: 50%;
+  background: transparent;
+  outline: none;
+}
+.ask-opt input[type="checkbox"] { border-radius: 3px; }
+.ask-opt input:checked { border-color: var(--accent); }
+.ask-opt input[type="radio"]:checked::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ask-opt input[type="checkbox"]:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
+.ask-opt input[type="checkbox"]:checked::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-block-start: -2px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ask-opt-text { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .ask-label { font-weight: 600; }
-.ask-desc { font-size: .85em; color: var(--fg-muted); }
+.ask-desc { font-size: .85em; color: var(--fg-muted); line-height: 1.45; }
 
-.ask-other { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 0; }
+/* «پاسخ دیگر» and its box on ONE row. */
+.ask-other { display: flex; align-items: center; gap: 8px; padding: 4px 8px 0; }
+.ask-other .ask-label { flex: none; font-weight: 400; color: var(--fg-muted); font-size: .92em; }
 .ask-free {
+  flex: 1;
+  min-inline-size: 0;
   background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 7px 9px;
+  padding: 4px 8px;
   color: inherit;
   font: inherit;
-  line-height: var(--lh-fa);
+  line-height: 1.5;
 }
 .ask-free:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -2830,11 +3001,18 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 .bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--surface-2); outline: none; }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
-.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
-.bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.bar-row-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-row-check { flex: none; inline-size: 1em; color: rgb(98 155 245); text-align: center; }
-.bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
+/* `align-items: flex-start`: a title is `dir="auto"`, so a Latin one («Opus
+   5.5») is an LTR box, and stretched to the row it put its text at the row's
+   far end, away from the Persian head it sits under. Shrunk to its text, the
+   RTL row places it at the start like every other title. */
+.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.bar-row-title { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
+/* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
+   on the others. Both at once left two columns of air beside every name. */
+.bar-row-check { flex: none; min-inline-size: 1.4em; color: rgb(98 155 245); text-align: center; }
+.bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
+.bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
 .bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 .bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
@@ -2929,8 +3107,11 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  min-height: 0;
+  /* 24 px each way: the smallest target WCAG 2.5.8 accepts (audit_ui.py). */
+  min-height: 24px;
+  min-inline-size: 24px;
   padding: 3px 8px;
   border: 0;
   border-radius: var(--r-chip, 6px);
@@ -3216,4 +3397,19 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   content: attr(data-focus-label);
   color: var(--fg-muted);
   font-size: .8em;
+}
+
+/* --- the dialog in a short or narrow pane ----------------------------------
+   Last in the file on purpose: these override the dialog's base rules above
+   (the terminal edition's block of the same name). The request IS the pane
+   now: the transcript strip goes before an option does, what is approved
+   keeps two lines and scrolls, the rows tighten to the 24px pointer floor. */
+@container (max-height: 360px) {
+  .cell:has(.perm[open]) .log { min-height: 0; }
+  .perm { padding: 6px 8px; margin-block-end: 4px; }
+  .perm-form > .perm-params { min-height: 2em; }
+  .perm-params .param-key { display: none; }
+  .perm .ask-opt { min-height: 24px; padding-block: 2px; }
+  .perm .ask-q:not([hidden]) { min-height: 3em; }
+  .perm .ask-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
 }

@@ -122,7 +122,7 @@
 /* The agents drawer's render seam has no window alias (nothing else needs one),
    so the harness imports it. Module scripts execute in document order, so
    js/app.js has already evaluated this module — the import reuses it. */
-import { withRenderTarget, newRenderScope, state } from "/static/js/render.js";
+import { withRenderTarget, questionOption, newRenderScope, state } from "/static/js/render.js";
 /* The tab registry and the synchronous half of a switch. Importing the ENTRY
    module is safe from here and only from here: nothing in the module tree may
    import app.js (its body runs last — see the load-order note there), but this
@@ -411,6 +411,16 @@ check("the CLI's English interrupt note never becomes a user bubble",
   specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
   specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
 
+/* `/compact` answers on the live stream as a user turn reading
+   «<local-command-stdout>Compacted </local-command-stdout>», with no
+   isSynthetic. The CLI talking to itself is never the person (CLI_SELF). */
+window.renderEvent({ type: "user", message: { content: [
+  { type: "text", text: "<local-command-stdout>Compacted </local-command-stdout>" },
+] } });
+check("the CLI's own <local-command-stdout> never becomes a user bubble",
+  specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
+  specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
+
 /* Case 10 is the moment of consent, and it is now a real diff: the person
    approving an Edit sees the change, not two blobs to compare by eye. The BiDi
    contract is unchanged — the box is LTR, the Persian line inside it is not. */
@@ -589,6 +599,13 @@ check("ask: the transcript shows the options, not raw JSON",
   [...(askCard?.children ?? [])].length === 2 &&
   askCard.textContent.includes("Tea") && !askCard.textContent.includes("{"),
   askCard?.textContent.trim() ?? "no question card");
+
+/* An option whose description has no letters («-», «42»): dir="auto" had
+   nothing to read past the isolated label and the row fell LTR. */
+const neutralOpt = questionOption(document.createElement("li"),
+  { label: "کوچک", description: "-" }, "q-label", "q-desc");
+check("ask: a Persian option with a letterless description stays RTL",
+  neutralOpt.getAttribute("dir") === "rtl", neutralOpt.getAttribute("dir"));
 
 /* The ANSWERED state, which is what the transcript keeps forever. The answer
    does not ride on the tool_result part — it arrives as `tool_use_result` on
@@ -1296,8 +1313,12 @@ check("a result alone leaves the line running: the command has not closed yet",
 // Persian prose, so Persian digits — and the token figure is the CLI's own, not
 // a guess: 10 900 has to read «۱۰٫۹ هزار», not «10.9k».
 const pulseText = pulse?.textContent ?? "";
+// The counters only: the running tool's target (pcg-r82) is a technical value
+// and keeps its Latin digits (rule 5).
+const pulseCounters = [...(pulse?.querySelectorAll(".pulse-meta, .pulse-tasks") ?? [])]
+  .map((n) => n.textContent).join(" ");
 check("the working line counts in Persian digits, the CLI's own tokens",
-  pulseText.includes("۱۰٫۹ هزار توکن") && !/[0-9]/.test(pulseText),
+  pulseText.includes("۱۰٫۹ هزار توکن") && !/[0-9]/.test(pulseCounters),
   pulseText.replace(/\s+/g, " ").trim() || "empty");
 
 // The command closes and the line GOES: claude.ai/code leaves nothing where the
@@ -3294,6 +3315,10 @@ check("B1: the saved file is named as a path — LTR, isolated, backslashes inta
 const taskLog = document.createElement("div");
 const taskScope = newRenderScope();
 const beforeAgents = sentTo("/api/agents").length;
+// A notification only exists inside a session, and /api/agents is asked only
+// with one (the server answers 400 without an id).
+const specSessionWas = state.status.sessionId;
+state.status.sessionId ||= "spec-session-b2";
 withRenderTarget(taskLog, taskScope, () => {
   window.renderEvent({ type: "user", message: { content: [{ type: "text", text:
     "<task-notification><task-id>t1</task-id><status>completed</status>" +
@@ -3313,6 +3338,7 @@ await tick(400);
 check("B2: the agents drawer is refreshed off the notification, from /api/agents",
   sentTo("/api/agents").length > beforeAgents,
   (sentTo("/api/agents").length - beforeAgents) + " request(s)");
+state.status.sessionId = specSessionWas;
 
 /* --- B1: /branch -------------------------------------------------------------
    The load-bearing half is that the new tab is shown through the SAME bridge

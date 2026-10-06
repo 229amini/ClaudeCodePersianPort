@@ -89,6 +89,8 @@
   --border-strong: rgb(255 255 255 / .13);
   --accent: #d97757;
   --accent-strong: #c4633f;
+  /* A FILL under white text: #b5552f is 4.9:1 against #fff, --accent 3.1:1. */
+  --accent-fill: #b5552f;
   --accent-soft: rgb(217 119 87 / .13);
   --danger: #e5695a;
   /* The amber the context meter already warned in, promoted to a token:
@@ -1184,14 +1186,14 @@ body.rail .rail-icon { transform: scaleX(-1); }
   padding-block: 6vh var(--pad);
 }
 .ns-card {
-  inline-size: min(640px, 100%);
+  inline-size: min(600px, 100%);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-panel);
-  padding: calc(var(--pad) * 2);
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   font-size: var(--fs-ui);
   line-height: var(--lh-ui);
 }
@@ -1201,36 +1203,48 @@ body.rail .rail-icon { transform: scaleX(-1); }
   font-weight: var(--wt-title);
   color: var(--fg);
 }
+/* ONE GRID FOR EVERY ROW: a label column and a control column, and every
+   control fills its column. They used to hug the label (`justify-self: start`)
+   while the task box and the launch list ran the whole width of the card, so
+   the card had three different left edges and a third of it stood empty. */
 .ns-field {
   display: grid;
-  grid-template-columns: 7.5em minmax(0, 1fr);
+  grid-template-columns: 7em minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 16px;
 }
-.ns-label { color: var(--fg-muted); padding-block-start: 5px; }
+.ns-label { color: var(--fg-muted); padding-block-start: 6px; }
+/* A segmented control is one track with equal cells, not a row of loose
+   buttons: the pressed cell is the only raised thing in it. */
 .ns-seg {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-self: start;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-row);
+  background: var(--surface);
 }
 .ns-opt {
   font: inherit;
-  min-inline-size: 2.4em;
-  padding: 4px 12px;
+  min-inline-size: 0;
+  min-height: 28px;
+  padding: 0 8px;
   border-radius: var(--r-chip);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 0;
+  background: none;
   color: var(--fg-muted);
-  min-height: 0;
   font-weight: var(--wt-body);
+  text-align: center;
   cursor: pointer;
 }
-.ns-opt:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+.ns-opt:hover:not(:disabled) { background: var(--surface); color: var(--fg); }
 .ns-opt[aria-pressed="true"] {
   background: var(--surface-2);
-  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
   color: var(--fg);
+  font-weight: var(--wt-title);
 }
 .ns-opt:disabled { opacity: .4; cursor: not-allowed; }
 .ns-opt:focus-visible,
@@ -1238,19 +1252,19 @@ body.rail .rail-icon { transform: scaleX(-1); }
 .ns-task:focus-visible,
 .ns-go:focus-visible,
 .ns-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ns-folder-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-inline-size: 0; }
+.ns-folder-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-inline-size: 0; }
 .ns-folder {
   font: inherit;
-  min-inline-size: 16em;
-  max-inline-size: 100%;
-  padding: 4px 8px;
-  border-radius: var(--r-chip);
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding: 4px 10px;
+  border-radius: var(--r-row);
   border: 1px solid var(--border);
   background: var(--raise);
   color: var(--fg);
 }
-.ns-folder-path { color: var(--fg-faint); font-size: var(--fs-meta); overflow-wrap: anywhere; }
-.ns-iso { display: flex; flex-direction: column; gap: 4px; }
+.ns-folder-path { align-self: flex-start; color: var(--fg-faint); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.ns-iso { display: flex; flex-direction: column; gap: 6px; padding-block-start: 6px; }
 .ns-radio { display: flex; align-items: center; gap: 8px; color: var(--fg); cursor: pointer; }
 .ns-radio:has(input:disabled) { color: var(--fg-faint); cursor: not-allowed; }
 .ns-radio input { accent-color: var(--accent); margin: 0; }
@@ -1262,24 +1276,20 @@ body.rail .rail-icon { transform: scaleX(-1); }
   resize: vertical;
   min-block-size: 4.5em;
   padding: 8px 10px;
-  border-radius: var(--r-card);
+  border-radius: var(--r-row);
   border: 1px solid var(--border);
   background: var(--raise);
   color: var(--fg);
 }
 .ns-task::placeholder { color: var(--fg-faint); }
-.ns-sub {
-  margin: 6px 0 0;
-  font-size: var(--fs-meta);
-  font-weight: var(--wt-title);
-  color: var(--fg-muted);
-}
-.ns-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ns-preview-wrap { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
+.ns-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ns-slot {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 8px;
+  min-block-size: 34px;
+  padding: 6px 10px;
   border-radius: var(--r-row);
   background: var(--surface);
   color: var(--fg);
@@ -1287,12 +1297,13 @@ body.rail .rail-icon { transform: scaleX(-1); }
 .ns-slot-n { color: var(--fg-faint); min-inline-size: 1em; }
 /* With more than one conversation a row is its own small form:
    centred rather than on the baseline, because a select has no text line to
-   share with the numbers beside it. */
+   share with the numbers beside it. The folder takes the room that is left,
+   so the branch box and the role line up down the list. */
 .ns-preview:has(.ns-slot-folder) .ns-slot { align-items: center; flex-wrap: wrap; }
 .ns-slot-folder {
   font: inherit;
+  flex: 1 1 9em;
   min-inline-size: 9em;
-  max-inline-size: 16em;
   padding: 2px 6px;
   border-radius: var(--r-chip);
   border: 1px solid var(--border);
@@ -1310,11 +1321,18 @@ body.rail .rail-icon { transform: scaleX(-1); }
 .ns-slot-role.is-reviewer { color: var(--st-wait); }
 .ns-slot-task { background: none; color: var(--fg-faint); font-size: var(--fs-meta); }
 .ns-error { margin: 0; color: var(--danger); }
-.ns-actions { display: flex; justify-content: flex-end; gap: 8px; margin-block-start: 4px; }
+.ns-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-block-start: 4px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--border);
+}
 .ns-cancel, .ns-go {
   font: inherit;
   min-height: 34px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-radius: var(--r-row);
   cursor: pointer;
 }
@@ -1382,6 +1400,14 @@ body.rail .rail-icon { transform: scaleX(-1); }
   min-block-size: 0;
   max-block-size: 50cqh;
 }
+/* pcg-rf8: the permission/question box hides the prompt and takes what it
+   needs; the transcript keeps a strip (.log min-height 48px) and the box
+   scrolls only when even that does not fit. Half the pane cut its options. */
+.cell > .perm { max-block-size: none; }
+/* A pane this short (six on a 1280x800 window) cannot show a diff AND four
+   options: the options win, what is approved keeps three lines and scrolls. */
+/* (The short-pane dialog rules live at the END of this file: they override
+   the dialog's base rules, which come later than this point.) */
 
 /* The popups are anchored to the prompt and open UPWARD, so their cap is the
    CELL's height, not the window's — one rule replacing both the `40vh` these
@@ -1570,6 +1596,10 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   cursor: pointer;
 }
 .empty-btn:hover { background: var(--surface-2); }
+.empty-btn::before { content: "+"; margin-inline-end: 8px; color: var(--accent); font-weight: 600; }
+/* A free slot beside live conversations reads as a slot, not as a pane that
+   failed to load: a dashed edge and the ground showing through. */
+#grid:not([data-split="1"]) .cell.blank { border-style: dashed; border-color: var(--border-strong); background: none; }
 /* With several panes the TUI's banner is enough; its tips are the `?` sheet. */
 #grid:not([data-split="1"]) .wel-tips { display: none; }
 
@@ -2492,7 +2522,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   display: block;
   color: var(--fg-muted);
   font-size: .85em;
-  margin-block-end: 3px;
+  margin-block-end: 2px;
 }
 
 .thinking .card-body { color: var(--fg-muted); font-style: normal; }
@@ -2514,6 +2544,10 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    appended — that turn's own closing line, kept in the history.
    `flex: none` for the same reason every card carries it: .log is a scrolling
    flex column and an automatic minimum size crushes its entries. */
+/* The running tool's target on the working line: one row, never a wrap — a
+   long command ends in an ellipsis and its title holds the rest. */
+.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.pulse-target { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 .pulse {
   align-self: stretch;
   max-width: none;
@@ -2751,12 +2785,12 @@ button {
   padding: 0 16px;
   border-radius: var(--radius);
   border: 1px solid transparent;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   cursor: pointer;
   transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
 }
-button:hover { background: var(--accent-strong); }
+button:hover { background: color-mix(in srgb, var(--accent-fill) 88%, #000); }
 button[disabled] { opacity: .45; cursor: not-allowed; }
 
 button.ghost {
@@ -3272,6 +3306,16 @@ button.round {
    of this bar is reference data the eye skips, and this one line is the reason
    the next answer will be shorter than the last. */
 .statusline .sl-warn { color: var(--danger); }
+/* A [BADGE] from the machine's statusLine script: what is switched on, as a
+   quiet chip. Latin, so LTR-isolated by pathEl. */
+.statusline .sl-badge {
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-chip);
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  letter-spacing: .02em;
+}
 /* «N فایل تغییر کرد» (§D12): a word in the state line that opens the panel. */
 .statusline .sl-changes {
   min-height: 0;
@@ -3360,34 +3404,106 @@ body.rail .side-zoom { display: none; }
 /* --- permission dialog -------------------------------------------------------- */
 /* The card (§D10): one step lighter than the pane, a stronger edge, so the
    one thing waiting for you is the brightest surface in the column. */
+/* COMPACT, AFTER THE VS CODE EXTENSION'S permissionRequestContainer (pcg-rf8,
+   2026-10-06): 8px padding, one header line, options ~28px tall, the whole
+   thing read at a glance in a six-pane window. The user's words: minimal,
+   understood in one look, no long gaps, no scrolling. The prompt below is
+   hidden while it is open (the extension puts the request IN PLACE of the
+   input), which is ~90px of a pane given back. */
 .perm {
   background: var(--raise);
   border-color: var(--border-strong);
   border-radius: var(--r-card);
-  padding: var(--pad) calc(var(--pad) + 4px);
-}
-.perm .perm-kind {
-  margin: 0 0 2px;
-  color: var(--fg-faint);
-  font-size: var(--fs-meta);
+  padding: 8px 10px;
+  margin-block-end: 8px;
+  font-size: var(--fs-ui);
   line-height: var(--lh-ui);
+  /* Its own height, not a cap: the transcript gives way instead (below),
+     and only a pane with no room left at all makes this box scroll. */
+  max-block-size: none;
+  flex: 0 1 auto;
+  min-height: 0;
 }
-/* «۲ از ۵»: stacked requests, at the title's far end. `.perm p`
+/* THE EXTENSION'S STACK (permissionRequestContainer, measured from its CSS
+   2026-10-06): the box never scrolls as a whole. Header, options and buttons
+   keep their size; only what is being approved (.perm-params) and a question's
+   option list (.ask-q) give way and scroll inside themselves. The whole-box
+   scroll this replaces left «ارسال پاسخ» 124px below a six-pane cell's edge
+   behind a 2px scrollbar (audit_ui.py). */
+.perm[open] { display: flex; flex-direction: column; overflow: hidden; }
+/* Where the keyboard is, at the box's scale: the option list is one tab stop
+   whose filled row is the answer, so the box's edge carries focus. */
+.perm[open]:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.perm-form {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  /* Last resort only: a pane too short even for the shrunk boxes. */
+  overflow-y: auto;
+}
+.perm-form > * { flex: none; }
+.perm-form > .perm-params { flex: 0 1 auto; min-height: 3.2em; }
+.perm-form > .perm-ask { flex: 0 1 auto; min-height: 0; flex-direction: column; }
+.cell:has(.perm[open]) .composer { display: none; }
+.cell:has(.perm[open]) .log { min-height: 48px; }
+
+/* The header is ONE line: what kind of act, the tool, «۲ از ۵» at the end. */
+.perm-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.perm .perm-kind {
+  flex: none;
+  margin: 0;
+  color: var(--fg);
+  font-weight: var(--wt-strong);
+}
+.perm .perm-tool {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perm-tool .mono {
+  padding: 0 6px;
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  font-size: .92em;
+}
+/* «۲ از ۵»: stacked requests, at the header's far end. `.perm p`
    below is (1,0,1), so this says `.perm .perm-count` to win its margin. */
 .perm .perm-count {
-  float: inline-end;
-  margin: 2px 0 0;
-  color: var(--fg-faint);
+  flex: none;
+  margin: 0;
+  margin-inline-start: auto;
+  color: var(--fg-muted);
   font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
 }
-.perm h2 { margin: 0 0 .4em; font-size: 1.1rem; font-weight: var(--wt-title); }
-.perm p { margin: 0 0 .8em; color: var(--fg-muted); font-size: .92em; }
-
-.perm-tool {
-  font-weight: var(--wt-title);
-  margin-block-end: 8px;
+/* A scroll box says it has more: a hairline at the edge content is hidden
+   behind (the extension's questionsContainerOverflowTop/Bottom, done with
+   background-attachment instead of a scroll listener). */
+.perm-params { --sbg: var(--bg-side); }
+.perm .ask-q { --sbg: var(--raise); }
+.perm-params,
+.perm .ask-q {
+  background:
+    linear-gradient(var(--sbg) 30%, transparent) top / 100% 12px no-repeat local,
+    linear-gradient(transparent, var(--sbg) 70%) bottom / 100% 12px no-repeat local,
+    linear-gradient(var(--fg-faint), var(--fg-faint)) top / 100% 1px no-repeat scroll,
+    linear-gradient(var(--fg-faint), var(--fg-faint)) bottom / 100% 1px no-repeat scroll,
+    var(--sbg);
 }
+.perm h2 { margin: 0 0 4px; font-size: var(--fs-ui); font-weight: var(--wt-strong); }
+.perm p { margin: 0 0 6px; color: var(--fg-muted); font-size: .92em; }
+/* The kind + tool line says it all; the title, the sentence under it and
+   «اجازه می‌دهید ادامه دهد؟» were three more lines of the same thing. A plan
+   keeps its title and body (it has no tool), a question its tabs. */
+.perm:not(.planning) .perm-title,
+.perm:not(.planning) .perm-body,
+.perm .perm-proceed,
+.perm.planning .perm-kind,
+.perm.asking .perm-kind { display: none; }
 
 /* Which conversation is asking, when it is not the one on screen. Sits between
    the question and the tool, quiet but not hidden: it is the difference between
@@ -3400,11 +3516,10 @@ body.rail .side-zoom { display: none; }
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-block: -.4em .8em;
-  padding: 6px 10px;
+  margin-block: 4px 2px;
+  padding: 0 8px;
   border-inline-start: 2px solid var(--accent);
-  border-radius: 6px;
-  background: var(--bg-side);
+  font-size: var(--fs-meta);
 }
 
 /* Tool parameters are model-supplied text: paths, but also file CONTENT the
@@ -3412,15 +3527,16 @@ body.rail .side-zoom { display: none; }
    order; each line inside gets dir="auto" so Persian content is readable at the
    moment of consent (spec rule 8, render.js renderParamRows). */
 .perm-params {
-  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 12px;
-  margin: 0 0 14px;
-  max-height: 30vh;
+  padding: 6px 8px;
+  margin: 6px 0 0;
+  /* The pane's height again: what is being approved scrolls inside its own
+     box, the options under it never leave the screen. */
+  max-height: min(30vh, 20cqb);
   overflow: auto;
   white-space: pre-wrap;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .perm-params .path { background: none; padding: 0; }
 /* The value boxes come from the shared builder and bring their own background;
@@ -3902,7 +4018,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    So the tool name, the raw params and the "don't ask again" checkbox all go —
    there is no tool to remember and nothing to approve. */
 .perm-ask { display: none; }
-.perm.asking .perm-ask { display: block; }
+.perm.asking .perm-ask { display: flex; }
 .perm.asking .perm-tool,
 .perm.asking .perm-params,
 .perm.asking .perm-remember-row { display: none; }
@@ -3916,29 +4032,63 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    is what its «a question offers no remember» assertion reads; in the window
    the remember scope is «۲.» in the list and this row never shows. */
 .perm menu { display: none; }
+/* A question's key hint and its two buttons share the last row. */
+.perm-foot { display: flex; align-items: center; gap: 8px; min-width: 0; margin-block-start: 8px; }
 .perm.asking menu {
   display: flex;
+  flex: none;
   gap: 8px;
-  justify-content: flex-start;   /* RTL start = right edge */
-  margin: 12px 0 0;
+  margin: 0;
+  margin-inline-start: auto;
   padding: 0;
 }
+/* The global `button { min-height: 44px }` would make this row taller than
+   the question above it. 28px is the extension's button row, and over the
+   24px floor a pointer needs (WCAG 2.5.8). */
+.perm menu button { min-height: 28px; padding: 4px 14px; font-size: var(--fs-ui); }
+.perm.asking .perm-hint { flex: 0 1 auto; min-width: 0; margin: 0; }
 .perm .perm-remember-row { display: none; }
 .perm.asking .perm-proceed,
 .perm.asking .perm-opts,
 .perm.asking .perm-feedback { display: none; }
 
-.perm .perm-proceed {
-  margin: 2px 0 8px;
-  color: var(--fg);
-  font-weight: var(--wt-title);
-  font-size: .95em;
+/* The options, as the extension draws them: full-width rows, the one the
+   keyboard is on FILLED, not outlined - it is the answer Enter will give. */
+.perm .perm-opts { margin-block-start: 6px; }
+/* The filled row already says where the keyboard is; a ring around the whole
+   list on top of it was the loudest thing in the pane. */
+.perm .opts:focus-visible { outline: none; }
+.perm-tool .perm-path { font-family: "Cascadia Code", "Consolas", ui-monospace, monospace; }
+.perm-tool .perm-desc {
+  margin-inline-start: 6px;
+  color: var(--fg-muted);
+  font-weight: var(--wt-body);
+  font-size: .92em;
 }
+/* Each answer is its own box (the extension's button_qlaBag: a 1px inner
+   hairline, 4px corners, a gap between rows), so four answers read as four
+   choices and not as one paragraph. */
+.perm .perm-opts .opts { gap: 4px; }
+.perm .opt {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-chip);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  align-items: center;
+}
+/* White on --accent is 3.1:1; the filled row is the answer Enter gives and
+   has to be readable at a glance, so it fills with the darker step (4.9:1). */
+.perm .opt[aria-selected="true"] { background: var(--accent-fill); box-shadow: none; }
+.perm .opt[aria-selected="true"] .opt-title,
+.perm .opt[aria-selected="true"] .opt-num,
+.perm .opt[aria-selected="true"] .opt-esc { color: #fff; }
+.perm .opt-title { font-size: 1em; }
 .perm-feedback {
   display: block;
   inline-size: 100%;
-  margin-block-start: 10px;
-  padding: 7px 9px;
+  margin-block-start: 6px;
+  padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-side);
@@ -3948,57 +4098,152 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   resize: vertical;
 }
 .perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.perm .perm-hint { margin: 8px 0 0; font-size: .78em; }
+/* One line, cut rather than wrapped: the keys are a reminder, not reading. */
+.perm .perm-hint {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The question's header tabs (perm.js renderQuestions), the extension's
+   navigationBar: one question on screen at a time. */
+.ask-nav {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 6px;
+  border-block-end: 1px solid var(--border);
+  overflow: hidden;
+}
+.ask-tab {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 18ch;
+  min-height: 0;
+  padding: 2px 2px 4px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ask-tab:hover { background: none; color: var(--fg); }
+.ask-tab[aria-selected="true"] { border-block-end-color: var(--accent); }
+.ask-tab[data-answered="true"] { color: var(--fg-muted); font-weight: var(--wt-body); }
+.ask-tab[data-answered="true"]::after { content: " ✓"; }
 
 .ask-q {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin: 0 0 12px;
-  padding: 10px 12px 12px;
+  border: 0;
+  margin: 0;
+  padding: 0;
   min-inline-size: 0;   /* a fieldset defaults to min-content and would not shrink */
 }
+/* The one part of a question that gives way: tabs above and buttons below stay
+   put, the options scroll (the extension's questionsContainer). The floor is
+   the question line plus most of one option, so a scroll always has a reason. */
+.perm .ask-q:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-height: 4.5em;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.perm .ask-q > *,
+.perm-ask > .ask-nav { flex: none; }
 .ask-q legend {
-  padding-inline: 6px;
-  font-size: .8em;
-  font-weight: 700;
+  padding: 0;
+  font-size: var(--fs-meta);
+  font-weight: var(--wt-title);
   color: var(--fg-muted);
 }
 .perm .ask-text {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: var(--fg);
   font-size: 1em;
-  font-weight: var(--wt-title);
+  font-weight: var(--wt-strong);
 }
-.ask-hint { display: block; margin-block-end: 8px; font-size: .8em; color: var(--fg-muted); }
+.ask-hint { display: block; margin-block-end: 4px; font-size: var(--fs-meta); color: var(--fg-muted); }
 
+/* The extension's option row: the whole row is the hit target, hover is a
+   ghost fill, the keyboard's row gets a 2px bar on its start edge, and the
+   radio is its own 16px ring with an 8px dot - never the OS control, which
+   drew a white disc on the dark box. */
 .ask-opt {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-chip);
   cursor: pointer;
 }
-.ask-opt:hover { background: var(--bg-side); }
-/* :has() lets the whole row show the checked state — this is Edge/Chromium
+.ask-opt:hover { background: var(--surface-2); }
+/* :has() lets the whole row show the state — this is Edge/Chromium
    only, so no fallback is owed. */
-.ask-opt:has(input:checked) { border-color: var(--accent); background: var(--bg-side); }
-.ask-opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ask-opt input { margin-block-start: 2px; width: 16px; height: 16px; accent-color: var(--accent); }
-.ask-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-opt:has(input:focus-visible) {
+  background: var(--surface-2);
+  box-shadow: inset -2px 0 0 var(--accent);   /* RTL: the right edge is the start */
+}
+.ask-opt:has(input:checked) .ask-label { color: var(--fg); }
+.ask-opt input {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  border: 1.5px solid var(--fg-faint);
+  border-radius: 50%;
+  background: transparent;
+  outline: none;
+}
+.ask-opt input[type="checkbox"] { border-radius: 3px; }
+.ask-opt input:checked { border-color: var(--accent); }
+.ask-opt input[type="radio"]:checked::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ask-opt input[type="checkbox"]:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
+.ask-opt input[type="checkbox"]:checked::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-block-start: -2px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ask-opt-text { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .ask-label { font-weight: var(--wt-title); }
-.ask-desc { font-size: .85em; color: var(--fg-muted); }
+.ask-desc { font-size: var(--fs-meta); color: var(--fg-muted); line-height: 1.45; }
 
-.ask-other { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 0; }
+/* «پاسخ دیگر» and its box on ONE row. */
+.ask-other { display: flex; align-items: center; gap: 8px; padding: 4px 8px 0; }
+.ask-other .ask-label { flex: none; font-weight: var(--wt-body); color: var(--fg-muted); font-size: .92em; }
 .ask-free {
+  flex: 1;
+  min-inline-size: 0;
   background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 7px 9px;
+  padding: 4px 8px;
   color: inherit;
   font: inherit;
-  line-height: var(--lh-fa);
+  line-height: var(--lh-ui);
 }
 .ask-free:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -4216,11 +4461,18 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 .bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--surface-2); outline: none; }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
-.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 1px; }
-.bar-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.bar-row-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-row-check { flex: none; inline-size: 1em; color: rgb(98 155 245); text-align: center; }
-.bar-row-digit { flex: none; min-inline-size: 1.2em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
+/* `align-items: flex-start`: a title is `dir="auto"`, so a Latin one («Opus
+   5.5») is an LTR box, and stretched to the row it put its text at the row's
+   far end, away from the Persian head it sits under. Shrunk to its text, the
+   RTL row places it at the start like every other title. */
+.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.bar-row-title { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
+/* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
+   on the others. Both at once left two columns of air beside every name. */
+.bar-row-check { flex: none; min-inline-size: 1.4em; color: rgb(98 155 245); text-align: center; }
+.bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
+.bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
 .bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 .bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
@@ -4315,8 +4567,11 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  min-height: 0;
+  /* 24 px each way: the smallest target WCAG 2.5.8 accepts (audit_ui.py). */
+  min-height: 24px;
+  min-inline-size: 24px;
   padding: 3px 8px;
   border: 0;
   border-radius: var(--r-chip, 6px);
@@ -4602,4 +4857,32 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   content: attr(data-focus-label);
   color: var(--fg-faint);
   font-size: var(--fs-meta);
+}
+
+/* --- the dialog in a short or narrow pane ----------------------------------
+   Last in the file on purpose: these override the dialog's base rules above.
+   A pane this short (six on a 1280x800 window) cannot show a diff AND four
+   options: the request IS the pane now, so the transcript strip goes before an
+   option does, what is approved keeps two lines and scrolls, and the rows
+   tighten to the 24px pointer floor (WCAG 2.5.8). */
+@container (max-height: 360px) {
+  .cell:has(.perm[open]) .log { min-height: 0; }
+  .perm { padding: 6px 8px; }
+  .perm-params { max-height: 4.6em; }
+  .perm-form > .perm-params { min-height: 2.4em; }
+  .perm .perm-hint { display: none; }
+  .perm .perm-opts .opts { gap: 2px; }
+  .perm .opt,
+  .perm .ask-opt { min-height: 24px; padding-block: 2px; }
+  .perm .ask-q:not([hidden]) { min-height: 3em; }
+  .perm { margin-block-end: 4px; }
+  .perm-form > .perm-params { min-height: 2em; }
+  /* «command» over a one-line command is a label for nothing. */
+  .perm-params .param-key { display: none; }
+  /* One line of each option's note: the label is the answer, the note a hint. */
+  .perm .ask-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+}
+/* A narrow pane keeps the keys for the sheet behind `?`. */
+@container (max-width: 560px) {
+  .perm .perm-hint { display: none; }
 }

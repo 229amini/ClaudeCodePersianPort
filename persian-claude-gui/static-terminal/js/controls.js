@@ -160,10 +160,20 @@ export function makeControls(root, cell) {
         ?? models[0] ?? null;
   }
 
+  /* The CLI's «Default (recommended)» is an alias, not a model: it resolves to
+     one the list already names (default -> claude-opus-5-5, which is «Opus
+     5.5»), and claude.ai shows that name. DISPLAY ONLY: `chosen` and set_model
+     keep the CLI's own values. An alias with no twin in the list is itself. */
+  function twinOf(entry) {
+    if (entry?.value !== "default") return entry;
+    return models.find((m) => m.value !== "default"
+                              && m.resolvedModel === entry.resolvedModel) ?? entry;
+  }
+
   function paintModel() {
     if (!ui.modelChip) return;
     ui.modelChip.hidden = !models.length;
-    const entry = modelEntry();
+    const entry = twinOf(modelEntry());
     ui.modelName.textContent = entry?.displayName ?? resolved ?? FA.modelDefault;
     ui.modelChip.title = entry?.description ?? "";
     // The effort chip belongs to the model: switching to Haiku must retire it.
@@ -460,8 +470,8 @@ export function makeControls(root, cell) {
   }
 
   function openModelPicker() {
-    const current = modelEntry();
-    return openPicker("model", FA.modelTitle, models.map((m) => ({
+    const current = twinOf(modelEntry());
+    return openPicker("model", FA.modelTitle, models.filter((m) => twinOf(m) === m).map((m) => ({
       key: m.value,
       title: m.displayName || m.value,
       note: m.description || "",
@@ -512,17 +522,19 @@ export function makeControls(root, cell) {
      write paths the numbered pickers use: nothing here is a second source of
      truth, and a failure still reports through the inline picker. */
   function openModelMenu() {
-    const current = modelEntry();
+    const current = twinOf(modelEntry());
     const row = (m) => ({ key: m.value, title: m.displayName || m.value,
                           tip: m.description || "", selected: m === current });
     // claude.ai's shape: the newest model of each family, then «More models ›»
     // for the rest. A family is the name's first word, read off the CLI's own
-    // list in the CLI's own order, so the first of each is the newest; the
-    // CLI's «Default» alias is not a family and goes behind the flyout too.
+    // list in the CLI's own order, so the first of each is the newest. The
+    // «Default» alias is not a row when the list names its model (twinOf): the
+    // ✓ sits on that model, which is what the alias means.
     const seen = new Set(), primary = [], rest = [];
     for (const m of models) {
+      if (twinOf(m) !== m) continue;
       const family = String(m.displayName || m.value).split(/\s+/)[0].toLowerCase();
-      if (m.value === "default" || seen.has(family)) rest.push(m);
+      if (seen.has(family)) rest.push(m);
       else { seen.add(family); primary.push(m); }
     }
     return openMenu(ui.modelChip, {

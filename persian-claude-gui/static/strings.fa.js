@@ -34,6 +34,26 @@ window.FA = {
   },
   /* The TUI's own «esc to interrupt», the working line's tooltip. */
   spinnerInterrupt: "Esc برای توقف",
+  /* The working line while ONE tool runs: present tense, and the call's own
+     target follows it (js/render.js toolLine). A tool with no entry falls back
+     to pulsePhases.tools; `mcp` is every `mcp__server__tool`. */
+  pulseTools: {
+    Bash: "در حال اجرای فرمان",
+    BashOutput: "در حال خواندن خروجی فرمان",
+    Read: "در حال خواندن",
+    Write: "در حال نوشتن فایل",
+    Edit: "در حال ویرایش",
+    MultiEdit: "در حال ویرایش",
+    NotebookEdit: "در حال ویرایش",
+    Glob: "در حال جست‌وجوی فایل",
+    Grep: "در حال جست‌وجو در متن",
+    WebFetch: "در حال دریافت از وب",
+    WebSearch: "در حال جست‌وجوی وب",
+    Task: "در حال اجرای عامل",
+    Agent: "در حال اجرای عامل",
+    Skill: "در حال استفاده از مهارت",
+    mcp: "در حال استفاده از MCP",
+  },
   pulseTokens: "↓ {n} توکن",
   thousands: "{n} هزار",
   elapsedMinSec: "{m} دقیقه و {s} ثانیه",
@@ -263,6 +283,7 @@ window.FA = {
      question, which is what the CLI's own Skip button does. */
   askTitle: "کلاد یک پرسش دارد",
   askBody: "برای ادامه، پاسخ خود را انتخاب کنید.",
+  askTabN: "پرسش {n}",
   askOther: "پاسخ دیگر",
   askOtherPlaceholder: "پاسخ خودتان را بنویسید…",
   askSubmit: "ارسال پاسخ",

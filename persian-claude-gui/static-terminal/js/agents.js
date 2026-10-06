@@ -19,6 +19,7 @@
 
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
+import { cssPx } from "./prefs.js";
 import {
   bulkAppend, label, renderEvent, state, withRenderTarget, newRenderScope,
   setRunningTasks, shortModel,
@@ -129,7 +130,7 @@ function taskChip(count) {
   chip.type = "button";
   chip.className = "ag-chip";
   chip.textContent = FA.pulseTasks.replace("{n}", count.toLocaleString("fa-IR"));
-  chip.addEventListener("click", () => openPanel());
+  chip.addEventListener("click", () => openPanel(chip.closest(".cell")));
   return chip;
 }
 
@@ -275,8 +276,23 @@ function paintPanel() {
   }
 }
 
-export function openPanel() {
-  if (panel) { paintPanel(); return true; }
+/* Inside the pane that asked, at its stage side. The stylesheet's window-edge
+   placement is the fallback (no pane: spec-test.html); in a split it covered
+   the NEIGHBOUR's transcript, which is not the conversation the chip counts.
+   Rects are screen px under app zoom, style lengths CSS px (cssPx). */
+function placePanel(cell) {
+  const s = panel?.el.style;
+  if (!s || !cell?.isConnected) return;
+  const r = cell.getBoundingClientRect();
+  s.top = cssPx(r.top) + 8 + "px";
+  s.bottom = cssPx(innerHeight - r.bottom) + 8 + "px";
+  s.left = cssPx(r.left) + 8 + "px";
+  s.right = "auto";
+  s.inlineSize = `min(380px, ${Math.max(0, cssPx(r.width) - 16)}px)`;
+}
+
+export function openPanel(cell = document.activeElement?.closest(".cell")) {
+  if (panel) { placePanel(cell); paintPanel(); return true; }
   closeDrawer();
   const el = document.createElement("div");
   el.id = "tasks-panel";
@@ -302,6 +318,7 @@ export function openPanel() {
   });
   panel = { el, body };
   el.showPopover();
+  placePanel(cell);
   paintPanel();
   refreshAgents();
   return true;
@@ -315,13 +332,13 @@ function closePanel() {
   el.remove();
 }
 
-window.addEventListener("pcg:tasks", () => openPanel());
+window.addEventListener("pcg:tasks", (e) => openPanel(e.detail || undefined));
 
 /* --- polling ---------------------------------------------------------------- */
 
 /* The strip is about the LIVE conversation, so the session is whatever the
-   renderer last heard from system/init; with none the server answers for the
-   session it is running. `id`, not `session`: both endpoints mirror
+   renderer last heard from system/init; with none there is nothing to ask
+   (loadAgents). `id`, not `session`: both endpoints mirror
    /api/session's parameter names exactly. */
 function agentsUrl(path, extra) {
   const params = new URLSearchParams(extra ?? {});
@@ -339,7 +356,9 @@ export function refreshAgents() {
 }
 
 async function loadAgents() {
-  if (!token) return;
+  // No session yet (a fresh conversation before its first turn): /api/agents
+  // requires an id and answers 400 without one, so there is nothing to ask.
+  if (!token || !state.status.sessionId) return;
   // Captured before the await: a project/session switch clears state.status
   // .sessionId synchronously (resetStatus), but a request already in flight
   // for the OLD session can still land after it — without this check its

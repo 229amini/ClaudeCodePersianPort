@@ -236,14 +236,17 @@
     <form class="perm-form">
       <!-- What KIND of action is asking, js/perm.js
            permKind(): read before the tool name, which is English. -->
-      <p class="perm-kind" dir="auto" hidden></p>
-      <p class="perm-count" hidden></p>
+      <!-- One line: kind, tool, «۲ از ۵». Never shrinks (style.css). -->
+      <div class="perm-head">
+        <p class="perm-kind" dir="auto" hidden></p>
+        <div class="perm-tool"></div>
+        <p class="perm-count" hidden></p>
+      </div>
       <h2 class="perm-title"></h2>
       <p class="perm-body" dir="auto"></p>
       <!-- Which conversation is asking, when it is not the one on screen: one
            dialog serves every open tab (js/chrome.js). -->
       <p class="perm-source meta" dir="auto" hidden></p>
-      <div class="perm-tool"></div>
       <pre class="perm-params"></pre>
       <!-- AskUserQuestion renders here instead of .perm-params: the CLI routes
            the model's question over the same can_use_tool pipe, so it arrives as
@@ -261,11 +264,13 @@
            where the "differently" goes. It rides back as the refusal's own
            message (server.py PermissionBroker.respond). -->
       <textarea class="perm-feedback" rows="1" dir="auto"></textarea>
-      <p class="perm-hint meta" dir="auto"></p>
-      <menu>
-        <button type="button" value="deny" class="perm-deny ghost"></button>
-        <button type="button" value="allow" class="perm-allow"></button>
-      </menu>
+      <div class="perm-foot">
+        <p class="perm-hint meta" dir="auto"></p>
+        <menu>
+          <button type="button" value="deny" class="perm-deny ghost"></button>
+          <button type="button" value="allow" class="perm-allow"></button>
+        </menu>
+      </div>
     </form>
   </dialog>
 

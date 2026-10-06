@@ -619,6 +619,22 @@ async function layoutCase(which) {
   await sleep(80);
   out.v27.after = CELLS()[0].querySelectorAll(".pulse").length;
 
+  /* --- the background tasks panel opens inside the pane that asked ----------
+     (terminal edition) It used to sit at the window's stage edge, over the
+     NEIGHBOUR's transcript (reported 2026-10-06 from a two-pane window). */
+  const asker = CELLS()[CELLS().length - 1];
+  window.dispatchEvent(new CustomEvent("pcg:tasks", {detail: asker}));
+  await sleep(60);
+  const tp = document.getElementById("tasks-panel");
+  if (tp) {
+    const a = asker.getBoundingClientRect(), p = tp.getBoundingClientRect();
+    out.tasksPanel = {inside: p.left >= a.left - 1 && p.right <= a.right + 1
+                              && p.top >= a.top - 1 && p.bottom <= a.bottom + 1,
+                      panel: [p.left, p.right], pane: [a.left, a.right]};
+    tp.hidePopover();
+    await sleep(30);
+  }
+
   /* --- shrinking parks, it never closes ------------------------------------ */
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t4",
     request_id: "r2", tool_name: "Bash", tool_input: {command: "dir"}});
@@ -1003,6 +1019,11 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
     if v27["after"] != 0:
         say(f"{v27['after']} working line(s) still counting after the turn ended - "
             f"the layout change orphaned the pulse ({v27})")
+    # 6d. the tasks panel stays in its own pane (terminal edition only has one)
+    if EDITION == "terminal":
+        tp = m.get("tasksPanel")
+        if not tp or not tp["inside"]:
+            say(f"the background tasks panel opened outside the pane that asked: {tp}")
     # 7. Alt+N
     if m["altFocused"] != 2:
         say(f"Alt+3 marked cell index {m['altFocused']} focused, not 2")

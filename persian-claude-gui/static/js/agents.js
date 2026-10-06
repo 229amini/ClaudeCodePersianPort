@@ -320,8 +320,8 @@ window.addEventListener("pcg:tasks", () => openPanel());
 /* --- polling ---------------------------------------------------------------- */
 
 /* The strip is about the LIVE conversation, so the session is whatever the
-   renderer last heard from system/init; with none the server answers for the
-   session it is running. `id`, not `session`: both endpoints mirror
+   renderer last heard from system/init; with none there is nothing to ask
+   (loadAgents). `id`, not `session`: both endpoints mirror
    /api/session's parameter names exactly. */
 function agentsUrl(path, extra) {
   const params = new URLSearchParams(extra ?? {});
@@ -339,7 +339,9 @@ export function refreshAgents() {
 }
 
 async function loadAgents() {
-  if (!token) return;
+  // No session yet (a fresh conversation before its first turn): /api/agents
+  // requires an id and answers 400 without one, so there is nothing to ask.
+  if (!token || !state.status.sessionId) return;
   // Captured before the await: a project/session switch clears state.status
   // .sessionId synchronously (resetStatus), but a request already in flight
   // for the OLD session can still land after it — without this check its

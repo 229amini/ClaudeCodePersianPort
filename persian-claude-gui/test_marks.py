@@ -99,7 +99,16 @@ const iso = (ms) => new Date(ms).toISOString();
     { type: "tool_use", id: "e2", name: "Write", input: { file_path: "C:/kar/b.md",
       content: "1\n2\n3" } },
     { type: "tool_use", id: "e3", name: "Edit", input: { file_path: "C:/kar/a.js",
-      old_string: "q", new_string: "r" } }] } });
+      old_string: "q", new_string: "r" } },
+    // Two refused edits: a new file, and a third edit of a.js. Neither changed
+    // anything, so neither may reach the change card (dropFailedEdit).
+    { type: "tool_use", id: "e4", name: "Write", input: { file_path: "C:/kar/c.txt",
+      content: "no" } },
+    { type: "tool_use", id: "e5", name: "Edit", input: { file_path: "C:/kar/a.js",
+      old_string: "m", new_string: "n\no\np" } }] } });
+  ev({ type: "user", message: { content: [
+    { type: "tool_result", tool_use_id: "e4", is_error: true, content: "The user doesn't want to proceed" },
+    { type: "tool_result", tool_use_id: "e5", is_error: true, content: "The user doesn't want to proceed" }] } });
   await sleep(120);
 
   // The message marks.
@@ -270,7 +279,8 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("a settled turn ends in ONE change card",
           m.get("cards") == 1 and m.get("cardTitle") == m.get("wantTitle"),
           f"{m.get('cards')} / «{m.get('cardTitle')}»")
-    check("summed per file from the tool calls (two edits of a.js, one write)",
+    check("summed per file from the tool calls (two edits of a.js, one write; "
+          "two refused edits left out)",
           m.get("cardRows") == "a.js:+3−1,b.md:+3−0", str(m.get("cardRows")))
     check("every «+A −D» draws left to right, sign before digits", m.get("statLtr"))
     check("the row under a turn's last answer is drawn without a hover", m.get("turnLast"))

@@ -1204,6 +1204,15 @@ export function applyTabs(data) {
     else if (free.length) switchTab(free.at(-1));
     else blank(focusedCell());
   }
+  // A conversation that has not had a turn yet has no system/init to name its
+  // folder, and its pane said «هنوز پروژه‌ای باز نیست» with a project open. The
+  // server's own tab list knows; init still wins once it has spoken.
+  for (const cell of cells) {
+    if (!cell.tab) continue;
+    const scope = cell === focusedCell() ? state : tabEntry(cell.tab).scope;
+    const cwd = !scope.status.cwd && tabList.find((t) => t.tab === cell.tab)?.cwd;
+    if (cwd && cell.cwd !== cwd) setChrome(cwd, cell);
+  }
   paintTabs();
   // An open layout panel counts the open conversations: keep it true.
   if (layoutPanel?.matches(":popover-open")) paintLayout();

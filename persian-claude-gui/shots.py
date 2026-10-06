@@ -53,7 +53,8 @@ PROBE = STATIC / "_shot_probe.html"
 OUT_ROOT = HERE / "shots"
 
 SIZES = ((1852, 1044), (1280, 800), (1052, 711))
-SCENES = ("home", "conversation", "panes3", "panes4", "permission", "newsession",
+SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", "panes6",
+          "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0")
 
@@ -401,6 +402,45 @@ async function run() {
     document.getElementById("btn-bell").click();
     return;
   }
+  if (SCENE === "question" || SCENE === "panes6") {
+    // The two blocking dialogs, at one pane and at six (pcg-rf8: they must read
+    // at a glance in EVERY layout, without scrolling).
+    const SIX = [...TABS,
+      {tab: "t5", title: "ترجمهٔ راهنما", cwd: "D:\\projects\\docs", session_id: "sess-7", busy: false},
+      {tab: "t6", title: "fix flaky upload test", cwd: "D:\\projects\\api-server", session_id: "sess-8", busy: false}];
+    const list = SCENE === "question" ? [TABS[0]] : SIX;
+    useTabs(list, "t1");
+    if (list.length > 1) APP.setSplit(list.length);
+    APP.applyTabs({tabs: list, active: "t1"});
+    for (let i = 1; i < list.length; i++) { APP.focusCell(i); APP.applySwitch(list[i].tab); }
+    APP.focusCell(0);
+    await sleep(60);
+    for (const t of list) { status(t.tab, t.cwd); turn(t.tab, 1); }
+    const ask = {type: "wrapper", subtype: "permission_request", request_id: "rq",
+      tool_name: "AskUserQuestion", tool_use_id: "aq", tool_input: {questions: [
+        {question: "مرجع اصلی طراحی دوباره کدام باشد؟", header: "مرجع", multiSelect: false,
+         options: [
+           {label: "افزونهٔ ویژوال‌استودیو (پیشنهادی)", description: "فایل ظاهرش روی سیستم نصب است و اندازه‌ها دقیق خوانده می‌شود"},
+           {label: "سایت کلاد کد", description: "فقط از روی عکس صفحه"},
+           {label: "هر دو", description: "پایه از افزونه، کمبودها از سایت"}]},
+        {question: "طراحی دوباره روی کدام نسخه اعمال شود؟", header: "نسخه", multiSelect: false,
+         options: [{label: "فقط ترمینال", description: "همان که چیدمان چندتایی دارد"},
+                   {label: "هر دو نسخه", description: "نسخهٔ وب هم عوض می‌شود"}]}]}};
+    if (SCENE === "question") {
+      ev("t1", ask);
+    } else {
+      ev("t1", {type: "wrapper", subtype: "permission_request", request_id: "rb",
+                tool_name: "Bash", tool_use_id: "b1",
+                tool_input: {command: "npm run build && npm test -- --runInBand",
+                             description: "Build and run the test suite"}});
+      ev("t2", {...ask, request_id: "rq2"});
+      ev("t3", {type: "wrapper", subtype: "permission_request", request_id: "rw",
+                tool_name: "Write", tool_use_id: "w3", tool_input: {
+                  file_path: "D:\\projects\\api-server\\src\\limits.ts",
+                  content: "export const LIMIT = 60;\nexport const WINDOW_MS = 60_000;\n"}});
+    }
+    return;
+  }
   if (SCENE === "panes4") {
     useTabs(TABS, "t1");
     APP.setSplit(4);
@@ -432,6 +472,7 @@ async function run() {
     console.error(err);
   }
   await sleep(400);
+  document.documentElement.dataset.sceneDone = "1";   // audit_ui.py waits on this
 })();
 </script>
 """

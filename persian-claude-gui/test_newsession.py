@@ -251,7 +251,7 @@ const cellCount = () => document.querySelectorAll("#grid .cell").length;
   const rows = () => [...page.querySelectorAll(".ns-slot-folder")];
   const boxes = () => [...page.querySelectorAll(".ns-slot-branch input")];
   out.rowForms = rows().length + "/" + boxes().length;
-  out.hintShown = !page.querySelector(".ns-sub + .ns-note").hidden;
+  out.hintShown = !page.querySelector(".ns-sub + .ns-preview-wrap > .ns-note").hidden;
   rows()[1].value = "C:/kar/sade"; rows()[1].dispatchEvent(new Event("change")); await sleep(20);
   out.rowFolders = rows().map((r) => r.value).join();
   out.rowGit = boxes().map((b) => (b.disabled ? "off" : "on")).join();

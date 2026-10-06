@@ -122,6 +122,14 @@ const NOW = Date.now();
   ring?.click(); await sleep(60);
   out.noLimits = [...(pop()?.querySelectorAll("p.bar-muted") ?? [])].some((p) => p.textContent === FA.barNoLimits);
   pop()?.hidePopover(); await sleep(20);
+  // A chip is a toggle: the second click shuts what the first opened.
+  ring?.click(); await sleep(40);
+  const ringOpen = !!pop();
+  ring?.click(); await sleep(40);
+  out.toggleShut = ringOpen && !pop();
+  ring?.click(); await sleep(40);
+  out.toggleAgain = !!pop();
+  pop()?.hidePopover(); await sleep(20);
 
   // The model menu: numbered, the current one checked, a digit picks.
   q(".model-chip")?.click(); await sleep(40);
@@ -173,12 +181,28 @@ const NOW = Date.now();
     out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-more):not(.bar-foot) .bar-row-title")]
       .map((t) => t.textContent).join("|");
     out.tip = pop().querySelector(":scope > .bar-row")?.title ?? "";
+    // The alias is not a row: the chip and the check name the model it means.
+    out.chipName = q(".model-chip-name")?.textContent ?? "";
+    out.checked = pop().querySelector(':scope > .bar-row[aria-current="true"] .bar-row-title')?.textContent ?? "";
+    // Geometry, never text: a Latin title sits at the START of its RTL row,
+    // and the current row shows the check where the others show a digit.
+    const row0 = pop().querySelector(":scope > .bar-row");
+    const t0 = row0.querySelector(".bar-row-title").getBoundingClientRect();
+    const r0 = row0.getBoundingClientRect();
+    out.titleGap = Math.round(r0.right - t0.right);
+    const cur = pop().querySelector(':scope > .bar-row[aria-current="true"]');
+    out.curDigitShown = !!cur && cur.querySelector(".bar-row-digit").getClientRects().length > 0;
+    // The menu opens over its own bar: it shares an edge with its chip.
+    const chipR = q(".model-chip").getBoundingClientRect(), menuR = pop().getBoundingClientRect();
+    out.menuOnChip = Math.min(Math.abs(menuR.left - chipR.left), Math.abs(menuR.right - chipR.right)) <= 1
+      || menuR.left <= 9 || menuR.right >= innerWidth - 9;
     out.notes = pop().querySelectorAll(":scope > .bar-row .bar-row-note").length;
     pop().querySelector(".bar-more")?.click(); await sleep(30);
     out.flyout = [...pop().querySelectorAll(".bar-flyout .bar-row-title")].map((t) => t.textContent).join("|");
     const fr = pop().querySelector(".bar-flyout")?.getBoundingClientRect();
     const mr = pop().getBoundingClientRect();
     out.flyoutBeside = !!fr && (fr.right <= mr.left + 1 || fr.left >= mr.right - 1);
+    out.flyoutBottom = !!fr && (Math.abs(fr.bottom - mr.bottom) <= 1 || fr.top <= 9);
     mark = calls.length;
     [...pop().querySelectorAll(".bar-flyout .bar-row")].at(-1)?.click(); await sleep(40);
     out.setFromFlyout = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
@@ -288,6 +312,9 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
     check("the headroom to auto-compact is the threshold minus the total",
           "۵۴۷" in (m.get("headroom") or ""), m.get("headroom") or "")
     check("a category reads in Persian", m.get("catName") == "فایل‌های حافظه", m.get("catName") or "")
+    check("a chip is a toggle: a second click shuts its popover, a third opens it again",
+          m.get("toggleShut") is True and m.get("toggleAgain") is True,
+          f"shut {m.get('toggleShut')}, again {m.get('toggleAgain')}")
     check("each plan limit is a row, the per-model window included",
           tuple(m.get("limitNames") or ()) == fa_limits, str(m.get("limitNames")))
     check("«فشرده کردن» sends /compact as text and closes the panel",
@@ -318,8 +345,17 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
               m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("notes") == 0
               and m.get("tip") == "complex work", f"{m.get('primary')} / {m.get('notes')} / {m.get('tip')}")
         check("«مدل‌های دیگر» opens the rest in a flyout beside the menu",
-              m.get("flyout") == "Default (recommended)|Opus 5" and m.get("flyoutBeside"),
+              m.get("flyout") == "Opus 5" and m.get("flyoutBeside"),
               f"{m.get('flyout')} / beside {m.get('flyoutBeside')}")
+        check("...its bottom edge on the menu's, so it grows up and not over the bar",
+              m.get("flyoutBottom") is True, str(m.get("flyoutBottom")))
+        check("the «Default» alias is the model it resolves to: no row of its own, the check on that model",
+              m.get("checked") == "Opus 5.5" and m.get("chipName") == "Opus 5.5",
+              f"checked «{m.get('checked')}», chip «{m.get('chipName')}»")
+        check("a Latin title sits at the start of its RTL row, and the current row shows only the check",
+              isinstance(m.get("titleGap"), int) and m.get("titleGap") <= 16 and m.get("curDigitShown") is False,
+              f"gap {m.get('titleGap')}px, digit shown {m.get('curDigitShown')}")
+        check("the menu shares an edge with its chip", m.get("menuOnChip") is True, str(m.get("menuOnChip")))
         check("a flyout row picks its model", m.get("setFromFlyout") == "claude-opus-5",
               str(m.get("setFromFlyout")))
         check("the audit count is the mode menu's footer, and it opens the list; no bar chip",

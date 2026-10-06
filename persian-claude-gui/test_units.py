@@ -1621,6 +1621,41 @@ check("and the same silence then settles the ledger, exactly as before",
       and gated.busy is False)
 gated._idle_deadline = 0.0
 
+print("_turn_began: a turn that STARTED is not silence")
+# Message Y is sent while X runs, so send_blocks() has nothing to disarm yet.
+# X's result arms the watchdog; the CLI then starts Y, which runs one tool that
+# says nothing for longer than IDLE_SYNC_SECONDS. Until 2026-10-06 that cleared
+# the ledger under Y: no working line and no stop button for a running turn.
+began_hub = _Hub()
+began = server.ClaudeSession(Path("D:/x"), began_hub, "claude.exe", None)
+began._write_line = lambda obj: None
+began_x = began.send_blocks([{"type": "text", "text": "first"}])
+began_y = began.send_blocks([{"type": "text", "text": "second, sent mid-turn"}])
+began._pump_stdout(_Lines(
+    {"type": "command_lifecycle", "state": "completed", "command_uuid": began_x},
+    {"type": "result", "subtype": "success", "is_error": False},
+), began._generation)
+check("a result arms the watchdog, as before", began._idle_deadline > 0)
+began._pump_stdout(_Lines(
+    {"type": "command_lifecycle", "state": "started", "command_uuid": began_y},
+), began._generation)
+check("the next turn's `started` disarms it", began._idle_deadline == 0.0)
+began._sync_idle(began._generation)
+check("so a quiet tool call in that turn cannot clear the ledger under it",
+      began_y in began._outstanding and began.busy is True
+      and "idle_sync" not in [e.get("subtype") for e in began_hub.events])
+began._idle_deadline = time.monotonic() + 60
+began._pump_stdout(_Lines({"type": "system", "subtype": "init", "session_id": "s",
+                           "model": "m"}), began._generation)
+check("a CLI with no lifecycle channel says the same with system/init",
+      began._idle_deadline == 0.0)
+began._pump_stdout(_Lines(
+    {"type": "command_lifecycle", "state": "completed", "command_uuid": began_y},
+    {"type": "result", "subtype": "success", "is_error": False},
+), began._generation)
+check("and that turn's own result arms it again", began._idle_deadline > 0)
+began._idle_deadline = 0.0
+
 print("_after_result: an older CLI closes one per result, the silence watchdog gets the rest")
 # 2.1.241's fold means N sends can produce ONE result (cli-stream-json-findings.md
 # "The message queue"). An older CLI has no command_lifecycle channel at all, so

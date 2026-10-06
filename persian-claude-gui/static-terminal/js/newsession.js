@@ -174,9 +174,14 @@ function build() {
   });
   task.addEventListener("input", () => { model.task = task.value; paintPreview(); });
 
-  const previewTitle = el("h3", "ns-sub", FA.nsPreviewTitle);
+  // The launch list is a row of the same grid as every field above it, so its
+  // edges are theirs.
   const previewHint = el("p", "ns-note", FA.nsPreviewHint);
   const preview = el("ul", "ns-preview");
+  const previewWrap = el("div", "ns-preview-wrap");
+  previewWrap.append(previewHint, preview);
+  const previewField = field(FA.nsPreviewTitle, previewWrap);
+  previewField.firstChild.classList.add("ns-sub");
   const error = el("p", "ns-error");
   error.setAttribute("role", "alert");
   error.setAttribute("dir", "auto");
@@ -198,7 +203,7 @@ function build() {
               field(FA.nsCount, counts),
               field(FA.nsIsolation, iso),
               field(FA.nsTask, task),
-              previewTitle, previewHint, preview, error, actions);
+              previewField, error, actions);
   root.append(card);
   ui = { presets, folder, folderPath, counts, isoShared, isoTree, isoNote, task,
          previewHint, preview, error, go, cancel };

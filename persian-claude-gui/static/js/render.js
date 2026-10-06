@@ -86,6 +86,10 @@ const INTERRUPT_NOTE = /^\s*\[Request interrupted by user/;
    is internal metadata (agentId, output_file) and it says so itself.
    Both measured — wiki/background-agents.md. */
 const TASK_NOTE = /^\s*<task-notification>/;
+// The CLI talking to itself on the live stream: `/compact` answers as a user
+// turn reading «<local-command-stdout>Compacted </local-command-stdout>», with
+// no isSynthetic. Replay already drops these (server.py CLI_ENVELOPE_RE).
+const CLI_SELF = /^\s*<(local-command-[a-z]+|command-(name|message|args)|system-reminder)>/;
 const ASYNC_LAUNCH = /^\s*Async agent launched/;
 
 /* Plain text out of a tool_result's own `content` — either a bare string or
@@ -389,8 +393,26 @@ function toolHome(el) {
 /* A failed step says so on its run's own line, so a shut run is not a green
    light over a red step. Found through the DOM, not state.run: a result can
    land after the run has closed. */
+/* A refused or failed edit changed nothing, so it leaves the turn's change
+   card (marks.js changeCard): a denied Write was listed there as
+   «۱ فایل ویرایش شد … b.txt» (found 2026-10-07, flow audit). Edits are
+   recorded at tool_use time, before anyone has answered for them. */
+function dropFailedEdit(step) {
+  if (!step) return;
+  for (const [file, v] of state.turnEdits ?? []) {
+    const kept = (v.edits ?? []).filter((e) => e.card !== step);
+    if (kept.length === (v.edits ?? []).length) continue;
+    if (!kept.length) { state.turnEdits.delete(file); continue; }
+    state.turnEdits.set(file, {
+      edits: kept, card: kept[kept.length - 1].card,
+      added: kept.reduce((n, e) => n + e.added, 0),
+      removed: kept.reduce((n, e) => n + e.removed, 0) });
+  }
+}
+
 function noteRunError(body) {
   const step = body?.closest?.("details.card");
+  dropFailedEdit(step);
   const row = step?.parentElement?.closest?.("details.run");
   if (!step || !row || step.dataset.failed) return;
   step.dataset.failed = "1";
@@ -793,11 +815,42 @@ export function clearPulse(scope = state) {
    thinking…»): thinking, writing, running a tool, or waiting on the person.
    Called from the events that mark each one; a change rewrites the line,
    which happens a few times a turn, not twice a second. */
-function pulsePhase(phase) {
+function pulsePhase(phase, tool = null) {
   const p = state.pulse;
-  if (!p || p.phase === phase) return;
+  if (!p) return;
+  if (tool) p.tool = tool;
+  else if (p.phase === phase) return;
   p.phase = phase;
-  p.text.textContent = FA.pulsePhases[phase] ?? FA.pulseStart;
+  if (phase === "tools" && p.tool) p.text.replaceChildren(...toolLine(p.tool));
+  else p.text.textContent = FA.pulsePhases[phase] ?? FA.pulseStart;
+}
+
+/* WHICH tool (pcg-r82). «در حال اجرای ابزار…» named nothing: a turn that sat
+   four minutes in one shell command, called an MCP server or loaded a skill
+   all read the same. The CLI's spinner row names the step, so this does: a
+   present-tense verb for the tool, then the one parameter that identifies the
+   call — the same one its transcript row shows (toolSummary), LTR-isolated.
+   An MCP tool has no verb and can never have one (the server set is
+   per-machine): its own name, then the server as a chip. */
+function toolLine({ name, input }) {
+  const mcp = mcpName(name);
+  const nodes = [document.createTextNode(
+    mcp ? FA.pulseTools.mcp : FA.pulseTools[name] ?? FA.pulsePhases.tools)];
+  const hint = mcp ? mcp.tool
+    : input?.skill ?? input?.subagent_type ?? input?.command ?? input?.file_path
+      ?? input?.path ?? input?.pattern ?? input?.url ?? input?.query;
+  if (hint) {
+    const target = pathEl(targetText(hint));
+    target.classList.add("pulse-target");
+    target.title = String(hint);
+    nodes.push(target);
+  }
+  if (mcp) {
+    const srv = pathEl(mcp.server);
+    srv.classList.add("tool-server");
+    nodes.push(srv);
+  }
+  return nodes;
 }
 
 function startPulse(seed) {
@@ -1002,10 +1055,15 @@ export function paintQueued() {
   for (const text of state.returned.splice(0)) cell.composer.restoreDraft(text);
   // Nothing queued and no strip ever built: do not create one to hide it.
   if (!state.queued.size && !cell.queueStrip?.isConnected) return;
+  // The strip is in flow, so showing or growing it shortens the transcript
+  // from below: a reader at the bottom lost the working line under it
+  // (flow audit 2026-10-07). Keep them at the bottom.
+  const stuck = atBottom();
   const box = queueStripEl(cell);
   box.replaceChildren();
   for (const [uuid, entry] of state.queued) box.append(queueRowEl(uuid, entry));
   box.hidden = !state.queued.size;
+  if (stuck) stickSoon(log);
 }
 
 
@@ -1589,6 +1647,13 @@ export function questionOption(stack, option, labelCls, descCls) {
   if (option.description) {
     stack.append(fillInline(label("", descCls), option.description));
   }
+  // A description with no letters («-», «42») leaves dir="auto" nothing to
+  // read past the isolated label, and the row fell LTR (flow audit
+  // 2026-10-07). The label decides then, as it would on its own.
+  if (!/\p{L}/u.test(option.description ?? "")) {
+    stack.setAttribute("dir", autoDir(name).getAttribute("dir"));
+    return stack;
+  }
   return autoDir(stack);
 }
 
@@ -2004,7 +2069,12 @@ export function renderEvent(ev) {
     }
 
     case "assistant": {
-      if ((ev.message?.content ?? []).some((part) => part.type === "tool_use")) pulsePhase("tools");
+      // The LAST call of the message is the one the turn is now waiting on. A
+      // subagent's own steps are its card's business, not the line's.
+      const calling = (ev.message?.content ?? []).filter((part) => part.type === "tool_use").at(-1);
+      if (calling) {
+        pulsePhase("tools", ev.parent_tool_use_id ? null : { name: calling.name, input: calling.input });
+      }
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
@@ -2081,7 +2151,8 @@ export function renderEvent(ev) {
                                           removed: was.removed + (d.removed || 0),
                                           card: details,
                                           edits: [...(was.edits ?? []),
-                                                  { name: part.name, input: part.input }] });
+                                                  { name: part.name, input: part.input, card: details,
+                                                    added: d.added || 0, removed: d.removed || 0 }] });
             }
             // The call half of a [sentence][call] pair. Read off the summary
             // AFTER the body is filled and before any tool_progress elapsed
@@ -2167,6 +2238,7 @@ export function renderEvent(ev) {
           // below. Both sources carry it, so it is dropped here, at the one
           // renderer they share.
           if (INTERRUPT_NOTE.test(part.text ?? "")) continue;
+          if (CLI_SELF.test(part.text ?? "")) continue;
           // `!` output riding in front of this message (splitBashBlocks above).
           // Each block becomes the same card the live wrapper/shell event
           // draws, and no resetTurn goes with it — the live path does not do
@@ -2468,6 +2540,10 @@ export function renderEvent(ev) {
         // ONE key, because the pill and its counter are set together -- see
         // APPLY.posture. A partial restore is this project's oldest defect.
         toChrome("posture", { name: ev.posture, autoCount: ev.auto_count });
+      } else if (ev.subtype === "model") {
+        // The settings' model, resolved by the server at spawn: what the first
+        // turn will run on, before any system/init exists to say so.
+        toChrome("model", ev.model);
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
         toChrome("effort", ev.effort);
