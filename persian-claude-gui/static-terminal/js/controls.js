@@ -19,7 +19,7 @@ import { api } from "./api.js";
 import { optionList, dialogHint } from "./choice.js";
 /* Two more leaves: the composer bar's popovers and the
    screen-px -> CSS-px conversion they are placed with under app zoom. */
-import { openMenu, openSlider } from "./bar.js";
+import { openMenu } from "./bar.js";
 import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
@@ -91,8 +91,9 @@ export function makeControls(root, cell) {
     modelName: $("model-chip-name"),
     postureChip: $("posture-chip"),
     postureName: $("posture-chip-name"),
-    effortChip: $("effort-chip"),
-    effortName: $("effort-chip-name"),
+    // The effort level rides in the model chip («Opus · زیاد»), as the
+    // extension draws it; it is SET inside the model and mode menus.
+    modelEffort: $("model-chip-effort"),
     styleChip: $("style-chip"),
     styleName: $("style-chip-name"),
   };
@@ -227,12 +228,17 @@ export function makeControls(root, cell) {
 
 
   function paintEffort() {
-    if (!ui.effortChip) return;
+    if (!ui.modelEffort) return;
+    ui.modelEffort.hidden = !effortLevels().length || !effort;
+    ui.modelEffort.textContent = ui.modelEffort.hidden ? "" : effortLabel(effort);
+  }
+
+  /* The effort track inside the model and mode menus, or nothing for a model
+     that takes no effort level (Haiku). */
+  function effortTrack() {
     const levels = effortLevels();
-    ui.effortChip.hidden = !levels.length || !effort;
-    if (ui.effortChip.hidden) return;
-    ui.effortName.textContent = effortLabel(effort);
-    ui.effortChip.title = FA.effortTitle;
+    return levels.length ? { title: FA.barEffort, levels, current: effort, label: effortLabel,
+                             onPick: (level) => pickEffort({ key: level }) } : null;
   }
 
   async function pickEffort(item) {
@@ -524,7 +530,7 @@ export function makeControls(root, cell) {
   function openModelMenu() {
     const current = twinOf(modelEntry());
     const row = (m) => ({ key: m.value, title: m.displayName || m.value,
-                          tip: m.description || "", selected: m === current });
+                          note: m.description || "", selected: m === current });
     // claude.ai's shape: the newest model of each family, then «More models ›»
     // for the rest. A family is the name's first word, read off the CLI's own
     // list in the CLI's own order, so the first of each is the newest. The
@@ -541,16 +547,8 @@ export function makeControls(root, cell) {
       title: FA.barModel, toCss: cssPx,
       rows: primary.map(row),
       more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null,
+      effort: effortTrack(),
       onPick: pickModel,
-    });
-  }
-
-  function openEffortSlider() {
-    const levels = effortLevels();
-    if (!levels.length) return null;
-    return openSlider(ui.effortChip, {
-      title: FA.barEffort, toCss: cssPx, levels, current: effort, label: effortLabel,
-      onPick: (level) => pickEffort({ key: level }),
     });
   }
 
@@ -561,17 +559,17 @@ export function makeControls(root, cell) {
   function openModeMenu() {
     return openMenu(ui.postureChip, {
       title: FA.barMode, hint: FA.slPostureHint, toCss: cssPx,
-      rows: POSTURES.map((p) => ({ key: p.key, title: p.title, note: p.note,
+      rows: POSTURES.map((p) => ({ key: p.key, icon: p.key, title: p.title, note: p.note,
                                    selected: p.key === posture })),
       footer: autoCount ? { title: FA.barAutoCount.replace("{n}", autoCount.toLocaleString("fa-IR")),
                             onClick: openAuditList } : null,
+      effort: effortTrack(),
       onPick: pickPosture,
     });
   }
 
   function initControls() {
     ui.modelChip?.addEventListener("click", openModelMenu);
-    ui.effortChip?.addEventListener("click", openEffortSlider);
     ui.postureChip?.addEventListener("click", openModeMenu);
     if (!ui.picker) return;   // spec-test.html carries no composer chrome
 

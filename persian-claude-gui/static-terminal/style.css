@@ -5153,3 +5153,33 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   min-height: 24px;
   block-size: 24px;
 }
+/* --- The composer bar after the VS Code extension's UX (2026-10-08) -------
+   Icons on the mode rows and the «+» rows, the effort track at the foot of the
+   model and mode menus, the «/» palette, the prompt-cache clock, and the
+   effort level beside the model's name. All on DESIGN.md's steps. */
+.bar-row-icon { flex: none; display: inline-flex; inline-size: 16px; block-size: 16px; color: var(--fg-muted); }
+.bar-row-icon:empty { display: none; }
+.bar-row-icon svg { display: block; }
+.bar-row[aria-current="true"] .bar-row-icon { color: currentColor; }
+.bar-effort { padding: 4px 8px 8px; }
+.bar-effort .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; }
+.bar-plus { min-inline-size: 240px; }
+.bar-servers { padding-block: 4px; }
+.bar-chevron { transition: transform var(--dur, .2s) ease-out; }
+.bar-fold[aria-expanded="true"] .bar-chevron { transform: rotate(-90deg); }
+.bar-palette { inline-size: min(480px, calc(100vw - 32px)); }
+.bar-filter {
+  box-sizing: border-box; inline-size: 100%; min-height: 28px; margin: 0 0 4px; padding: 4px 8px;
+  border: 1px solid var(--app-input-border); border-radius: 4px; background: transparent;
+  color: var(--fg); font: inherit; font-size: 13px;
+}
+.bar-filter:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: -1px; }
+.bar-palette-list { max-block-size: 320px; overflow-y: auto; }
+.bar-group { color: var(--fg-muted); font-size: 12px; padding-block-start: 8px; }
+.bar-palette .bar-row[aria-selected="true"] { background: var(--app-list-hover-background); }
+.bar-palette .bar-row-digit { min-inline-size: 0; font-family: var(--app-monospace-font-family); font-size: 11px; }
+.bar-cache { gap: 4px; cursor: default; color: var(--fg-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bar-cache svg { display: block; }
+.bar-cache[data-state="cold"] { color: var(--fg-faint, var(--fg-muted)); }
+.model-chip-effort { margin-inline-start: 4px; color: var(--fg-muted); }
+.model-chip-effort[hidden] { display: none; }

@@ -17,7 +17,7 @@ import { api } from "./api.js";
 /* A leaf too: the composer bar's popovers. Only the effort
    slider comes from it here; the other menus stay the in-cell .menu-popup,
    which test_layout/test_split measure staying inside its own cell. */
-import { openSlider } from "./bar.js";
+import { openMenu as openBarMenu } from "./bar.js";
 
 const FA = window.STRINGS;
 
@@ -78,8 +78,9 @@ export function makeControls(root, cell) {
     postureChip: $("posture-chip"),
     postureName: $("posture-chip-name"),
     autoChip: $("auto-chip"),
-    effortChip: $("effort-chip"),
-    effortName: $("effort-chip-name"),
+    // The effort level rides in the model chip («Opus · زیاد»), as the VS
+    // Code extension draws it; it is SET inside the model and mode menus.
+    modelEffort: $("model-chip-effort"),
     styleChip: $("style-chip"),
     styleName: $("style-chip-name"),
   };
@@ -216,12 +217,17 @@ export function makeControls(root, cell) {
   }
 
   function paintEffort() {
-    if (!ui.effortChip) return;
+    if (!ui.modelEffort) return;
+    ui.modelEffort.hidden = !effortLevels().length || !effort;
+    ui.modelEffort.textContent = ui.modelEffort.hidden ? "" : effortLabel(effort);
+  }
+
+  /* The effort track inside the model and mode menus (bar.js), or nothing for
+     a model that takes no effort level (Haiku). */
+  function effortTrack() {
     const levels = effortLevels();
-    ui.effortChip.hidden = !levels.length || !effort;
-    if (ui.effortChip.hidden) return;
-    ui.effortName.textContent = effortLabel(effort);
-    ui.effortChip.title = FA.effortTitle;
+    return levels.length ? { title: FA.barEffort, levels, current: effort, label: effortLabel,
+                             onPick: (level) => pickEffort({ key: level }) } : null;
   }
 
   async function pickEffort(item) {
@@ -525,27 +531,33 @@ export function makeControls(root, cell) {
   function initControls() {
     if (!ui.menu) return;   // spec-test.html carries no composer chrome
 
+    /* The model and the mode open bar.js menus, the terminal edition's and
+       the VS Code extension's shape: a line under each model, an icon on each
+       mode, and the effort track at the foot of both. */
     ui.modelChip.addEventListener("click", (e) => {
       e.stopPropagation();
-      const current = twinOf(modelEntry());
-      toggleMenu("model", models.filter((m) => twinOf(m) === m).map((m) => ({
-        key: m.value,
-        title: m.displayName || m.value,
-        note: m.description || "",
-        selected: m === current,
-      })), pickModel);
-    });
-
-    // The effort levels as one track, «سریع‌تر ↔ باهوش‌تر» (bar.js).
-    ui.effortChip.addEventListener("click", (e) => {
-      e.stopPropagation();
       closeMenu();
-      const levels = effortLevels();
-      if (levels.length) {
-        openSlider(ui.effortChip, { title: FA.barEffort, levels, current: effort,
-                                    label: effortLabel,
-                                    onPick: (level) => pickEffort({ key: level }) });
+      const current = twinOf(modelEntry());
+      const row = (m) => ({ key: m.value, title: m.displayName || m.value,
+                            note: m.description || "", selected: m === current });
+      // The newest model of each family, then «مدل‌های دیگر ›» for the rest. A
+      // family is the name's first word, in the CLI's own order, so the first
+      // of each is the newest. The «Default» alias is not a row when the list
+      // names its model (twinOf): the ✓ sits on that model.
+      const seen = new Set(), primary = [], rest = [];
+      for (const m of models) {
+        if (twinOf(m) !== m) continue;
+        const family = String(m.displayName || m.value).split(/\s+/)[0].toLowerCase();
+        if (seen.has(family)) rest.push(m);
+        else { seen.add(family); primary.push(m); }
       }
+      openBarMenu(ui.modelChip, {
+        title: FA.barModel,
+        rows: primary.map(row),
+        more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null,
+        effort: effortTrack(),
+        onPick: pickModel,
+      });
     });
 
     ui.styleChip.addEventListener("click", (e) => {
@@ -559,9 +571,14 @@ export function makeControls(root, cell) {
 
     ui.postureChip.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleMenu("posture", POSTURES.map((p) => ({
-        key: p.key, title: p.title, note: p.note, selected: p.key === posture,
-      })), pickPosture);
+      closeMenu();
+      openBarMenu(ui.postureChip, {
+        title: FA.barMode,
+        rows: POSTURES.map((p) => ({ key: p.key, icon: p.key, title: p.title, note: p.note,
+                                     selected: p.key === posture })),
+        effort: effortTrack(),
+        onPick: pickPosture,
+      });
     });
 
     /* The count alone is a number with nothing behind it. Opening it is the

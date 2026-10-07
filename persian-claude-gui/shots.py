@@ -56,7 +56,7 @@ SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", "panes6",
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
-          "bar-model", "bar-effort", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0")
+          "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -358,8 +358,14 @@ async function run() {
     turn("t1", 1);
     ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000});
     ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    // A reply that wrote the 1h prompt cache two minutes ago: the clock chip.
+    ev("t1", {type: "assistant", timestamp: new Date(Date.now() - 120e3).toISOString(),
+              message: {id: "m-cache", role: "assistant", content: [],
+                        usage: {input_tokens: 4, cache_read_input_tokens: 0,
+                                cache_creation_input_tokens: 9000,
+                                cache_creation: {ephemeral_1h_input_tokens: 9000}}}});
     await sleep(120);
-    const cls = {"bar-model": "model-chip", "bar-effort": "effort-chip", "bar-mode": "posture-chip",
+    const cls = {"bar-model": "model-chip", "bar-slash": "bar-slash-btn", "bar-mode": "posture-chip",
                  "bar-usage": "bar-ring", "bar-plus": "bar-plus-btn"}[SCENE];
     document.querySelector("#grid .cell ." + cls)?.click();
     await sleep(200);

@@ -22,7 +22,7 @@ import {
 import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
-import { paintRing } from "./bar.js";
+import { paintRing, noteCache, paintCache } from "./bar.js";
 import { scheduleFocus } from "./focus.js";
 import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
          foldLong, openDiff, closeDiff } from "./marks.js";
@@ -1952,6 +1952,7 @@ export function setStatus(patch) {
   // The composer bar's ◔: the same figure, as a ring.
   const ring = state.cell.root?.querySelector(".bar-ring");
   if (ring) paintRing(ring, s.context);
+  paintCache(state.cell.root?.querySelector(".bar-cache"), s.cache);
   // Which conversation this transcript is, for the pins. A cell's
   // log shows one conversation after another, so the stamp follows it.
   const sid = s.sessionId || "";
@@ -2238,6 +2239,16 @@ export function renderEvent(ev) {
         state.pulse.base += ev.message?.usage?.output_tokens ?? state.pulse.live;
         state.pulse.live = 0;
         paintPulse(state.pulse);   // the banked figure now, not on the next tick
+      }
+      // The prompt-cache clock on the bar (bar.js noteCache): this reply's
+      // usage says which cache it wrote and when the prefix goes cold. A
+      // helper's reply runs on its own cache and is not this conversation's.
+      if (ev.message?.usage && !ev.parent_tool_use_id) {
+        const at = ev.timestamp ? Date.parse(ev.timestamp) : Date.now();
+        // Not setStatus: a replay passes hundreds of replies through here, and
+        // each would rebuild the whole status line for one chip.
+        state.status.cache = noteCache(state.status.cache, ev.message.usage, at);
+        paintCache(state.cell?.root?.querySelector(".bar-cache"), state.status.cache);
       }
       return;
     }

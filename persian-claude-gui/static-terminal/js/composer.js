@@ -14,7 +14,7 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking, state, runQueueNow } from "./render.js";
-import { openPlus, openUsage } from "./bar.js";
+import { openPlus, openUsage, openPalette, paletteGroups } from "./bar.js";
 import { runWindowCommand } from "./commands.js";
 import { newChatHere } from "./chrome.js";
 import { cssPx } from "./prefs.js";
@@ -117,6 +117,11 @@ const LIFECYCLE_VERBS = {
   // new-session page «+ گفتگوی تازه» opens.
   clear: () => newChatHere(),
 };
+
+/* The window-local verbs the «/» palette offers whether or not the CLI's own
+   list carries them (bar.js paletteGroups gives them their Persian names). */
+const WINDOW_VERBS = ["clear", "model", "effort", "output-style", "permissions", "export",
+                      "branch", "resume", "memory", "hooks", "status", "help"];
 
 /* The window-local commands that TAKE an argument, and are this module's own:
    `!` is a composer mode, so `/bash ls` is the same call the `!` line makes
@@ -1649,13 +1654,15 @@ export function makeComposer(root, cell) {
       await attachBytes([...(e.dataTransfer?.files ?? [])]);
     });
 
-    /* --- the composer bar's «+» and ◔ -----------------------
+    /* --- the composer bar's «+», «/» and ◔ -------------------
 
        «+»: the native file dialog (/api/attach/pick, the web edition's
-       paperclip route: real paths, no base64 through the page), the slash
-       popup, and this machine's MCP servers with a switch each. Ctrl+U opens
-       the dialog, as it does in claude.ai/code. */
+       paperclip route: real paths, no base64 through the page), `@` for a
+       file in the project, and this machine's MCP servers with a switch each.
+       Ctrl+U opens the dialog, as it does in claude.ai/code. «/»: every
+       command, grouped and filterable (bar.js paletteGroups). */
     const plusBtn = $("bar-plus-btn");
+    const slashBtn = $("bar-slash-btn");
     const ringBtn = $("bar-ring");
     const pickFiles = async () => {
       try {
@@ -1665,12 +1672,26 @@ export function makeComposer(root, cell) {
         bubble("error", FA.pasteFailed);
       }
     };
-    const openSlash = () => {
+    // `@` at the caret, as if typed: the file list opens off the input event.
+    const mention = () => {
       input.focus();
-      if (!input.value) {
-        input.value = "/";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }
+      const at = input.selectionStart ?? input.value.length;
+      const before = input.value.slice(0, at);
+      input.setRangeText(before && !/\s$/.test(before) ? " @" : "@", at, input.selectionEnd ?? at, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    // A command that takes nothing runs at once, the way the extension's
+    // palette does; one that takes an argument waits in the prompt for it.
+    // Either way it goes through the same submit a typed `/name` does, so a
+    // window-local verb (/model, /export…) still opens the window's own UI.
+    const runCommand = (item) => {
+      const draft = input.value.trim();
+      input.value = "/" + item.key + (item.arg || draft ? " " : "");
+      if (draft) input.value += draft;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      slashPopup && (slashPopup.hidden = true);
+      if (!item.arg && !draft) composer.requestSubmit();
+      else input.focus();
     };
     const mcpServers = async () => {
       const res = await api("/api/control", { subtype: "mcp_status", tab: cell.tab });
@@ -1680,12 +1701,23 @@ export function makeComposer(root, cell) {
       plusBtn.title = FA.barPlus;
       plusBtn.setAttribute("aria-label", FA.barPlus);
       plusBtn.addEventListener("click", () => openPlus(plusBtn, {
-        toCss: cssPx, onFiles: pickFiles, onSlash: openSlash, loadServers: mcpServers,
+        toCss: cssPx, onFiles: pickFiles, onMention: mention, loadServers: mcpServers,
         onToggle: async (name, enabled) => {
           await api("/api/control", { subtype: "mcp_toggle", tab: cell.tab,
                                       params: { serverName: name, enabled } });
           return mcpServers();
         },
+      }));
+    }
+    if (slashBtn) {
+      slashBtn.title = FA.barPalette;
+      slashBtn.setAttribute("aria-label", FA.barPalette);
+      slashBtn.addEventListener("click", () => openPalette(slashBtn, {
+        toCss: cssPx, title: FA.barPalette, placeholder: FA.barPaletteFilter,
+        // The verbs the window answers itself first: the CLI's list in -p
+        // mode leaves most of them out, and the window's is the one that runs.
+        groups: paletteGroups([...WINDOW_VERBS.map((name) => ({ name })), ...slashCommands]),
+        onPick: runCommand,
       }));
     }
     input.addEventListener("keydown", (e) => {

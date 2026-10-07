@@ -61,10 +61,12 @@ SHELL = {
                    "tool-output", "diff", "attachments", "ag-log"),
         home_sel=".greeting", home_name="greeting",
         # The posture menu: the widest picker, hanging off the last chip of the
-        # row, which is what made it the one that came back 201px wide.
+        # row, which is what made it the one that came back 201px wide. Since
+        # 2026-10-08 it is a bar.js popover (the terminal edition's and the VS
+        # Code extension's shape), so its rows are the popover's own.
         open_menu='document.querySelector(".posture-chip").click();',
-        menu_id=".menu-popup", row_sel=".menu-row", menu_name="posture menu",
-        # 7 = attach + folder + model + effort + style + posture + audit counter.
+        menu_id=".bar-pop", row_sel=":scope > .bar-row", menu_name="posture menu",
+        # 7 = attach + commands + folder + model + style + posture + audit counter.
         chips=7, chip_row=".comp-row", rows=4, drawer_test="",
         # MA4-T2: the same window with four columns in it. The picker is opened
         # again after the split, through the chip the user presses, because
@@ -74,11 +76,12 @@ SHELL = {
             'if (innerWidth > 1000 && APP.setSplit(4)) {'
             '  await sleep(300);'
             '  const cRoot = APP.cells[0].root;'
-            '  APP.cells[0].controls.closeMenu();'
+            '  document.querySelector(".bar-pop")?.hidePopover?.();'
+            '  await sleep(60);'
             '  cRoot.querySelector(".posture-chip").click();'
             '  await sleep(200);'
-            '  const m4 = cRoot.querySelector(".menu-popup");'
-            '  const rows4 = [...m4.querySelectorAll(".menu-row")];'
+            '  const m4 = document.querySelector(".bar-pop");'
+            '  const rows4 = [...m4.querySelectorAll(":scope > .bar-row")];'
             '  split4 = {cells: document.querySelectorAll("#grid .cell").length,'
             '            cell: box(cRoot), comp: box(cRoot.querySelector(".comp-box")),'
             '            menu: box(m4), rows: rows4.length,'
@@ -269,6 +272,18 @@ const SCROLLERS = new Set(%SCROLLERS%);
   await sleep(150);
   const menu = document.querySelector("%MENUID%");
   const rows = [...menu.querySelectorAll("%ROWSEL%")];
+  // Read NOW, before anything else is opened: a popover menu (the web
+  // edition's, since 2026-10-08) is light-dismissed by the kebab below, and a
+  // box read after that is a detached element's 0x0.
+  const menuBox = box(menu);
+  let overlap = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
+    overlap = Math.max(overlap, Math.round(a.bottom - b.top));
+  }
+  // A row that gave up its own height is the same defect one step earlier:
+  // scrollHeight is what it wanted, clientHeight what the flex box left it.
+  const squashed = rows.filter((r) => r.scrollHeight > r.clientHeight + 1).length;
 
   // F5: the terminal edition's agent drawer, measured against the sidebar.
   let drawer = null;
@@ -317,20 +332,11 @@ const SCROLLERS = new Set(%SCROLLERS%);
   const kebab = {roomy: await openKebab("top: 140px; left: 300px;"),
                  edge: await openKebab("top: 220px; left: 0;")};
 
-  let overlap = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
-    overlap = Math.max(overlap, Math.round(a.bottom - b.top));
-  }
-  // A row that gave up its own height is the same defect one step earlier:
-  // scrollHeight is what it wanted, clientHeight what the flex box left it.
-  const squashed = rows.filter((r) => r.scrollHeight > r.clientHeight + 1).length;
 
   // EVERY box of the one-column pass, read BEFORE the split below: the JSON at
   // the foot of this file is built last, so a box() left in it measures the
   // page as the split4 block leaves it. That is how the picker started
   // reporting itself half its width in a window nothing had resized.
-  const menuBox = box(menu);
   // ...and the sidebar's, for the same reason: since Phase 3 the pane has TWO
   // widths and the split4 block below collapses it to the rail, so a box read
   // at the foot of this file measures the rail rather than the tree. The

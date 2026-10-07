@@ -361,15 +361,22 @@
              The audit count of «خودکار» lives in the mode menu's footer
             : claude.ai's bar carries the mode alone. -->
 
-        <!-- THE COMPOSER BAR. User decision: the
-             claude.ai/code bar in this edition too — «+», the mode, then the
-             model, effort and the context ring at the far end. Each opens a
-             js/bar.js popover; `/model`, `/effort`, `/permissions` and
+        <!-- THE COMPOSER BAR. User decisions: the claude.ai/code bar in this
+             edition too, and (2026-10-07) the VS Code extension's UX for it —
+             «+» (attach, mention, servers), «/» (every command, grouped, with a
+             filter), the mode; then the model (its effort level beside the
+             name; the level is set inside the model and mode menus), the
+             prompt-cache clock and the context ring at the far end. Each opens
+             a js/bar.js popover; `/model`, `/effort`, `/permissions` and
              Shift+Tab still reach the same state the TUI's way. Labels come
              from strings.fa.js (js/controls.js and js/composer.js). -->
         <button type="button" class="bar-chip bar-plus-btn" aria-haspopup="dialog" aria-expanded="false">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button type="button" class="bar-chip bar-slash-btn" aria-haspopup="dialog" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m14 8-4 8"/></svg>
         </button>
         <button type="button" class="bar-chip posture-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
           <span class="posture-chip-name"></span>
@@ -379,10 +386,13 @@
 
         <button type="button" class="bar-chip model-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
           <span class="model-chip-name" dir="auto"></span>
+          <span class="model-chip-effort" dir="auto" hidden></span>
         </button>
-        <button type="button" class="bar-chip effort-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
-          <span class="effort-chip-name" dir="auto"></span>
-        </button>
+        <span class="bar-chip bar-cache" tabindex="0" role="note" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>
+          <span class="bar-cache-label"></span>
+        </span>
         <button type="button" class="bar-chip bar-ring" aria-haspopup="dialog" aria-expanded="false">
           <svg viewBox="0 0 36 36" width="16" height="16" fill="none" stroke-width="4" aria-hidden="true">
             <circle class="bar-ring-track" cx="18" cy="18" r="15.9155"/>

@@ -7,13 +7,22 @@
    CSS px, the controls' own state — comes in as arguments, so each edition
    keeps the state it already had and this only draws.
 
-   Four popovers, all `[popover=auto]` (so a second one, Esc or a click
+   Five popovers, all `[popover=auto]` (so a second one, Esc or a click
    outside closes the first, for free):
 
-     openMenu    numbered rows, a ✓ on the current one, a digit picks
-     openSlider  the effort levels as one track, «سریع‌تر ↔ باهوش‌تر»
-     openUsage   the context window by category, then each plan limit
-     openPlus    files, slash commands, and the MCP servers with switches
+     openMenu     numbered rows (an icon, a title, a one-line note), a ✓ on
+                  the current one, a digit picks; optionally the effort track
+                  under them (the VS Code extension's mode and model menus)
+     openSlider   the effort levels alone, as one track
+     openUsage    the context window by category, then each plan limit
+     openPlus     attach a file, mention a project file, and the MCP servers
+                  folded behind one row
+     openPalette  every slash command, grouped, with a filter box (the
+                  extension's «/» button)
+
+   Plus the prompt-cache clock (cacheState / noteCache / paintCache): how long
+   the conversation's cached prefix is still warm, worked out the way the
+   extension's webview does it from each reply's `usage.cache_creation`.
 
    Placement: above the anchor, lined up with it, clamped into the window.
    Rects are SCREEN px and style lengths CSS px under app zoom (terminal
@@ -43,6 +52,28 @@ export function fmtTokens(n) {
   if (n >= 1e6) return FA.barMillion.replace("{n}", faNum(n / 1e6, 1));
   if (n >= 1e3) return FA.barThousand.replace("{n}", faNum(n / 1e3, 1));
   return faNum(n);
+}
+
+/* Stroke icons for menu rows, 16px on a 24 grid, one weight (DESIGN.md:
+   icons are drawn, never glyphs). Keyed by what they stand for. */
+const ICONS = {
+  plan: '<path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8"/><path d="M8 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2"/><path d="M10 9h6M10 13h6M10 17h3"/>',
+  ask: '<path d="M7 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M10 10V5a1.5 1.5 0 0 1 3 0v5"/><path d="M13 10V6a1.5 1.5 0 0 1 3 0v6"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L4.5 13.6a1.5 1.5 0 0 1 2.4-1.8L7 12"/>',
+  acceptEdits: '<path d="m9 8-4 4 4 4M15 8l4 4-4 4"/>',
+  autoApprove: '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3-3 3 3"/>',
+  mention: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
+  plug: '<path d="M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/>',
+};
+
+function icon(name) {
+  const span = el("span", "bar-row-icon");
+  if (ICONS[name]) {
+    span.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+      + 'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + ICONS[name] + "</svg>";
+  }
+  return span;
 }
 
 let open = null;   // the one popover this module has on screen
@@ -143,6 +174,7 @@ function menuRow(row, digit) {
   if (row.key !== undefined) b.dataset.key = row.key;
   if (row.selected) b.setAttribute("aria-current", "true");
   if (row.tip) b.title = row.tip;
+  if (row.icon) b.append(icon(row.icon));
   const text = el("span", "bar-row-text");
   const name = el("span", "bar-row-title", row.title);
   name.dir = "auto";
@@ -165,8 +197,12 @@ function menuRow(row, digit) {
    `more`: {title, rows} — the rest of a long list behind one row that opens a
    flyout beside the menu (claude.ai's «More models ›»). Its rows take no digit.
    `footer`: {title, onClick} — one row under a rule that is not a choice (the
-   mode menu's count of what «خودکار» approved, which opens that list). */
-export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, footer }) {
+   mode menu's count of what «خودکار» approved, which opens that list).
+   `effort`: {title, levels, current, label, onPick} — the effort track under
+   the rows, so the level is set where the model and the mode are (the
+   extension carries no separate effort chip). Picking a level does not close
+   the menu; picking a row does. */
+export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, footer, effort }) {
   if (toggledShut(anchor)) return null;
   const pick = (row) => {
     close();
@@ -270,9 +306,16 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
       });
       box.append(f);
     }
+    if (effort?.levels?.length) {
+      box.append(el("hr", "bar-rule"));
+      const track = effortControl(effort);
+      track.addEventListener("mouseenter", shut);
+      box.append(track);
+    }
   }, toCss);
   pop.addEventListener("keydown", (e) => {
     if (e.target.closest?.(".bar-flyout")) return;
+    if (e.target.matches?.(".bar-slider-range")) return;   // its own arrows and digits
     const rowsEl = [...pop.querySelectorAll(":scope > .bar-row:not(:disabled)")];
     const digit = /^Digit([1-9])$/.exec(e.code) || /^Numpad([1-9])$/.exec(e.code);
     if (digit && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -298,33 +341,39 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
    first). A native range input: the arrows, Home/End and the screen reader's
    value all come with it. `change`, not `input`: dragging across three stops
    is one decision, not three writes. */
+function effortControl({ title, levels, current, label, onPick }) {
+  const wrap = el("div", "bar-effort");
+  const head = el("div", "bar-head");
+  const now = el("span", "bar-slider-now", label(current));
+  head.append(el("span", "", title), now);
+  const ends = el("div", "bar-slider-ends");
+  ends.append(el("span", "", FA.barFaster), el("span", "", FA.barSmarter));
+  const range = el("input", "bar-slider-range");
+  range.type = "range";
+  range.min = "0";
+  range.max = String(levels.length - 1);
+  range.step = "1";
+  range.value = String(Math.max(0, levels.indexOf(current)));
+  range.setAttribute("aria-label", title);
+  range.setAttribute("aria-valuetext", label(current));
+  const ticks = el("div", "bar-slider-ticks");
+  for (let i = 0; i < levels.length; i++) ticks.append(el("span", "bar-tick"));
+  range.addEventListener("input", () => {
+    const level = levels[Number(range.value)];
+    now.textContent = label(level);
+    range.setAttribute("aria-valuetext", label(level));
+  });
+  range.addEventListener("change", () => onPick?.(levels[Number(range.value)]));
+  const track = el("div", "bar-slider-track");
+  track.append(ticks, range);
+  wrap.append(head, ends, track);
+  return wrap;
+}
+
 export function openSlider(anchor, { title, levels, current, label, onPick, toCss }) {
   if (toggledShut(anchor)) return null;
   const { pop } = popover(anchor, "bar-slider", title, (box) => {
-    const head = el("div", "bar-head");
-    const now = el("span", "bar-slider-now", label(current));
-    head.append(el("span", "", title), now);
-    const ends = el("div", "bar-slider-ends");
-    ends.append(el("span", "", FA.barFaster), el("span", "", FA.barSmarter));
-    const range = el("input", "bar-slider-range");
-    range.type = "range";
-    range.min = "0";
-    range.max = String(levels.length - 1);
-    range.step = "1";
-    range.value = String(Math.max(0, levels.indexOf(current)));
-    range.setAttribute("aria-label", title);
-    range.setAttribute("aria-valuetext", label(current));
-    const ticks = el("div", "bar-slider-ticks");
-    for (let i = 0; i < levels.length; i++) ticks.append(el("span", "bar-tick"));
-    range.addEventListener("input", () => {
-      const level = levels[Number(range.value)];
-      now.textContent = label(level);
-      range.setAttribute("aria-valuetext", label(level));
-    });
-    range.addEventListener("change", () => onPick?.(levels[Number(range.value)]));
-    const track = el("div", "bar-slider-track");
-    track.append(ticks, range);
-    box.append(head, ends, track);
+    box.append(...effortControl({ title, levels, current, label, onPick }).childNodes);
   }, toCss);
   pop.querySelector(".bar-slider-range")?.focus();
   return pop;
@@ -517,64 +566,296 @@ export function paintRing(button, pct) {
 
 /* --- 4. the «+» menu -------------------------------------------------------- */
 
-/* servers: the CLI's own mcp_status list, fetched when the menu opens (the
-   host's `loadServers` resolves it). A switch writes through `onToggle`, which
-   is PERSISTENT for this folder — the CLI writes disabledMcpServers, as its
-   own /mcp does — and the note under the list says so. */
-export function openPlus(anchor, { onFiles, onSlash, loadServers, onToggle, toCss }) {
+/* Two actions on top, the way the extension's «+» reads: attach a file from
+   this computer (the native dialog, Ctrl+U) and point at a file in the project
+   (`@`). The MCP servers fold behind one row underneath: they are a setting,
+   not something done to this message.
+
+   servers: the CLI's own mcp_status list, fetched the first time the row is
+   opened (the host's `loadServers`). A switch writes through `onToggle`, which
+   is PERSISTENT for this folder — the CLI writes disabledMcpServers, as its own
+   /mcp does — and the note under the list says so. */
+export function openPlus(anchor, { onFiles, onMention, loadServers, onToggle, toCss }) {
   if (toggledShut(anchor)) return null;
-  const { pop, relayout } = popover(anchor, "bar-menu bar-plus", FA.barPlus, (box) => {
-    const row = (title, hint, run) => {
+  let relayout = () => {};
+  const made = popover(anchor, "bar-menu bar-plus", FA.barPlus, (box) => {
+    const row = (name, title, hint, run) => {
       const b = el("button", "bar-row");
       b.type = "button";
+      b.append(icon(name));
       const text = el("span", "bar-row-text");
       text.append(el("span", "bar-row-title", title));
-      b.append(text, el("span", "bar-row-check", ""), el("kbd", "bar-row-digit", hint));
-      b.lastChild.dir = "ltr";
+      const key = el("kbd", "bar-row-digit", hint);
+      key.dir = "ltr";
+      b.append(text, el("span", "bar-row-check", ""), key);
       b.addEventListener("click", () => { close(); run?.(); });
       box.append(b);
+      return b;
     };
-    row(FA.barFiles, "Ctrl+U", onFiles);
-    row(FA.barSlash, "/", onSlash);
+    row("file", FA.barFiles, "Ctrl+U", onFiles);
+    if (onMention) row("mention", FA.barMention, "@", onMention);
+    if (!loadServers) return;
     box.append(el("hr", "bar-rule"));
-    box.append(el("div", "bar-head", FA.barConnectors));
+    const fold = el("button", "bar-row bar-fold");
+    fold.type = "button";
+    fold.setAttribute("aria-expanded", "false");
+    fold.append(icon("plug"));
+    const text = el("span", "bar-row-text");
+    text.append(el("span", "bar-row-title", FA.barConnectors));
+    fold.append(text, el("span", "bar-row-check", ""), el("span", "bar-row-digit bar-chevron", "‹"));
     const list = el("div", "bar-servers");
-    list.append(el("p", "bar-muted", FA.barLoading));
-    box.append(list);
-  }, toCss);
-  const list = pop.querySelector(".bar-servers");
-  const paint = (servers) => {
-    list.replaceChildren();
-    if (!servers?.length) {
-      list.append(el("p", "bar-muted", FA.barNoServers));
+    list.hidden = true;
+    box.append(fold, list);
+    let loaded = false;
+    const paint = (servers) => {
+      list.replaceChildren();
+      if (!servers?.length) {
+        list.append(el("p", "bar-muted", FA.barNoServers));
+        relayout();
+        return;
+      }
+      for (const s of servers) {
+        const label = el("label", "bar-server");
+        const name = el("span", "bar-server-name", s.name);
+        name.dir = "ltr";
+        const status = el("span", "bar-muted", FA.barServerStatus?.[s.status] ?? s.status);
+        const sw = el("input", "bar-switch");
+        sw.type = "checkbox";
+        sw.setAttribute("role", "switch");
+        sw.checked = s.status !== "disabled";
+        sw.addEventListener("change", async () => {
+          sw.disabled = true;
+          try {
+            const next = await onToggle?.(s.name, sw.checked);
+            if (Array.isArray(next)) paint(next);
+          } finally {
+            sw.disabled = false;
+          }
+        });
+        label.append(name, status, sw);
+        list.append(label);
+      }
+      list.append(el("p", "bar-note", FA.barConnectorsNote));
       relayout();
-      return;
-    }
-    for (const s of servers) {
-      const label = el("label", "bar-server");
-      const name = el("span", "bar-server-name", s.name);
-      name.dir = "ltr";
-      const status = el("span", "bar-muted", FA.barServerStatus?.[s.status] ?? s.status);
-      const sw = el("input", "bar-switch");
-      sw.type = "checkbox";
-      sw.setAttribute("role", "switch");
-      sw.checked = s.status !== "disabled";
-      sw.addEventListener("change", async () => {
-        sw.disabled = true;
-        try {
-          const next = await onToggle?.(s.name, sw.checked);
-          if (Array.isArray(next)) paint(next);
-        } finally {
-          sw.disabled = false;
-        }
-      });
-      label.append(name, status, sw);
-      list.append(label);
-    }
-    list.append(el("p", "bar-note", FA.barConnectorsNote));
-    relayout();
-  };
-  Promise.resolve(loadServers?.()).then(paint, () => paint([]));
+    };
+    fold.addEventListener("click", () => {
+      const opening = list.hidden;
+      list.hidden = !opening;
+      fold.setAttribute("aria-expanded", String(opening));
+      if (opening && !loaded) {
+        loaded = true;
+        list.append(el("p", "bar-muted", FA.barLoading));
+        Promise.resolve(loadServers()).then(paint, () => paint([]));
+      }
+      relayout();
+    });
+  }, toCss);
+  relayout = made.relayout;
+  const { pop } = made;
+  pop.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (e.target.matches?.(".bar-switch")) return;
+    e.preventDefault();
+    const rows = [...pop.querySelectorAll(".bar-row")];
+    const at = rows.indexOf(document.activeElement);
+    rows[(at + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]?.focus();
+  });
   pop.querySelector(".bar-row")?.focus();
   return pop;
+}
+
+/* --- 5. the «/» palette ----------------------------------------------------- */
+
+/* The same letter in its two Unicode shapes, and no case: «ي»/«ی» and «ك»/«ک»
+   are what a Persian keyboard and an Arabic one disagree on. */
+function fold(s) {
+  return String(s ?? "").toLowerCase().replace(/ي/g, "ی").replace(/ك/g, "ک").replace(/\u200c/g, " ");
+}
+
+/* groups: [{title, items: [{key, title, note?, hint?}]}] — the host decides the
+   groups and the words; this draws them, filters as you type (title, note and
+   hint all count), and hands the picked item to `onPick`. ↑/↓ move, Enter picks,
+   Esc closes (the popover's own light dismiss). */
+export function openPalette(anchor, { title, placeholder, groups, onPick, toCss }) {
+  if (toggledShut(anchor)) return null;
+  let active = 0;
+  let shown = [];
+  const { pop, relayout } = popover(anchor, "bar-menu bar-palette", title, (box) => {
+    const search = el("input", "bar-filter");
+    search.type = "search";
+    search.placeholder = placeholder ?? "";
+    search.setAttribute("aria-label", placeholder ?? title);
+    search.dir = "auto";
+    const list = el("div", "bar-palette-list");
+    list.setAttribute("role", "listbox");
+    box.append(search, list);
+  }, toCss);
+  const search = pop.querySelector(".bar-filter");
+  const list = pop.querySelector(".bar-palette-list");
+  const pick = (item) => {
+    close();
+    anchor.focus();
+    onPick?.(item);
+  };
+  const mark = () => {
+    shown.forEach((b, i) => b.setAttribute("aria-selected", String(i === active)));
+    shown[active]?.scrollIntoView({ block: "nearest" });
+  };
+  const paint = () => {
+    const q = fold(search.value.trim());
+    list.replaceChildren();
+    shown = [];
+    for (const g of groups) {
+      const items = g.items.filter((it) => !q
+        || [it.title, it.note, it.hint].some((s) => fold(s).includes(q)));
+      if (!items.length) continue;
+      list.append(el("div", "bar-head bar-group", g.title));
+      for (const it of items) {
+        const b = el("button", "bar-row");
+        b.type = "button";
+        b.setAttribute("role", "option");
+        b.tabIndex = -1;
+        const text = el("span", "bar-row-text");
+        const name = el("span", "bar-row-title", it.title);
+        name.dir = "auto";
+        text.append(name);
+        if (it.note) {
+          const note = el("span", "bar-row-note", it.note);
+          note.dir = "auto";
+          text.append(note);
+        }
+        const hint = el("kbd", "bar-row-digit", it.hint ?? "");
+        hint.dir = "ltr";
+        b.append(text, el("span", "bar-row-check", ""), hint);
+        const at = shown.length;
+        b.addEventListener("mousemove", () => { if (active !== at) { active = at; mark(); } });
+        b.addEventListener("click", () => pick(it));
+        list.append(b);
+        shown.push(b);
+      }
+    }
+    if (!shown.length) list.append(el("p", "bar-muted", FA.barPaletteEmpty));
+    active = Math.min(active, Math.max(0, shown.length - 1));
+    mark();
+    relayout();
+  };
+  search.addEventListener("input", () => { active = 0; paint(); });
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!shown.length) return;
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length;
+      mark();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      shown[active]?.click();
+    }
+  });
+  paint();
+  search.focus();
+  return pop;
+}
+
+/* --- 6. the prompt-cache clock ---------------------------------------------- */
+
+/* Read off the extension's webview (2.1.292): every reply's usage says which
+   cache it wrote — `cache_creation.ephemeral_1h_input_tokens` or `_5m_` — and
+   the prefix stays warm for that long after the reply. A reply that only READ
+   the cache keeps the lifetime the last write set. `at` is when the reply came
+   (now, live; the transcript's timestamp, replayed). */
+const CACHE_TTL = { "5m": 300000, "1h": 3600000 };
+
+export function noteCache(prev, usage, at) {
+  if (!usage || !isFinite(at)) return prev;
+  const cached = (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) > 0;
+  const made = usage.cache_creation ?? {};
+  const ttl = (made.ephemeral_1h_input_tokens ?? 0) > 0 ? "1h"
+    : (made.ephemeral_5m_input_tokens ?? 0) > 0 ? "5m" : prev?.ttl;
+  const size = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0)
+    + (usage.cache_creation_input_tokens ?? 0);
+  return { at, ttl: cached ? ttl : undefined, size: size || undefined };
+}
+
+/* {kind: "unknown"} | {kind: "warm", minutes} | {kind: "cold", idle, size?, compacted?} */
+export function cacheState(c, now = Date.now()) {
+  if (c?.compacted) return { kind: "cold", compacted: true };
+  if (!c?.at || !CACHE_TTL[c.ttl]) return { kind: "unknown" };
+  const span = CACHE_TTL[c.ttl];
+  const left = Math.min(span, c.at + span - now);
+  if (left > 0) return { kind: "warm", minutes: Math.ceil(left / 60000) };
+  return { kind: "cold", idle: now - c.at, size: c.size };
+}
+
+function fmtIdle(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 60) return FA.barIdleMinutes.replace("{m}", faNum(m));
+  const h = Math.floor(m / 60);
+  if (h < 24) return FA.barIdleHours.replace("{h}", faNum(h)).replace("{m}", faNum(m % 60));
+  return FA.barIdleDays.replace("{d}", faNum(Math.floor(h / 24)));
+}
+
+/* The chip: «۵۸ دقیقه» while warm, the clock alone once cold, nothing until a
+   reply has said anything about the cache. The sentence is the title. `c` is
+   what noteCache kept; the chip keeps it too, so one clock per window can count
+   every chip down without asking the conversation again. */
+let cacheClock = 0;
+
+export function paintCache(button, c) {
+  if (!button) return;
+  button._cache = c;
+  if (!cacheClock) {
+    cacheClock = setInterval(() => {
+      for (const b of document.querySelectorAll(".bar-cache")) paintCache(b, b._cache);
+    }, 30000);
+  }
+  const state = cacheState(c);
+  button.hidden = state.kind === "unknown";
+  button.dataset.state = state.kind;
+  const label = button.querySelector(".bar-cache-label");
+  if (label) label.textContent = state.kind === "warm" ? FA.barCacheMinutes.replace("{n}", faNum(state.minutes)) : "";
+  const text = state.kind === "warm" ? FA.barCacheWarm.replace("{n}", faNum(state.minutes))
+    : state.compacted ? FA.barCacheCompacted
+    : state.kind === "cold"
+      ? FA.barCacheCold.replace("{t}", fmtIdle(state.idle))
+        + (state.size ? " " + FA.barCacheRecache.replace("{n}", fmtTokens(state.size)) : "")
+      : "";
+  button.title = text;
+  button.setAttribute("aria-label", text || FA.barCache);
+}
+/* --- 7. what the «/» palette lists ------------------------------------------
+
+   Every command the window knows (the CLI's own list plus the verbs the window
+   answers itself), sorted into the extension's groups. A command with a Persian
+   name in FA.paletteNames shows that name and its own `/name` as the hint; any
+   other (a skill, a plugin's command) keeps its name and the CLI's description,
+   in the last group. */
+const PALETTE_GROUP = {
+  chat: ["clear", "compact", "rewind", "branch", "rename", "resume", "export"],
+  model: ["model", "effort", "output-style", "permissions", "fast", "context", "usage", "cost"],
+  project: ["init", "memory", "add-dir", "agents", "hooks", "mcp", "review", "security-review",
+            "status", "help"],
+};
+
+export function paletteGroups(commands) {
+  const names = FA.paletteNames ?? {};
+  const byName = new Map();
+  for (const c of commands ?? []) if (c?.name && !byName.has(c.name)) byName.set(c.name, c);
+  const groups = [];
+  const used = new Set();
+  for (const [key, list] of Object.entries(PALETTE_GROUP)) {
+    const items = [];
+    for (const name of list) {
+      const c = byName.get(name);
+      if (!c) continue;
+      used.add(name);
+      items.push({ key: name, title: names[name] ?? name, note: names[name] ? "" : c.description,
+                   hint: "/" + name, arg: !!c.argumentHint });
+    }
+    if (items.length) groups.push({ title: FA.paletteGroups[key], items });
+  }
+  const rest = [...byName.values()].filter((c) => !used.has(c.name))
+    .map((c) => ({ key: c.name, title: "/" + c.name, note: c.description, hint: "",
+                   arg: !!c.argumentHint }));
+  if (rest.length) groups.push({ title: FA.paletteGroups.other, items: rest });
+  return groups;
 }

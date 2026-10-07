@@ -6,7 +6,7 @@
 import { pathEl } from "./bidi.js";
 import { api, token } from "./api.js";
 import { bubble, label, paintQueued, state } from "./render.js";
-import { openPlus, openUsage } from "./bar.js";
+import { openPlus, openUsage, openPalette, paletteGroups } from "./bar.js";
 /* An edge INTO the render↔chrome cycle, not a new cycle of its own: chrome.js
    imports render.js and api.js, neither of which imports this module back at
    evaluation time. `/branch` needs the one tab-switch path the sidebar already
@@ -1010,6 +1010,8 @@ export function makeComposer(root, cell) {
      as text like every other slash command. */
   const LIFECYCLE_BUTTONS = {
     model: () => $("model-chip"),
+    // The effort track lives at the foot of the model menu now (bar.js).
+    effort: () => $("model-chip"),
     permissions: () => $("posture-chip"),
     // The one WINDOW-level button of the three: there is a single new-chat
     // button in the sidebar however many columns are on screen.
@@ -1190,21 +1192,37 @@ export function makeComposer(root, cell) {
       }
     };
 
-    /* --- the composer bar's «+» and ◔ -----------------------
-       «+» is what the paperclip was (the native file dialog, real paths), the
-       slash popup, and this machine's MCP servers with a switch each; Ctrl+U
-       opens the dialog, as in claude.ai/code. ◔ opens the context window by
+    /* --- the composer bar's «+», «/» and ◔ -------------------
+       «+» is what the paperclip was (the native file dialog, real paths), `@`
+       for a file in the project, and this machine's MCP servers with a switch
+       each; Ctrl+U opens the dialog, as in claude.ai/code. «/» is every
+       command, grouped and filterable (bar.js paletteGroups). ◔ opens the context window by
        category and the plan's limits: the last usage event paints at once, then
        the panel asks the CLI again. «فشرده کردن» is `/compact` as text — it is
        not a control subtype. */
     const plusBtn = $("bar-plus-btn");
+    const slashBtn = $("bar-slash-btn");
     const ringBtn = $("bar-ring");
-    const openSlash = () => {
+    // `@` at the caret, as if typed: the file list opens off the input event.
+    const mention = () => {
       input.focus();
-      if (!input.value) {
-        input.value = "/";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }
+      const at = input.selectionStart ?? input.value.length;
+      const before = input.value.slice(0, at);
+      input.setRangeText(before && !/\s$/.test(before) ? " @" : "@", at, input.selectionEnd ?? at, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    // A command that takes nothing runs at once, the way the extension's
+    // palette does; one that takes an argument waits in the prompt for it.
+    // Either way it goes through the same submit a typed `/name` does, so a
+    // window-local verb still opens the window's own UI.
+    const runCommand = (item) => {
+      const draft = input.value.trim();
+      input.value = "/" + item.key + (item.arg || draft ? " " : "");
+      if (draft) input.value += draft;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      if (slashPopup) slashPopup.hidden = true;
+      if (!item.arg && !draft) composer.requestSubmit();
+      else input.focus();
     };
     const mcpServers = async () => {
       const res = await api("/api/control", { subtype: "mcp_status", tab: cell.tab });
@@ -1214,12 +1232,24 @@ export function makeComposer(root, cell) {
       plusBtn.title = FA.barPlus;
       plusBtn.setAttribute("aria-label", FA.barPlus);
       plusBtn.addEventListener("click", () => openPlus(plusBtn, {
-        onFiles: pickFiles, onSlash: openSlash, loadServers: mcpServers,
+        onFiles: pickFiles, onMention: mention, loadServers: mcpServers,
         onToggle: async (name, enabled) => {
           await api("/api/control", { subtype: "mcp_toggle", tab: cell.tab,
                                       params: { serverName: name, enabled } });
           return mcpServers();
         },
+      }));
+    }
+    if (slashBtn) {
+      slashBtn.title = FA.barPalette;
+      slashBtn.setAttribute("aria-label", FA.barPalette);
+      slashBtn.addEventListener("click", () => openPalette(slashBtn, {
+        title: FA.barPalette, placeholder: FA.barPaletteFilter,
+        // The window's own verbs first: the CLI's list in -p mode leaves most
+        // of them out, and the window's is the one that runs.
+        groups: paletteGroups([...Object.keys(LIFECYCLE_BUTTONS).map((name) => ({ name })),
+                               ...allCommands()]),
+        onPick: runCommand,
       }));
     }
     input.addEventListener("keydown", (e) => {

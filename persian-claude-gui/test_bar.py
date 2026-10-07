@@ -13,9 +13,16 @@ check here follows a click to the request it sends:
     a login with no limits says so;
   - the model menu numbers its rows, marks the current one, and a digit picks
     (set_model with that row's value); the mode menu likewise (/api/posture);
-  - the effort slider starts at the current level and a change posts it;
-  - «+» offers files (/api/attach/pick), slash commands (the popup opens), and
-    this machine's MCP servers, whose switch sends mcp_toggle for that server.
+  - the effort track sits at the foot of the model AND mode menus (the VS Code
+    extension's shape, 2026-10-08), starts at the current level and a change
+    posts it; the level is drawn beside the model's name, and there is no
+    effort chip; the mode rows carry icons;
+  - «+» offers files (/api/attach/pick), `@` for a project file, and this
+    machine's MCP servers behind one row, whose switch sends mcp_toggle for
+    that server;
+  - «/» opens every command in groups with a filter, and a picked command with
+    no argument goes as that command;
+  - the prompt-cache clock reads the minutes a reply's 1h cache write leaves.
 
 Free: no CLI, no login. Every route is stubbed inside the page.
 
@@ -161,14 +168,23 @@ const NOW = Date.now();
   key(pop() ?? document.body, "Digit1"); await sleep(40);
   out.posture = since(mark).filter((c) => c.url === "/api/posture").map((c) => c.body.posture).join();
 
-  // The effort slider.
-  q(".effort-chip")?.click(); await sleep(40);
-  const range = pop()?.querySelector(".bar-slider-range");
+  // The effort track: at the foot of the mode menu and of the model menu,
+  // the level beside the model's name, no chip of its own.
+  out.effortChip = !!q(".effort-chip");
+  out.chipEffort = q(".model-chip-effort")?.textContent ?? "";
+  out.wantChipEffort = FA.effortLevels?.medium ?? "medium";
+  q(".posture-chip")?.click(); await sleep(40);
+  out.modeEffort = !!pop()?.querySelector(".bar-effort .bar-slider-range");
+  out.modeIcons = pop()?.querySelectorAll(":scope > .bar-row .bar-row-icon svg").length ?? -1;
+  pop()?.hidePopover(); await sleep(20);
+  q(".model-chip")?.click(); await sleep(40);
+  const range = pop()?.querySelector(".bar-effort .bar-slider-range");
   out.rangeStart = range ? range.value + "/" + range.max : "none";
   mark = calls.length;
   if (range) { range.value = "3"; range.dispatchEvent(new Event("change")); }
   await sleep(40);
   out.effortPost = since(mark).filter((c) => c.url === "/api/effort").map((c) => c.body.level).join();
+  out.menuStays = !!pop();   // a level is not a pick: the menu stays open
   pop()?.hidePopover(); await sleep(20);
 
   // claude.ai's model shape: the newest of each
@@ -204,6 +220,7 @@ const NOW = Date.now();
     out.menuOnChip = Math.min(Math.abs(menuR.left - chipR.left), Math.abs(menuR.right - chipR.right)) <= 1
       || menuR.left <= 9 || menuR.right >= innerWidth - 9;
     out.notes = pop().querySelectorAll(":scope > .bar-row .bar-row-note").length;
+    out.noteLine = pop().querySelector(":scope > .bar-row .bar-row-note")?.textContent ?? "";
     pop().querySelector(".bar-more")?.click(); await sleep(30);
     out.flyout = [...pop().querySelectorAll(".bar-flyout .bar-row-title")].map((t) => t.textContent).join("|");
     const fr = pop().querySelector(".bar-flyout")?.getBoundingClientRect();
@@ -214,6 +231,8 @@ const NOW = Date.now();
     [...pop().querySelectorAll(".bar-flyout .bar-row")].at(-1)?.click(); await sleep(40);
     out.setFromFlyout = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
       .map((c) => c.body.params.model).join();
+   }
+   if (out.barMenus && FA.barAutoCount) {   // the terminal edition's footer
     ev({ type: "wrapper", subtype: "posture", posture: "autoApprove", auto_count: 3 });
     await sleep(30);
     q(".posture-chip")?.click(); await sleep(40);
@@ -226,9 +245,12 @@ const NOW = Date.now();
     out.noChip = !document.querySelector(".auto-chip");
   }
 
-  // «+»: files, slash, and the MCP switches.
+  // «+»: files, a project file, and the MCP switches behind one row.
   q(".bar-plus-btn")?.click(); await sleep(80);
   out.plusRows = pop()?.querySelectorAll(".bar-row").length ?? -1;
+  out.plusIcons = pop()?.querySelectorAll(".bar-row-icon svg").length ?? -1;
+  out.serversHidden = !!pop()?.querySelector(".bar-servers")?.hidden;
+  pop()?.querySelector(".bar-fold")?.click(); await sleep(80);
   out.servers = [...(pop()?.querySelectorAll(".bar-server-name") ?? [])].map((n) => n.textContent).join();
   mark = calls.length;
   const sw = pop()?.querySelectorAll(".bar-switch")[1];
@@ -243,6 +265,39 @@ const NOW = Date.now();
   q(".bar-plus-btn")?.click(); await sleep(60);
   pop()?.querySelectorAll(".bar-row")[1]?.click(); await sleep(40);
   out.slash = q(".input")?.value ?? "";
+  if (q(".input")) { q(".input").value = ""; q(".input").dispatchEvent(new Event("input", { bubbles: true })); }
+
+  // «/»: every command, grouped; the filter folds ي/ی; a pick with no
+  // argument goes as that command.
+  q(".bar-slash-btn")?.click(); await sleep(60);
+  out.groups = [...(pop()?.querySelectorAll(".bar-group") ?? [])].map((g) => g.textContent).join("|");
+  out.wantGroups = [FA.paletteGroups.chat, FA.paletteGroups.model].join("|");
+  const filter = pop()?.querySelector(".bar-filter");
+  out.filterFocused = !!filter && document.activeElement === filter;
+  if (filter) {
+    filter.value = "فشرده";
+    filter.dispatchEvent(new Event("input"));
+  }
+  out.filtered = [...(pop()?.querySelectorAll(".bar-row .bar-row-title") ?? [])].map((t) => t.textContent).join("|");
+  mark = calls.length;
+  filter?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await sleep(60);
+  out.ran = since(mark).filter((c) => c.url === "/api/message").map((c) => c.body.text).join();
+  out.paletteClosed = !pop();
+  ev({ type: "result", subtype: "success", usage: {}, result: "ok" });
+  await sleep(30);
+
+  // The prompt-cache clock: a reply that wrote the 1h cache now leaves 60
+  // minutes; before any reply the chip is not drawn.
+  const cache = q(".bar-cache");
+  out.cacheBefore = cache ? cache.hidden : "none";
+  ev({ type: "assistant", timestamp: new Date().toISOString(), message: { id: "m-cache", role: "assistant",
+       content: [{ type: "text", text: "باشه" }],
+       usage: { input_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000,
+                cache_creation: { ephemeral_1h_input_tokens: 9000, ephemeral_5m_input_tokens: 0 } } } });
+  await sleep(40);
+  out.cacheLabel = cache && !cache.hidden ? cache.querySelector(".bar-cache-label")?.textContent : "hidden";
+  out.wantCache = FA.barCacheMinutes.replace("{n}", "۶۰");
 
   // The button at the end of the box, terminal edition: send, or
   // stop while a turn runs with nothing to send; mid-turn «بعداً بفرست».
@@ -350,10 +405,11 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
         check("the held message goes when the turn ends, and its row with it",
               m.get("sentLater") == "بعد از این هم بپرس" and m.get("stripAfter"),
               f"«{m.get('sentLater')}» / strip hidden {m.get('stripAfter')}")
+    check("bar-menu shape in both editions", m.get("barMenus") is True, str(m.get("barMenus")))
     if m.get("barMenus"):
-        check("the model menu lists the newest of each family, no notes, the description as a tip",
-              m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("notes") == 0
-              and m.get("tip") == "complex work", f"{m.get('primary')} / {m.get('notes')} / {m.get('tip')}")
+        check("the model menu lists the newest of each family, the description as the line under it",
+              m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("noteLine") == "complex work",
+              f"{m.get('primary')} / «{m.get('noteLine')}»")
         check("«مدل‌های دیگر» opens the rest in a flyout beside the menu",
               m.get("flyout") == "Opus 5" and m.get("flyoutBeside"),
               f"{m.get('flyout')} / beside {m.get('flyoutBeside')}")
@@ -368,22 +424,40 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
         check("the menu shares an edge with its chip", m.get("menuOnChip") is True, str(m.get("menuOnChip")))
         check("a flyout row picks its model", m.get("setFromFlyout") == "claude-opus-5",
               str(m.get("setFromFlyout")))
+    if "foot" in m:
         check("the audit count is the mode menu's footer, and it opens the list; no bar chip",
               m.get("foot") == m.get("wantFoot") and m.get("auditOpen") and m.get("noChip"),
               f"«{m.get('foot')}» / list {m.get('auditOpen')} / no chip {m.get('noChip')}")
     check("the mode menu lists the four postures and a digit picks",
           m.get("modeRows") == 4 and m.get("posture") == "plan", f"{m.get('modeRows')} / {m.get('posture')}")
-    check("the effort slider starts at the current level and posts a change",
-          m.get("rangeStart") == "1/3" and m.get("effortPost") == "xhigh",
-          f"{m.get('rangeStart')} / {m.get('effortPost')}")
-    check("«+» offers files and slash commands, and lists the MCP servers",
-          m.get("plusRows") == 2 and m.get("servers") == "github,playwright",
-          f"{m.get('plusRows')} rows / {m.get('servers')}")
+    check("the mode menu carries an icon per row and the effort track",
+          m.get("modeIcons") == 4 and m.get("modeEffort") is True,
+          f"{m.get('modeIcons')} icons / track {m.get('modeEffort')}")
+    check("no effort chip; the level is drawn beside the model's name",
+          m.get("effortChip") is False and m.get("chipEffort") == m.get("wantChipEffort"),
+          f"chip {m.get('effortChip')} / «{m.get('chipEffort')}»")
+    check("the model menu's effort track starts at the current level, posts a change, stays open",
+          m.get("rangeStart") == "1/3" and m.get("effortPost") == "xhigh" and m.get("menuStays") is True,
+          f"{m.get('rangeStart')} / {m.get('effortPost')} / open {m.get('menuStays')}")
+    check("«+» offers files, a project file and one servers row, each with an icon",
+          m.get("plusRows") == 3 and m.get("plusIcons") == 3 and m.get("serversHidden") is True,
+          f"{m.get('plusRows')} rows / {m.get('plusIcons')} icons / folded {m.get('serversHidden')}")
+    check("...the servers row opens this machine's MCP servers",
+          m.get("servers") == "github,playwright", str(m.get("servers")))
     check("a switch toggles THAT server, and the list repaints from the CLI",
           m.get("toggle") == "playwright:false" and m.get("afterToggle") == "on,off",
           f"{m.get('toggle')} / {m.get('afterToggle')}")
-    check("«پیوست فایل» opens the native dialog; «فرمان‌ها» starts a slash command",
-          m.get("pick") is True and m.get("slash") == "/", f"{m.get('pick')} / {m.get('slash')!r}")
+    check("«پیوست فایل» opens the native dialog; the mention row starts an `@`",
+          m.get("pick") is True and m.get("slash") == "@", f"{m.get('pick')} / {m.get('slash')!r}")
+    check("«/» opens the commands in groups, the filter focused",
+          (m.get("groups") or "").startswith(m.get("wantGroups") or "?") and m.get("filterFocused") is True,
+          f"{m.get('groups')} / focused {m.get('filterFocused')}")
+    check("the filter narrows to the Persian name; Enter runs it as its command",
+          m.get("filtered") == "فشرده کردن گفتگو" and m.get("ran") == "/compact" and m.get("paletteClosed"),
+          f"«{m.get('filtered')}» / sent {m.get('ran')!r} / closed {m.get('paletteClosed')}")
+    check("the cache clock is hidden until a reply, then reads the 1h write's minutes",
+          m.get("cacheBefore") is True and m.get("cacheLabel") == m.get("wantCache"),
+          f"before hidden {m.get('cacheBefore')} / «{m.get('cacheLabel')}»")
     check("a reset inside a day reads as hours and minutes to go",
           m.get("reset") == m.get("wantReset"), f"{m.get('reset')} vs {m.get('wantReset')}")
     check("the per-model window is named by the CLI's own label",

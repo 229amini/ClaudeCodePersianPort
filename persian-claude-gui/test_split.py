@@ -108,24 +108,25 @@ LOG_SHARE = {"terminal": 60, "web": 40}[EDITION]
 SHELL = {
     "web": dict(
         parts=["log", "perm", "menu-popup", "composer", "statusline"],
+        # The posture menu is a bar.js popover since 2026-10-08: top layer,
+        # placed against its chip and the window, found in the document.
         # Through the chip the user presses, not a back door: positionMenu()
         # measures against the CELL, and that is the code under test.
         open_menu=('const openMenu = (cell) => {'
                    '  cell.controls.setPostureState("ask", 0);'
                    '  cell.root.querySelector(".posture-chip").click();'
                    '};'
-                   'const closeMenu = (cell) => cell.controls.closeMenu();'
-                   'const menuOpen = (cell) => {'
-                   '  const m = cell.root.querySelector(".menu-popup");'
-                   '  return !!m && !m.hidden;'
-                   '};'),
+                   'const closeMenu = () => document.querySelector(".bar-pop")?.hidePopover?.();'
+                   'const menuOpen = () => !!document.querySelector(".bar-pop");'
+                   'const menuBox = () => document.querySelector(".bar-pop");'),
         menu_name="posture menu"),
     "terminal": dict(
         parts=["log", "perm", "picker", "composer", "statusline"],
         open_menu=('const openMenu = (cell) => cell.controls.openPosturePicker();'
                    'const closeMenu = (cell) => cell.controls.closePicker();'
                    'const menuOpen = (cell) =>'
-                   '  !!cell.root.querySelector(".picker")?.open;'),
+                   '  !!cell.root.querySelector(".picker")?.open;'
+                   'const menuBox = (cell) => cell.root.querySelector(".picker");'),
         menu_name="posture picker"),
 }
 SH = SHELL[EDITION]
@@ -690,7 +691,7 @@ WEB_ONLY_JS = """
   const leftAt = xs.lastIndexOf(Math.min(...xs));
   openMenu(APP.cells[leftAt]);
   await sleep(250);
-  const leftMenu = rowCells[leftAt].querySelector(".menu-popup");
+  const leftMenu = menuBox(APP.cells[leftAt]);
   out.leftMenu = {at: leftAt, open: menuOpen(APP.cells[leftAt]),
                   cell: box(rowCells[leftAt]),
                   menu: leftMenu ? box(leftMenu) : null,
@@ -940,13 +941,19 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             say(f"the {SH['menu_name']} did not open in the left-most column "
                 f"(cell index {left['at']})")
         else:
-            cell, menu = left["cell"], left["menu"]
-            if (menu["x"] < cell["x"] - 1
-                    or menu["x"] + menu["w"] > cell["x"] + cell["w"] + 1
-                    or menu["y"] < cell["y"] - 1
-                    or menu["y"] + menu["h"] > cell["y"] + cell["h"] + 1):
+            # Since 2026-10-08 the posture menu is a bar.js popover: top layer,
+            # placed against its chip and clamped to the WINDOW, as the terminal
+            # edition's and the VS Code extension's are. It may lie over the
+            # next column; it must not leave the window or be squeezed.
+            menu = left["menu"]
+            vw, vh = size
+            if (menu["x"] < 0 or menu["x"] + menu["w"] > vw + 1
+                    or menu["y"] < 0 or menu["y"] + menu["h"] > vh + 1):
                 say(f"the {SH['menu_name']} opened in the left-most column is "
-                    f"outside it ({menu} vs {cell})")
+                    f"off the window ({menu} in {vw}x{vh})")
+            if menu["w"] < 240:
+                say(f"the {SH['menu_name']} opened in the left-most column is "
+                    f"squeezed to {menu['w']}px")
             if left["spill"]["n"]:
                 say(f"with that menu open {left['spill']['n']} boxes are drawn "
                     f"outside the left-most column (worst "
