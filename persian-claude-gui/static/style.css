@@ -3628,13 +3628,16 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
    measures it. 28 is the working size (the bar's chips, send/stop, menu rows,
    panel buttons); 32 is a decision (a permission answer, the layout panel);
    24 is an inline chip or a small text button inside a row. */
-.bar-chip, .comp-act, button.round.send, button.round.danger, .bar-row,
+.bar-chip, .comp-act, button.round.send, button.round.danger,
 .ch-back, .ch-refresh {
   box-sizing: border-box;
   min-height: 28px;
   block-size: 28px;
 }
 .comp-act, button.round.send, button.round.danger { inline-size: 28px; min-width: 28px; }
+/* A menu row is AT LEAST 28: a row with a description under its title grows.
+   block-size here overlapped the two lines (mode menu, 2026-10-07). */
+.bar-row { box-sizing: border-box; min-height: 28px; }
 .perm-allow, .perm-deny, .layout-btn, .layout-panel .layout-equal, .bar-btn {
   box-sizing: border-box;
   min-height: 32px;
