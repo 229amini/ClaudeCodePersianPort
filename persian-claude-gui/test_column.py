@@ -316,15 +316,15 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
 
     # pcg-rf8 R3 (user decision 2026-10-07, replacing 0.6.0's "no marker"):
     # every answer sits on the extension's timeline, a drawn dot (content "")
-    # in a 30px gutter on the PHYSICAL right. An English answer and a Persian
+    # in a 32px gutter on the PHYSICAL right (the extension's 30px, on the scale since 2026-10-07). An English answer and a Persian
     # one must keep the same gutter, or the rail would jump sides row to row,
     # the "scattered" row 0.6.0 removed the old ⏺ for.
     marks = m.get("marks") or []
     check("every assistant row wears the timeline dot",
           len(marks) == 2 and all(x == '""' for x in marks),
           str(marks))
-    check("and the same 30px right gutter, RTL and LTR alike",
-          m.get("gutters") == [30, 30],
+    check("and the same 32px right gutter, RTL and LTR alike",
+          m.get("gutters") == [32, 32],
           str(m.get("gutters")))
     check("the step sits in a run whose one line names what happened",
           m.get("runLine") == "note.md \u062e\u0648\u0627\u0646\u062f\u0647 \u0634\u062f",

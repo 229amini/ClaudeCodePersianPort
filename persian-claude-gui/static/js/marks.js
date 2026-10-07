@@ -108,7 +108,7 @@ export function decorate(msg, { uuid, ts, text, pinned = false, onPin, onFork, f
   if (uuid && onPin) {
     const pin = el("button", "msg-act msg-pin");
     pin.type = "button";
-    pin.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" '
+    pin.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
       + 'stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">'
       + '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/></svg>';
     pin.addEventListener("click", () => onPin(!msg.classList.contains("is-pinned")));
@@ -122,7 +122,7 @@ export function decorate(msg, { uuid, ts, text, pinned = false, onPin, onFork, f
     fork.type = "button";
     fork.title = forkTitle || FA.markFork;
     fork.setAttribute("aria-label", fork.title);
-    fork.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" '
+    fork.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
       + 'stroke-width="1.8" stroke-linecap="round" aria-hidden="true">'
       + '<circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="7" r="2"/>'
       + '<path d="M7 7v10M17 9c0 4-10 3-10 8"/></svg>';

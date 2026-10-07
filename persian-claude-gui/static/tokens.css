@@ -52,7 +52,7 @@
   /* text */
   --app-primary-foreground: #cccccc;
   --app-secondary-foreground: #9d9d9d;
-  --app-link-foreground: #4daafc;
+  --app-link-foreground: #e8956f;   /* accent is Claude orange, not VS Code blue (user decision 2026-10-07) */
   --app-disabled-foreground: rgb(204 204 204 / .5);
 
   /* surfaces. The window is the extension's editor mode: the transcript sits
@@ -72,10 +72,10 @@
   --app-widget-border: #454545;
   --app-menu-border: #454545;
   --app-splitter-background: #454545;
-  --app-splitter-hover-background: #0078d4;
-  --app-input-active-border: #2488db;
-  --app-focus-border: #0078d4;
-  --app-selection-background: #264f78;
+  --app-splitter-hover-background: var(--app-claude-orange);
+  --app-input-active-border: var(--app-claude-orange);
+  --app-focus-border: var(--app-claude-orange);
+  --app-selection-background: #5c3324;
   --app-scrollbar: #79797966;
   --app-scrollbar-hover: #646464b3;
   --app-transparent-inner-border: #ffffff1a;
@@ -98,11 +98,11 @@
   --app-list-border-radius: 4px;
   --app-list-gap: 2px;
   --app-list-hover-background: #2a2d2e;
-  --app-list-active-background: #04395e;
+  --app-list-active-background: #4a2a1d;
   --app-list-active-foreground: #ffffff;
-  --app-list-drop-background: #062f4a;
+  --app-list-drop-background: #3d2318;
   --app-menu-foreground: #cccccc;
-  --app-menu-selection-background: #0078d4;
+  --app-menu-selection-background: #b5552f;
   --app-menu-selection-foreground: #ffffff;
 
   /* state */
@@ -114,8 +114,9 @@
 
   /* buttons and accents */
   --app-button-foreground: #ffffff;
-  --app-button-background: #0078d4;
-  --app-button-hover-background: #026ec1;
+  /* a fill under white text: #b5552f is 4.9:1, the brand orange 3.1:1 */
+  --app-button-background: #b5552f;
+  --app-button-hover-background: #a14a28;
   /* dark_modern.json button.secondary* and button.border (R7) */
   --app-button-secondary-background: transparent;
   --app-button-secondary-foreground: #cccccc;
@@ -123,21 +124,21 @@
   --app-button-border: #ffffff1a;
   --app-accent-color: var(--app-button-background);
   --app-plan-mode-color: var(--app-button-background);
-  --app-effort-fill-color: #2488db;
+  --app-effort-fill-color: var(--app-claude-orange);
   --app-ultracode-color: var(--app-chart-5);
   --app-ghost-button-hover-background: #5a5d5e50;
   --app-badge-foreground: #f8f8f8;
   --app-badge-background: #616161;
-  --app-progressbar-background: #0078d4;
+  --app-progressbar-background: var(--app-claude-orange);
   --app-spinner-foreground: var(--app-claude-orange);
 
   /* status dots */
   --app-status-busy: #89d185;
-  --app-status-pending: #3b82f6;
+  --app-status-pending: var(--app-warning-accent);   /* amber, not blue (user, 2026-10-07) */
   --app-status-unread: var(--app-claude-orange);
 
   /* misc */
-  --app-banner-tint: #4a63af;
+  --app-banner-tint: #8a4a32;
   --app-modal-background: #000000bf;
   --app-editor-highlight-background: transparent;
 
@@ -150,8 +151,8 @@
   --app-diff-editor-background: #1e1e1e;
 
   /* chips and pills */
-  --app-mention-chip-background: #26477866;
-  --app-mention-chip-foreground: #85b6ff;
+  --app-mention-chip-background: #d9775733;
+  --app-mention-chip-foreground: #f0a585;
   --app-pill-background: color-mix(in srgb, var(--app-primary-foreground) 10%, transparent);
   --app-pill-foreground: var(--app-primary-foreground);
   --app-pill-hover-background: color-mix(in srgb, var(--app-primary-foreground) 18%, transparent);

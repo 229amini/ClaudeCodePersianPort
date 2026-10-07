@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-07T21:30:00+03:30",
+  "title": "Design System: Claude Persian",
+  "extensions": {
+    "colorMeta": {
+      "claude-orange": { "role": "primary", "displayName": "Claude Orange", "canonical": "#d97757", "tonalRamp": ["#3d1f14", "#5c3324", "#7f4430", "#a1563c", "#c26a4b", "#d97757", "#e8956f", "#f5c3ad"] },
+      "clay-fill": { "role": "primary", "displayName": "Clay Fill", "canonical": "#b5552f" },
+      "amber-attention": { "role": "secondary", "displayName": "Amber Attention", "canonical": "#e5a54b" },
+      "editor-ground": { "role": "neutral", "displayName": "Editor Ground", "canonical": "#181818", "tonalRamp": ["#141414", "#181818", "#1f1f1f", "#2b2b2b", "#313131", "#454545", "#9d9d9d", "#cccccc"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Body", "purpose": "Every message; Persian at 14px with line height 1.9." },
+      "ui": { "displayName": "UI", "purpose": "Chrome: sidebar, menus, composer bar, buttons." },
+      "small": { "displayName": "Small", "purpose": "Meta and hints; the floor for Persian text." },
+      "mono-small": { "displayName": "Mono Small", "purpose": "Line numbers, +N -M counts, versions. Latin only." }
+    },
+    "shadows": [
+      { "name": "float", "value": "0 4px 12px rgb(0 0 0 / .4), 0 0 0 1px #454545", "purpose": "Menus and popovers." },
+      { "name": "sheet", "value": "0 8px 24px rgb(0 0 0 / .4)", "purpose": "The composer's menus and panels." },
+      { "name": "drawer", "value": "0 18px 50px rgb(0 0 0 / .5)", "purpose": "The agent drawer and large dialogs." }
+    ],
+    "motion": [
+      { "name": "fast", "value": "120ms ease", "purpose": "Hover reveals, the message action strip." },
+      { "name": "standard", "value": ".2s linear", "purpose": "The context ring fill." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The default answer of a permission request.",
+      "html": "<button class=\"ds-btn-primary\">۱. بله</button>",
+      "css": ".ds-btn-primary { height: 32px; padding: 0 12px; border: 0; border-radius: 4px; background: #b5552f; color: #fff; font: 600 13px Vazirmatn, 'Segoe UI', sans-serif; cursor: pointer; } .ds-btn-primary:hover { background: #a14a28; } .ds-btn-primary:focus-visible { outline: 2px solid #d97757; outline-offset: 1px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Panel actions: back, refresh.",
+      "html": "<button class=\"ds-btn-secondary\">تازه‌سازی</button>",
+      "css": ".ds-btn-secondary { height: 28px; padding: 2px 8px; border: 1px solid #ffffff1a; border-radius: 4px; background: transparent; color: #ccc; font: 13px Vazirmatn, 'Segoe UI', sans-serif; cursor: pointer; } .ds-btn-secondary:hover { background: #2b2b2b; } .ds-btn-secondary:focus-visible { outline: 1px solid #d97757; outline-offset: 1px; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "input-composer",
+      "description": "The prompt box with its bar of chips.",
+      "html": "<div class=\"ds-composer\" dir=\"rtl\"><textarea class=\"ds-composer-input\" placeholder=\"پیام خود را بنویسید\"></textarea><div class=\"ds-composer-bar\"><button class=\"ds-chip\">Opus</button><button class=\"ds-send\">↵</button></div></div>",
+      "css": ".ds-composer { border: 1px solid #454545; border-radius: 8px; background: #313131; padding: 8px; } .ds-composer:focus-within { border-color: #d97757; } .ds-composer-input { width: 100%; border: 0; background: none; color: #ccc; font: 14px/1.9 Vazirmatn, sans-serif; resize: none; outline: none; } .ds-composer-input::placeholder { color: #989898; } .ds-composer-bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; } .ds-chip { height: 28px; padding: 0 8px; border: 0; border-radius: 9999px; background: rgb(204 204 204 / .1); color: #ccc; font: 13px Vazirmatn, sans-serif; } .ds-chip:hover { background: rgb(204 204 204 / .18); } .ds-send { width: 28px; height: 28px; border: 0; border-radius: 6px; background: #c6613f; color: #fff; }"
+    },
+    {
+      "name": "Sidebar Row",
+      "kind": "nav",
+      "refersTo": "list-row-active",
+      "description": "A conversation in the sidebar; the current one is ember.",
+      "html": "<ul class=\"ds-list\" dir=\"rtl\"><li class=\"ds-row ds-row-active\">یک‌خطی کردن نوار وضعیت</li><li class=\"ds-row\">بررسی تغییرات قاب‌ها</li></ul>",
+      "css": ".ds-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; background: #1f1f1f; } .ds-row { padding: 4px 8px; border-radius: 4px; color: #ccc; font: 13px Vazirmatn, sans-serif; cursor: pointer; } .ds-row:hover { background: #2a2d2e; } .ds-row-active, .ds-row-active:hover { background: #4a2a1d; color: #fff; }"
+    },
+    {
+      "name": "Mention Chip",
+      "kind": "chip",
+      "refersTo": "chip-mention",
+      "description": "Running tasks, @file mentions.",
+      "html": "<button class=\"ds-mention\">۱ کار در حال اجرا</button>",
+      "css": ".ds-mention { height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: #d9775733; color: #f0a585; font: 12px Vazirmatn, sans-serif; cursor: pointer; } .ds-mention:hover { background: rgb(217 119 87 / .3); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Workbench",
+    "overview": "A tidy desk in a dim room. Everything has a place and stays in it; the surface is grey and still, and the one warm colour on it — Claude orange — appears only where something needs the person. The window is a Persian, right-to-left reading of the Claude Code VS Code extension's webview.",
+    "keyCharacteristics": [
+      "Dark only, flat tonal layers, hairline borders, almost no shadow.",
+      "One accent, used sparingly: Claude orange.",
+      "Every size comes from one scale; persian-claude-gui/test_scale.py fails on anything else.",
+      "Persian body text is generous (14px, line height 1.9); chrome is 13px.",
+      "Paths, code and numbers are always isolated LTR inside RTL text."
+    ],
+    "rules": [
+      { "name": "The One Ember Rule", "body": "Orange marks what needs the person or what they are acting on. If a screen has orange on something that needs nothing, remove it.", "section": "colors" },
+      { "name": "The No Blue Rule", "body": "No blue accent anywhere — not for focus, links, selection, badges or the pending state. Categorical chart colours in the usage panel are the only exception.", "section": "colors" },
+      { "name": "The Twelve Floor Rule", "body": "No Persian text below 12px; Vazirmatn is unreadable there. 11px is for Latin digits and mono only.", "section": "typography" },
+      { "name": "The Six Steps Rule", "body": "Font sizes are 11, 12, 13, 14, 16, 20 — nothing else, and never em that compounds. Weights are 400, 500 and 700 — the three vendored Vazirmatn files; 600 renders as 700.", "section": "typography" },
+      { "name": "The Flat-at-Rest Rule", "body": "Nothing in the transcript casts a shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do take every size from the scale: spacing 2/4/8/12/16/24/32 (+20 gutter), type 11/12/13/14/16/20, corners 4/6/8/full, controls 24/28/32, icons 14/16.",
+      "Do run test_scale.py, audit_ui.py and the layout gates in both editions before calling a visual change done.",
+      "Do give every path, command, number and code span its own LTR isolate (spec rules 1–7).",
+      "Do keep tokens.css byte-identical in both editions."
+    ],
+    "donts": [
+      "Don't use a blue accent, a light theme, or a gradient.",
+      "Don't set Persian text below 12px or use em font sizes that compound.",
+      "Don't let a hover element cover content; reserve its room.",
+      "Don't put orange on anything that does not need the person.",
+      "Don't add a shadow to anything inside the transcript."
+    ]
+  }
+}

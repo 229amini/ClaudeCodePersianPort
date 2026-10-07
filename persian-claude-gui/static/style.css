@@ -187,7 +187,7 @@ body.app {
 /* Code needs a monospace face; Vazirmatn is not monospace (spec rule 3). */
 pre, code, .path, .diff, .tool-output, .mono {
   font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
-  font-size: 0.9em;
+  font-size: 12px;
 }
 
 }
@@ -205,11 +205,11 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 18px 16px 12px;
+  gap: 12px;
+  padding: 16px 16px 12px;
 }
 .side-head .mark { color: var(--accent); flex: none; }
-.brand { font-weight: 700; font-size: 1.05rem; }
+.brand { font-weight: 700; font-size: 16px; }
 
 /* pcg-rf8 R6: the extension's .newSessionButton (§8.1), a ghost row at 500
    with the list's own hover. 44px kept: it is this edition's one primary
@@ -217,8 +217,8 @@ pre, code, .path, .diff, .tool-output, .mono {
 .new-chat {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 2px 12px 10px;
+  gap: 8px;
+  margin: 2px 12px 8px;
   min-height: 44px;
   padding: 0 12px;
   border: 0;
@@ -249,9 +249,9 @@ pre, code, .path, .diff, .tool-output, .mono {
 }
 
 #projects .empty {
-  padding: 8px 10px;
+  padding: 8px 12px;
   color: var(--fg-muted);
-  font-size: .85em;
+  font-size: 12px;
 }
 
 /* --- open conversations ------------------------------------------------------
@@ -332,7 +332,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   color: var(--fg-muted);
   font-size: var(--app-font-size-min-fa);   /* a Persian name: the 12px floor */
 }
-/* On the blue current row the muted grey is 3.4:1; the row's own white is not. */
+/* On the current row the muted grey is 3.4:1; the row's own white is not. */
 .tab-row[data-current="true"] .tab-proj { color: inherit; opacity: .8; }
 
 /* The `⎇ agent-2` chip on a tab row and on a folded session row. It IS .path
@@ -345,7 +345,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 12px;
 }
 
 /* `.tab-row .tab-close`, not `.tab-close`: it reuses .sess-act, whose
@@ -353,7 +353,7 @@ pre, code, .path, .diff, .tool-output, .mono {
    and would win the tie on source order. */
 .tab-row .tab-close {
   display: inline-flex;
-  font-size: 1.05em;
+  font-size: 14px;
   line-height: 1;
 }
 .tab-row .tab-close:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
@@ -411,8 +411,8 @@ pre, code, .path, .diff, .tool-output, .mono {
 .tab-unread {
   flex: none;
   min-inline-size: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
+  padding: 0 4px;
+  border-radius: 8px;
   background: var(--app-status-unread);   /* the extension's .statusDotUnread */
   color: #111;
   font-size: var(--app-font-size-min-fa);
@@ -424,19 +424,19 @@ pre, code, .path, .diff, .tool-output, .mono {
 #tabs-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .tabs-badge {
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: .95em;
+  font-size: 12px;
   white-space: nowrap;
 }
 .tabs-badge[data-status="waiting"] {
   background: color-mix(in srgb, var(--app-status-pending) 18%, transparent);
-  color: #7fb0ff;
+  color: #f5cd8a;
 }
 
 /* A history row whose session is open in a tab right now: clicking it switches
@@ -476,7 +476,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 32px;
   padding: 0 8px;
   border: 0;
@@ -516,14 +516,14 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex: 1;
   min-width: 0;
   min-height: 34px;
-  margin: 3px 0;
+  margin: 2px 0;
   padding: 0 8px;
   border: 1px solid var(--accent);
   border-radius: 8px;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
-  font-size: .92em;
+  font-size: 12px;
   line-height: var(--lh-fa);
 }
 .proj-rename:focus-visible { outline: none; }   /* the accent border is the focus */
@@ -559,7 +559,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-muted);
-  font-size: .78em;
+  font-size: 12px;
 }
 
 /* Sits after the name, so a long name ellipses into it rather than pushing it
@@ -575,10 +575,10 @@ pre, code, .path, .diff, .tool-output, .mono {
 .proj-sessions {
   list-style: none;
   margin: 0;
-  padding: 0 22px 4px 0;   /* indent under the caret; RTL so padding-right */
+  padding: 0 24px 4px 0;   /* indent under the caret; RTL so padding-right */
 }
 .proj-sessions[hidden] { display: none; }
-.proj-sessions .empty { padding: 4px 10px; color: var(--fg-muted); font-size: .8em; }
+.proj-sessions .empty { padding: 4px 12px; color: var(--fg-muted); font-size: 12px; }
 
 .proj-sessions li {
   display: flex;
@@ -635,7 +635,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   color: var(--fg-muted);
   cursor: pointer;
   font: inherit;
-  font-size: .78em;
+  font-size: 12px;
 }
 .proj-sessions li:hover .sess-act,
 .proj-sessions li:focus-within .sess-act { display: inline-flex; }
@@ -644,8 +644,8 @@ pre, code, .path, .diff, .tool-output, .mono {
 .arch-head {
   width: 100%;
   color: var(--fg-muted);
-  font-size: .85em;
-  margin-block-start: 10px;
+  font-size: 12px;
+  margin-block-start: 8px;
 }
 .arch-head:hover { background: var(--surface); }
 
@@ -656,20 +656,20 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-height: 40px;
   padding: 0 8px;
   border-radius: 8px;
   color: var(--fg-muted);
-  font-size: .9em;
+  font-size: 12px;
   text-decoration: none;
   cursor: pointer;
 }
 .side-item:hover { background: var(--surface); color: var(--fg); }
 .side-ver {
-  padding: 6px 8px 0;
+  padding: 4px 8px 0;
   color: var(--fg-muted);
-  font-size: .74rem;
+  font-size: 12px;
   opacity: .75;
 }
 
@@ -691,7 +691,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   display: flex;
   justify-content: flex-end;   /* the far corner, out of the reading path */
   align-items: center;
-  padding: 6px 14px 0;
+  padding: 4px 16px 0;
 }
 
 /* THE SPLIT CONTROL. Three segments, «۱ | ۲ | ۴», one of them pressed. A
@@ -719,7 +719,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   border-radius: var(--corner-radius-small);
   background: none;
   color: var(--fg-muted);
-  font-size: .82rem;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -748,7 +748,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   min-width: 0;
   min-height: 0;
   display: grid;
-  gap: 1px;
+  gap: 2px;
   background: var(--border);   /* the gap IS the divider: one colour, no rules */
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
@@ -838,11 +838,11 @@ pre, code, .path, .diff, .tool-output, .mono {
 .cell-badge {
   flex: none;
   min-width: 1.4em;
-  padding: 0 .35em;
+  padding: 0 4px;
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--fg-muted);
-  font-size: .72rem;
+  font-size: 12px;
   line-height: 1.6;
   text-align: center;
 }
@@ -853,10 +853,10 @@ pre, code, .path, .diff, .tool-output, .mono {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 10px 24px 6px;
+  padding: 8px 24px 4px;
   min-height: 40px;
 }
-.topbar-name { font-weight: 700; font-size: .95em; }
+.topbar-name { font-weight: 700; font-size: 12px; }
 
 /* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
 .topbar-cwd {
@@ -868,7 +868,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   /* R8 audit: muted grey on the path chip was 4.1:1 at 10.6px. A Latin path
      may sit at 11px (wiki §13.3 rule 7), not under it. */
   color: var(--fg);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .replay-banner {
@@ -878,7 +878,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   margin: 0 auto 8px;
   width: min(var(--app-column-max), calc(100% - 32px));
   /* pcg-rf8 R7: the extension's .worktreeBanner. */
-  padding: 6px 12px;
+  padding: 4px 12px;
   background: var(--app-root-background);
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-medium);
@@ -926,7 +926,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
-  padding-block-end: 26px;
+  padding-block-end: 24px;
   flex: 1 1 0;
 }
 .cell.home::after {
@@ -939,9 +939,9 @@ pre, code, .path, .diff, .tool-output, .mono {
 .greeting {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   margin: 0;
-  font-size: 2rem;
+  font-size: 20px;
   font-weight: 600;
   line-height: 1.5;
 }
@@ -959,9 +959,9 @@ pre, code, .path, .diff, .tool-output, .mono {
 .home-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   width: min(var(--app-column-max), calc(100% - 40px));
-  margin-block-start: 28px;
+  margin-block-start: 24px;
 }
 
 /* A <button>, so it inherits the coral button:hover unless it says otherwise —
@@ -972,7 +972,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   align-items: center;
   gap: 12px;
   min-height: 62px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   /* pcg-rf8 R7: VS Code's welcome-page tile (welcomePage.tileBackground),
      with the list's hover. */
   border: 1px solid var(--app-primary-border-color);
@@ -989,7 +989,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 .home-card svg { flex: none; color: var(--accent); }
 
 .hc-text { display: flex; flex-direction: column; min-width: 0; }
-.hc-title { font-size: .92em; font-weight: 500; }
+.hc-title { font-size: 12px; font-weight: 500; }
 .hc-note {
   color: var(--app-secondary-foreground);
   font-size: var(--app-font-size-min-fa);
@@ -1006,17 +1006,17 @@ pre, code, .path, .diff, .tool-output, .mono {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   width: min(24rem, 46vw);
   max-height: 40vh;
   overflow: hidden;
-  padding: 12px 14px;
+  padding: 12px 16px;
   /* A floating card is opaque: the menu surface (R7). */
   background: var(--app-menu-background);
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-large);
   box-shadow: 0 2px 8px #00000026;
-  font-size: .85em;
+  font-size: 12px;
   line-height: 1.7;
   pointer-events: none;   /* must never steal the hover that opened it */
 }
@@ -1025,7 +1025,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   gap: 8px;
   align-items: baseline;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 12px;
 }
 .sc-line {
   display: -webkit-box;
@@ -1051,7 +1051,7 @@ pre, code, .path, .diff, .tool-output, .mono {
      is visible, kept their content size. Invisible in a short conversation and
      total in a long one. */
   /* Centered reading column, claude.ai-style. */
-  padding: 6px max(20px, calc((100% - var(--app-column-max)) / 2)) 14px;
+  padding: 8px max(20px, calc((100% - var(--app-column-max)) / 2)) 16px;
   display: flex;
   flex-direction: column;
   gap: var(--log-gap);
@@ -1080,8 +1080,8 @@ pre, code, .path, .diff, .tool-output, .mono {
 
 .msg {
   max-width: 62ch;          /* readable measure; Persian counts the same */
-  padding: 7px 14px;
-  border-radius: 14px;
+  padding: 8px 16px;
+  border-radius: 8px;
   overflow-wrap: anywhere;
 }
 
@@ -1106,7 +1106,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   align-self: stretch;
   max-width: none;
   background: transparent;
-  padding-block: 1px;
+  padding-block: 2px;
   padding-inline: 2px;
 }
 
@@ -1121,7 +1121,7 @@ pre, code, .path, .diff, .tool-output, .mono {
    dot sits on the first line's centre (.95em = half of 1.9 leading). */
 .log > :is(.msg.assistant:not(.side), details.card, .pulse, .recap, .todos, .msg.agent-note) {
   position: relative;
-  padding-right: 30px;
+  padding-right: 32px;
 }
 .log > :is(.msg.assistant:not(.side), details.card, .pulse, .recap, .todos, .msg.agent-note)::before {
   content: "";
@@ -1188,13 +1188,13 @@ pre, code, .path, .diff, .tool-output, .mono {
    not, and at this leading it stacks a whole blank line between paragraphs on
    top of one that already reads as a break. Halved: the leading separates the
    paragraphs, the margin only has to group them. */
-.msg p { margin: .45em 0; }
-.msg h1, .msg h2, .msg h3 { font-weight: 700; line-height: 1.4; margin: .7em 0 .25em; }
-.msg ul, .msg ol { padding-inline-start: 1.4em; margin: .35em 0; }
+.msg p { margin: 4px 0; }
+.msg h1, .msg h2, .msg h3 { font-weight: 700; line-height: 1.4; margin: 8px 0 4px; }
+.msg ul, .msg ol { padding-inline-start: 20px; margin: 4px 0; }
 .msg blockquote {
-  border-inline-start: 3px solid #616161;
-  padding-inline-start: .8em;
-  margin-block: .45em;
+  border-inline-start: 2px solid #616161;
+  padding-inline-start: 12px;
+  margin-block: 4px;
   margin-inline: 0;
   color: var(--fg-muted);
 }
@@ -1206,9 +1206,9 @@ pre, code, .path, .diff, .tool-output, .mono {
 .msg :not(pre) > code {
   color: var(--app-inline-code-foreground);
   background: var(--app-inline-code-background);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: .9em;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
   word-break: break-word;
 }
 
@@ -1218,7 +1218,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   border: 0;
   border-radius: var(--corner-radius-small);
   padding: 8px;
-  margin-block: .45em;
+  margin-block: 4px;
   overflow-x: auto;         /* long lines scroll, page never does */
   line-height: 1.55;        /* code is Latin: the Persian floor does not apply */
 }
@@ -1230,7 +1230,7 @@ pre, code, .path, .diff, .tool-output, .mono {
    :last-child margin resets (above) now land on the wrapper for the same
    reason. Declared after `.msg pre` so `.code-wrap > pre`'s margin-block: 0
    wins the tie (equal specificity, same layer). */
-.code-wrap { position: relative; margin-block: .45em; }
+.code-wrap { position: relative; margin-block: 4px; }
 .code-wrap > pre { margin-block: 0; }
 .code-copy {
   position: absolute;
@@ -1262,16 +1262,16 @@ pre, code, .path, .diff, .tool-output, .mono {
    The wrapper is what makes a wide table scroll ITSELF: `overflow-x` on the
    table would clip its own borders, and without either the page grows a
    horizontal scrollbar and breaks the layout guard. */
-.msg .table-wrap { overflow-x: auto; margin: .5em 0; }
+.msg .table-wrap { overflow-x: auto; margin: 8px 0; }
 .msg table {
   border-collapse: collapse;
   inline-size: max-content;
   max-inline-size: 100%;
-  font-size: .95em;
+  font-size: 12px;
 }
 .msg th, .msg td {
   border: 1px solid var(--app-input-border);
-  padding: 4px 9px;
+  padding: 4px 8px;
   text-align: start;       /* never `left`: the cell's own dir decides — spec */
   vertical-align: top;
   line-height: var(--lh-fa);
@@ -1282,7 +1282,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 /* Bare Windows paths / URLs / versions found in prose (spec rule 2). */
 .path {
   background: var(--surface-2);
-  padding: .1em .3em;
+  padding: 2px 4px;
   border-radius: 4px;
 }
 
@@ -1353,7 +1353,7 @@ details.card.run[open] { border: 0; background: none; }
 details.card.run > summary {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   max-inline-size: 100%;
   padding: 0;
   min-height: 0;
@@ -1365,23 +1365,23 @@ details.card.run > summary:hover { background: none; color: var(--fg); }
 details.card.run > summary::after {
   content: "‹";
   flex: none;
-  font-size: 1.1em;
+  font-size: 16px;
   line-height: 1;
   transition: transform var(--dur) var(--ease);
 }
 details.card.run[open] > summary::after { transform: rotate(-90deg); }
 .run-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-name { color: inherit; }
-.run-stat { flex: none; display: inline-flex; gap: 4px; font-size: .92em; font-variant-numeric: tabular-nums; }
+.run-stat { flex: none; display: inline-flex; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .run-err { flex: none; }
 .run-err:empty { display: none; }
 details.card.run.has-failed > summary .run-err { color: var(--danger); }
 /* toolBody: an #454545 hairline on the tool surface, 5px corners. */
 details.card.run > .card-body {
-  margin-block-start: 6px;
+  margin-block-start: 4px;
   padding: 0;
   border: 1px solid var(--app-input-border);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--app-tool-background);
   overflow: hidden;
 }
@@ -1390,11 +1390,11 @@ details.card.run > .card-body > * + * { border-block-start: 1px solid var(--app-
 details.card.run > .card-body > details.card > summary { padding: 4px 8px; min-height: 28px; }
 details.card.run > .card-body > details.card[open] { background: var(--app-list-hover-background); }
 details.card.run > .card-body .tool-icon:not(.glyph) { display: none; }
-details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
+details.card.run > .card-body > .msg.agent-note { padding: 8px 12px; }
 .log .run details.card > summary::before,
 .log .run details.card > summary::after { content: none; }
 
-details.card.group > .card-body { padding: 4px 0 6px 6px; }
+details.card.group > .card-body { padding: 4px 0 4px 8px; }
 /* A grouped run can fall back to an MCP tool's own (unbounded-length) name —
    groupSummaryText() in render.js — so this row needs the same one-line
    ellipsis guard `.tool-name`/`.tool-target` already carry. min-inline-size:0
@@ -1413,13 +1413,13 @@ details.card.group[open] > summary .tool-verb { color: var(--fg); }
 details.card > summary {
   position: relative;
   cursor: pointer;
-  padding: 3px 12px;
+  padding: 2px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
   list-style: none;
   color: var(--fg-muted);
-  font-size: .92em;
+  font-size: 12px;
   min-height: 30px;
   border-radius: var(--radius);
 }
@@ -1445,7 +1445,7 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
   margin-inline-start: auto;
   flex: none;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1456,11 +1456,11 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
 .tool-repeat {
   margin-inline-start: auto;
   flex: none;
-  padding: 0 7px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--fg-muted);
-  font-size: .78em;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -1471,7 +1471,7 @@ details.card[open] > summary { border-end-start-radius: 0; border-end-end-radius
   text-overflow: ellipsis;
   white-space: nowrap;
   background: none;
-  font-size: .95em;
+  font-size: 12px;
 }
 details.card > summary::-webkit-details-marker { display: none; }
 
@@ -1503,7 +1503,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 /* Which MCP server the tool came from: present, but not competing with it. */
 .tool-server {
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1531,7 +1531,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   background: var(--app-code-background);
   border-radius: var(--corner-radius-small);
   line-height: var(--lh-fa);
-  padding: 6px 8px;
+  padding: 4px 8px;
 }
 .diff { background: var(--app-diff-editor-background); }
 
@@ -1561,8 +1561,8 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .param-key {
   display: block;
   color: var(--fg-muted);
-  font-size: .85em;
-  margin-block-end: 3px;
+  font-size: 12px;
+  margin-block-end: 2px;
 }
 
 .thinking .card-body { color: var(--fg-muted); font-style: normal; }
@@ -1586,7 +1586,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    flex column and an automatic minimum size crushes its entries. */
 /* The running tool's target on the working line: one row, never a wrap — a
    long command ends in an ellipsis and its title holds the rest. */
-.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0;
+.pulse-verb { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0;
               flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
 /* The counter and the verb hold their line too: a long command squeezed
    «۱ دقیقه و ۴۹ ثانیه · ↓ ۱٫۵ هزار توکن» and «در حال اجرای ابزار…» onto two
@@ -1600,10 +1600,10 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 12px;
+  padding: 2px 12px;
   min-height: 30px;
   color: var(--fg-muted);
-  font-size: .92em;
+  font-size: 12px;
 }
 
 .pulse.live { order: 1; }
@@ -1626,15 +1626,15 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 /* «۱ کار در حال اجرا»: the site's blue chip; it opens the tasks panel. */
 .pulse-tasks {
   min-height: 0;
-  padding: 0 6px;
+  padding: 0 8px;
   border: 0;
   border-radius: 4px;
-  background: rgb(76 139 245 / .16);
-  color: rgb(128 176 255);
+  background: var(--app-mention-chip-background);
+  color: var(--app-mention-chip-foreground);
   font: inherit;
   cursor: pointer;
 }
-.pulse-tasks:hover { background: rgb(76 139 245 / .26); }
+.pulse-tasks:hover { background: color-mix(in srgb, var(--app-claude-orange) 30%, transparent); }
 .pulse-tasks:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* tabular-nums so a ticking counter does not jiggle the line it sits on. */
@@ -1663,7 +1663,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   gap: 8px;
   padding: 2px 12px 8px;
   color: var(--fg-muted);
-  font-size: .92em;
+  font-size: 12px;
 }
 
 .recap-glyph {
@@ -1689,7 +1689,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 
 /* --- composer ---------------------------------------------------------------- */
 .composer {
-  padding: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
+  padding: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
 }
 
 /* pcg-rf8 R5: THE EXTENSION'S INPUT BOX - the input surface in an #454545
@@ -1727,8 +1727,8 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 4px 5px;
+  gap: 8px;
+  padding: 4px 4px;
   border-block-start: 1px solid var(--app-input-border);
   color: var(--app-secondary-foreground);
 }
@@ -1742,7 +1742,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px 12px;
+  padding: 8px 12px;
   resize: none;
   max-height: 40vh;
   min-height: 44px;         /* touch-target floor */
@@ -1751,7 +1751,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 .comp-box .input {
   background: none;
   border: 0;
-  padding: 6px 12px 4px;
+  padding: 4px 12px 4px;
   min-height: 36px;
   /* The base rule's `flex: 1` sets flex-basis:0% — in this COLUMN flex box that
      replaces the height property on the main axis, so the auto-grow in
@@ -1802,7 +1802,7 @@ button.icon {
   align-items: center;
   justify-content: center;
 }
-.comp-box button.icon { min-width: 26px; min-height: 26px; border: 0; border-radius: 5px; color: var(--app-secondary-foreground); }
+.comp-box button.icon { min-width: 26px; min-height: 26px; border: 0; border-radius: 6px; color: var(--app-secondary-foreground); }
 .comp-box button.icon:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 
 /* sendButton: 26px clay, 5px corners, an ivory glyph, following the posture
@@ -1817,7 +1817,7 @@ button.round {
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--app-claude-clay-button-orange);
   color: var(--app-claude-ivory);
 }
@@ -1839,7 +1839,7 @@ button.round svg { width: 16px; height: 16px; }
   max-width: 34ch;
   padding: 0 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   color: var(--app-secondary-foreground);
   font: inherit;
@@ -1875,26 +1875,26 @@ button.round svg { width: 16px; height: 16px; }
    posture menu off the top of a 500px-wide window. Same trap the file already
    names for `.perm .perm-source` vs `.perm p`. */
 .composer .composer-hint {
-  font-size: .74em;
+  font-size: 12px;
   text-align: center;
-  padding-top: 5px;
+  padding-top: 4px;
   min-height: 1.4em;
 }
 
 /* --- attachments ------------------------------------------------------------- */
-.attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 4px; }
+.attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 2px 4px; }
 .attachments[hidden] { display: none; }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 32ch;
-  padding: 3px 8px;
+  padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-2);
-  font-size: .82em;
+  font-size: 12px;
 }
 .chip .path {
   background: none;
@@ -1910,7 +1910,7 @@ button.round svg { width: 16px; height: 16px; }
   background: none;
   border: 0;
   color: var(--fg-muted);
-  font-size: 1.1em;
+  font-size: 14px;
   line-height: 1;
 }
 .chip button:hover { background: none; color: var(--fg); }
@@ -1938,7 +1938,7 @@ button.round svg { width: 16px; height: 16px; }
 .shell-cmd {
   unicode-bidi: isolate;
   font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
-  font-size: .92em;
+  font-size: 12px;
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1972,10 +1972,10 @@ button.round svg { width: 16px; height: 16px; }
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 4px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: .88em;
+  font-size: 12px;
 }
 .slash-popup li[aria-selected="true"],
 .slash-popup li:hover { background: var(--surface-2); }
@@ -2023,7 +2023,7 @@ button.round svg { width: 16px; height: 16px; }
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-muted);
-  font-size: .95em;
+  font-size: 12px;
 }
 
 /* --- model picker / approval pill menu --------------------------------------- */
@@ -2056,13 +2056,13 @@ button.round svg { width: 16px; height: 16px; }
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   /* Never shrink. The popup is a flex column with a max-height, so a row with
      `min-height: 0` gave up its own content size once the list was taller than
      the box — the notes then drew ON TOP of the next row's title instead of
      scrolling. Same defect, same fix, as `.log > * { flex: none }`. */
   flex: none;
-  padding: 6px 12px;
+  padding: 4px 12px;
   border: 0;
   border-radius: var(--app-list-border-radius);
   background: none;
@@ -2120,7 +2120,7 @@ button.round svg { width: 16px; height: 16px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   border: 0;
   border-radius: var(--app-list-border-radius);
   background: none;
@@ -2133,7 +2133,7 @@ button.round svg { width: 16px; height: 16px; }
 .kebab-item svg { flex: none; opacity: .8; }
 .kebab-note {
   display: block;
-  padding: 6px 9px;
+  padding: 4px 8px;
   max-inline-size: 15rem;
   color: var(--fg-muted);
   font-size: var(--fs-meta);
@@ -2166,27 +2166,27 @@ button.round svg { width: 16px; height: 16px; }
 .statusline {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 4px 16px;
   align-items: center;
   justify-content: center;
-  padding: 5px 16px 8px;
+  padding: 4px 16px 8px;
   color: var(--fg-muted);
-  font-size: .74em;
+  font-size: 11px;
   line-height: 1.6;
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.statusline .sl-item { display: flex; gap: 6px; align-items: center; }
+.statusline .sl-item { display: flex; gap: 8px; align-items: center; }
 .statusline .sl-label { opacity: .7; }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
-.statusline .sl-meter { display: flex; gap: 6px; align-items: center; }
+.statusline .sl-meter { display: flex; gap: 8px; align-items: center; }
 .statusline progress {
   appearance: none;
   inline-size: 44px;
   block-size: 4px;
   border: 0;
-  border-radius: 2px;
+  border-radius: 4px;
   overflow: hidden;
 }
 .statusline progress::-webkit-progress-bar {
@@ -2194,7 +2194,7 @@ button.round svg { width: 16px; height: 16px; }
 }
 .statusline progress::-webkit-progress-value {
   background: var(--fg-muted);
-  border-radius: 2px;
+  border-radius: 4px;
   transition: inline-size .3s ease;
 }
 .statusline progress[data-level="warn"]::-webkit-progress-value { background: var(--warn); }
@@ -2219,7 +2219,7 @@ button.round svg { width: 16px; height: 16px; }
   max-width: none;
   opacity: .95;
 }
-.statusline .sl-custom span:not(:empty) { padding-block: 1px; }
+.statusline .sl-custom span:not(:empty) { padding-block: 2px; }
 
 /* --- permission dialog --------------------------------------------------------
    v2.4-style non-modal placement (MA4-T0): shown with show(), not showModal(),
@@ -2246,7 +2246,7 @@ button.round svg { width: 16px; height: 16px; }
   color: var(--fg);
   padding: 8px;
   max-width: none;
-  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
   font: inherit;
   font-size: var(--fs-ui);
   line-height: 1.55;
@@ -2281,11 +2281,11 @@ button.round svg { width: 16px; height: 16px; }
   margin: 0;
   margin-inline-start: auto;
   color: var(--fg-muted);
-  font-size: .78rem;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .perm h2 { flex: none; margin: 0; font-size: 14px; font-weight: 700; }
-.perm p { margin: 0 0 6px; color: var(--fg-muted); font-size: .92em; }
+.perm p { margin: 0 0 4px; color: var(--fg-muted); font-size: 12px; }
 /* «کلاد می‌خواهد این ابزار را اجرا کند:» says what the header already says. */
 .perm .perm-body { display: none; }
 .perm.asking h2 { display: none; }
@@ -2302,17 +2302,17 @@ button.round svg { width: 16px; height: 16px; }
 .perm-tool .perm-path { font-family: "Cascadia Code", "Consolas", ui-monospace, monospace; }
 /* The tool name is the extension's inline code chip. */
 .perm-tool .mono {
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 2px 4px;
+  border-radius: 4px;
   background: var(--app-inline-code-background);
   color: var(--app-inline-code-foreground);
-  font-size: .9em;
+  font-size: 12px;
 }
 .perm-tool .perm-desc {
-  margin-inline-start: 6px;
+  margin-inline-start: 8px;
   color: var(--fg-muted);
   font-weight: 400;
-  font-size: .92em;
+  font-size: 12px;
 }
 
 /* Which conversation is asking, when it is not the one on screen. Sits between
@@ -2324,12 +2324,12 @@ button.round svg { width: 16px; height: 16px; }
 .perm .perm-source {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   margin-block: 4px 2px;
   padding: 0 8px;
   border-inline-start: 2px solid var(--accent);
-  font-size: .85em;
+  font-size: 12px;
 }
 
 /* Tool parameters are model-supplied text: paths, but also file CONTENT the
@@ -2351,9 +2351,9 @@ button.round svg { width: 16px; height: 16px; }
 .perm-params {
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-small);
-  padding: 6px 8px;
+  padding: 4px 8px;
   margin: 4px 0 0;
-  font-size: .9em;
+  font-size: 12px;
   max-height: min(30vh, 20cqb);
   overflow: auto;
   white-space: pre-wrap;
@@ -2374,7 +2374,7 @@ button.round svg { width: 16px; height: 16px; }
   min-width: 0;
   min-height: 28px;
   cursor: pointer;
-  font-size: .88em;
+  font-size: 12px;
   color: var(--fg-muted);
 }
 .perm-remember-row input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--app-button-background); }
@@ -2392,13 +2392,13 @@ button.round svg { width: 16px; height: 16px; }
 }
 /* The global 44px button floor would make this row the tallest thing here;
    28px is the extension's row and over the 24px pointer floor (WCAG 2.5.8). */
-.perm menu button { min-height: 28px; padding: 4px 14px; font-size: var(--fs-ui); }
+.perm menu button { min-height: 28px; padding: 4px 16px; font-size: var(--fs-ui); }
 
 /* --- diffs -------------------------------------------------------------------
    .diff already carries direction:ltr + isolate + monospace + its own scroll box
    from the spec's base CSS; this is only the rows inside it. Colour is never the
    only signal — the +/− gutter says the same thing without it. */
-.diff { padding: 6px 0; }
+.diff { padding: 4px 0; }
 .dl {
   display: grid;
   grid-template-columns: 3ch 3ch 2ch 1fr;
@@ -2424,8 +2424,8 @@ button.round svg { width: 16px; height: 16px; }
    "1- 2+". Spec rule 2, in the smallest possible token. */
 .diff-stat {
   display: inline-flex;
-  gap: 5px;
-  font-size: .85em;
+  gap: 4px;
+  font-size: 11px;
   direction: ltr;
   unicode-bidi: isolate;
 }
@@ -2444,7 +2444,7 @@ button.round svg { width: 16px; height: 16px; }
   /* pcg-rf8 R6: the extension's .notice [KPdslw], a card tinted with the
      warning accent, the error red when urgent. */
   --tint: var(--app-warning-accent);
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 1px solid color-mix(in srgb, var(--app-primary-foreground), var(--tint) 50%);
   border-radius: var(--corner-radius-large);
   background: color-mix(in srgb, var(--app-secondary-background), var(--tint) 25%);
@@ -2453,22 +2453,22 @@ button.round svg { width: 16px; height: 16px; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
+  gap: 12px 16px;
 }
 .context-notice[hidden] { display: none; }   /* beats the flex above */
 .context-notice.urgent { --tint: var(--app-error-foreground); }
 
 .ctx-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 16rem; min-width: 0; }
 .ctx-title { font-weight: 600; }
-.ctx-body { font-size: .9em; }
+.ctx-body { font-size: 12px; }
 
 .ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .ctx-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
-  padding: 6px 12px;
+  gap: 2px;
+  padding: 4px 12px;
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-small);
   background: var(--app-secondary-background);
@@ -2482,8 +2482,8 @@ button.round svg { width: 16px; height: 16px; }
 .ctx-btn.primary:hover { background: var(--app-button-hover-background); }
 .ctx-btn.ghost { background: none; border-color: transparent; color: inherit; }
 .ctx-btn.ghost:hover { background: var(--app-ghost-button-hover-background); }
-.ctx-btn-text { font-weight: 600; font-size: .92em; }
-.ctx-btn-note { font-size: .78em; opacity: .8; }
+.ctx-btn-text { font-weight: 600; font-size: 12px; }
+.ctx-btn-note { font-size: 12px; opacity: .8; }
 
 /* --- the queued-message strip ------------------------------------------------
    A message sent while the CLI is still answering is not delivered: it waits in
@@ -2493,9 +2493,9 @@ button.round svg { width: 16px; height: 16px; }
 .queue-strip {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   /* The composer's own column, to the pixel. */
-  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
   /* #stage is a flex column: without `flex: none` a queue several messages deep
      is crushed instead of scrolling — the `.log > * { flex: none }` family,
      which has now cost this project three separate defects
@@ -2511,16 +2511,16 @@ button.round svg { width: 16px; height: 16px; }
   align-items: center;
   gap: 8px;
   min-height: 28px;
-  padding: 2px 10px;
+  padding: 2px 12px;
   border-radius: 8px;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 12px;
 }
 
 .queued-tag {
   flex: none;
-  padding: 1px 6px;
-  border-radius: 10px;
+  padding: 2px 8px;
+  border-radius: 8px;
   background: var(--app-badge-background);   /* the .groupCount badge */
   color: var(--app-badge-foreground);
   font-size: var(--app-font-size-min-fa);
@@ -2552,7 +2552,7 @@ button.round svg { width: 16px; height: 16px; }
   border-radius: 6px;
   background: none;
   color: var(--fg-muted);
-  font-size: 1.1em;
+  font-size: 14px;
   line-height: 1;
 }
 .queued-x:hover, .queued-x:focus-visible {
@@ -2569,16 +2569,16 @@ button.round svg { width: 16px; height: 16px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
 }
 /* The site's «N running task» chip, the same as the working line's. */
 .ag-chip {
   min-height: 0;
-  padding: 0 6px;
+  padding: 0 8px;
   border: 0;
   border-radius: 4px;
-  background: rgb(76 139 245 / .16);
-  color: rgb(128 176 255);
+  background: var(--app-mention-chip-background);
+  color: var(--app-mention-chip-foreground);
   font: inherit;
   /* R8 audit: .85em of the 13px chrome was 11px and 19px tall; the Persian
      floor and the 24px pointer floor (WCAG 2.5.8). */
@@ -2586,7 +2586,7 @@ button.round svg { width: 16px; height: 16px; }
   min-height: 24px;
   cursor: pointer;
 }
-.ag-chip:hover { background: rgb(76 139 245 / .26); }
+.ag-chip:hover { background: color-mix(in srgb, var(--app-claude-orange) 30%, transparent); }
 .ag-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .agents-strip .ag-wait { padding: 0; }
 .agents-strip[hidden] { display: none; }   /* beats the flex above */
@@ -2597,13 +2597,13 @@ button.round svg { width: 16px; height: 16px; }
   gap: 8px;
   inline-size: 100%;
   min-height: 28px;
-  padding: 2px 10px;
+  padding: 2px 12px;
   border: 0;
   border-radius: 8px;
   background: none;
   color: var(--fg-muted);
   font: inherit;
-  font-size: .82em;
+  font-size: 12px;
   text-align: start;
   cursor: pointer;
 }
@@ -2668,7 +2668,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 .ag-time { flex: none; opacity: .8; font-variant-numeric: tabular-nums; }
 
 /* The CLI's own "Waiting for N background agents", in Persian. */
-.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: var(--app-font-size-min-fa); }
+.ag-wait { padding: 2px 12px 4px; color: var(--fg-muted); font-size: var(--app-font-size-min-fa); }
 
 /* Folds finished agents open — muted like .ag-wait, since it is status chrome
    too, not an action. Needs its own :hover: the generic filled `button:hover`
@@ -2676,13 +2676,13 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
    paint it coral, the same trap `.ag-row` and `.kebab-item` already hit. */
 .ag-history {
   align-self: flex-start;
-  padding: 2px 10px;
+  padding: 2px 12px;
   border: 0;
   border-radius: 8px;
   background: none;
   color: var(--fg-muted);
   font: inherit;
-  font-size: .8em;
+  font-size: 12px;
   cursor: pointer;
 }
 .ag-history:hover { background: var(--surface-2); color: var(--fg); }
@@ -2735,38 +2735,38 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
   box-shadow: 0 18px 50px rgb(0 0 0 / .5);
 }
 #tasks-panel:popover-open { display: flex; flex-direction: column; }
-.tk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-           flex: none; padding: 12px 14px 8px; }
+.tk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           flex: none; padding: 12px 16px 8px; }
 .tk-heading { font-weight: var(--wt-title); }
 .tk-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px;
            display: flex; flex-direction: column; gap: 8px; }
 .tk-body > * { flex: none; }
-.tk-section, .tk-empty { color: var(--fg-muted); font-size: .85em; padding: 4px 2px 0; }
-.tk-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+.tk-section, .tk-empty { color: var(--fg-muted); font-size: 12px; padding: 4px 2px 0; }
+.tk-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px;
            border-radius: 8px; background: rgb(255 255 255 / .04); }
-.tk-top { display: flex; align-items: flex-start; gap: 10px; }
+.tk-top { display: flex; align-items: flex-start; gap: 12px; }
 .tk-title { flex: 1; min-inline-size: 0; color: var(--fg); }
-.tk-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
-           color: var(--fg-muted); font-size: .85em; }
+.tk-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+           color: var(--fg-muted); font-size: 12px; }
 .tk-kind { color: var(--fg); }
 .tk-model { color: var(--fg); background: none; padding: 0; }
 .tk-now { color: var(--fg-muted); }
 .tk-view, .tk-finished, .tk-clear, .tk-stop {
   min-height: 0; border: 0; background: none; font: inherit; cursor: pointer; }
-.tk-view { align-self: flex-start; padding: 0; color: rgb(128 176 255); font-size: .85em; }
+.tk-view { align-self: flex-start; padding: 0; color: var(--app-mention-chip-foreground); font-size: 12px; }
 .tk-view:hover { text-decoration: underline; }
 .tk-stop { flex: none; inline-size: 22px; block-size: 22px; border: 1px solid var(--border);
-           border-radius: 5px; position: relative; }
-.tk-stop::before { content: ""; position: absolute; inset: 6px; border-radius: 2px;
+           border-radius: 6px; position: relative; }
+.tk-stop::before { content: ""; position: absolute; inset: 6px; border-radius: 4px;
                    background: var(--fg-muted); }
 .tk-stop:hover { background: var(--surface-2); }
 .tk-stop:hover::before { background: var(--fg); }
-.tk-finished-row { display: flex; align-items: center; justify-content: space-between; padding-top: 6px; }
-.tk-finished { padding: 2px; color: var(--fg-muted); font-size: .9em; }
+.tk-finished-row { display: flex; align-items: center; justify-content: space-between; padding-top: 4px; }
+.tk-finished { padding: 2px; color: var(--fg-muted); font-size: 12px; }
 .tk-finished::after { content: " ‹"; }
 .tk-finished[aria-expanded="true"]::after { content: " ⌄"; }
-.tk-clear { inline-size: 24px; block-size: 24px; border-radius: 5px; color: var(--fg-muted); }
-.tk-clear::before { content: "🗑"; filter: grayscale(1); font-size: .9em; }
+.tk-clear { inline-size: 24px; block-size: 24px; border-radius: 6px; color: var(--fg-muted); }
+.tk-clear::before { content: "🗑"; filter: grayscale(1); font-size: 12px; }
 .tk-clear:hover { background: var(--surface-2); color: var(--fg); }
 .tk-view:focus-visible, .tk-finished:focus-visible, .tk-clear:focus-visible, .tk-stop:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -2775,20 +2775,20 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 .ag-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex: none;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border-block-end: 1px solid var(--border);
-  font-size: .9em;
+  font-size: 12px;
 }
 .ag-head .ag-desc { color: var(--fg); font-weight: 600; }
 .ag-live {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: none;
   color: var(--fg-muted);
-  font-size: .82em;
+  font-size: 12px;
 }
 button.ag-close {
   flex: none;
@@ -2799,7 +2799,7 @@ button.ag-close {
   border-radius: 6px;
   background: none;
   color: var(--fg-muted);
-  font-size: 1.2em;
+  font-size: 16px;
   line-height: 1;
 }
 button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
@@ -2816,7 +2816,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   display: flex;
   flex-direction: column;
   gap: var(--log-gap);
-  padding: 10px 14px 16px;
+  padding: 8px 16px 16px;
 }
 .ag-log > * { flex: none; }
 
@@ -2839,8 +2839,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    navigationBar: one question on screen at a time (pcg-rf8). */
 .ask-nav {
   display: flex;
-  gap: 10px;
-  margin: 0 0 6px;
+  gap: 12px;
+  margin: 0 0 4px;
   border-block-end: 1px solid var(--app-widget-border);
   overflow: hidden;
 }
@@ -2893,7 +2893,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .perm .ask-text {
   margin: 0 0 4px;
   color: var(--fg);
-  font-size: 1em;
+  font-size: 13px;
   font-weight: 500;
 }
 .ask-hint { display: block; margin-block-end: 4px; font-size: var(--fs-meta); color: var(--fg-muted); }
@@ -2906,7 +2906,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: flex-start;
   gap: 8px;
   min-height: 28px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   border: 0;
   border-radius: var(--corner-radius-small);
   cursor: pointer;
@@ -2937,7 +2937,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   background: transparent;
   outline: none;
 }
-.ask-opt input[type="checkbox"] { border-radius: 3px; }
+.ask-opt input[type="checkbox"] { border-radius: 4px; }
 .ask-opt input:checked { border-color: var(--app-button-background); }
 .ask-opt input[type="radio"]:checked::before {
   content: "";
@@ -2980,9 +2980,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    The record of the same exchange, and in history replay the ONLY rendering of
    it — there is no dialog on a replayed turn. */
 .q-block + .q-block { margin-block-start: 12px; }
-.q-header { font-size: .8em; font-weight: 700; color: var(--fg-muted); }
+.q-header { font-size: 12px; font-weight: 700; color: var(--fg-muted); }
 .q-text { margin: 2px 0 8px; font-weight: 600; }
-.q-options { margin: 0; padding-inline-start: 1.1em; display: flex; flex-direction: column; gap: 4px; }
+.q-options { margin: 0; padding-inline-start: 16px; display: flex; flex-direction: column; gap: 4px; }
 .q-options li { color: var(--fg-muted); }
 .q-label { font-weight: 600; color: var(--fg); }
 .q-desc { color: var(--fg-muted); }
@@ -3000,13 +3000,13 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  font-size: .92em;
+  font-size: 12px;
 }
-.q-row-head { color: var(--fg-muted); font-size: .8em; }
+.q-row-head { color: var(--fg-muted); font-size: 12px; }
 .q-row .q-answer { color: var(--fg-muted); }
 .q-row .q-asked::after { content: ":"; }
 
-.meta { color: var(--fg-muted); font-size: .85em; }
+.meta { color: var(--fg-muted); font-size: 12px; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -3052,7 +3052,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   /* Two columns of 97px fit neither a title nor its note: the cards grew to
      215px tall and clipped their own text. One column, full width. */
   .home-cards { grid-template-columns: minmax(0, 1fr); width: calc(100% - 24px); }
-  .greeting { font-size: 1.5rem; gap: 10px; }
+  .greeting { font-size: 20px; gap: 12px; }
 }
 
 /* A SHORT cell (MA3-T4 defect 3, ported). Four columns of an 800px window are
@@ -3078,11 +3078,11 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      (line-height 1.6, and 1em here is already the .74em below), plus its own
      padding because `* { box-sizing: border-box }`. */
   .statusline {
-    padding-block: 3px 5px;
+    padding-block: 2px 4px;
     max-height: calc(3.2em + 8px);
     overflow-y: auto;
   }
-  .topbar { min-height: 0; padding-block: 6px 2px; }
+  .topbar { min-height: 0; padding-block: 4px 2px; }
   /* The prompt may still be several lines; it may no longer eat the transcript
      to be so. js/composer.js autoGrow() writes an inline `height` off the
      WINDOW, and a max-height in the cell's own units is what caps it. */
@@ -3095,9 +3095,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      can afford. Hiding a chip here would have been the cheaper diff and the
      wrong one: a picker the user cannot find is a feature that is gone. */
   .comp-row { gap: 4px; }
-  .chip-btn { padding: 0 6px; }
+  .chip-btn { padding: 0 8px; }
   .home-cards { display: none; }
-  .greeting { font-size: 1.2rem; }
+  .greeting { font-size: 20px; }
 }
 }
 
@@ -3155,7 +3155,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   color: var(--app-secondary-foreground);
   font-size: var(--fs-meta, 12.5px);
 }
-.bar-head-hint { font-size: 11px; }
+.bar-head-hint { font-size: 12px; }
 /* claude.ai's rows: a regular-weight name, a one-line muted note, ✓ and the
    digit at the row's end. Tight — a menu is a list you scan, not a form. */
 .bar-row {
@@ -3165,7 +3165,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   inline-size: 100%;
   min-height: 0;
   /* menuItem: 8px 12px, the list radius. */
-  padding: 6px 12px;
+  padding: 4px 12px;
   border: 0;
   border-radius: var(--app-list-border-radius);
   background: none;
@@ -3185,7 +3185,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    5.5») is an LTR box, and stretched to the row it put its text at the row's
    far end, away from the Persian head it sits under. Shrunk to its text, the
    RTL row places it at the start like every other title. */
-.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .bar-row-title { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 /* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
@@ -3193,15 +3193,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-row-check { flex: none; min-inline-size: 1.4em; color: currentColor; text-align: center; }
 .bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
 .bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
-.bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
+.bar-more .bar-row-digit { color: var(--fg-muted); font-size: 14px; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 .bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
 .bar-rule { margin: 4px 0; border: 0; border-block-start: 1px solid var(--app-input-border); }
 .bar-muted { color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 0; }
-.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 6px 8px 2px; }
+.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 4px 8px 2px; }
 .bar-btn {
   min-height: 0;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-small);
   background: transparent;
@@ -3217,12 +3217,12 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    (right) … «باهوش‌تر» (left), and a gray pill with one dot per level under a
    light thumb. The pill is the WRAPPER's background, not the range's own track,
    so the dots can sit on it and under the thumb. */
-.bar-slider { padding: 8px 12px 14px; min-inline-size: 280px; }
+.bar-slider { padding: 8px 12px 12px; min-inline-size: 280px; }
 .bar-slider .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; font-size: var(--fs-ui, 13px); }
 .bar-slider-now { color: var(--fg); font-weight: 500; }
 .bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); margin: 8px 0 8px; }
 /* The extension's effort toggle: an 18px #454545 track, a 14px light thumb. */
-.bar-slider-track { position: relative; block-size: 18px; border-radius: 9px; background: var(--app-input-border); }
+.bar-slider-track { position: relative; block-size: 18px; border-radius: 8px; background: var(--app-input-border); }
 .bar-slider-ticks {
   position: absolute;
   inset-inline: 9px;
@@ -3251,40 +3251,40 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-slider-range:focus-visible::-webkit-slider-thumb { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 
 /* The context panel. */
-.bar-usage { min-inline-size: 320px; padding: 6px 10px 10px; }
+.bar-usage { min-inline-size: 320px; padding: 4px 12px 8px; }
 .bar-usage .bar-head { padding-inline: 0; }
 .bar-figure { color: var(--fg); font-variant-numeric: tabular-nums; }
 /* usageTrack: the #454545 track, 6px (8px for context), 3px corners. */
 .bar-context, .bar-meter {
   display: flex;
   block-size: 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
   background: var(--app-input-border);
 }
 .bar-context { block-size: 8px; border-radius: 4px; }
 .bar-seg { flex: none; block-size: 100%; }
 .bar-seg + .bar-seg { box-shadow: inset 1px 0 0 var(--app-menu-background); }
-.bar-context-act { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 2px; }
-.bar-detail { margin-block-start: 6px; color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
+.bar-context-act { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 2px; }
+.bar-detail { margin-block-start: 4px; color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
 .bar-detail > summary { cursor: pointer; }
-.bar-cats { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+.bar-cats { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
 .bar-cats li { display: flex; align-items: center; gap: 8px; }
 .bar-cats li > :nth-child(2) { flex: 1; }
-.bar-dot { inline-size: 8px; block-size: 8px; border-radius: 2px; flex: none; }
-.bar-limit { margin-block-end: 10px; }
-.bar-limit-top { display: flex; align-items: baseline; gap: 10px; margin-block-end: 5px; }
+.bar-dot { inline-size: 8px; block-size: 8px; border-radius: 4px; flex: none; }
+.bar-limit { margin-block-end: 8px; }
+.bar-limit-top { display: flex; align-items: baseline; gap: 12px; margin-block-end: 4px; }
 .bar-limit-name { flex: 1; min-inline-size: 0; }
 .bar-limit-reset { color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
 .bar-limit-pct { color: var(--fg-muted); font-size: var(--fs-meta, 12px); font-variant-numeric: tabular-nums; min-inline-size: 3ch; text-align: end; }
 /* usageFill: the progress blue, coral once high (usageFillHigh). */
-.bar-meter-fill { block-size: 100%; background: var(--app-progressbar-background); border-radius: 3px; }
+.bar-meter-fill { block-size: 100%; background: var(--app-progressbar-background); border-radius: 4px; }
 .bar-meter-fill[data-level="high"] { background: var(--app-claude-orange); }
 
 /* The «+» menu's server list. */
-.bar-server { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-row, 8px); cursor: pointer; }
+.bar-server { display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-radius: var(--r-row, 8px); cursor: pointer; }
 .bar-server:hover { background: var(--app-list-hover-background); }
-.bar-server-name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .95em; }
+.bar-server-name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--app-monospace-font-family); font-size: 12px; }
 .bar-switch { accent-color: var(--app-accent-color); inline-size: 16px; block-size: 16px; margin: 0; cursor: pointer; }
 
 /* The bar's own buttons: quiet text chips, as claude.ai draws them. */
@@ -3299,7 +3299,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   min-inline-size: 26px;
   padding: 0 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   color: var(--app-secondary-foreground);
   font: inherit;
@@ -3313,7 +3313,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-chip.model-chip { min-height: 24px; border-radius: 9999px; background: var(--app-pill-background); color: var(--app-pill-foreground); }
 .bar-chip.model-chip:hover, .bar-chip.model-chip[aria-expanded="true"] { background: var(--app-pill-hover-background); }
 .bar-chip[hidden] { display: none; }
-.bar-ring { padding: 3px; }
+.bar-ring { padding: 2px; }
 .bar-ring svg { display: block; }
 .bar-ring-track { stroke: color-mix(in srgb, var(--fg-muted) 30%, transparent); }
 .bar-ring-fill { stroke: var(--fg-muted); transition: stroke-dasharray var(--dur, .2s) linear; }
@@ -3329,6 +3329,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    and a logical side would flip between a Persian and an English answer. */
 @layer components {
 .msg:has(> .msg-acts) { position: relative; }
+/* The hover strip is 24px and the log gap 8px: without this room it sat on
+   the next message's first line (a one-line answer showed it plainly). */
+.msg:has(> .msg-acts):not(.turn-last) { margin-block-end: calc(24px - var(--log-gap, 8px)); }
 .msg-acts {
   position: absolute;
   top: 100%;
@@ -3337,7 +3340,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 1px 4px;
+  padding: 2px 4px;
   border-radius: 6px;
   background: var(--bg);
   direction: rtl;
@@ -3354,7 +3357,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   color: var(--fg-faint, var(--fg-muted));
   font: inherit;
@@ -3363,7 +3366,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 .msg-act:hover, .msg-act:focus-visible { background: var(--surface-2); color: var(--fg); outline: none; }
 .msg-pin[aria-pressed="true"] { color: var(--accent); }
-.msg-when { color: var(--fg-faint, var(--fg-muted)); font-size: 11px; padding-inline: 4px; white-space: nowrap; }
+.msg-when { color: var(--fg-faint, var(--fg-muted)); font-size: 12px; padding-inline: 4px; white-space: nowrap; }
 /* Drawn, never text: see marks.js on textContent. */
 .msg-copy::before { content: attr(data-glyph); }
 .msg-when::before { content: attr(data-text); }
@@ -3376,7 +3379,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   bottom: 3px;
   right: -8px;
   inline-size: 2px;
-  border-radius: 1px;
+  border-radius: 0;
   background: var(--accent);
 }
 .msg.is-flash { animation: msg-flash 1.4s ease-out; }
@@ -3396,7 +3399,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 .pin-hit { position: absolute; top: 6px; right: -18px; padding: 4px; outline: none; }
 .pin-dashes { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.pin-dash { inline-size: 10px; block-size: 2px; border-radius: 1px; background: var(--fg-muted); opacity: .7; }
+.pin-dash { inline-size: 10px; block-size: 2px; border-radius: 0; background: var(--fg-muted); opacity: .7; }
 .pin-dash.is-start { inline-size: 14px; }
 .pin-list {
   display: none;
@@ -3409,7 +3412,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--bg-elev, var(--surface));
   box-shadow: var(--shadow-float, 0 10px 30px rgba(0,0,0,.45));
 }
@@ -3418,7 +3421,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   display: block;
   inline-size: 100%;
   min-height: 0;
-  padding: 6px 8px;
+  padding: 4px 8px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -3440,21 +3443,21 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-self: stretch;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--surface);
   font-size: 13px;
 }
-.change-head { display: flex; align-items: center; gap: 10px; padding: 5px 8px; color: var(--fg-muted); }
+.change-head { display: flex; align-items: center; gap: 12px; padding: 4px 8px; color: var(--fg-muted); }
 .change-title { flex: 1; }
 .change-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   inline-size: 100%;
   min-height: 0;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   color: var(--fg);
   font: inherit;
@@ -3464,7 +3467,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* The name's box is its text (a Latin name in an RTL row, pcg-84j). */
 .change-file { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
 .change-row .change-stat { margin-inline-start: auto; }
-.change-stat { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; }
+.change-stat { display: inline-flex; gap: 8px; font-variant-numeric: tabular-nums; }
 .change-go { color: var(--fg-muted); }   /* --fg-faint was 3.8:1 on the card */
 
 /* pcg-lw0. The row under a turn's LAST message is always drawn, in flow and
@@ -3485,7 +3488,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   flex: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-self: flex-start;
   max-inline-size: 100%;
 }
@@ -3496,7 +3499,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   max-inline-size: min(480px, 100%);
   object-fit: contain;
   border: 1px solid rgb(255 255 255 / .1);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--surface);
 }
 
@@ -3512,9 +3515,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   display: block;
   min-height: 0;
   margin-block-start: 4px;
-  padding: 0 6px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: rgb(255 255 255 / .06);
   color: var(--fg-muted);
   font: inherit;
@@ -3548,8 +3551,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 12px;
+  padding: 4px 12px;
   border-block-end: 1px solid var(--border);
   font-size: 13px;
 }
@@ -3557,9 +3560,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .diff-side-close {
   margin-inline-start: auto;
   min-height: 0;
-  padding: 2px 6px;
+  padding: 2px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   color: var(--fg-muted);
   font: inherit;
@@ -3567,7 +3570,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 .diff-side-close:hover, .diff-side-close:focus-visible { background: var(--surface-2); color: var(--fg); outline: none; }
 .diff-side-body { flex: 1 1 auto; min-block-size: 0; overflow: auto; padding: 8px; }
-.diff-side-edit + .diff-side-edit { margin-block-start: 10px; }
+.diff-side-edit + .diff-side-edit { margin-block-start: 8px; }
 @container (max-width: 640px) {
   .diff-open > .log { margin-inline-end: 0; }
   .diff-side { inline-size: 100%; border-inline-start: 0; }
@@ -3585,7 +3588,7 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary > * { display: non
 body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   content: attr(data-focus-label);
   color: var(--fg-muted);
-  font-size: .8em;
+  font-size: 12px;
 }
 
 /* --- the dialog in a short or narrow pane ----------------------------------
@@ -3595,7 +3598,7 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
    keeps two lines and scrolls, the rows tighten to the 24px pointer floor. */
 @container (max-height: 360px) {
   .cell:has(.perm[open]) .log { min-height: 0; }
-  .perm { padding: 6px 8px; margin-block-end: 4px; }
+  .perm { padding: 4px 8px; margin-block-end: 4px; }
   .perm-form > .perm-params { min-height: 2em; }
   .perm-params .param-key { display: none; }
   .perm .ask-opt { min-height: 24px; padding-block: 2px; }
@@ -3607,8 +3610,8 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
    on the row's own line. 24px is the pointer floor (WCAG 2.5.8). */
 .resume-act {
   min-height: 24px;
-  margin-inline-start: 6px;
-  padding: 0 10px;
+  margin-inline-start: 8px;
+  padding: 0 12px;
   border: 1px solid var(--app-button-border);
   border-radius: var(--corner-radius-small);
   background: var(--app-button-secondary-background);
@@ -3618,3 +3621,29 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
 }
 .resume-act:hover { background: var(--app-button-secondary-hover-background); }
 .resume-act:disabled { opacity: .6; cursor: default; }
+
+/* --- control scale (DESIGN.md "Controls are 24, 28 or 32") -------------------
+   One place that says how tall a boxed control is, instead of each rule's
+   padding + line-height landing on 22.8, 25.5, 26 or 30.1. test_scale.py
+   measures it. 28 is the working size (the bar's chips, send/stop, menu rows,
+   panel buttons); 32 is a decision (a permission answer, the layout panel);
+   24 is an inline chip or a small text button inside a row. */
+.bar-chip, .comp-act, button.round.send, button.round.danger, .bar-row,
+.ch-back, .ch-refresh {
+  box-sizing: border-box;
+  min-height: 28px;
+  block-size: 28px;
+}
+.comp-act, button.round.send, button.round.danger { inline-size: 28px; min-width: 28px; }
+.perm-allow, .perm-deny, .layout-btn, .layout-panel .layout-equal, .bar-btn {
+  box-sizing: border-box;
+  min-height: 32px;
+  block-size: 32px;
+}
+.pulse-tasks, .tk-stop, .queued-now, .fold-toggle {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  block-size: 24px;
+}
