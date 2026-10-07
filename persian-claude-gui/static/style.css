@@ -330,9 +330,10 @@ pre, code, .path, .diff, .tool-output, .mono {
   white-space: nowrap;
   background: none;
   color: var(--fg-muted);
-  font-size: .85em;
-  opacity: .8;
+  font-size: var(--app-font-size-min-fa);   /* a Persian name: the 12px floor */
 }
+/* On the blue current row the muted grey is 3.4:1; the row's own white is not. */
+.tab-row[data-current="true"] .tab-proj { color: inherit; opacity: .8; }
 
 /* The `⎇ agent-2` chip on a tab row and on a folded session row. It IS .path
    (LTR + isolate, from the base layer) — the name is ASCII and names a folder;
@@ -864,8 +865,10 @@ pre, code, .path, .diff, .tool-output, .mono {
   text-overflow: ellipsis;
   white-space: nowrap;
   background: none;
-  color: var(--fg-muted);
-  font-size: .76em;
+  /* R8 audit: muted grey on the path chip was 4.1:1 at 10.6px. A Latin path
+     may sit at 11px (wiki §13.3 rule 7), not under it. */
+  color: var(--fg);
+  font-size: 11px;
 }
 
 .replay-banner {
@@ -1632,7 +1635,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 /* tabular-nums so a ticking counter does not jiggle the line it sits on. */
 .pulse-meta {
   color: var(--fg-muted);
-  font-size: .85em;
+  font-size: var(--app-font-size-min-fa);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2372,7 +2375,7 @@ button.round svg { width: 16px; height: 16px; }
 .perm-remember-row input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--app-button-background); }
 /* A consent sentence wraps, never ellipsizes: «…دوباره نپرس» cut to «نپ» was
    the clipped checkbox text in the 2026-10-06 audit. */
-.perm-remember-label { min-width: 0; line-height: 1.4; }
+.perm-remember-label { min-width: 0; line-height: 1.4; font-size: max(1em, var(--app-font-size-min-fa)); }
 
 .perm menu {
   display: flex;
@@ -2572,7 +2575,10 @@ button.round svg { width: 16px; height: 16px; }
   background: rgb(76 139 245 / .16);
   color: rgb(128 176 255);
   font: inherit;
-  font-size: .85em;
+  /* R8 audit: .85em of the 13px chrome was 11px and 19px tall; the Persian
+     floor and the 24px pointer floor (WCAG 2.5.8). */
+  font-size: var(--app-font-size-min-fa);
+  min-height: 24px;
   cursor: pointer;
 }
 .ag-chip:hover { background: rgb(76 139 245 / .26); }
@@ -2657,7 +2663,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 .ag-time { flex: none; opacity: .8; font-variant-numeric: tabular-nums; }
 
 /* The CLI's own "Waiting for N background agents", in Persian. */
-.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: .8em; }
+.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: var(--app-font-size-min-fa); }
 
 /* Folds finished agents open — muted like .ag-wait, since it is status chrome
    too, not an action. Needs its own :hover: the generic filled `button:hover`
@@ -2951,7 +2957,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 
 /* «پاسخ دیگر» and its box on ONE row. */
 .ask-other { display: flex; align-items: center; gap: 8px; padding: 4px 8px 0; }
-.ask-other .ask-label { flex: none; font-weight: 400; color: var(--fg-muted); font-size: .92em; }
+.ask-other .ask-label { flex: none; font-weight: 400; color: var(--fg-muted); font-size: var(--app-font-size-min-fa); }
 .ask-free {
   flex: 1;
   min-inline-size: 0;
@@ -3454,7 +3460,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .change-file { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
 .change-row .change-stat { margin-inline-start: auto; }
 .change-stat { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; }
-.change-go { color: var(--fg-faint, var(--fg-muted)); }
+.change-go { color: var(--fg-muted); }   /* --fg-faint was 3.8:1 on the card */
 
 /* pcg-lw0. The row under a turn's LAST message is always drawn, in flow and
    muted (the site's action row); every other message keeps it on hover. */

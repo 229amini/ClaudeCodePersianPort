@@ -113,7 +113,8 @@
   --st-run: var(--app-status-busy);
   --st-wait: var(--app-status-pending);
   --st-err: var(--danger);
-  --st-idle: #6b6b6b;
+  /* 3.2:1 on the focused pane header (#2a2d2e); #6b6b6b was 2.9 (R8 audit). */
+  --st-idle: #7a7a7a;
 
   /* Radius scale, largest to smallest: panel > card > row > chip. */
   --r-panel: var(--corner-radius-large);
@@ -637,9 +638,10 @@ body.rail .layout-btn { inline-size: auto; }
   white-space: nowrap;
   background: none;
   color: var(--fg-muted);
-  font-size: .85em;
-  opacity: .8;
+  font-size: var(--app-font-size-min-fa);   /* a Persian name: the 12px floor */
 }
+/* On the blue current row the muted grey is 3.4:1; the row's own white is not. */
+.tab-row[data-current="true"] .tab-proj { color: inherit; opacity: .8; }
 
 /* The `⎇ agent-2` chip on a tab row and on a folded session row. It IS .path
    (LTR + isolate, from the base layer) — the name is ASCII and names a folder;
@@ -654,6 +656,12 @@ body.rail .layout-btn { inline-size: auto; }
 }
 .row-state[data-status="waiting"] { color: var(--st-wait); }
 .row-state[data-status="error"] { color: var(--st-err); }
+/* On the blue current row the state colours fall to 2.2-3.3:1; their light
+   twins keep the meaning and clear 4.5:1 (R8 audit). */
+.tab-row[data-current="true"] .row-state { color: inherit; }
+.tab-row[data-current="true"] .tab-dot[data-status="waiting"] { color: #7fb0ff; }
+.tab-row[data-current="true"] .tab-dot[data-status="error"] { color: var(--app-diff-deletion-foreground); }
+.tab-row[data-current="true"] .tab-dot[data-status="idle"] { color: inherit; opacity: .7; }
 
 .wt-chip {
   flex: none;
@@ -674,7 +682,7 @@ body.rail .layout-btn { inline-size: auto; }
 .tab-row .tab-close {
   display: inline-flex;
   width: 30px;
-  opacity: .5;
+  opacity: .75;   /* .5 measured 2.1:1 on the current row; 3:1 is the floor */
   font-size: 1.05em;
   line-height: 1;
 }
@@ -1531,7 +1539,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: .84em;
+  font-size: var(--fs-meta);   /* a Persian title: .84em of 13px was 10.9px */
   font-weight: 500;
 }
 
@@ -2706,7 +2714,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
 /* tabular-nums so a ticking counter does not jiggle the line it sits on. */
 .pulse-meta {
   color: var(--fg-muted);
-  font-size: .85em;
+  font-size: var(--app-font-size-min-fa);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3919,7 +3927,10 @@ body.rail .side-zoom { display: none; }
   background: rgb(76 139 245 / .16);
   color: rgb(128 176 255);
   font: inherit;
-  font-size: .85em;
+  /* R8 audit: .85em of the 13px chrome was 11px and 19px tall; the Persian
+     floor and the 24px pointer floor (WCAG 2.5.8). */
+  font-size: var(--app-font-size-min-fa);
+  min-height: 24px;
   cursor: pointer;
 }
 .ag-chip:hover { background: rgb(76 139 245 / .26); }
@@ -4004,7 +4015,7 @@ button.ag-row:hover, button.ag-row:focus-visible { background: var(--surface); c
 .ag-time { flex: none; opacity: .8; font-variant-numeric: tabular-nums; }
 
 /* The CLI's own "Waiting for N background agents", in Persian. */
-.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: .8em; }
+.ag-wait { padding: 2px 10px 4px; color: var(--fg-muted); font-size: var(--app-font-size-min-fa); }
 
 /* Folds finished agents open — muted like .ag-wait, since it is status chrome
    too, not an action. Needs its own :hover: the generic filled `button:hover`
@@ -4397,7 +4408,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 
 /* «پاسخ دیگر» and its box on ONE row. */
 .ask-other { display: flex; align-items: center; gap: 8px; padding: 4px 8px 0; }
-.ask-other .ask-label { flex: none; font-weight: var(--wt-body); color: var(--fg-muted); font-size: .92em; }
+.ask-other .ask-label { flex: none; font-weight: var(--wt-body); color: var(--fg-muted); font-size: var(--fs-meta); }
 /* otherInput: #454545 hairline on the tool surface, active border on focus. */
 .ask-free {
   flex: 1;
@@ -4917,7 +4928,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .change-file { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
 .change-row .change-stat { margin-inline-start: auto; }
 .change-stat { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; }
-.change-go { color: var(--fg-faint, var(--fg-muted)); }
+.change-go { color: var(--fg-muted); }   /* --fg-faint was 3.8:1 on the card */
 
 /* pcg-lw0. The row under a turn's LAST message is always drawn, in flow and
    muted (the site's action row); every other message keeps it on hover. */
