@@ -1,0 +1,174 @@
+/* ============================================================================
+   Design tokens after the Claude Code VS Code extension (webview index.css,
+   v2.1.291), with every `--vscode-*` it reads resolved to VS Code's Dark
+   Modern theme (theme-defaults/themes/dark_modern.json, then the colour
+   registry's dark default where the theme sets nothing).
+
+   BYTE-IDENTICAL in static/ and static-terminal/, like bar.js and marks.js.
+   Names are the extension's own `--app-*` names, so a declaration copied out
+   of wiki/vscode-webview-design.md works unchanged. Where a value differs
+   from what VS Code would resolve, the line says why. Every other line is the
+   resolved value. wiki/vscode-webview-design.md section 13 is the source.
+
+   Imported by style.css into its `tokens` layer; it declares no layer itself.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* brand */
+  --app-claude-orange: #d97757;
+  --app-claude-clay-button-orange: #c6613f;
+  --app-claude-ivory: #faf9f5;
+  --app-claude-slate: #141413;
+
+  /* type. The extension is one 13px size. Persian body text is 14px (user
+     decision 2026-10-07); chrome stays 13px. Line height of message text is
+     the spec's 1.9 floor (rule 4) and is set where messages are, not here. */
+  --app-font-family: "Vazirmatn", "Segoe UI", system-ui, sans-serif;
+  --app-font-size: 13px;
+  --app-body-font-size: 14px;
+  /* The extension's .85em of 13px is 11px. Vazirmatn is unreadable there, so
+     any Persian-bearing text floors at this; Latin and mono meta may go 11px. */
+  --app-font-size-min-fa: 12px;
+  --app-monospace-font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  /* VS Code supplies the user's editor size here (14px by default on
+     Windows). Cascadia at 14px reads larger than Vazirmatn at 14px, so 13. */
+  --app-monospace-font-size: 13px;
+  --app-monospace-font-size-small: 11px;
+
+  /* spacing, radius */
+  --app-spacing-small: 4px;
+  --app-spacing-medium: 8px;
+  --app-spacing-large: 12px;
+  --app-spacing-xlarge: 16px;
+  --corner-radius-small: 4px;
+  --corner-radius-medium: 6px;
+  --corner-radius-large: 8px;
+  /* The extension's input and permission column: 680px, centred, with a 20px
+     floor of side padding. The transcript uses it too (user decision). */
+  --app-column-max: 680px;
+
+  /* text */
+  --app-primary-foreground: #cccccc;
+  --app-secondary-foreground: #9d9d9d;
+  --app-link-foreground: #4daafc;
+  --app-disabled-foreground: rgb(204 204 204 / .5);
+
+  /* surfaces. The window is the extension's editor mode: the transcript sits
+     on the editor colour, the sidebar on the side bar colour. */
+  --app-primary-background: #181818;
+  --app-secondary-background: #1f1f1f;
+  --app-root-background: var(--app-secondary-background);
+  --app-tool-background: #1f1f1f;
+  --app-header-background: #181818;
+  --app-input-background: #313131;
+  --app-input-secondary-background: #1f1f1f;
+  --app-menu-background: #1f1f1f;
+
+  /* borders */
+  --app-primary-border-color: #2b2b2b;
+  --app-input-border: #454545;
+  --app-widget-border: #454545;
+  --app-menu-border: #454545;
+  --app-splitter-background: #454545;
+  --app-splitter-hover-background: #0078d4;
+  --app-input-active-border: #2488db;
+  --app-focus-border: #0078d4;
+  --app-selection-background: #264f78;
+  --app-scrollbar: #79797966;
+  --app-scrollbar-hover: #646464b3;
+  --app-transparent-inner-border: #ffffff1a;
+  --app-progressbar-border: #313131;
+
+  /* input */
+  --app-input-foreground: #cccccc;
+  --app-input-placeholder-foreground: #989898;
+  --app-input-secondary-foreground: #cccccc;
+
+  /* code */
+  --app-code-background: #2b2b2b;
+  --app-inline-code-foreground: #d0d0d0;
+  --app-inline-code-background: #3c3c3c;
+
+  /* lists and menus */
+  --app-list-padding: 0px;
+  --app-list-item-padding: 4px 8px;
+  --app-list-border-color: transparent;
+  --app-list-border-radius: 4px;
+  --app-list-gap: 2px;
+  --app-list-hover-background: #2a2d2e;
+  --app-list-active-background: #04395e;
+  --app-list-active-foreground: #ffffff;
+  --app-list-drop-background: #062f4a;
+  --app-menu-foreground: #cccccc;
+  --app-menu-selection-background: #0078d4;
+  --app-menu-selection-foreground: #ffffff;
+
+  /* state */
+  --app-warning-foreground: #cccccc;
+  --app-warning-background: #313131;
+  --app-warning-accent: #e5a54b;
+  --app-error-foreground: #f85149;
+  --app-success-foreground: #81b88b;
+
+  /* buttons and accents */
+  --app-button-foreground: #ffffff;
+  --app-button-background: #0078d4;
+  --app-button-hover-background: #026ec1;
+  /* dark_modern.json button.secondary* and button.border (R7) */
+  --app-button-secondary-background: transparent;
+  --app-button-secondary-foreground: #cccccc;
+  --app-button-secondary-hover-background: #2b2b2b;
+  --app-button-border: #ffffff1a;
+  --app-accent-color: var(--app-button-background);
+  --app-plan-mode-color: var(--app-button-background);
+  --app-effort-fill-color: #2488db;
+  --app-ultracode-color: var(--app-chart-5);
+  --app-ghost-button-hover-background: #5a5d5e50;
+  --app-badge-foreground: #f8f8f8;
+  --app-badge-background: #616161;
+  --app-progressbar-background: #0078d4;
+  --app-spinner-foreground: var(--app-claude-orange);
+
+  /* status dots */
+  --app-status-busy: #89d185;
+  --app-status-pending: #3b82f6;
+  --app-status-unread: var(--app-claude-orange);
+
+  /* misc */
+  --app-banner-tint: #4a63af;
+  --app-modal-background: #000000bf;
+  --app-editor-highlight-background: transparent;
+
+  /* diff. VS Code's deleted-resource red #c74e39 is 3.6:1 on the diff ground,
+     under AA for the `-N` counts; Dark Modern's own error red is 5.0:1. */
+  --app-diff-addition-foreground: #81b88b;
+  /* R7 audit: #f85149 measured 3.9-4.4:1 on the change card and the red
+     diff row; #ff7b72 is 5.2:1 or better on every surface it sits on. */
+  --app-diff-deletion-foreground: #ff7b72;
+  --app-diff-editor-background: #1e1e1e;
+
+  /* chips and pills */
+  --app-mention-chip-background: #26477866;
+  --app-mention-chip-foreground: #85b6ff;
+  --app-pill-background: color-mix(in srgb, var(--app-primary-foreground) 10%, transparent);
+  --app-pill-foreground: var(--app-primary-foreground);
+  --app-pill-hover-background: color-mix(in srgb, var(--app-primary-foreground) 18%, transparent);
+  --app-pill-min-height: 18px;
+
+  /* charts (context panel categories) */
+  --app-chart-1: #d18616;
+  --app-chart-2: #59a4f9;
+  --app-chart-3: #89d185;
+  --app-chart-4: #cca700;
+  --app-chart-5: #b180d7;
+  --app-chart-6: #f14c4c;
+  --app-chart-7: #11a8cd;
+  --app-chart-8: #cccccc;
+
+  /* timeline dots (literal colours in the extension) */
+  --app-dot-success: #74c991;
+  --app-dot-failure: #c74e39;
+  --app-dot-warning: #e1c08d;
+}

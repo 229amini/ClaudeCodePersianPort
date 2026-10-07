@@ -314,16 +314,17 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     def check(name: str, ok: bool, detail: str = "") -> None:
         out.append((name, bool(ok), detail))
 
+    # pcg-rf8 R3 (user decision 2026-10-07, replacing 0.6.0's "no marker"):
+    # every answer sits on the extension's timeline, a drawn dot (content "")
+    # in a 30px gutter on the PHYSICAL right. An English answer and a Persian
+    # one must keep the same gutter, or the rail would jump sides row to row,
+    # the "scattered" row 0.6.0 removed the old ⏺ for.
     marks = m.get("marks") or []
-    # CLAUDE-AI-PARITY.md P2: the site's answer is plain prose — no ⏺ and no
-    # gutter reserved for one (the coral dot far from an LTR paragraph was the
-    # "scattered" row the user reported).
-    marks = m.get("marks") or []
-    check("no assistant row wears a marker",
-          len(marks) == 2 and all(x in ("none", "normal", None) for x in marks),
+    check("every assistant row wears the timeline dot",
+          len(marks) == 2 and all(x == '""' for x in marks),
           str(marks))
-    check("and none keeps a gutter for one, RTL and LTR alike",
-          len(m.get("gutters") or []) == 2 and all(g <= 2 for g in m["gutters"]),
+    check("and the same 30px right gutter, RTL and LTR alike",
+          m.get("gutters") == [30, 30],
           str(m.get("gutters")))
     check("the step sits in a run whose one line names what happened",
           m.get("runLine") == "note.md \u062e\u0648\u0627\u0646\u062f\u0647 \u0634\u062f",
@@ -420,17 +421,18 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           f"bubble \u00ab{m.get('replayBubble')}\u00bb"
           + (" / RAW TAGS IN THE COLUMN" if m.get("replayRawTags") else ""))
 
-    # CLAUDE-AI-PARITY.md P2: your message is the site's bubble, measured
-    #: a faint fill, 10px radius, 8×12
-    # padding, on the RIGHT of the column. Computed style and geometry
-    # throughout — a fill and a side are invisible to textContent.
+    # pcg-rf8 R3: your message is the extension's .userMessage, measured: the
+    # input fill (#313131), a 6px radius, 4px block padding (inline 8, not
+    # the extension's 6, for Persian dots), on the RIGHT of the column.
+    # Computed style and geometry throughout — a fill and a side are
+    # invisible to textContent.
     live = m.get("liveShape") or {}
     replay = m.get("replayShape") or {}
     clear = ("rgba(0, 0, 0, 0)", "transparent")
 
-    check("your message is a bubble: a fill, a 10px radius, 8x12 padding",
-          live.get("bg") not in clear and live.get("radius") == "10px"
-          and live.get("padBlock") == 8 and live.get("padInline") == 12,
+    check("your message is the extension's box: input fill, 6px radius, 4x8 padding",
+          live.get("bg") == "rgb(49, 49, 49)" and live.get("radius") == "6px"
+          and live.get("padBlock") == 4 and live.get("padInline") == 8,
           f"bg {live.get('bg')}, radius {live.get('radius')}, padding "
           f"{live.get('padBlock')}/{live.get('padInline')}")
 

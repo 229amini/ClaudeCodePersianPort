@@ -33,6 +33,10 @@
 
 @layer tokens, base, components, spec;
 
+/* VS Code extension tokens on Dark Modern (pcg-rf8). Shared, byte-identical,
+   with the web edition. */
+@import url("tokens.css") layer(tokens);
+
 /* --- Vazirmatn (spec rule 3), self-hosted; the target PC may be offline ---- */
 @font-face {
   font-family: "Vazirmatn";
@@ -69,54 +73,53 @@
      Contrast on --bg (#0e0e0e): --fg 16:1, --fg-muted 7.6:1, --fg-faint 5.6:1
      (AA for small text, which is what it is for: times, counts, labels),
      --accent 6.4:1. */
-  --ground: #070707;
-  --bg: #0e0e0e;
-  --bg-side: var(--bg);
-  --raise: #151515;
+  /* pcg-rf8 (2026-10-07): every colour below is an alias of tokens.css, the
+     VS Code extension's `--app-*` set resolved to Dark Modern. Change a value
+     there, not here; these names stay so no component rule had to move. */
+  --ground: var(--app-primary-background);
+  --bg: var(--app-secondary-background);
+  --bg-side: var(--app-primary-background);
+  /* The composer and the permission card: the extension's input surface. */
+  --raise: var(--app-input-background);
   /* Anything FLOATING over content is opaque and lands here. --surface below
      is translucent, which is right on the ground and wrong over a transcript:
      a menu you can read the conversation through is not a menu. */
-  --bg-elev: #1a1a1a;
-  --surface: rgb(255 255 255 / .03);
-  --surface-2: rgb(255 255 255 / .06);
-  --fg: #ededed;
-  /* Prose a notch under --fg (pcg-els, after claude.ai/code): a long answer in
-     full white glares; bold and headings keep --fg, so they still stand out. */
-  --fg-prose: #d6d6d6;
-  --fg-muted: #a3a3a3;
+  --bg-elev: var(--app-menu-background);
+  --surface: rgb(255 255 255 / .04);
+  --surface-2: rgb(255 255 255 / .07);
+  --fg: var(--app-primary-foreground);
+  --fg-prose: var(--app-primary-foreground);
+  --fg-muted: var(--app-secondary-foreground);
+  /* Times and counts: 4.8:1 on --bg. Not for text on --raise (3.8:1). */
   --fg-faint: #8a8a8a;
-  --border: rgb(255 255 255 / .07);
-  --border-strong: rgb(255 255 255 / .13);
-  --accent: #d97757;
-  --accent-strong: #c4633f;
+  --border: var(--app-primary-border-color);
+  --border-strong: var(--app-input-border);
+  --accent: var(--app-claude-orange);
+  --accent-strong: var(--app-claude-clay-button-orange);
   /* A FILL under white text: #b5552f is 4.9:1 against #fff, --accent 3.1:1. */
   --accent-fill: #b5552f;
   --accent-soft: rgb(217 119 87 / .13);
-  --danger: #e5695a;
-  /* The amber the context meter already warned in, promoted to a token:
-     the status dot for a conversation waiting on a person uses the same
-     one, and «needs you» is the same message in both places. */
-  --warn: #d9a441;
+  --danger: var(--app-error-foreground);
+  --warn: var(--app-warning-accent);
   /* `!` bash mode. The TUI recolours its prompt bar for it; this is that
      colour, kept off the accent so it cannot be mistaken for a running turn. */
   --bash: #b072b5;
-  --danger-bg: rgb(229 105 90 / .12);
-  --ok: #82c091;
+  --danger-bg: rgb(248 81 73 / .12);
+  --ok: var(--app-success-foreground);
   /* ONE status palette, used identically by every dot, badge and label
-     (§D2). Coral is the brand, not a state: a running conversation is green
-     and breathes, one waiting on a person is amber and breathes, a failed one
-     is red and still, an idle one is a grey ring. The glyph carries the state
+     (§D2), now the extension's: running green, waiting on a person blue,
+     unread coral, failed red, idle a grey ring. The glyph carries the state
      as well (● ◉ ⊘ ○), so none of this is colour-only. */
-  --st-run: #6fbf8a;
-  --st-wait: var(--warn);
+  --st-run: var(--app-status-busy);
+  --st-wait: var(--app-status-pending);
   --st-err: var(--danger);
   --st-idle: #6b6b6b;
 
   /* Radius scale, largest to smallest: panel > card > row > chip. */
-  --r-panel: 12px;
-  --r-card: 10px;
-  --r-row: 7px;
-  --r-chip: 5px;
+  --r-panel: var(--corner-radius-large);
+  --r-card: var(--corner-radius-medium);
+  --r-row: var(--corner-radius-small);
+  --r-chip: var(--corner-radius-small);
   --radius: var(--r-card);
   --radius-lg: var(--r-panel);
   /* THE gutter: the window's own padding, the space between the sidebar card
@@ -128,15 +131,15 @@
      §D13, M3) is three values here and one @font-face, nothing else. 600 is
      NOT vendored: asking for it renders 700, which is how every chrome title
      in this file came out bold. */
-  --fs-body: 15px;
-  --fs-ui: 13px;
-  --fs-meta: 12px;
+  --fs-body: var(--app-body-font-size);
+  --fs-ui: var(--app-font-size);
+  --fs-meta: var(--app-font-size-min-fa);
   --wt-body: 400;
   --wt-title: 500;
   --wt-strong: 700;
   --lh-ui: 1.5;
-  --row-h: 32px;
-  --shadow-float: 0 10px 28px rgb(0 0 0 / .5), 0 0 0 1px var(--border);
+  --row-h: 28px;
+  --shadow-float: 0 4px 12px rgb(0 0 0 / .4), 0 0 0 1px var(--app-menu-border);
   /* The sidebar's track. A token because the two @media breakpoints below
      retune the WIDTH and body.app's shorthand must not be restated three
      times — the track ORDER is the decision (§1) and it is written once. */
@@ -257,12 +260,14 @@ body.app {
 body.app > #sidebar { grid-column: 1; grid-row: 1; }
 body.app > #stage   { grid-column: 2; grid-row: 1; }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-::selection { background: rgb(217 119 87 / .35); }
+/* VS Code's focus ring: 1px focusBorder blue (3.7:1 on the editor ground). */
+:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
+::selection { background: var(--app-selection-background); }
 
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--app-scrollbar) transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: var(--app-scrollbar); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-scrollbar-hover); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* Code needs a monospace face; Vazirmatn is not monospace (spec rule 3). */
@@ -301,22 +306,28 @@ pre, code, .path, .diff, .tool-output, .mono {
 
 /* Searching the conversations: a quiet field under the actions,
    the same ground and border language as the composer, no icon. */
+/* The extension's .searchInput + .searchIcon (§8.1). The icon is a
+   background, not markup: the sidebar is always inside the RTL shell, so the
+   field's start is its physical right and the glass sits there. */
 .side-search {
   display: block;
   box-sizing: border-box;
   inline-size: calc(100% - 20px);
   margin: 0 10px 8px;
   min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--fg);
+  padding-block: 0;
+  padding-inline: 32px 12px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-medium);
+  background: var(--app-input-background)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16' fill='none' stroke='%23cccccc' stroke-width='1.5' stroke-linecap='round' opacity='.5'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5 14 14'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  color: var(--app-input-foreground);
   font: inherit;
   font-size: var(--fs-meta);
 }
-.side-search::placeholder { color: var(--fg-faint); }
-.side-search:focus-visible { outline: none; border-color: var(--accent); }
+.side-search::placeholder { color: var(--app-input-placeholder-foreground); }
+.side-search:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 /* A hit names the project it lives in, after its own name. */
 .sess-proj {
   flex: none;
@@ -334,36 +345,38 @@ pre, code, .path, .diff, .tool-output, .mono {
   inline-size: 36px;
   min-height: 36px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-row);
-  background: var(--raise);     /* the new-chat button's own face */
+  border: 0;
+  border-radius: var(--corner-radius-medium);
+  background: none;             /* the new-chat button's own face */
   color: var(--fg-muted);
   cursor: pointer;
 }
-.layout-btn:hover, .layout-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
-.layout-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.layout-btn:hover, .layout-btn[aria-expanded="true"] { background: var(--app-list-hover-background); color: var(--fg); }
+.layout-btn:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 body.rail .side-actions { flex-direction: column; margin: 2px 6px 10px; }
 body.rail .side-actions .new-chat { margin: 0; }
 body.rail .layout-btn { inline-size: auto; }
 
+/* The extension's .newSessionButton (§8.1): a ghost row, weight 500, the
+   list's own hover. */
 .new-chat {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   margin: 2px 10px 10px;
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-row);
-  background: var(--raise);
-  color: var(--fg);
+  border: 0;
+  border-radius: var(--corner-radius-medium);
+  background: none;
+  color: var(--app-primary-foreground);
   font: inherit;
   font-size: var(--fs-ui);
-  font-weight: var(--wt-title);
+  font-weight: 500;
   cursor: pointer;
   transition: background var(--dur) var(--ease);
 }
-.new-chat:hover { background: var(--surface-2); }
+.new-chat:hover { background: var(--app-list-hover-background); }
 .new-chat svg { color: var(--accent); flex: none; }
 
 /* THE BELL. An icon button in the head; the count is a
@@ -384,8 +397,8 @@ body.rail .layout-btn { inline-size: auto; }
   background: none;
   color: var(--fg-muted);
 }
-.bell-btn:hover, .bell-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
-.bell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bell-btn:hover, .bell-btn[aria-expanded="true"] { background: var(--app-ghost-button-hover-background); color: var(--fg); }
+.bell-btn:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 .bell-btn + .rail-toggle { margin-inline-start: 0; }
 
 /* The layout panel wears the bell panel's box; inside, the counts
@@ -406,9 +419,9 @@ body.rail .layout-btn { inline-size: auto; }
   font: inherit;
   text-align: start;
 }
-.layout-panel .layout-equal:hover:not(:disabled) { background: var(--surface); }
+.layout-panel .layout-equal:hover:not(:disabled) { background: var(--app-list-hover-background); }
 .layout-panel .layout-equal:disabled { color: var(--fg-faint); cursor: not-allowed; }
-.layout-panel .layout-equal:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.layout-panel .layout-equal:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 .layout-panel .layout-equal kbd { font: inherit; font-size: var(--fs-meta); color: var(--fg-muted); unicode-bidi: isolate; }
 .layout-panel .layout-hint { margin: 8px 0 0; color: var(--fg-faint); font-size: var(--fs-meta); }
 .bell-count {
@@ -425,19 +438,19 @@ body.rail .layout-btn { inline-size: auto; }
   font-weight: var(--wt-title);
   text-align: center;
 }
-.bell-btn.needs .bell-count { background: var(--st-wait); color: #111; }
+.bell-btn.needs .bell-count { background: var(--app-status-pending); color: #fff; }
 .bell-panel {
   position: fixed;
   margin: 0;
   inline-size: min(340px, calc(100vw - 16px));
   max-block-size: min(70vh, 520px);
   overflow-y: auto;
-  padding: 6px;
-  border: 0;
-  border-radius: var(--r-card);
-  background: var(--bg-elev);
-  box-shadow: var(--shadow-float);
-  color: var(--fg);
+  padding: 4px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  background: var(--app-menu-background);
+  box-shadow: 0 2px 8px #00000026;
+  color: var(--app-primary-foreground);
   font-size: var(--fs-ui);
 }
 .bell-head {
@@ -458,7 +471,7 @@ body.rail .layout-btn { inline-size: auto; }
   font-size: var(--fs-meta);
   font-weight: var(--wt-body);
 }
-.bell-allread:hover { background: var(--surface); color: var(--fg); }
+.bell-allread:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 .bell-list { list-style: none; margin: 0; padding: 0; }
 .bell-empty { padding: 10px 8px; color: var(--fg-faint); }
 .bell-row {
@@ -478,14 +491,15 @@ body.rail .layout-btn { inline-size: auto; }
   font-weight: var(--wt-body);
   text-align: start;
 }
-.bell-row:hover:not(:disabled), .bell-row:focus-visible { background: var(--surface); outline: none; }
-.bell-row.unread { background: var(--surface-2); color: var(--fg); }
+.bell-row:hover:not(:disabled), .bell-row:focus-visible { background: var(--app-list-hover-background); outline: none; }
+.bell-row.unread { color: var(--app-primary-foreground); }
 .bell-row.unread .bell-title { font-weight: var(--wt-title); }
 .bell-row:disabled { opacity: .55; cursor: default; }
 .bell-glyph { grid-area: g; font-size: 11px; }
 .bell-row[data-kind="needs"] .bell-glyph { color: var(--st-wait); }
 .bell-row[data-kind="failed"] .bell-glyph { color: var(--st-err); }
-.bell-row[data-kind="done"] .bell-glyph { color: var(--st-run); }
+.bell-row[data-kind="done"] .bell-glyph { color: var(--app-status-busy); }
+.bell-row.unread .bell-glyph { color: var(--app-status-unread); }
 .bell-title { grid-area: t; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bell-what { grid-area: k; font-size: var(--fs-meta); color: var(--fg-muted); }
 .bell-when { grid-area: w; font-size: var(--fs-meta); color: var(--fg-faint); }
@@ -513,16 +527,17 @@ body.rail .layout-btn { inline-size: auto; }
   line-height: 18px;
   color: var(--fg-faint);
 }
+/* The extension's .groupCount (§8.1): the badge colours, 10px radius. */
 .count-pill {
   flex: none;
   min-inline-size: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--fg-muted);
-  font-size: var(--fs-meta);
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--app-badge-background);
+  color: var(--app-badge-foreground);
+  font-size: var(--fs-meta);    /* fa-IR digits: the 12px floor, not .8em */
   font-weight: var(--wt-body);
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
 }
 
@@ -551,15 +566,19 @@ body.rail .layout-btn { inline-size: auto; }
    audience does not hunt for hover-only controls. */
 #open-tabs { margin-block-end: 8px; }
 
+/* Rows are the extension's .sessionItem (§8.1): 28px, radius 6, the list's
+   hover, and the active row in the list's selection blue with its name 600. */
 .tab-row {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: var(--r-row);
+  border-radius: var(--corner-radius-medium);
 }
 .tab-row:hover,
-.tab-row:focus-within { background: var(--surface); }
-.tab-row[data-current="true"] { background: var(--surface-2); }
+.tab-row:focus-within { background: var(--app-list-hover-background); }
+.tab-row[data-current="true"] { background: var(--app-list-active-background); }
+.tab-row[data-current="true"] .tab-open { color: var(--app-list-active-foreground); }
+.tab-row[data-current="true"] .tab-name { font-weight: 600; }
 
 .tab-open {
   flex: 1;
@@ -567,10 +586,10 @@ body.rail .layout-btn { inline-size: auto; }
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--r-row);
+  border-radius: var(--corner-radius-medium);
   background: none;
   color: var(--fg);
   font: inherit;
@@ -729,9 +748,9 @@ body.rail .layout-btn { inline-size: auto; }
   min-inline-size: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--surface-2);
-  color: var(--fg);
-  font-size: .78em;
+  background: var(--app-status-unread);   /* the extension's .statusDotUnread */
+  color: #111;
+  font-size: var(--fs-meta);
   line-height: 18px;
   text-align: center;
 }
@@ -768,18 +787,21 @@ body.rail .layout-btn { inline-size: auto; }
 
 .proj { margin-block-end: 2px; }
 
+/* A project is the extension's .groupHeader (§8.1): 26px, secondary text at
+   600, a count badge. A group has no selected state there; the current
+   project is told by its name at full strength. */
 .proj-top {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: var(--r-row);
+  margin-block-start: 2px;
+  border-radius: var(--corner-radius-medium);
 }
 .proj-top:hover,
-.proj-top:focus-within { background: var(--surface); }
+.proj-top:focus-within { background: var(--app-list-hover-background); }
 /* The row carries the hover tint; the buttons inside must not go coral
    (they inherit the global button:hover otherwise). */
 .proj-head:hover, .sess:hover { background: none; }
-.proj[data-current="true"] > .proj-top { background: var(--surface-2); }
 .proj-top:hover .sess-act,
 .proj-top:focus-within .sess-act { opacity: 1; width: 30px; }
 
@@ -788,16 +810,17 @@ body.rail .layout-btn { inline-size: auto; }
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: var(--row-h);
-  padding: 0 10px;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--r-row);
+  border-radius: var(--corner-radius-medium);
   background: none;
   /* Only the project you are in is at full strength (§D4). */
-  color: var(--fg-muted);
+  color: var(--app-secondary-foreground);
   font: inherit;
   font-size: var(--fs-ui);
+  font-weight: 600;
   cursor: pointer;
   text-align: start;
 }
@@ -856,34 +879,33 @@ body.rail .layout-btn { inline-size: auto; }
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: var(--r-row);
+  margin-block-end: 2px;        /* --app-list-gap */
+  border-radius: var(--corner-radius-medium);
 }
 .proj-sessions li:hover,
-.proj-sessions li:focus-within { background: var(--surface); }
-.proj-sessions li[data-current="true"] {
-  background: var(--surface-2);
-}
+.proj-sessions li:focus-within { background: var(--app-list-hover-background); }
+.proj-sessions li[data-current="true"] { background: var(--app-list-active-background); }
 
 .sess {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-height: 28px;
-  padding: 3px 10px;
+  padding: 0 8px;
   border: 0;
   background: none;
-  color: var(--fg-muted);
+  color: var(--app-primary-foreground);
   font: inherit;
   font-size: var(--fs-ui);
   cursor: pointer;
   text-align: start;
-  border-radius: var(--r-row);
+  border-radius: var(--corner-radius-medium);
   line-height: 1.6;
 }
-.proj-sessions li[data-current="true"] .sess,
-.proj-sessions li:hover .sess { color: var(--fg); }
+.proj-sessions li[data-current="true"] .sess { color: var(--app-list-active-foreground); }
+.proj-sessions li[data-current="true"] .sess-preview { font-weight: 600; }
 .sess-preview {
   flex: 0 1 auto;   /* see .proj-name */
   min-width: 0;
@@ -891,7 +913,8 @@ body.rail .layout-btn { inline-size: auto; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sess-when { flex: none; margin-inline-start: auto; color: var(--fg-faint); font-size: var(--fs-meta); }
+.sess-when { flex: none; margin-inline-start: auto; color: var(--app-secondary-foreground); font-size: var(--fs-meta); }
+.proj-sessions li[data-current="true"] .sess-when { color: inherit; opacity: .75; }
 
 /* Row actions (⋯, «+»): present and focusable at rest but invisible, shown
    while the pointer or the keyboard is on the row (§D4). `display: none` used
@@ -910,10 +933,10 @@ body.rail .layout-btn { inline-size: auto; }
   align-items: center;
   justify-content: center;
   width: 0;
-  min-height: 30px;
+  min-height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--corner-radius-small);
   background: none;
   color: var(--fg-muted);
   cursor: pointer;
@@ -921,8 +944,9 @@ body.rail .layout-btn { inline-size: auto; }
   font-size: .78em;
 }
 .proj-sessions li:hover .sess-act,
-.proj-sessions li:focus-within .sess-act { opacity: 1; width: 30px; }
-.sess-act:hover { background: var(--surface-2); color: var(--fg); }
+.proj-sessions li:focus-within .sess-act { opacity: 1; width: 24px; }
+.sess-act:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
+.proj-sessions li[data-current="true"] .sess-act { color: var(--app-list-active-foreground); }
 
 .arch-head {
   width: 100%;
@@ -1185,11 +1209,13 @@ body.rail .rail-icon { transform: scaleX(-1); }
   align-items: flex-start;
   padding-block: 6vh var(--pad);
 }
+/* pcg-rf8 R7: the extension's 600px .dialog [yumWmQ] - the side bar's
+   ground, its border, 8px corners - with the form's own 24px padding. */
 .ns-card {
   inline-size: min(600px, 100%);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel);
+  background: var(--app-primary-background);
+  border: 1px solid var(--app-primary-border-color);
+  border-radius: var(--corner-radius-large);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -1199,8 +1225,8 @@ body.rail .rail-icon { transform: scaleX(-1); }
 }
 .ns-title {
   margin: 0 0 4px;
-  font-size: 17px;
-  font-weight: var(--wt-title);
+  font-size: 15px;
+  font-weight: 600;
   color: var(--fg);
 }
 /* ONE GRID FOR EVERY ROW: a label column and a control column, and every
@@ -1213,7 +1239,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
   align-items: start;
   gap: 16px;
 }
-.ns-label { color: var(--fg-muted); padding-block-start: 6px; }
+.ns-label { color: var(--app-secondary-foreground); padding-block-start: 6px; }
 /* A segmented control is one track with equal cells, not a row of loose
    buttons: the pressed cell is the only raised thing in it. */
 .ns-seg {
@@ -1222,9 +1248,9 @@ body.rail .rail-icon { transform: scaleX(-1); }
   grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-row);
-  background: var(--surface);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-medium);
+  background: var(--app-input-background);
 }
 .ns-opt {
   font: inherit;
@@ -1238,36 +1264,38 @@ body.rail .rail-icon { transform: scaleX(-1); }
   font-weight: var(--wt-body);
   text-align: center;
   cursor: pointer;
+  /* A segment switches at once: the generic button fade left the old cell
+     blue for 160ms while the new one was already bold. */
+  transition: none;
 }
-.ns-opt:hover:not(:disabled) { background: var(--surface); color: var(--fg); }
+.ns-opt:hover:not(:disabled) { background: var(--app-list-hover-background); color: var(--fg); }
 .ns-opt[aria-pressed="true"] {
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-  color: var(--fg);
-  font-weight: var(--wt-title);
+  background: var(--app-list-active-background);
+  color: var(--app-list-active-foreground);
+  font-weight: 600;
 }
 .ns-opt:disabled { opacity: .4; cursor: not-allowed; }
 .ns-opt:focus-visible,
 .ns-folder:focus-visible,
 .ns-task:focus-visible,
 .ns-go:focus-visible,
-.ns-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ns-cancel:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 .ns-folder-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-inline-size: 0; }
 .ns-folder {
   font: inherit;
   inline-size: 100%;
-  min-block-size: 34px;
+  min-block-size: 32px;
   padding: 4px 10px;
-  border-radius: var(--r-row);
-  border: 1px solid var(--border);
-  background: var(--raise);
-  color: var(--fg);
+  border-radius: var(--corner-radius-small);
+  border: 1px solid var(--app-input-border);
+  background: var(--app-input-background);
+  color: var(--app-input-foreground);
 }
 .ns-folder-path { align-self: flex-start; color: var(--fg-faint); font-size: var(--fs-meta); overflow-wrap: anywhere; }
 .ns-iso { display: flex; flex-direction: column; gap: 6px; padding-block-start: 6px; }
 .ns-radio { display: flex; align-items: center; gap: 8px; color: var(--fg); cursor: pointer; }
 .ns-radio:has(input:disabled) { color: var(--fg-faint); cursor: not-allowed; }
-.ns-radio input { accent-color: var(--accent); margin: 0; }
+.ns-radio input { accent-color: var(--app-button-background); margin: 0; }
 .ns-note { margin: 0; color: var(--fg-faint); font-size: var(--fs-meta); }
 .ns-task {
   font: inherit;
@@ -1276,12 +1304,13 @@ body.rail .rail-icon { transform: scaleX(-1); }
   resize: vertical;
   min-block-size: 4.5em;
   padding: 8px 10px;
-  border-radius: var(--r-row);
-  border: 1px solid var(--border);
-  background: var(--raise);
-  color: var(--fg);
+  border-radius: var(--corner-radius-medium);
+  border: 1px solid var(--app-input-border);
+  background: var(--app-input-background);
+  color: var(--app-input-foreground);
 }
-.ns-task::placeholder { color: var(--fg-faint); }
+.ns-task::placeholder { color: var(--app-input-placeholder-foreground); }
+.ns-task:focus-visible, .ns-folder:focus-visible, .ns-slot-folder:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 .ns-preview-wrap { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
 .ns-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ns-slot {
@@ -1290,8 +1319,9 @@ body.rail .rail-icon { transform: scaleX(-1); }
   gap: 8px;
   min-block-size: 34px;
   padding: 6px 10px;
-  border-radius: var(--r-row);
-  background: var(--surface);
+  border: 1px solid var(--app-primary-border-color);
+  border-radius: var(--corner-radius-medium);
+  background: var(--app-secondary-background);
   color: var(--fg);
 }
 .ns-slot-n { color: var(--fg-faint); min-inline-size: 1em; }
@@ -1305,41 +1335,43 @@ body.rail .rail-icon { transform: scaleX(-1); }
   flex: 1 1 9em;
   min-inline-size: 9em;
   padding: 2px 6px;
-  border-radius: var(--r-chip);
-  border: 1px solid var(--border);
-  background: var(--raise);
-  color: var(--fg);
+  border-radius: var(--corner-radius-small);
+  border: 1px solid var(--app-input-border);
+  background: var(--app-input-background);
+  color: var(--app-input-foreground);
 }
-.ns-slot-folder:focus-visible,
-.ns-slot-branch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ns-slot-branch input:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 .ns-slot-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); cursor: pointer; }
-.ns-slot-branch input { accent-color: var(--accent); margin: 0; }
+.ns-slot-branch input { accent-color: var(--app-button-background); margin: 0; }
 .ns-slot-branch:has(input:disabled) { color: var(--fg-faint); cursor: not-allowed; }
 .ns-slot-proj { font-weight: var(--wt-title); }
 .ns-slot-iso, .ns-slot-role { color: var(--fg-muted); }
 .ns-slot-iso::before, .ns-slot-role::before { content: "· "; color: var(--fg-faint); }
-.ns-slot-role.is-reviewer { color: var(--st-wait); }
+.ns-slot-role.is-reviewer { color: var(--app-link-foreground); }
 .ns-slot-task { background: none; color: var(--fg-faint); font-size: var(--fs-meta); }
-.ns-error { margin: 0; color: var(--danger); }
+.ns-error { margin: 0; color: var(--app-error-foreground); }
 .ns-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-block-start: 4px;
   padding-block-start: 16px;
-  border-block-start: 1px solid var(--border);
+  border-block-start: 1px solid var(--app-primary-border-color);
 }
+/* VS Code's own buttons: primary in button blue, secondary transparent with
+   the 10% white border (dark_modern.json button.*). */
 .ns-cancel, .ns-go {
   font: inherit;
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 16px;
-  border-radius: var(--r-row);
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
   cursor: pointer;
 }
-.ns-cancel { background: none; border: 1px solid var(--border); color: var(--fg-muted); }
-.ns-cancel:hover { color: var(--fg); background: var(--surface); }
-.ns-go { background: var(--accent); border: 1px solid var(--accent); color: #111; font-weight: var(--wt-title); }
-.ns-go:hover:not(:disabled) { background: var(--accent-strong); }
+.ns-cancel { background: var(--app-button-secondary-background); color: var(--app-button-secondary-foreground); }
+.ns-cancel:hover { background: var(--app-button-secondary-hover-background); }
+.ns-go { background: var(--app-button-background); color: var(--app-button-foreground); font-weight: 500; }
+.ns-go:hover:not(:disabled) { background: var(--app-button-hover-background); }
 .ns-go:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 620px) {
   .ns-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
@@ -1369,8 +1401,8 @@ body.rail .rail-icon { transform: scaleX(-1); }
      (that pair is the guard, measured). */
   min-height: 0;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel);
+  border: 1px solid var(--app-primary-border-color);
+  border-radius: var(--corner-radius-large);
   container-type: size;
 }
 
@@ -1426,8 +1458,13 @@ body.rail .rail-icon { transform: scaleX(-1); }
    nothing to disambiguate, so it is not drawn at all. */
 /* §D5: the focused pane's edge is one step brighter and its header is
    tinted. No coral frame, no glow, no motion. */
-#grid:not([data-split="1"]) .cell.focused { border-color: var(--border-strong); }
-#grid:not([data-split="1"]) .cell.focused > .topbar { background: var(--surface); }
+/* R7: VS Code's focused editor group - its tab's 1px top in focusBorder blue
+   (tab.activeBorderTop) and the header one step up, nothing else. */
+#grid:not([data-split="1"]) .cell.focused { border-color: var(--app-input-border); }
+#grid:not([data-split="1"]) .cell.focused > .topbar {
+  background: var(--app-list-hover-background);
+  box-shadow: inset 0 1px 0 var(--app-focus-border);
+}
 
 /* The cell's own number, «۱»…«۴», so Alt+N names something visible. Muted: it
    is a label for a key, not a piece of the conversation. */
@@ -1543,13 +1580,13 @@ body.rail .rail-icon { transform: scaleX(-1); }
   color: var(--fg-muted);
   cursor: pointer;
 }
-.pane-btn:hover { background: var(--surface-2); color: var(--fg); }
+.pane-btn:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 .pane-btn:active { transform: scale(.97); }
-.pane-btn[aria-pressed="true"] { color: var(--fg); background: var(--surface-2); }
+.pane-btn[aria-pressed="true"] { color: var(--fg); background: var(--app-ghost-button-hover-background); }
 .pane-close[data-armed="true"] {
-  color: var(--danger);
-  background: var(--danger-bg);
-  box-shadow: inset 0 0 0 1px var(--danger);
+  color: var(--app-error-foreground);
+  background: color-mix(in srgb, var(--app-error-foreground) 15%, transparent);
+  box-shadow: inset 0 0 0 1px var(--app-error-foreground);
 }
 /* Fullscreen needs a second pane to leave; at one pane there is nothing to fill. */
 #grid[data-split="1"] .pane-zoom { display: none; }
@@ -1585,21 +1622,21 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 .cell.blank > .statusline { display: none; }
 .empty-line { margin: 0; color: var(--fg-muted); font-size: var(--fs-ui); }
 .empty-btn {
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-row);
-  background: var(--raise);
-  color: var(--fg);
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-button-secondary-background);
+  color: var(--app-button-secondary-foreground);
   font: inherit;
   font-size: var(--fs-ui);
   cursor: pointer;
 }
-.empty-btn:hover { background: var(--surface-2); }
-.empty-btn::before { content: "+"; margin-inline-end: 8px; color: var(--accent); font-weight: 600; }
+.empty-btn:hover { background: var(--app-button-secondary-hover-background); }
+.empty-btn::before { content: "+"; margin-inline-end: 8px; font-weight: 600; }
 /* A free slot beside live conversations reads as a slot, not as a pane that
    failed to load: a dashed edge and the ground showing through. */
-#grid:not([data-split="1"]) .cell.blank { border-style: dashed; border-color: var(--border-strong); background: none; }
+#grid:not([data-split="1"]) .cell.blank { border-style: dashed; border-color: var(--app-input-border); background: none; }
 /* With several panes the TUI's banner is enough; its tips are the `?` sheet. */
 #grid:not([data-split="1"]) .wel-tips { display: none; }
 
@@ -1607,27 +1644,32 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
    one quiet square-cornered button — send ↵, or stop ⊙ while a turn runs and
    the box is empty. Muted until it has something to do. */
 .comp-line { position: relative; }
+/* sendButton: 26px clay, 5px corners, an ivory glyph; dimmed to .4 until it
+   has something to send. It follows the posture like the ring does. */
 .comp-act {
   flex: none;
-  inline-size: 28px;
-  block-size: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  margin-block-start: 4px;
+  inline-size: 26px;
+  block-size: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  margin-block-start: 5px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--fg);
+  border-radius: 5px;
+  background: var(--app-claude-clay-button-orange);
+  color: var(--app-claude-ivory);
   cursor: pointer;
 }
-.comp-act:hover:not(:disabled) { background: var(--surface-2); }
-.comp-act:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: default; opacity: .6; }
+.comp-act:hover:not(:disabled) { background: var(--app-claude-clay-button-orange); filter: brightness(1.1); }
+.comp-act:active:not(:disabled) { filter: brightness(.9); }
+.comp-act:disabled { cursor: not-allowed; opacity: .4; }
 .comp-act[hidden] { display: none; }
-.comp-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.comp-act.stop { color: var(--fg); }
+.comp-act:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
+.comp-box:has(.posture-chip[data-posture="acceptEdits"]) .comp-act { background: var(--app-primary-foreground); color: var(--app-primary-background); }
+.comp-box:has(.posture-chip[data-posture="plan"]) .comp-act { background: var(--app-plan-mode-color); color: var(--app-button-foreground); }
+.comp-box:has(.posture-chip:is([data-posture="autoApprove"], [data-posture="bypassPermissions"])) .comp-act { background: #c74e39; color: #fff; }
 
 /* «بفرست ⏎ / بعداً بفرست Ctrl+⏎», opening above the button (the site's). */
 .send-menu {
@@ -1639,10 +1681,10 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   flex-direction: column;
   min-inline-size: 190px;
   padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-elev, #1f1f1e);
-  box-shadow: var(--shadow-float, 0 10px 30px rgba(0,0,0,.45));
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  background: var(--app-menu-background);
+  box-shadow: 0 2px 8px #00000026;
 }
 .send-menu-row {
   display: flex;
@@ -1650,23 +1692,24 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   justify-content: space-between;
   gap: 14px;
   min-height: 0;
-  padding: 5px 8px;
+  padding: 6px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--app-list-border-radius);
   background: none;
-  color: var(--fg);
+  color: var(--app-primary-foreground);
   font: inherit;
   font-size: var(--fs-ui, 13px);
   cursor: pointer;
 }
-.send-menu-row:hover, .send-menu-row:focus-visible { background: var(--surface-2); outline: none; }
+.send-menu-row:hover, .send-menu-row:focus-visible { background: var(--app-list-active-background); color: var(--app-list-active-foreground); outline: none; }
 .send-menu-row kbd {
   font: inherit;
   font-size: 11px;
-  color: var(--fg-muted);
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  color: var(--app-secondary-foreground);
+  padding: 1px 4px;
+  border: 1px solid var(--app-input-border);
+  border-radius: 3px;
+  background: var(--app-code-background);
 }
 
 /* Messages held for after this turn: dim rows above the prompt, each with a
@@ -1674,24 +1717,24 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 .later-strip { display: flex; flex-direction: column; gap: 2px; margin-block-end: 6px; }
 .later-strip[hidden] { display: none; }
 .later-row { display: flex; align-items: center; gap: 8px; color: var(--fg-muted); font-size: .9em; }
-.later-tag { flex: none; font-size: .85em; padding: 0 6px; border-radius: 4px; background: var(--surface-2); }
+.later-tag { flex: none; font-size: var(--fs-meta); padding: 0 6px; border-radius: 10px; background: var(--app-badge-background); color: var(--app-badge-foreground); }
 .later-text { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .later-back { flex: none; min-height: 0; inline-size: 22px; block-size: 22px; padding: 0; border: 0;
               border-radius: 5px; background: none; color: var(--fg-muted); cursor: pointer; }
-.later-back:hover { background: var(--surface-2); color: var(--fg); }
+.later-back:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 
 .replay-banner {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 auto 8px;
-  width: min(50rem, calc(100% - 32px));
-  padding: 8px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--fg-muted);
-  font-size: .88em;
+  width: min(var(--app-column-max), calc(100% - 32px));
+  padding: 6px 12px;
+  background: var(--app-root-background);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-medium);
+  color: var(--app-secondary-foreground);
+  font-size: var(--fs-meta);
 }
 .replay-banner[hidden] { display: none; }
 
@@ -1762,7 +1805,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   overflow-y: auto;
   /* The composer's own inline padding, so the greeting and the prompt line up
      on the same reading column instead of being two boxes of different widths. */
-  padding: 10px max(20px, calc((100% - 50rem) / 2)) 26px;
+  padding: 10px max(20px, calc((100% - var(--app-column-max)) / 2)) 26px;
 }
 
 /* --- the TUI's greeting (V2-PLAN §2, unboxed by TP1 §3) ----------------------
@@ -1843,10 +1886,10 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   max-height: 40vh;
   overflow: hidden;
   padding: 12px 14px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgb(0 0 0 / .45);
+  background: var(--app-menu-background);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  box-shadow: 0 2px 8px #00000026;
   font-size: .85em;
   line-height: 1.7;
   pointer-events: none;   /* must never steal the hover that opened it */
@@ -1866,7 +1909,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
   padding-inline-start: 8px;
   border-inline-start: 2px solid var(--border);
 }
-.sc-line.user { border-inline-start-color: var(--accent); }
+.sc-line.user { border-inline-start-color: var(--app-focus-border); }
 .sc-line.assistant { color: var(--fg-muted); }
 
 /* --- message list ---------------------------------------------------------- */
@@ -1882,7 +1925,7 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
      is visible, kept their content size. Invisible in a short conversation and
      total in a long one. */
   /* Centered reading column, claude.ai-style. */
-  padding: 6px max(20px, calc((100% - 50rem) / 2)) 14px;
+  padding: 6px max(20px, calc((100% - var(--app-column-max)) / 2)) 14px;
   display: flex;
   flex-direction: column;
   gap: var(--log-gap);
@@ -1940,18 +1983,20 @@ details.card.run[open] > summary::after { transform: rotate(-90deg); }
 .run-stat { flex: none; display: inline-flex; gap: 4px; font-size: .92em; font-variant-numeric: tabular-nums; }
 .run-err { flex: none; }
 .run-err:empty { display: none; }
-details.card.run.has-failed > summary .run-err { color: var(--accent); }
+details.card.run.has-failed > summary .run-err { color: var(--danger); }
+/* toolBody: an #454545 hairline on the tool surface, 5px corners. */
 details.card.run > .card-body {
   margin-block-start: 6px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--app-input-border);
+  border-radius: 5px;
+  background: var(--app-tool-background);
   overflow: hidden;
 }
 details.card.run > .card-body > * { margin: 0; border-radius: 0; }
-details.card.run > .card-body > * + * { border-block-start: 1px solid var(--border); }
-details.card.run > .card-body > details.card > summary { padding: 8px 10px; }
-details.card.run > .card-body > details.card[open] { background: var(--surface); }
+details.card.run > .card-body > * + * { border-block-start: 1px solid var(--app-input-border); }
+details.card.run > .card-body > details.card > summary { padding: 4px 8px; min-height: 28px; }
+details.card.run > .card-body > details.card[open] { background: var(--app-list-hover-background); }
 details.card.run > .card-body .tool-icon:not(.glyph) { display: none; }
 details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .log .run details.card > summary::before,
@@ -1968,7 +2013,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px max(16px, calc((100% - 50rem) / 2)) 14px;
+  padding: 8px max(16px, calc((100% - var(--app-column-max)) / 2)) 14px;
   font-size: var(--fs-ui);
   line-height: var(--lh-ui);
 }
@@ -1979,19 +2024,21 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   gap: 10px;
   margin-block-end: 8px;
 }
-.ch-title { font-weight: var(--wt-title); color: var(--fg); }
+/* pcg-rf8 R7: VS Code's Source Control view - secondary buttons, list rows,
+   and the status letter in the git decoration colour, no chip. */
+.ch-title { font-weight: 600; color: var(--app-primary-foreground); }
 .ch-back, .ch-refresh {
   min-height: 0;
   padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-chip);
-  background: none;
-  color: var(--fg-muted);
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-button-secondary-background);
+  color: var(--app-button-secondary-foreground);
   font: inherit;
   font-weight: var(--wt-body);
 }
 .ch-refresh { margin-inline-start: auto; }
-.ch-back:hover, .ch-refresh:hover { background: var(--surface); color: var(--fg); }
+.ch-back:hover, .ch-refresh:hover { background: var(--app-button-secondary-hover-background); }
 .ch-state { display: block; padding: 10px 2px; color: var(--fg-faint); }
 .ch-group { margin-block-end: 10px; }
 .ch-group > summary {
@@ -1999,8 +2046,9 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   align-items: center;
   gap: 8px;
   padding: 4px 2px;
-  color: var(--fg-muted);
+  color: var(--app-secondary-foreground);
   font-size: var(--fs-meta);
+  font-weight: 600;
   cursor: pointer;
 }
 .ch-file > summary {
@@ -2009,13 +2057,13 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   gap: 8px;
   min-block-size: var(--row-h);
   padding: 0 8px;
-  border-radius: var(--r-row);
+  border-radius: var(--corner-radius-medium);
   cursor: pointer;
   list-style: none;
 }
 .ch-file > summary::-webkit-details-marker { display: none; }
-.ch-file > summary:hover { background: var(--surface); }
-.ch-file[open] > summary { background: var(--surface-2); }
+.ch-file > summary:hover { background: var(--app-list-hover-background); }
+.ch-file[open] > summary { background: var(--app-list-active-background); color: var(--app-list-active-foreground); }
 /* PHYSICAL on purpose: .diff-stat is direction:ltr, so its own logical
    `margin-inline-start` is its LEFT and pushed it toward the path instead of
    away. In this RTL row the count belongs at the far left. */
@@ -2033,14 +2081,15 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   flex: none;
   inline-size: 1.4em;
   text-align: center;
-  border-radius: var(--r-chip);
-  background: var(--surface-2);
-  color: var(--fg-muted);
+  background: none;
+  color: var(--app-secondary-foreground);
   font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: var(--fs-meta);
+  font-weight: 600;
 }
-.ch-status[data-status="?"], .ch-status[data-status="A"] { color: var(--ok); }
-.ch-status[data-status="D"] { color: var(--danger); }
+.ch-status[data-status="?"], .ch-status[data-status="A"] { color: var(--app-diff-addition-foreground); }
+.ch-status[data-status="M"] { color: var(--app-dot-warning); }
+.ch-status[data-status="D"] { color: var(--app-diff-deletion-foreground); }
 .ch-file > .diff { margin: 4px 0 8px; }
 
 /* §D11.3: the row at the top of a long history. Quiet, full width. */
@@ -2048,15 +2097,15 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   align-self: center;
   min-height: 0;
   padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-row);
-  background: none;
-  color: var(--fg-muted);
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-button-secondary-background);
+  color: var(--app-button-secondary-foreground);
   font: inherit;
   font-size: var(--fs-meta);
   font-weight: var(--wt-body);
 }
-.history-earlier:hover { background: var(--surface); color: var(--fg); }
+.history-earlier:hover { background: var(--app-button-secondary-hover-background); }
 
 /* §D11.4, NOT switched on: `.log.cv` would let the browser skip laying out
    rows that are off screen. It stays behind a class nothing sets until
@@ -2078,13 +2127,17 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
    echo it replaces read as the same colour as everything else around it.
    `:not(.side)`: a `/btw` question keeps its own rule. Alignment is layout
    only — never a substitute for `dir` on the text. */
+/* pcg-rf8 R3: the extension's .userMessage - the input surface, an #454545
+   hairline, 6px corners, 4px 8px (6px horizontal in the extension; 8 for
+   Persian joining at the edges). */
 .msg.user:not(.side) {
   align-self: flex-start;
   max-width: min(85%, 62ch);
   color: var(--fg);
-  background: rgb(255 255 255 / .05);
-  border-radius: 10px;
-  padding: 8px 12px;
+  background: var(--app-input-background);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-medium);
+  padding: 4px 8px;
 }
 
 /* The assistant is plain text on the page, not a bubble — it has no surface to
@@ -2099,14 +2152,68 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   position: relative;
 }
 
-/* No ⏺ and no gutter: the site's answer is plain
-   prose on the column, and a coral dot beside an English paragraph that
-   starts at the other edge of an RTL column was the "scattered" row. */
+/* THE TIMELINE (pcg-rf8 R3, user decision 2026-10-07; replaces 0.6.0's "no
+   marker"). The extension's .timelineMessage: every answer, run of steps and
+   the working line carries a 7px dot, and a 1px rail joins a run of them.
+   PHYSICAL `right` on purpose: these rows hold dir="auto"/"ltr" content, and
+   a logical inset would move an English answer's dot to the other edge - the
+   "scattered" row 0.6.0 removed the old ⏺ for. The shell is RTL, so the rail
+   runs down the right of the column whatever each row's language is.
+   Values are the extension's: padding 30px, dot at 9px, rail at 12px; the
+   dot sits on the first line's centre (.95em = half of 1.9 leading). */
+.log > :is(.msg.assistant:not(.side), details.card, .pulse, .recap, .todos, .msg.agent-note) {
+  position: relative;
+  padding-right: 30px;
+}
+.log > :is(.msg.assistant:not(.side), details.card, .pulse, .recap, .todos, .msg.agent-note)::before {
+  content: "";
+  position: absolute;
+  right: 9px;
+  top: calc(.95em - 3.5px);
+  z-index: 1;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--app-secondary-foreground);
+}
+.log > :is(.msg.assistant:not(.side), details.card, .pulse, .recap, .todos, .msg.agent-note)::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 0;
+  bottom: calc(-1 * var(--log-gap));
+  inline-size: 1px;
+  background: var(--app-primary-border-color);
+  pointer-events: none;
+}
+/* First in a run: the rail starts at its dot. Last: it stops just past it.
+   Alone: no rail. The pulse is `order: 1` while live, so it never joins. */
+.log > :is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note):not(:is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note) + *)::after {
+  top: .95em;
+}
+.log > :is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note):not(:has(+ :is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note)))::after {
+  bottom: auto;
+  block-size: calc(.95em + 4px);
+}
+.log > :is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note):not(:is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note) + *):not(:has(+ :is(.msg.assistant:not(.side), details.card, .recap, .todos, .msg.agent-note)))::after,
+.log > .pulse::after { display: none; }
+/* The dot says how the step went: dotSuccess / dotFailure, and the working
+   line blinks in the spinner's coral (dotProgress). */
+.log > details.card.run::before { background: var(--app-dot-success); }
+.log > details.card.run.has-failed::before { background: var(--app-dot-failure); }
+.log > .msg.assistant.is-pinned::before { background: var(--accent); }
+.log > .pulse::before { top: calc(50% - 3.5px); background: var(--app-spinner-foreground); }
+.log > .pulse.live::before { animation: tl-blink 1s linear infinite; }
+@keyframes tl-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .log > .pulse.live::before { animation: none; } }
+/* The pulse and the recap draw their own glyph in this gutter; the dot
+   replaces it. */
+.log > :is(.pulse, .recap) > :is(.pulse-glyph, .recap-glyph) { display: none; }
 
 .msg.error {
   align-self: stretch;
   max-width: none;
-  color: var(--danger);
+  color: var(--app-diff-deletion-foreground);   /* 4.28:1 with --danger on its tint */
   background: var(--danger-bg);
   border: 1px solid var(--danger);
 }
@@ -2158,30 +2265,32 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .msg strong { color: var(--fg); }
 .msg ul, .msg ol { padding-inline-start: 1.4em; margin: .35em 0; }
 .msg blockquote {
-  border-inline-start: 3px solid var(--border);
+  border-inline-start: 3px solid #616161;
   padding-inline-start: .8em;
   margin-block: .45em;
   margin-inline: 0;
   color: var(--fg-muted);
 }
-.msg a { color: var(--accent); }
+.msg a { color: var(--app-link-foreground); text-decoration: none; }
+.msg a:hover { text-decoration: underline; }
 
-/* The site's inline code chip, measured: reddish text on a faint fill with
-   a hairline, 5px radius, a little smaller than the prose around it. */
+/* The extension's inline code (.root code): textPreformat colours, 3px
+   corners, 2px 4px, .9em. */
 .msg :not(pre) > code {
-  color: rgb(236 126 126);
-  background: rgb(255 255 255 / .05);
-  border: 1px solid rgb(255 255 255 / .1);
-  padding: .05em .3em;
-  border-radius: 5px;
+  color: var(--app-inline-code-foreground);
+  background: var(--app-inline-code-background);
+  padding: 1px 4px;
+  border-radius: 3px;
   font-size: .9em;
+  word-break: break-word;
 }
 
+/* codeBlockWrapper pre: the code surface, 4px corners, 8px, no border. */
 .msg pre {
-  background: var(--bg-side);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 11px;
+  background: var(--app-code-background);
+  border: 0;
+  border-radius: var(--corner-radius-small);
+  padding: 8px;
   margin-block: .45em;
   overflow-x: auto;         /* long lines scroll, page never does */
   line-height: 1.55;        /* code is Latin: the Persian floor does not apply */
@@ -2198,8 +2307,8 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .code-wrap > pre { margin-block: 0; }
 .code-copy {
   position: absolute;
-  top: .4rem;
-  right: .4rem;             /* physical, not logical — code reads LTR always */
+  top: 4px;
+  right: 4px;             /* physical, not logical — code reads LTR always */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2208,8 +2317,8 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
-  background: var(--surface-2);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-code-background);
   color: var(--fg-muted);
   opacity: 0;
   transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease),
@@ -2218,7 +2327,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
 .code-wrap:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
 /* The generic `button:hover` (~line 1016) fills coral and would otherwise
    repaint this on hover — same trap as .kebab-item and .ag-row. */
-.code-copy:hover { background: var(--surface-2); color: var(--fg); }
+.code-copy:hover { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 
 /* GFM tables. marked emits them and always has; with no rules at all the
    browser's default <table> is borderless and gap-less, so a comparison grid
@@ -2234,7 +2343,7 @@ details.card.run > .card-body > .msg.agent-note { padding: 8px 10px; }
   font-size: .95em;
 }
 .msg th, .msg td {
-  border: 1px solid var(--border);
+  border: 1px solid var(--app-input-border);
   padding: 4px 9px;
   text-align: start;       /* never `left`: the cell's own dir decides — spec */
   vertical-align: top;
@@ -2489,11 +2598,13 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   overflow-x: auto;
   max-height: 22em;
   overflow-y: auto;
-  background: var(--bg-side);
-  border-radius: 6px;
+  /* The extension's toolResult: the code surface, 4px corners. */
+  background: var(--app-code-background);
+  border-radius: var(--corner-radius-small);
   line-height: var(--lh-fa);
-  padding: 7px 9px;
+  padding: 6px 8px;
 }
+.diff { background: var(--app-diff-editor-background); }
 
 /* Targets `.dt`, not `.dl`: renderDiff() (render.js) sets dir="auto" on the
    text span (.dt), never on the row (.dl) — a `.dl:dir()` selector has no dir
@@ -2686,22 +2797,35 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    the status line have to touch, so there is nothing between them — including
    the `6px` that used to sit here, and including `.statusline`'s own
    `border-top`, which was removed for the same reason. */
+/* pcg-rf8 R5: THE EXTENSION'S INPUT BOX replaces the TUI's two rules - the
+   input surface in an #454545 hairline, 8px corners, a 1px shadow, centred in
+   the 680px column. Focused, it takes the coral ring, recoloured by posture
+   exactly as inputContainer[data-permission-mode] does. */
 .composer {
-  padding: 0 max(20px, calc((100% - 50rem) / 2));
-  border-block: 1px solid var(--border);
-  transition: border-color var(--dur) var(--ease);
+  padding: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
 }
-.composer:focus-within { border-color: #57544e; }
 
 .comp-box {
+  --ring: var(--app-claude-orange);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  /* §2.4: 8/4 -> 5/3. Four columns pay this padding four times and the
-     transcript is what buys it back. */
-  padding: 5px 0 3px;
+  gap: 0;
+  padding: 0;
+  background: var(--app-input-background);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .1);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
+.comp-box:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 12%, transparent),
+              0 1px 2px color-mix(in srgb, var(--ring), transparent 80%);
+}
+.comp-box:has(.posture-chip[data-posture="acceptEdits"]) { --ring: var(--app-primary-foreground); }
+.comp-box:has(.posture-chip[data-posture="plan"]) { --ring: var(--app-focus-border); }
+.comp-box:has(.posture-chip:is([data-posture="autoApprove"], [data-posture="bypassPermissions"])) { --ring: var(--app-error-foreground); }
 
 /* The prompt line itself: the mark, then the field. A ROW flex box, so the
    mark is laid out beside the textarea instead of above it — and the page is
@@ -2714,6 +2838,8 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   align-items: flex-start;
   gap: 8px;
   min-inline-size: 0;
+  padding-block: 4px;
+  padding-inline: 12px 6px;
 }
 
 /* The mark is DECORATION. It is the product's own mirrored prompt (the same
@@ -2738,11 +2864,15 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    window, and a non-wrapping flex row does not warn you — it just pushes the
    last chips out of the box. The effort chip was the one that vanished, since
    it only shares the row once a session has a posture and an audit count. */
+/* inputFooter: a hairline above, 5px, 6px apart, secondary text. */
 .comp-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding: 4px 5px;
+  border-block-start: 1px solid var(--app-input-border);
+  color: var(--app-secondary-foreground);
 }
 .comp-spacer { flex: 1; }
 
@@ -2783,24 +2913,28 @@ button {
   font-weight: 500;
   min-height: 44px;
   padding: 0 16px;
-  border-radius: var(--radius);
+  border-radius: var(--corner-radius-small);
   border: 1px solid transparent;
-  background: var(--accent-fill);
-  color: #fff;
+  /* VS Code's primary button (Dark Modern), as the extension's dialogs use it.
+     Coral is the brand, kept for send, the spinner and the prompt's ring. */
+  background: var(--app-button-background);
+  color: var(--app-button-foreground);
   cursor: pointer;
   transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
 }
-button:hover { background: color-mix(in srgb, var(--accent-fill) 88%, #000); }
+button:hover { background: var(--app-button-hover-background); }
 button[disabled] { opacity: .45; cursor: not-allowed; }
 
+/* VS Code's secondary button: transparent, a hairline, #2B2B2B on hover. */
 button.ghost {
   background: transparent;
-  color: var(--fg-muted);
-  border-color: var(--border);
+  color: var(--fg);
+  border-color: var(--border-strong);
 }
-button.ghost:hover { background: var(--surface-2); color: var(--fg); }
-button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-button.danger:hover { background: #d1554a; }
+button.ghost:hover { background: var(--app-list-hover-background); color: var(--fg); }
+/* #c74e39 under white is 4.6:1; the error red itself is 3.1:1. */
+button.danger { background: #c74e39; border-color: #c74e39; color: #fff; }
+button.danger:hover { background: #b3412e; }
 
 button.icon {
   min-width: 44px;
@@ -2994,7 +3128,7 @@ button.round {
    here — on the two rules and on the prompt mark, since TP1 moved the border
    off .comp-box and onto .composer; composer.js still writes the class on
    .comp-box, so the selector reaches up rather than the class moving down. */
-.composer:has(.comp-box.bash) { border-color: var(--bash); }
+.comp-box.bash { border-color: var(--bash); --ring: var(--bash); }
 .comp-box.bash .comp-mark { color: var(--bash); }
 .comp-box.bash .input::placeholder { color: var(--bash); }
 /* An EMPTY box has no text for dir="auto" to measure, so Chromium lays it out
@@ -3097,11 +3231,11 @@ button.round {
   /* The same centred column the prompt uses (.composer's padding), so the
      list sits exactly over the box it is answering for instead of drifting
      wider on a big window and narrower on a small one. */
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 10px;
+  padding: 8px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  background: var(--app-input-background);
   color: var(--fg);
   font: inherit;
   line-height: var(--lh-fa);
@@ -3125,7 +3259,7 @@ button.round {
   padding: 0;
   list-style: none;
 }
-.opts:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.opts:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 2px; }
 
 .opt {
   display: flex;
@@ -3135,17 +3269,20 @@ button.round {
      content size draws its note on top of the next row's title instead of
      scrolling. Third appearance of the same family. */
   flex: none;
-  padding: 7px 10px;
+  padding: 6px 8px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--app-list-border-radius);
   cursor: pointer;
 }
-.opt:hover { background: var(--surface-2); }
+/* The extension's menu rows: hover is the list hover, the keyboard's row is
+   the list's active selection (#04395E under white, 12:1). */
+.opt:hover { background: var(--app-list-hover-background); }
 .opt[aria-selected="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--app-list-active-background);
+  color: var(--app-list-active-foreground);
 }
-.opt[aria-selected="true"] .opt-title { color: var(--accent); font-weight: var(--wt-title); }
+.opt[aria-selected="true"] .opt-title { color: var(--app-list-active-foreground); font-weight: var(--wt-title); }
+.opt[aria-selected="true"] :is(.opt-num, .opt-note) { color: var(--app-list-active-foreground); }
 
 /* The digit is chrome the renderer places, never text inside the label
   It is a Latin-ordered token in an RTL row, so it is
@@ -3186,12 +3323,13 @@ button.round {
 .kebab-menu {
   position: fixed;
   margin: 0;
-  padding: 5px;
+  /* contextMenu: menu surface, the menu border (in the shadow), 6px corners. */
+  padding: 4px;
   inline-size: max-content;
   min-inline-size: 168px;
   border: 0;
-  border-radius: var(--r-card);
-  background: var(--bg-elev);
+  border-radius: var(--corner-radius-medium);
+  background: var(--app-menu-background);
   box-shadow: var(--shadow-float);
   overflow: visible;
 }
@@ -3207,20 +3345,20 @@ button.round {
 .kebab-menu hr {
   border: 0;
   border-block-start: 1px solid var(--border);
-  margin: 4px 6px;
+  margin: 4px 0;
 }
 .kebab-item {
   inline-size: 100%;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
+  gap: 8px;
+  padding: 6px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--app-list-border-radius);
   background: none;
   color: var(--fg);
   font: inherit;
-  font-size: .88em;
+  font-size: var(--fs-ui);
   text-align: start;
   cursor: pointer;
 }
@@ -3230,15 +3368,16 @@ button.round {
   padding: 6px 9px;
   max-inline-size: 15rem;
   color: var(--fg-muted);
-  font-size: .8em;
-  line-height: 1.7;
+  font-size: var(--fs-meta);
+  line-height: 1.6;
 }
 /* `background` must be opted out of explicitly: this is a <button>, so the
    filled `button.danger` above wins over `.kebab-item`'s `background: none`,
    and coral text on a coral fill rendered the row as a blank slab. Declared
    BEFORE :hover so hover still repaints it. */
 .kebab-item.danger { color: var(--danger); background: none; }
-.kebab-item:hover, .kebab-item:focus-visible { background: var(--surface); outline: none; }
+/* VS Code menu selection: #0078D4 under white. */
+.kebab-item:hover, .kebab-item:focus-visible { background: var(--app-menu-selection-background); color: var(--app-menu-selection-foreground); outline: none; }
 
 /* Armed, not alarming. A full-bleed coral fill was the loudest thing in the
    whole app and read as a broken block rather than as a question; the tinted
@@ -3410,12 +3549,17 @@ body.rail .side-zoom { display: none; }
    understood in one look, no long gaps, no scrolling. The prompt below is
    hidden while it is open (the extension puts the request IN PLACE of the
    input), which is ~90px of a pane given back. */
+/* pcg-rf8 R2: the extension's permissionRequestContainer exactly - the input
+   surface, an #454545 hairline, 8px corners and padding, 6px under it. Its
+   header is 1.1em and its buttons the base 13px: here the header is the
+   Persian body size, 14px, and the rest 13px, which is what lets four
+   options fit a six-pane cell without a scroll. */
 .perm {
-  background: var(--raise);
-  border-color: var(--border-strong);
-  border-radius: var(--r-card);
-  padding: 8px 10px;
-  margin-block-end: 8px;
+  background: var(--app-input-background);
+  border-color: var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  padding: 8px;
+  margin-block-end: 6px;
   font-size: var(--fs-ui);
   line-height: var(--lh-ui);
   /* Its own height, not a cap: the transcript gives way instead (below),
@@ -3433,7 +3577,7 @@ body.rail .side-zoom { display: none; }
 .perm[open] { display: flex; flex-direction: column; overflow: hidden; }
 /* Where the keyboard is, at the box's scale: the option list is one tab stop
    whose filled row is the answer, so the box's edge carries focus. */
-.perm[open]:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.perm[open]:focus-within { border-color: color-mix(in srgb, var(--app-input-active-border) 65%, transparent); }
 .perm-form {
   display: flex;
   flex-direction: column;
@@ -3449,7 +3593,7 @@ body.rail .side-zoom { display: none; }
 .cell:has(.perm[open]) .log { min-height: 48px; }
 
 /* The header is ONE line: what kind of act, the tool, «۲ از ۵» at the end. */
-.perm-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.perm-head { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-body); }
 .perm .perm-kind {
   flex: none;
   margin: 0;
@@ -3464,11 +3608,13 @@ body.rail .side-zoom { display: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The tool name is the extension's inline code chip. */
 .perm-tool .mono {
-  padding: 0 6px;
-  border-radius: var(--r-chip);
-  background: var(--surface-2);
-  font-size: .92em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--app-inline-code-background);
+  color: var(--app-inline-code-foreground);
+  font-size: .9em;
 }
 /* «۲ از ۵»: stacked requests, at the header's far end. `.perm p`
    below is (1,0,1), so this says `.perm .perm-count` to win its margin. */
@@ -3483,8 +3629,8 @@ body.rail .side-zoom { display: none; }
 /* A scroll box says it has more: a hairline at the edge content is hidden
    behind (the extension's questionsContainerOverflowTop/Bottom, done with
    background-attachment instead of a scroll listener). */
-.perm-params { --sbg: var(--bg-side); }
-.perm .ask-q { --sbg: var(--raise); }
+.perm-params { --sbg: var(--app-tool-background); }
+.perm .ask-q { --sbg: var(--app-input-background); }
 .perm-params,
 .perm .ask-q {
   background:
@@ -3526,11 +3672,13 @@ body.rail .side-zoom { display: none; }
    user is about to approve. The box stays LTR so paths and code keep their
    order; each line inside gets dir="auto" so Persian content is readable at the
    moment of consent (spec rule 8, render.js renderParamRows). */
+/* The extension's inputJson box: #454545 hairline, tool surface, 4px, mono .9em. */
 .perm-params {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-small);
   padding: 6px 8px;
-  margin: 6px 0 0;
+  margin: 4px 0 0;
+  font-size: .9em;
   /* The pane's height again: what is being approved scrolls inside its own
      box, the options under it never leave the screen. */
   max-height: min(30vh, 20cqb);
@@ -3567,13 +3715,14 @@ body.rail .side-zoom { display: none; }
   white-space: pre-wrap;
   word-break: break-word;
 }
-.dl.add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
-.dl.del { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+/* VS Code's diffEditor.insertedLineBackground / removedLineBackground (dark). */
+.dl.add { background: rgb(155 185 85 / .2); }
+.dl.del { background: rgb(255 0 0 / .2); }
 .dl.gap { height: 8px; }
-.dn { color: var(--fg-muted); opacity: .55; text-align: right; user-select: none; }
+.dn { color: var(--fg-muted); text-align: right; user-select: none; }
 .dm { user-select: none; font-weight: 700; }
 .dl.add .dm { color: var(--ok); }
-.dl.del .dm { color: var(--danger); }
+.dl.del .dm { color: var(--app-diff-deletion-foreground); }
 /* text-align:start so a Persian line in a diff aligns to its own side — the
    box is LTR, the line is not (spec rule 8). */
 .dt { text-align: start; min-width: 0; }
@@ -3589,7 +3738,7 @@ body.rail .side-zoom { display: none; }
   unicode-bidi: isolate;
 }
 .d-add { color: var(--ok); }
-.d-del { color: var(--danger); }
+.d-del { color: var(--app-diff-deletion-foreground); }
 
 /* Inside the permission dialog the box already has one background. */
 .perm-params .diff { background: none; padding: 0; max-height: 18em; }
@@ -3606,31 +3755,34 @@ body.rail .side-zoom { display: none; }
    classes the 174 spec assertions read are all still here, and the actions
    still press exactly what they pressed) and only its shape moved: one line,
    the buttons inline, the per-button explanations dropped to their titles. */
+/* pcg-rf8 R6: the extension's .notice [KPdslw] - a card tinted with the
+   warning accent, the error red when urgent. Padding trimmed 10->6 block so a
+   4-up cell keeps its transcript. */
 .context-notice {
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 4px;
-  padding: 4px 10px;
-  border: 0;
-  border-inline-start: 2px solid var(--accent);
-  border-radius: 0;
-  background: none;
-  color: var(--fg-muted);
-  font-size: .82em;
+  --tint: var(--app-warning-accent);
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--app-primary-foreground), var(--tint) 50%);
+  border-radius: var(--corner-radius-large);
+  background: color-mix(in srgb, var(--app-secondary-background), var(--tint) 25%);
+  color: var(--app-primary-foreground);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 12px;
 }
 .context-notice[hidden] { display: none; }   /* beats the flex above */
-.context-notice.urgent { border-inline-start-color: var(--danger); }
-.context-notice.urgent .ctx-title { color: var(--danger); }
+.context-notice.urgent { --tint: var(--app-error-foreground); }
 
 /* One line: the title and the sentence after it, the way a terminal warning
    reads. `flex: 1 1 auto` rather than a fixed basis — it must give way to the
    actions on a narrow window instead of pushing them onto a third row. */
 .ctx-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
             flex: 1 1 auto; min-width: 0; }
-.ctx-title { font-weight: var(--wt-title); color: var(--fg); }
-.ctx-body { color: var(--fg-muted); }
+.ctx-title { font-weight: 600; color: var(--app-primary-foreground); }
+.ctx-body { color: var(--app-primary-foreground); }
 
 .ctx-actions { display: flex; gap: 4px 12px; flex-wrap: wrap; }
 /* A command you can press, not a card. Underlined on hover, like the CLI's own
@@ -3644,13 +3796,15 @@ body.rail .side-zoom { display: none; }
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--fg-muted);
+  /* Primary text, underlined: the link blue is ~4.1:1 on the amber tint. */
+  color: var(--app-primary-foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
   font: inherit;
   cursor: pointer;
 }
-.ctx-btn:hover { color: var(--fg); text-decoration: underline; }
-.ctx-btn.primary { color: var(--accent); }
-.ctx-btn.primary:hover { color: var(--accent-strong); }
+.ctx-btn:hover { color: #fff; }
+.ctx-btn.primary:hover { color: #fff; }
 .ctx-btn-text { font-weight: var(--wt-title); }
 /* The note stays in the DOM — it is the button's own explanation and rides in
    its `title` — but a warning row has no room to print it. */
@@ -3666,7 +3820,7 @@ body.rail .side-zoom { display: none; }
   flex-direction: column;
   gap: 1px;
   /* The composer's own column, to the pixel. */
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
   /* #stage is a flex column: without `flex: none` a queue several messages deep
      is crushed instead of scrolling — the `.log > * { flex: none }` family,
      which has now cost this project three separate defects
@@ -3690,10 +3844,11 @@ body.rail .side-zoom { display: none; }
 
 .queued-tag {
   flex: none;
-  padding: 1px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: .92em;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--app-badge-background);   /* the .groupCount badge */
+  color: var(--app-badge-foreground);
+  font-size: var(--fs-meta);
 }
 
 /* Gives up characters, never height: a wrapped message turns the strip into a
@@ -3726,7 +3881,7 @@ body.rail .side-zoom { display: none; }
   line-height: 1;
 }
 .queued-act:hover, .queued-act:focus-visible {
-  background: var(--surface-2);
+  background: var(--app-ghost-button-hover-background);
   color: var(--fg);
 }
 /* «الان بفرست»: words, not a glyph, because it is the one action here that
@@ -3735,14 +3890,14 @@ body.rail .side-zoom { display: none; }
   flex: none;
   min-height: 22px;
   padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-small);
   background: none;
-  color: var(--fg-muted);
+  color: var(--app-primary-foreground);
   font: inherit;
   font-size: .95em;
 }
-.queued-now:hover:not(:disabled), .queued-now:focus-visible { background: var(--surface-2); color: var(--fg); }
+.queued-now:hover:not(:disabled), .queued-now:focus-visible { background: var(--app-ghost-button-hover-background); color: var(--fg); }
 
 /* --- background agents --------------------------------------------------------
    A slim strip in the composer's own column, above it, next to where the
@@ -3753,7 +3908,7 @@ body.rail .side-zoom { display: none; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 max(20px, calc((100% - 50rem) / 2)) 6px;
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 6px;
 }
 /* The site's «N running task» chip, the same as the working line's. */
 .ag-chip {
@@ -4068,41 +4223,50 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* Each answer is its own box (the extension's button_qlaBag: a 1px inner
    hairline, 4px corners, a gap between rows), so four answers read as four
    choices and not as one paragraph. */
+/* The extension spaces these 8px apart; 4px here, because a six-pane cell
+   has to show all four without scrolling (the user's 2026-10-06 rule). */
 .perm .perm-opts .opts { gap: 4px; }
+/* button_qlaBag: a 1px #ffffff1a inner hairline, 4px corners, 6px 8px. */
 .perm .opt {
   min-height: 28px;
   padding: 4px 8px;
   border: 0;
-  border-radius: var(--r-chip);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  border-radius: var(--corner-radius-small);
+  box-shadow: inset 0 0 0 1px var(--app-transparent-inner-border);
   align-items: center;
 }
-/* White on --accent is 3.1:1; the filled row is the answer Enter gives and
-   has to be readable at a glance, so it fills with the darker step (4.9:1). */
-.perm .opt[aria-selected="true"] { background: var(--accent-fill); box-shadow: none; }
-.perm .opt[aria-selected="true"] .opt-title,
+.perm .opt:hover { background: var(--app-list-hover-background); }
+/* The focused option is VS Code's primary button: #0078D4, white, bold
+   (4.5:1). It is the answer Enter gives. */
+.perm .opt[aria-selected="true"] { background: var(--app-button-background); box-shadow: none; }
+.perm .opt[aria-selected="true"] .opt-title { color: var(--app-button-foreground); font-weight: var(--wt-strong); }
 .perm .opt[aria-selected="true"] .opt-num,
-.perm .opt[aria-selected="true"] .opt-esc { color: #fff; }
+.perm .opt[aria-selected="true"] .opt-esc { color: var(--app-button-foreground); }
 .perm .opt-title { font-size: 1em; }
+/* rejectMessageInput: no surface of its own, the options' hairline, and the
+   active border once it has the keyboard. */
 .perm-feedback {
   display: block;
   inline-size: 100%;
-  margin-block-start: 6px;
+  margin-block-start: 4px;
   padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-side);
+  border: 1px solid transparent;
+  border-radius: var(--corner-radius-small);
+  box-shadow: inset 0 0 0 1px var(--app-transparent-inner-border);
+  background: transparent;
   color: inherit;
   font: inherit;
   line-height: var(--lh-fa);
   resize: vertical;
 }
-.perm-feedback:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* One line, cut rather than wrapped: the keys are a reminder, not reading. */
+.perm-feedback::placeholder { color: var(--app-input-placeholder-foreground); }
+.perm-feedback:focus-visible { outline: none; border-color: var(--app-input-active-border); }
+/* One line, cut rather than wrapped: the keys are a reminder, not reading.
+   Secondary, not faint: faint is 3.8:1 on this surface. */
 .perm .perm-hint {
   margin: 0;
   font-size: var(--fs-meta);
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4112,9 +4276,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    navigationBar: one question on screen at a time. */
 .ask-nav {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   margin: 0 0 6px;
-  border-block-end: 1px solid var(--border);
+  border-block-end: 1px solid var(--app-widget-border);
   overflow: hidden;
 }
 .ask-tab {
@@ -4134,8 +4298,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ask-tab:hover { background: none; color: var(--fg); }
-.ask-tab[aria-selected="true"] { border-block-end-color: var(--accent); }
+.ask-tab:hover { background: none; color: var(--fg); opacity: .8; }
+.ask-tab[aria-selected="true"] { border-block-end-color: var(--app-button-background); }
 .ask-tab[data-answered="true"] { color: var(--fg-muted); font-weight: var(--wt-body); }
 .ask-tab[data-answered="true"]::after { content: " ✓"; }
 
@@ -4169,7 +4333,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   margin: 0 0 4px;
   color: var(--fg);
   font-size: 1em;
-  font-weight: var(--wt-strong);
+  font-weight: var(--wt-title);
 }
 .ask-hint { display: block; margin-block-end: 4px; font-size: var(--fs-meta); color: var(--fg-muted); }
 
@@ -4187,12 +4351,12 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   border-radius: var(--r-chip);
   cursor: pointer;
 }
-.ask-opt:hover { background: var(--surface-2); }
+.ask-opt:hover { background: var(--app-list-hover-background); }
 /* :has() lets the whole row show the state — this is Edge/Chromium
-   only, so no fallback is owed. */
+   only, so no fallback is owed. optionHighlighted: a 2px button-blue bar. */
 .ask-opt:has(input:focus-visible) {
-  background: var(--surface-2);
-  box-shadow: inset -2px 0 0 var(--accent);   /* RTL: the right edge is the start */
+  background: var(--app-list-hover-background);
+  box-shadow: inset -2px 0 0 var(--app-button-background);   /* RTL: the right edge is the start */
 }
 .ask-opt:has(input:checked) .ask-label { color: var(--fg); }
 .ask-opt input {
@@ -4203,21 +4367,21 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   width: 16px;
   height: 16px;
   margin: 2px 0 0;
-  border: 1.5px solid var(--fg-faint);
+  border: 1.5px solid var(--fg-muted);
   border-radius: 50%;
   background: transparent;
   outline: none;
 }
 .ask-opt input[type="checkbox"] { border-radius: 3px; }
-.ask-opt input:checked { border-color: var(--accent); }
+.ask-opt input:checked { border-color: var(--app-button-background); }
 .ask-opt input[type="radio"]:checked::before {
   content: "";
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--app-button-background);
 }
-.ask-opt input[type="checkbox"]:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
+.ask-opt input[type="checkbox"]:checked { background: var(--app-button-background); border-color: var(--app-button-background); }
 .ask-opt input[type="checkbox"]:checked::before {
   content: "";
   width: 4px;
@@ -4234,18 +4398,19 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* «پاسخ دیگر» and its box on ONE row. */
 .ask-other { display: flex; align-items: center; gap: 8px; padding: 4px 8px 0; }
 .ask-other .ask-label { flex: none; font-weight: var(--wt-body); color: var(--fg-muted); font-size: .92em; }
+/* otherInput: #454545 hairline on the tool surface, active border on focus. */
 .ask-free {
   flex: 1;
   min-inline-size: 0;
-  background: var(--bg-side);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--app-tool-background);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-small);
   padding: 4px 8px;
   color: inherit;
   font: inherit;
   line-height: var(--lh-ui);
 }
-.ask-free:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ask-free:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 
 /* --- a question in the transcript -------------------------------------------
    The record of the same exchange, and in history replay the ONLY rendering of
@@ -4381,7 +4546,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      which is also why the prompt is the piece §2.4's arithmetic was most wrong
      about (it costs 36px of line box before any padding, plus the 38px icon
      row under it that the estimate left out entirely). */
-  .comp-box { gap: 2px; padding-block: 4px 2px; }
+  /* R5 moved the padding off .comp-box onto its two rows; trim it there. */
+  .comp-line { padding-block: 1px 0; }
+  .comp-row { padding-block: 2px; }
   .comp-box .input { max-height: 22cqh; padding-block: 2px 1px; }
 }
 }
@@ -4417,14 +4584,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   position: fixed;
   inset: auto;
   margin: 0;
-  min-inline-size: 240px;
+  /* menuPopup: menu surface, #454545 hairline, 8px corners, 4px padding. */
+  min-inline-size: 260px;
   max-inline-size: min(380px, calc(100vw - 16px));
   max-block-size: min(70vh, 560px);
   overflow-y: auto;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-card, 12px);
-  background: var(--bg-elev, #1f1f1e);
+  padding: 4px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-large);
+  background: var(--app-menu-background);
   box-shadow: var(--shadow-float, 0 10px 30px rgba(0,0,0,.45));
   color: var(--fg);
   font: inherit;
@@ -4435,22 +4603,23 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 10px 4px;
-  color: var(--fg-muted);
+  padding: 4px 12px;
+  color: var(--app-secondary-foreground);
   font-size: var(--fs-meta, 12.5px);
 }
-.bar-head-hint { font-size: 11.5px; opacity: .8; }
+.bar-head-hint { font-size: 11px; }
 /* claude.ai's rows: a regular-weight name, a one-line muted note, ✓ and the
    digit at the row's end. Tight — a menu is a list you scan, not a form. */
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   inline-size: 100%;
   min-height: 0;
-  padding: 6px 10px;
+  /* menuItem: 8px 12px, the list radius. */
+  padding: 6px 12px;
   border: 0;
-  border-radius: var(--r-row, 8px);
+  border-radius: var(--app-list-border-radius);
   background: none;
   color: var(--fg);
   font: inherit;
@@ -4459,7 +4628,10 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   text-align: start;
   cursor: pointer;
 }
-.bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--surface-2); outline: none; }
+.bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--app-list-hover-background); outline: none; }
+/* menuItemSelected: the list's active selection, white text (12:1). */
+.bar-row[aria-current="true"] { background: var(--app-list-active-background); color: var(--app-list-active-foreground); }
+.bar-row[aria-current="true"] .bar-row-note { color: var(--app-list-active-foreground); }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
 /* `align-items: flex-start`: a title is `dir="auto"`, so a Latin one («Opus
    5.5») is an LTR box, and stretched to the row it put its text at the row's
@@ -4470,28 +4642,28 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 /* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
    on the others. Both at once left two columns of air beside every name. */
-.bar-row-check { flex: none; min-inline-size: 1.4em; color: rgb(98 155 245); text-align: center; }
+.bar-row-check { flex: none; min-inline-size: 1.4em; color: currentColor; text-align: center; }
 .bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
 .bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
 .bar-more .bar-row-digit { color: var(--fg-muted); font-size: 1.1em; }
 .bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
 .bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
-.bar-rule { margin: 6px 4px; border: 0; border-block-start: 1px solid var(--border); }
+.bar-rule { margin: 4px 0; border: 0; border-block-start: 1px solid var(--app-input-border); }
 .bar-muted { color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 0; }
 .bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 6px 8px 2px; }
 .bar-btn {
   min-height: 0;
   padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-chip, 6px);
-  background: var(--surface);
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-small);
+  background: transparent;
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-meta, 12px);
   cursor: pointer;
 }
-.bar-btn:hover { background: var(--surface-2); }
-.bar-btn:focus-visible, .bar-switch:focus-visible, .bar-slider-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bar-btn:hover { background: var(--app-list-hover-background); }
+.bar-btn:focus-visible, .bar-switch:focus-visible, .bar-slider-range:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 
 /* The slider, after claude.ai: «تلاش  زیاد» together at the start, «سریع‌تر»
    (right) … «باهوش‌تر» (left), and a gray pill with one dot per level under a
@@ -4501,7 +4673,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-slider .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; font-size: var(--fs-ui, 13px); }
 .bar-slider-now { color: var(--fg); font-weight: 500; }
 .bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); margin: 8px 0 8px; }
-.bar-slider-track { position: relative; block-size: 22px; border-radius: 11px; background: var(--surface-2); }
+/* The extension's effort toggle: an 18px #454545 track, a 14px light thumb. */
+.bar-slider-track { position: relative; block-size: 18px; border-radius: 9px; background: var(--app-input-border); }
 .bar-slider-ticks {
   position: absolute;
   inset-inline: 9px;
@@ -4510,7 +4683,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   justify-content: space-between;
   pointer-events: none;
 }
-.bar-tick { inline-size: 4px; block-size: 4px; margin-block-start: -2px; border-radius: 50%; background: var(--fg-faint, var(--fg-muted)); }
+.bar-tick { inline-size: 4px; block-size: 4px; margin-block-start: -2px; border-radius: 50%; background: color-mix(in srgb, var(--app-secondary-foreground) 40%, transparent); }
 .bar-slider-range {
   position: absolute; inset: 0;
   inline-size: 100%; block-size: 100%;
@@ -4519,29 +4692,31 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   background: transparent;
   cursor: pointer;
 }
-.bar-slider-range::-webkit-slider-runnable-track { block-size: 22px; background: transparent; border: 0; }
+.bar-slider-range::-webkit-slider-runnable-track { block-size: 18px; background: transparent; border: 0; }
 .bar-slider-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  inline-size: 14px; block-size: 18px; margin-block-start: 2px;
-  border-radius: 7px; background: #f4f3ee; border: 0;
-  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  inline-size: 14px; block-size: 14px; margin-block-start: 2px;
+  border-radius: 50%; background: var(--app-primary-foreground); border: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .2);
 }
 .bar-slider-range:focus-visible { outline: none; }
-.bar-slider-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bar-slider-range:focus-visible::-webkit-slider-thumb { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 
 /* The context panel. */
 .bar-usage { min-inline-size: 320px; padding: 6px 10px 10px; }
 .bar-usage .bar-head { padding-inline: 0; }
 .bar-figure { color: var(--fg); font-variant-numeric: tabular-nums; }
+/* usageTrack: the #454545 track, 6px (8px for context), 3px corners. */
 .bar-context, .bar-meter {
   display: flex;
   block-size: 6px;
   border-radius: 3px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--fg-muted) 22%, transparent);
+  background: var(--app-input-border);
 }
+.bar-context { block-size: 8px; border-radius: 4px; }
 .bar-seg { flex: none; block-size: 100%; }
-.bar-seg + .bar-seg { box-shadow: inset 1px 0 0 var(--bg-elev, #1f1f1e); }
+.bar-seg + .bar-seg { box-shadow: inset 1px 0 0 var(--app-menu-background); }
 .bar-context-act { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 2px; }
 .bar-detail { margin-block-start: 6px; color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
 .bar-detail > summary { cursor: pointer; }
@@ -4554,14 +4729,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-limit-name { flex: 1; min-inline-size: 0; }
 .bar-limit-reset { color: var(--fg-muted); font-size: var(--fs-meta, 12px); }
 .bar-limit-pct { color: var(--fg-muted); font-size: var(--fs-meta, 12px); font-variant-numeric: tabular-nums; min-inline-size: 3ch; text-align: end; }
-.bar-meter-fill { block-size: 100%; background: var(--accent); border-radius: 3px; }
-.bar-meter-fill[data-level="high"] { background: var(--danger); }
+/* usageFill: the progress blue, coral once high (usageFillHigh). */
+.bar-meter-fill { block-size: 100%; background: var(--app-progressbar-background); border-radius: 3px; }
+.bar-meter-fill[data-level="high"] { background: var(--app-claude-orange); }
 
 /* The «+» menu's server list. */
 .bar-server { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-row, 8px); cursor: pointer; }
-.bar-server:hover { background: var(--surface-2); }
+.bar-server:hover { background: var(--app-list-hover-background); }
 .bar-server-name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .95em; }
-.bar-switch { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; cursor: pointer; }
+.bar-switch { accent-color: var(--app-accent-color); inline-size: 16px; block-size: 16px; margin: 0; cursor: pointer; }
 
 /* The bar's own buttons: quiet text chips, as claude.ai draws them. */
 .bar-chip {
@@ -4569,21 +4745,25 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  /* 24 px each way: the smallest target WCAG 2.5.8 accepts (audit_ui.py). */
-  min-height: 24px;
-  min-inline-size: 24px;
-  padding: 3px 8px;
+  /* footerButton (V2): 26px tall, 5px corners, ghost hover. 26 is over the
+     24px WCAG 2.5.8 floor (audit_ui.py). */
+  min-height: 26px;
+  min-inline-size: 26px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--r-chip, 6px);
+  border-radius: 5px;
   background: none;
-  color: var(--fg-muted);
+  color: var(--app-secondary-foreground);
   font: inherit;
   font-size: var(--fs-meta, 12px);
   cursor: pointer;
   white-space: nowrap;
 }
-.bar-chip:hover, .bar-chip[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
-.bar-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bar-chip:hover, .bar-chip[aria-expanded="true"] { background: var(--app-ghost-button-hover-background); color: var(--fg); }
+.bar-chip:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: -1px; }
+/* modelPill: a 10% fill, fully round. 24px, not its 18px: the WCAG floor. */
+.bar-chip.model-chip { min-height: 24px; border-radius: 9999px; background: var(--app-pill-background); color: var(--app-pill-foreground); }
+.bar-chip.model-chip:hover, .bar-chip.model-chip[aria-expanded="true"] { background: var(--app-pill-hover-background); }
 .bar-chip[hidden] { display: none; }
 .bar-ring { padding: 3px; }
 .bar-ring svg { display: block; }
@@ -4640,7 +4820,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .msg-copy::before { content: attr(data-glyph); }
 .msg-when::before { content: attr(data-text); }
 .pin-item::before { content: attr(data-label); }
-.msg.is-pinned::after {
+/* An answer on the timeline shows its pin on its dot instead (style.css R3). */
+.msg.user.is-pinned::after {
   content: "";
   position: absolute;
   top: 3px;

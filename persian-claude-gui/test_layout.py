@@ -551,9 +551,12 @@ def main() -> int:
                 if mark["x"] < field["x"] + field["w"] - 1:
                     failures.append(f"{where}: the prompt mark is not at the RTL start of "
                                     f"the input line (mark={mark} field={field})")
-                if abs((mark["x"] + mark["w"]) - (comp["x"] + comp["w"])) > 2:
-                    failures.append(f"{where}: the prompt mark is not flush with the prompt's "
-                                    f"start edge (mark={mark} box={comp})")
+                # pcg-rf8 R5: the prompt is the extension's padded box, so the
+                # mark sits in the box's start padding (14px), not on its edge.
+                inset = (comp["x"] + comp["w"]) - (mark["x"] + mark["w"])
+                if not 0 <= inset <= 16:
+                    failures.append(f"{where}: the prompt mark is not at the prompt's start "
+                                    f"edge, {inset}px in (mark={mark} box={comp})")
             # Asserted at all so a picker that renders nothing cannot pass
             # every geometry check below by having no geometry.
             if m["rows"] != SH["rows"]:
