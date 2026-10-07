@@ -550,6 +550,10 @@ pre, code, .path, .diff, .tool-output, .mono {
   font-size: var(--app-font-size);
 }
 .side-search::placeholder { color: var(--app-input-placeholder-foreground); }
+/* Every placeholder is Persian, but an EMPTY dir=auto field resolves to LTR and
+   seats it at the far (left) edge, away from its icon. Only while it shows:
+   the first typed character decides the direction again (pcg-rf8.12). */
+:is(input, textarea)[dir="auto"]:placeholder-shown { direction: rtl; }
 .side-search:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 /* A hit names the project it lives in, after its own name. */
 .sess-proj {
@@ -2168,15 +2172,20 @@ button.round svg { width: 16px; height: 16px; }
   flex-wrap: wrap;
   gap: 4px 16px;
   align-items: center;
-  justify-content: center;
-  padding: 4px 16px 8px;
-  color: var(--fg-muted);
-  font-size: 11px;
+  /* Under the composer, on its column and flush with its start edge: a wrapped
+     second row reads as the rest of a list, not an orphan centred under the
+     first (pcg-rf8.12). Same gutter rule as .log. */
+  justify-content: flex-start;
+  padding: 4px max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
+  color: var(--fg);
+  /* The Twelve Floor Rule: the labels are Persian. */
+  font-size: 12px;
   line-height: 1.6;
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.statusline .sl-item { display: flex; gap: 8px; align-items: center; }
-.statusline .sl-label { opacity: .7; }
+.statusline .sl-item { display: flex; gap: 4px; align-items: center; }
+/* Label quiet, value readable: the value is what the eye is looking for. */
+.statusline .sl-label { color: var(--fg-muted); }
 
 /* The percentages that mean something at a glance. <progress> is native, so
    the value is announced without an aria dance; only the paint is ours. */
@@ -3332,6 +3341,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* The hover strip is 24px and the log gap 8px: without this room it sat on
    the next message's first line (a one-line answer showed it plainly). */
 .msg:has(> .msg-acts):not(.turn-last) { margin-block-end: calc(24px - var(--log-gap, 8px)); }
+/* ...and the timeline rail crosses that room too, or it breaks 16px short of the
+   next dot. Loses to the last-in-run rule (more specific), as it should. */
+.log > .msg.assistant:not(.side):has(> .msg-acts):not(.turn-last)::after { bottom: -24px; }
 .msg-acts {
   position: absolute;
   top: 100%;
@@ -3397,7 +3409,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   content-visibility: visible;
   contain: none;
 }
-.pin-hit { position: absolute; top: 6px; right: -18px; padding: 4px; outline: none; }
+/* Its outer edge on the gutter's (>= 20px), its dashes 8px clear of the column, so
+   they never touch a user bubble's corner (pcg-rf8.12). */
+.pin-hit { position: absolute; top: 6px; right: -20px; padding: 4px 2px 4px 8px; outline: none; }
 .pin-dashes { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .pin-dash { inline-size: 10px; block-size: 2px; border-radius: 0; background: var(--fg-muted); opacity: .7; }
 .pin-dash.is-start { inline-size: 14px; }
@@ -3466,7 +3480,9 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .change-row:hover, .change-row:focus-visible { background: var(--surface-2); outline: none; }
 /* The name's box is its text (a Latin name in an RTL row, pcg-84j). */
 .change-file { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
-.change-row .change-stat { margin-inline-start: auto; }
+/* Physical: the stat is dir=ltr, so an inline-start margin would resolve to its LEFT
+   and push it against the name instead of to the row's end (pcg-rf8.12). */
+.change-row .change-stat { margin-right: auto; }
 .change-stat { display: inline-flex; gap: 8px; font-variant-numeric: tabular-nums; }
 .change-go { color: var(--fg-muted); }   /* --fg-faint was 3.8:1 on the card */
 
