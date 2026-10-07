@@ -204,6 +204,25 @@ def main() -> int:
             bad.append("/api/tabs does not carry the resumed session id "
                        f"({listed}) - the backfill has nothing to ask for")
 
+        # pcg-lpc: wait until the resumed CLI answers a control request. The
+        # page's boot asks it things, and while the spawn is still under way
+        # those requests hang; headless Edge then ends --dump-dom before the
+        # probe has written anything, so load 1 failed as "the probe never ran"
+        # on both editions while load 2 - seconds later - passed. A real window
+        # just waits; only the virtual-time budget cannot. get_context_usage is
+        # answered locally by the CLI, no turn spent.
+        deadline = time.time() + 60
+        while tab:
+            try:
+                post(base, token, "/api/control",
+                     {"tab": tab, "subtype": "get_context_usage"})
+                break
+            except (urllib.error.URLError, OSError):
+                if time.time() > deadline:
+                    bad.append("the resumed CLI never answered a control request")
+                    break
+                time.sleep(0.5)
+
         # TWICE. The first load is the window the resume opened; the second is
         # the reload the bead is about, and it must be no different.
         for at in (1, 2):
