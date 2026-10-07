@@ -399,6 +399,56 @@ check("the CLI's English interrupt note never becomes a user bubble",
   specLog.querySelectorAll(".msg.user").length === beforeInterrupt,
   specLog.querySelectorAll(".msg.user").length + " vs " + beforeInterrupt);
 
+/* pcg-mkd: the note is a stop's ONLY witness in a replayed transcript (results
+   are never written to disk), so it draws «متوقف شد» itself; live, the result
+   that follows it must not draw a second one. aborted_tools is what a stop
+   with a permission pending ends in - a stop, not an error. */
+const stopRows = () => specLog.querySelectorAll(".msg.stopped").length;
+check("the interrupt note alone draws «متوقف شد», as a reload repaints it",
+  stopRows() === 1, stopRows() + " stop rows");
+const errorsBeforeStop = specLog.querySelectorAll(".msg.error").length;
+window.renderEvent({ type: "result", subtype: "error_during_execution", is_error: true,
+                     terminal_reason: "aborted_tools", usage: {} });
+check("its live result adds no second row, and a stop at a permission is no error",
+  stopRows() === 1 && specLog.querySelectorAll(".msg.error").length === errorsBeforeStop,
+  stopRows() + " stop rows, " +
+  (specLog.querySelectorAll(".msg.error").length - errorsBeforeStop) + " new error rows");
+
+/* pcg-k02: the five-hour wall, as -p reports it (wiki/usage-limit-wall.md) -
+   an English synthetic reply and a 429 result - is ONE Persian row, and the
+   server's wait for the reset updates a second one in place. */
+const errorsBeforeWall = specLog.querySelectorAll(".msg.error").length;
+const textBeforeWall = specLog.textContent;
+window.renderEvent({ type: "assistant", error: "rate_limit", message: { model: "<synthetic>",
+  role: "assistant", content: [{ type: "text", text: "You've hit your limit · resets 3:46pm (Asia/Tehran)" }] } });
+window.renderEvent({ type: "result", subtype: "success", is_error: true, terminal_reason: "api_error",
+  api_error_status: 429, result: "You've hit your limit · resets 3:46pm (Asia/Tehran)", usage: {} });
+const wallText = specLog.textContent.slice(textBeforeWall.length);
+check("the usage wall reads in Persian, once, and is not an error",
+  wallText.includes(window.STRINGS.usageWall) && !/hit your limit/.test(wallText)
+  && specLog.querySelectorAll(".msg.error").length === errorsBeforeWall,
+  JSON.stringify(wallText.trim().slice(0, 80)));
+window.renderEvent({ type: "wrapper", subtype: "auto_resume", state: "armed", at: 1791375960 });
+const resumeRows = () => [...specLog.querySelectorAll(".auto-resume")];
+const armedRow = resumeRows().at(-1);
+check("the wait says when, in Persian digits, with «ادامه نده» on its row",
+  !!armedRow && /[۰-۹]{2}:[۰-۹]{2}/.test(armedRow.textContent)
+  && armedRow.querySelector("button.resume-act")?.textContent === window.STRINGS.autoResumeCancel,
+  armedRow ? armedRow.textContent : "no row");
+window.renderEvent({ type: "wrapper", subtype: "auto_resume", state: "cancelled" });
+check("cancelling rewrites that same row and takes its button away",
+  resumeRows().length === 1 && resumeRows()[0].dataset.phase === "cancelled"
+  && !resumeRows()[0].querySelector("button"),
+  resumeRows().length + " rows, phase " + resumeRows()[0]?.dataset.phase);
+const usersBeforeResume = specLog.querySelectorAll(".msg.user").length;
+window.renderEvent({ type: "user", message: { content: [{ type: "text", text:
+  "Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete." }] } });
+check("the replayed continuation prompt is a row, not a message the person typed",
+  specLog.querySelectorAll(".msg.user").length === usersBeforeResume
+  && resumeRows().at(-1)?.dataset.phase === "fired",
+  (specLog.querySelectorAll(".msg.user").length - usersBeforeResume) + " user rows, last phase "
+  + resumeRows().at(-1)?.dataset.phase);
+
 /* `/compact` answers on the live stream as a user turn reading
    «<local-command-stdout>Compacted </local-command-stdout>», with no
    isSynthetic. The CLI talking to itself is never the person (CLI_SELF). */

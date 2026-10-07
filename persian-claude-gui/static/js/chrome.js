@@ -1165,6 +1165,12 @@ function renderInto(tab, events, resumedNote = false) {
       endReplayMarks();   // the last turn's change card: a replay has no settle
       if (resumedNote) bubble("assistant", FA.resumed).classList.add("meta");
     });
+    // Unhide the column FIRST (pcg-256): an empty one is `.cell.home`, whose
+    // log is display:none, and a scroll written into a hidden box is dropped.
+    // The observer that would unhide it runs only after this returns, so the
+    // transcript showed at its first message.
+    const cell = tabBridge?.cells?.().find((c) => c.log === node);
+    if (cell) syncHome(cell);
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message
   });
 }

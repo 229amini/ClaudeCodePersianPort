@@ -1231,7 +1231,10 @@ export function makeComposer(root, cell) {
     if (ringBtn) ringBtn.addEventListener("click", () => {
       const s = state.status ?? {};
       openUsage(ringBtn, {
-        data: { detail: s.contextDetail, context: s.context, limits: s.limits },
+        data: { detail: s.contextDetail, context: s.context, limits: s.limits,
+                // usage is only published after a turn, and an empty log is a
+                // conversation nobody has written in yet
+                fresh: typeof s.context !== "number" && !cell.log.childElementCount },
         onCompact: () => api("/api/message", { tab: cell.tab, text: "/compact" }).catch(() => {}),
         refresh: async (paint) => {
           const tab = cell.tab;

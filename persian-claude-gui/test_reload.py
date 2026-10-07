@@ -61,22 +61,35 @@ SESSION_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 # a row count alone would pass on a spinner.
 SAID = "پیامی که روی دیسک نوشته شده"
 ANSWERED = "پاسخی که باید پس از بارگذاری دوباره دیده شود"
+# Long enough to be several screens tall, so "opened at the bottom" is a
+# measurement and not the only place a short transcript can be.
+TURNS = 20
 
-# The setup pair, three per page load, and - terminal only - the rail on the
+# The setup pair, four per page load, and - terminal only - the rail on the
 # reload; the web edition has no rail to restore.
-CHECKS = 2 + 2 * 3 + (1 if EDITION == "terminal" else 0)
+CHECKS = 2 + 2 * 4 +(1 if EDITION == "terminal" else 0)
 
 
 def transcript_lines(cwd: Path) -> str:
     """Two turns in the record format read_session() parses."""
     common = {"sessionId": SESSION_ID, "cwd": str(cwd), "version": "2.1.261"}
+    filler = "\n\n".join(["یک بند پرکننده تا گفتگو از یک صفحه بلندتر شود."] * 6)
     rows = [
         {"type": "user", "uuid": "u1", "timestamp": "2026-09-08T10:00:00.000Z",
          "message": {"role": "user", "content": SAID}, **common},
-        {"type": "assistant", "uuid": "a1", "timestamp": "2026-09-08T10:00:05.000Z",
-         "message": {"role": "assistant",
-                     "content": [{"type": "text", "text": ANSWERED}]}, **common},
     ]
+    for i in range(2, TURNS + 1):
+        rows += [
+            {"type": "assistant", "uuid": f"a{i - 1}", "timestamp": "2026-09-08T10:00:05.000Z",
+             "message": {"role": "assistant",
+                         "content": [{"type": "text", "text": filler}]}, **common},
+            {"type": "user", "uuid": f"u{i}", "timestamp": "2026-09-08T10:01:00.000Z",
+             "message": {"role": "user", "content": f"پرسش شماره {i}"}, **common},
+        ]
+    rows.append(
+        {"type": "assistant", "uuid": f"a{TURNS}", "timestamp": "2026-09-08T10:02:00.000Z",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": ANSWERED}]}, **common})
     return "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
 
 
@@ -84,6 +97,7 @@ PROBE_JS = """
 <pre id="probe-out" hidden></pre>
 <script type="module">
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SAID = __SAID__, ANSWERED = __ANSWERED__;
 const cell = () => document.querySelector(".cell") || document.body;
 const log = () => cell().querySelector(".log");
 
@@ -97,7 +111,17 @@ const log = () => cell().querySelector(".log");
     out.rows = log().childElementCount;
     out.home = cell().classList.contains("home");
     out.rail = document.body.classList.contains("rail");
-    out.text = log().textContent.replace(/\\s+/g, " ").trim().slice(0, 400);
+    const text = log().textContent;
+    out.said = text.includes(SAID);
+    out.answered = text.includes(ANSWERED);
+    out.text = text.replace(/\\s+/g, " ").trim().slice(0, 120);
+    // Where the column opened (pcg-256): at its newest message, not its first.
+    // Read after two frames, so anything that grows the rows after the
+    // synchronous render (fonts, folds, clipping) has had its turn.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const l = log();
+    out.tall = l.scrollHeight > l.clientHeight * 2;
+    out.gap = Math.round(l.scrollHeight - l.scrollTop - l.clientHeight);
   } catch (err) {
     out.error = String((err && err.stack) || err);
   }
@@ -130,7 +154,9 @@ def write_probe(seed: str = "") -> None:
     if marker not in page:
         sys.exit("index.html no longer opens with " + marker)
     page = page.replace(marker, marker + NO_SSE + seed, 1)
-    PROBE.write_text(page.replace("</body>", PROBE_JS + "\n</body>", 1),
+    probe = (PROBE_JS.replace("__SAID__", json.dumps(SAID))
+             .replace("__ANSWERED__", json.dumps(ANSWERED)))
+    PROBE.write_text(page.replace("</body>", probe + "\n</body>", 1),
                      encoding="utf-8")
 
 
@@ -199,13 +225,20 @@ def main() -> int:
             if m["home"]:
                 bad.append(f"{where}: the home greeting is showing over an open "
                            "conversation")
-            if SAID not in m["text"] or ANSWERED not in m["text"]:
+            if not (m.get("said") and m.get("answered")):
                 bad.append(f"{where}: the rows are not this session's "
                            f"({m['text'][:120]!r})")
+            if not m.get("tall"):
+                bad.append(f"{where}: the transcript fits the column, so where "
+                           "it opened proves nothing - make TURNS bigger")
+            elif m.get("gap", 1e9) > 80:
+                bad.append(f"{where}: the conversation opened {m.get('gap')} px "
+                           "above its newest message (pcg-256)")
             if at == 2 and EDITION == "terminal" and not m.get("rail"):
                 bad.append(f"{where}: the sidebar came back as the tree - the "
                            "rail state in pcg.layout did not survive the reload")
-            print(f"  {where}: {m['rows']} rows, home={m['home']}, rail={m.get('rail')}")
+            print(f"  {where}: {m['rows']} rows, home={m['home']}, "
+                  f"rail={m.get('rail')}, gap={m.get('gap')}px")
     finally:
         stop.set()
         # Leave no project behind: server.py lists every ~/.claude/projects entry

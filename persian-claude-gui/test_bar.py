@@ -95,6 +95,12 @@ const NOW = Date.now();
       description: "Sonnet 5.5", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh"] }] } });
   ev({ type: "wrapper", subtype: "posture", posture: "ask", auto_count: 0 });
   ev({ type: "wrapper", subtype: "effort", effort: "medium" });
+  // Before anything was said, the panel calls its figure a baseline.
+  const hasBaseline = () => [...(pop()?.querySelectorAll("p.bar-muted") ?? [])]
+    .some((p) => p.textContent === FA.barBaseline);
+  q(".bar-ring")?.click(); await sleep(60);
+  out.baselineFresh = hasBaseline();
+  pop()?.hidePopover(); await sleep(20);
   ev({ type: "wrapper", subtype: "usage", context: 42,
        limits: { five_hour: { utilization: 31, resets_at: new Date(NOW + 16380e3).toISOString() },
                  seven_day: { utilization: 21, resets_at: new Date(NOW + 4 * 864e5).toISOString() },
@@ -114,6 +120,7 @@ const NOW = Date.now();
   out.headroom = pop()?.querySelector(".bar-context-act .bar-muted")?.textContent ?? "";
   out.limitNames = [...(pop()?.querySelectorAll(".bar-limit-name") ?? [])].map((n) => n.textContent);
   out.catName = pop()?.querySelector(".bar-cats li span:nth-child(2)")?.textContent ?? "";
+  out.baselineAfter = hasBaseline();
   let mark = calls.length;
   pop()?.querySelector(".bar-btn")?.click(); await sleep(30);
   out.compact = since(mark).filter((c) => c.url === "/api/message").map((c) => c.body.text).join();
@@ -320,6 +327,9 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
     check("«فشرده کردن» sends /compact as text and closes the panel",
           m.get("compact") == "/compact" and m.get("panelClosed"), f"{m.get('compact')} / {m.get('panelClosed')}")
     check("a login with no plan limits says so", m.get("noLimits"))
+    check("before the first message the panel says its figure is a baseline, after it not",
+          m.get("baselineFresh") is True and m.get("baselineAfter") is False,
+          f"fresh {m.get('baselineFresh')}, after {m.get('baselineAfter')}")
     check("the model menu numbers its rows and checks the current one",
           m.get("modelRows") == 2 and m.get("modelDigits") == "۱,۲" and m.get("modelCheck") == "v-",
           f"{m.get('modelRows')} rows / {m.get('modelDigits')} / {m.get('modelCheck')}")

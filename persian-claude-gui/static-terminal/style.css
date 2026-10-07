@@ -1557,7 +1557,7 @@ body.rail .rail-icon { transform: scaleX(-1); }
   font-size: .74em;
 }
 
-/* THE PANE HEADER'S CONTROLS: ⋯ ⤢ ✕ at the row's
+/* THE PANE HEADER'S CONTROLS: ⋯ ↕ ⤢ ✕ at the row's
    END. Quiet at rest, full on pane hover or when the keyboard is in the pane;
    never display:none, so Tab still reaches them. */
 .pane-actions {
@@ -1598,6 +1598,8 @@ body.rail .rail-icon { transform: scaleX(-1); }
 }
 /* Fullscreen needs a second pane to leave; at one pane there is nothing to fill. */
 #grid[data-split="1"] .pane-zoom { display: none; }
+/* Vertical needs a row above or below to take the height from. */
+#grid[data-rows="1"] .pane-vzoom { display: none; }
 
 /* The digit is Alt+N's name. It shows WHILE Alt is held (js/app.js), not at
    rest - at rest it read as a debug label (analysis item 6). */
@@ -1606,9 +1608,10 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
 
 /* FULLSCREEN (§D5): the zoomed pane fills the grid; the others stay in the
    DOM, keep their logs and keep receiving events - only their box goes. */
-#grid[data-zoomed] .cell:not(.zoomed),
-#grid[data-zoomed] .divider,
-#grid[data-zoomed] .grid-row:not(:has(.zoomed)) { display: none; }
+#grid[data-zoomed="full"] .cell:not(.zoomed),
+#grid[data-zoomed="full"] .divider,
+#grid[data-zoomed] .grid-row:not(:has(.zoomed)),
+#grid[data-zoomed="v"] > .divider.h { display: none; }
 
 /* A PANE WITH NO CONVERSATION (§D5): one line, one button. No header controls,
    no welcome box, no prompt that can send nowhere and no status line. The
@@ -2665,7 +2668,12 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    flex column and an automatic minimum size crushes its entries. */
 /* The running tool's target on the working line: one row, never a wrap — a
    long command ends in an ellipsis and its title holds the rest. */
-.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0;
+              flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
+/* The counter and the verb hold their line too: a long command squeezed
+   «۱ دقیقه و ۴۹ ثانیه · ↓ ۱٫۵ هزار توکن» and «در حال اجرای ابزار…» onto two
+   lines each (user report 2026-10-07). Only the command gives way. */
+.pulse-meta, .pulse-tasks { flex: none; white-space: nowrap; }
 .pulse-target { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 .pulse {
   align-self: stretch;
@@ -5071,10 +5079,45 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   .perm-form > .perm-params { min-height: 2em; }
   /* «command» over a one-line command is a label for nothing. */
   .perm-params .param-key { display: none; }
-  /* One line of each option's note: the label is the answer, the note a hint. */
-  .perm .ask-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+  /* ONE LINE PER OPTION (pcg-rf8.11): the label is the answer, its note a
+     hint that follows it on the same line and ends in an ellipsis — the whole
+     note is the row's title. Label over note cost a line per option, and a
+     six-pane cell then hid the third option and «پاسخ دیگر» under a scroll. */
+  .perm .ask-opt-text { flex-direction: row; align-items: baseline; gap: 6px; min-inline-size: 0; }
+  .perm .ask-label { flex: 0 1 auto; min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .perm .ask-desc { flex: 1 1 0; min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .perm .ask-opt input { margin-block-start: 0; align-self: center; }
+  .perm .ask-other { padding-block-start: 0; }
+  .perm .ask-free { padding-block: 0; }
+  .perm .ask-text { margin-block-end: 2px; }
+  .perm .ask-nav { margin-block-end: 2px; }
+  .perm .ask-q:not([hidden]) { gap: 0; }
+  /* The strip above was the log's own padding, 20px of nothing. */
+  .cell:has(.perm[open]) .log { padding-block: 0; }
+  /* And the permission box's own air: its «…بنویسید» box was cut by 22px at
+     six panes on 1052x711. */
+  .perm { padding-block: 4px; margin-block-end: 0; }
+  .perm .perm-opts { margin-block-start: 2px; }
+  .perm .perm-opts .opts { gap: 0; }
+  .perm-feedback { margin-block-start: 2px; padding-block: 0; }
 }
 /* A narrow pane keeps the keys for the sheet behind `?`. */
 @container (max-width: 560px) {
   .perm .perm-hint { display: none; }
 }
+
+/* The usage-wall row's one button (render.js resumeRow): quiet, secondary,
+   on the row's own line. 24px is the pointer floor (WCAG 2.5.8). */
+.resume-act {
+  min-height: 24px;
+  margin-inline-start: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-button-secondary-background);
+  color: var(--app-button-secondary-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.resume-act:hover { background: var(--app-button-secondary-hover-background); }
+.resume-act:disabled { opacity: .6; cursor: default; }

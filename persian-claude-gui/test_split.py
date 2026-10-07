@@ -732,6 +732,19 @@ GRID_JS = """
   }
   await sleep(80);
   out.panes.drag = {before: dragBefore, after: wide()};
+  /* ↕ on pane 1: its row takes the grid's height, its width stays, the other
+     row goes; the same button brings the grid back. */
+  const gridH = document.getElementById("grid").getBoundingClientRect().height;
+  const vBefore = CELLS().map(box);
+  CELLS()[0].querySelector(".pane-vzoom")?.click();
+  await sleep(60);
+  const vOn = CELLS().map(box);
+  const vPressed = CELLS()[0].querySelector(".pane-vzoom")?.getAttribute("aria-pressed");
+  CELLS()[0].querySelector(".pane-vzoom")?.click();
+  await sleep(60);
+  out.panes.vzoom = {gridH, before: vBefore, on: vOn, pressed: vPressed,
+                     off: CELLS().map(box),
+                     shown: getComputedStyle(CELLS()[0].querySelector(".pane-vzoom")).display};
 """
 
 
@@ -995,6 +1008,19 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 or abs((d["before"][0] - d["after"][0]) - 80) > 6):
             say(f"dragging the divider 80px right moved the panes {d['before']} -> "
                 f"{d['after']} - the left pane should grow by 80 and the right shrink")
+        # ↕: one row has nothing to grow into, so the button is not drawn.
+        v = g["vzoom"]
+        if g["rows3"] == [3]:
+            if v["shown"] != "none":
+                say("↕ is drawn with a single row, where it can do nothing")
+        elif (v["pressed"] != "true" or abs(v["on"][0]["h"] - v["gridH"]) > 2
+                or abs(v["on"][0]["w"] - v["before"][0]["w"]) > 2
+                or v["on"][2]["w"] != 0
+                or abs(v["off"][0]["h"] - v["before"][0]["h"]) > 2):
+            say(f"↕ on pane 1: grid {v['gridH']}px, pane {v['before'][0]} -> "
+                f"{v['on'][0]} -> {v['off'][0]}, bottom pane {v['on'][2]}, pressed "
+                f"{v['pressed']} - want full height, same width, the other row "
+                "gone, and back on the second press")
 
     # 6. a request for a conversation nobody is watching
     if m["permOpen"] != [True, False, False, False]:

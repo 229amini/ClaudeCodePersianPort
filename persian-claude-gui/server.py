@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.10.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.10.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.10.1"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.10.1"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -212,6 +212,23 @@ CANCEL_QUEUED_TIMEOUT = 5.0
 # streaming bubble, the pulse and the stop button vanish while output is still
 # printing, and the next delta opens an orphan bubble nothing settles.
 IDLE_SYNC_SECONDS = 5.0
+
+# THE FIVE-HOUR WALL (pcg-k02, wiki/usage-limit-wall.md). `-p` stops at it and
+# never continues; the TUI waits and, at reset, sends this exact text as a
+# hidden prompt. The window does the same, from here, so a reload or a
+# minimised window does not lose the wait. The renderer hides this text the
+# way the TUI's isMeta does (render.js AUTO_RESUME).
+AUTO_RESUME_PROMPT = ("Your claude.ai usage limit has reset. Continue the task you "
+                      "were working on when the limit was reached; do not repeat "
+                      "work that is already complete.")
+AUTO_RESUME_HORIZON = 24 * 3600   # the TUI's own cutoff: further out, no wait
+AUTO_RESUME_JITTER = (5.0, 30.0)  # after resetsAt, like the TUI, never before
+# Checked on a short tick against the WALL clock, not one long timer: a PC that
+# slept through the reset must not fire on waking - the TUI calls that "stale"
+# and asks instead. A tick that crosses the reset after a gap longer than the
+# grace slept through it.
+AUTO_RESUME_TICK = 15.0
+AUTO_RESUME_GRACE = 120.0
 
 # What /recap says when it has nothing to recap or could not generate one, read
 # out of the 2.1.235 bundle. All three come back as an ordinary SUCCESSFUL
@@ -2864,6 +2881,13 @@ class ClaudeSession:
         # paid turn per `!ls`, which the terminal never does.
         self._context_blocks: list[str] = []
         self._context_lock = threading.Lock()
+        # The wait at a usage wall (AUTO_RESUME_*). `_resume_seq` is bumped by
+        # every arm and every cancel, so a waiting thread that sees a number
+        # other than its own simply ends; `_resume_armed` is what the window is
+        # told is pending.
+        self._resume_seq = 0
+        self._resume_armed = False
+        self._resume_lock = threading.Lock()
 
     # ponytail: the ledger is stick-proofed at both ends -- discarding an
     # unknown uuid is free, every path that ends a PROCESS empties it outright
@@ -2904,6 +2928,7 @@ class ClaudeSession:
               fork_id: str | None = None, fork_at: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
+        self.cancel_auto_resume(quiet=True)   # that wait belonged to the old process
         # A DELIBERATE respawn (a resume, a restart) kills whatever the old
         # process still held exactly as a crash would -- and the generation bump
         # above suppresses the old reader's own death-path publish, so this is
@@ -3026,6 +3051,8 @@ class ClaudeSession:
                 # waiters would otherwise hold forever.
                 if self.broker:
                     self.broker.deny_all()
+                # Nothing to continue in: the TUI's "exited during the wait".
+                self.cancel_auto_resume()
                 self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
                                   "returncode": proc.poll()})
 
@@ -3158,6 +3185,8 @@ class ClaudeSession:
                 if self.broker:
                     self.broker.sync_cli_mode(event["permissionMode"])
             self.hub.publish(event)
+            if etype == "rate_limit_event":
+                self._arm_auto_resume(event.get("rate_limit_info") or {}, generation)
             if etype == "result":
                 # Off-thread: the statusline is someone else's script, and the
                 # usage/rename control requests wait on THIS reader thread for
@@ -3399,6 +3428,10 @@ class ClaudeSession:
 
     def send_blocks(self, blocks: list[dict], recap: bool = False) -> str:
         """Send one message; returns the command_uuid the CLI will report on."""
+        # The person wrote something: that, not the wait, is what happens next
+        # (a /recap is the window's own and does not count).
+        if not recap:
+            self.cancel_auto_resume()
         if not self._titled and self._first_prompt is None:
             self._first_prompt = next(
                 (b.get("text") for b in blocks if b.get("type") == "text"), None)
@@ -3432,6 +3465,79 @@ class ClaudeSession:
 
     def send_text(self, text: str, recap: bool = False) -> str:
         return self.send_blocks([{"type": "text", "text": text}], recap=recap)
+
+    # --- the wait at a usage wall (AUTO_RESUME_*) ---------------------------
+
+    def _arm_auto_resume(self, info: dict, generation: int) -> None:
+        """A five-hour wall the CLI reported: wait for its reset, then go on.
+
+        Only `rejected` + `five_hour`, like the TUI: a weekly wall or one more
+        than a day out is not worth holding a turn open for. A second report
+        of the same wall re-arms rather than stacking a second wait.
+        """
+        if info.get("status") != "rejected" or info.get("rateLimitType") != "five_hour":
+            return
+        reset = info.get("resetsAt")
+        if not isinstance(reset, (int, float)) or reset - time.time() > AUTO_RESUME_HORIZON:
+            return
+        fire_at = reset + secrets.SystemRandom().uniform(*AUTO_RESUME_JITTER)
+        with self._resume_lock:
+            self._resume_seq += 1
+            seq = self._resume_seq
+            self._resume_armed = True
+        self.hub.publish({"type": "wrapper", "subtype": "auto_resume",
+                          "state": "armed", "at": reset})
+        threading.Thread(target=self._wait_auto_resume, args=(seq, fire_at, generation),
+                         daemon=True).start()
+
+    def _wait_auto_resume(self, seq: int, fire_at: float, generation: int) -> None:
+        last = time.time()
+        while True:
+            time.sleep(min(AUTO_RESUME_TICK, max(0.5, fire_at - time.time())))
+            if seq != self._resume_seq or generation != self._generation:
+                return                       # cancelled, re-armed, or a new process
+            now = time.time()
+            gap, last = now - last, now
+            if now < fire_at:
+                continue
+            with self._resume_lock:
+                if seq != self._resume_seq:
+                    return
+                self._resume_seq += 1
+                self._resume_armed = False
+            if gap > AUTO_RESUME_TICK + AUTO_RESUME_GRACE:
+                # Slept through it. Sending now would start work the person is
+                # not there to see begin; the window asks instead.
+                self.hub.publish({"type": "wrapper", "subtype": "auto_resume",
+                                  "state": "stale"})
+                return
+            if self.alive():
+                self.resume_now()
+            return
+
+    def resume_now(self) -> str:
+        """Send the TUI's continuation prompt. The armed wait, if any, ends."""
+        with self._resume_lock:
+            self._resume_seq += 1
+            self._resume_armed = False
+        command_uuid = self.send_text(AUTO_RESUME_PROMPT)
+        # The window's user_echo for a message nobody typed: it carries the
+        # ledger uuid (so the turn shows as working and the stop button stops
+        # it) and no text (so no bubble).
+        self.hub.publish({"type": "wrapper", "subtype": "auto_resume", "state": "fired",
+                          "uuid": command_uuid})
+        return command_uuid
+
+    def cancel_auto_resume(self, quiet: bool = False) -> bool:
+        """End a pending wait. False when there was none (nothing published)."""
+        with self._resume_lock:
+            was = self._resume_armed
+            self._resume_seq += 1
+            self._resume_armed = False
+        if was and not quiet:
+            self.hub.publish({"type": "wrapper", "subtype": "auto_resume",
+                              "state": "cancelled"})
+        return was
 
     def park_context(self, text: str) -> None:
         """Hold text until the next message carries it (see _context_blocks)."""
@@ -3544,6 +3650,8 @@ class ClaudeSession:
         # pressing it twice is exactly what happens when the first press looked
         # like nothing. The CLI answers an interrupt it has no turn for with a
         # plain `success`, so the cost of being wrong here is one line on a pipe.
+        # Stop also ends a wait at the usage wall (the TUI's Esc does).
+        self.cancel_auto_resume()
         request_id, slot = self._send_control("interrupt", True,
                                               {"cancel_queued": False})
         # Off-thread on purpose: the answer is delivered BY the reader thread,
@@ -4575,6 +4683,22 @@ class Handler(BaseHTTPRequestHandler):
             # The CLI's own answer, unedited: false is not an error, it is
             # "already running" (see ClaudeSession.cancel_queued).
             self._send_json(HTTPStatus.OK, {"cancelled": cancelled})
+        elif parsed.path == "/api/auto_resume":
+            # The usage-wall row's two buttons: «ادامه نده» while it waits,
+            # «ادامه بده» once the wait went stale (the PC slept through it).
+            session = self._target(tab)
+            if session is None:
+                return
+            action = body.get("action")
+            if action not in ("cancel", "now"):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "action"})
+                return
+            try:
+                ok = session.cancel_auto_resume() if action == "cancel" else bool(session.resume_now())
+            except RuntimeError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": ok})
         elif parsed.path == "/api/recap":
             # Fire-and-forget: the recap arrives over SSE as wrapper/recap, the
             # same way every other CLI answer does. `ok:false` means the window

@@ -79,6 +79,64 @@ function onFocused() {
    "[Request interrupted by user for tool use]". */
 const INTERRUPT_NOTE = /^\s*\[Request interrupted by user/;
 
+/* A STOP IS DRAWN ONCE, from whichever of its two witnesses comes first. Live,
+   the note above arrives and then the result: aborted_streaming, or
+   aborted_tools when a permission was pending (measured 2026-10-07,
+   probe_stop_records.py). A transcript keeps only the note - results are never
+   written to disk - so a row drawn off the result alone vanished on every
+   reload that repainted from the transcript (pcg-mkd). */
+const STOP_REASONS = new Set(["aborted_streaming", "aborted_tools"]);
+
+export function isStop(ev) {
+  return STOP_REASONS.has(ev?.terminal_reason);
+}
+
+function stopRow() {
+  const row = bubble("assistant", FA.stopped);
+  row.classList.add("meta", "stopped");
+  if (row.previousElementSibling?.classList.contains("stopped")) row.remove();
+}
+
+/* THE FIVE-HOUR WALL (pcg-k02, wiki/usage-limit-wall.md). The CLI says it in
+   English twice - a synthetic reply «You've hit your limit · resets …» and an
+   is_error result with api_error_status 429 - and then stops; the SERVER waits
+   for the reset (server.py AUTO_RESUME_*) and sends the TUI's own hidden
+   continuation prompt, which a replayed transcript shows as a user turn. One
+   Persian row per wall says all of it, updated in place as the wait moves on:
+   armed (with the reset time and «ادامه نده»), then fired, cancelled, or
+   stale (with «ادامه بده»: the PC slept through the reset). */
+const USAGE_WALL = /^You've hit your (?:\w+ )?limit/;
+const AUTO_RESUME = /^Your claude\.ai usage limit has reset\. Continue the task/;
+const RESUME_TIME = new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit" });
+
+function resumeRow(phase, at = null) {
+  let row = [...log.querySelectorAll(".auto-resume")].at(-1);
+  if (phase === "armed" || !row || row.dataset.phase !== "armed") {
+    row = bubble("assistant");
+    row.classList.add("meta", "auto-resume");
+  }
+  row.dataset.phase = phase;
+  const text = phase === "armed"
+    ? FA.autoResumeArmed.replace("{t}", at ? RESUME_TIME.format(new Date(at * 1000)) : "")
+    : { fired: FA.autoResumeFired, cancelled: FA.autoResumeCancelled,
+        stale: FA.autoResumeStale }[phase] ?? "";
+  row.replaceChildren(label(text, ""));
+  const action = { armed: ["cancel", FA.autoResumeCancel], stale: ["now", FA.autoResumeNow] }[phase];
+  if (action) {
+    const tab = state.tab;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "resume-act";
+    btn.textContent = action[1];
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      api("/api/auto_resume", { tab, action: action[0] }).catch(() => { btn.disabled = false; });
+    });
+    row.append(" ", btn);
+  }
+  return row;
+}
+
 /* A finished background agent reports itself as a <task-notification> block
    that the CLI then auto-submits as an ordinary `user` message — so left alone
    it renders as the USER pasting forty lines of XML at themselves, in both the
@@ -2076,6 +2134,11 @@ export function renderEvent(ev) {
         pulsePhase("tools", ev.parent_tool_use_id ? null : { name: calling.name, input: calling.input });
       }
       for (const part of ev.message?.content ?? []) {
+        if (part.type === "text" && ev.message?.model === "<synthetic>"
+            && USAGE_WALL.test(part.text ?? "")) {
+          bubble("assistant", FA.usageWall).classList.add("meta");
+          continue;
+        }
         if (part.type === "text") {
           const rendered = renderMarkdown(part.text ?? "");
           let settled;
@@ -2233,11 +2296,18 @@ export function renderEvent(ev) {
           }
           // The CLI narrates an interrupt as a `user` turn whose text is
           // "[Request interrupted by user]" (or "...for tool use"). Rendered as
-          // written it looks like the user typed an English sentence — and the
-          // stop is already reported in Persian by result/aborted_streaming
-          // below. Both sources carry it, so it is dropped here, at the one
-          // renderer they share.
-          if (INTERRUPT_NOTE.test(part.text ?? "")) continue;
+          // written it looks like the user typed an English sentence, so it is
+          // the Persian «متوقف شد» instead - the one witness of a stop a
+          // replayed transcript has (stopRow above).
+          if (INTERRUPT_NOTE.test(part.text ?? "")) {
+            stopRow();
+            continue;
+          }
+          // The server's continuation prompt, replayed: nobody typed it.
+          if (AUTO_RESUME.test(part.text ?? "")) {
+            resumeRow("fired");
+            continue;
+          }
           if (CLI_SELF.test(part.text ?? "")) continue;
           // `!` output riding in front of this message (splitBashBlocks above).
           // Each block becomes the same card the live wrapper/shell event
@@ -2322,9 +2392,11 @@ export function renderEvent(ev) {
       });
       // A user-pressed stop lands here as error_during_execution /
       // aborted_streaming (B-9.10). That is not a failure — do not alarm.
-      if (ev.terminal_reason === "aborted_streaming") {
-        bubble("assistant", FA.stopped).classList.add("meta");
-      } else if (ev.is_error) {
+      // The usage wall's own row already said it, in Persian (USAGE_WALL).
+      const wall = ev.api_error_status === 429;
+      if (isStop(ev)) {
+        stopRow();
+      } else if (ev.is_error && !wall) {
         bubble("error", ev.result ?? String(ev.subtype ?? "error"));
         // The hard limit. The CLI's own wording for it, in English, in a turn
         // that produced nothing: "Context exceeds the N-token limit by M tokens
@@ -2344,10 +2416,10 @@ export function renderEvent(ev) {
         state.pulse.cliMs += ev.duration_ms;
       }
       state.recapWorthy = !ev.is_error
-        && ev.terminal_reason !== "aborted_streaming";
+        && !isStop(ev);
       // Same predicate, kept for the tab's status dot: a stop is not a failure,
       // and a turn that succeeded clears whatever the last one left behind.
-      state.error = !!ev.is_error && ev.terminal_reason !== "aborted_streaming";
+      state.error = !!ev.is_error && !isStop(ev) && !wall;
       // A stop ends the batch whatever the ledger says — nothing else reaches
       // this window instantly on a stop, and without this every press of it
       // would leave the line breathing until the wrapper's five-second
@@ -2362,7 +2434,7 @@ export function renderEvent(ev) {
       // lifecycle event arrives — the synthetic `cancelled` the receipt
       // publishes (which hands its text back), or the `started` of one the CLI
       // kept, which promotes it with the pulse still alive.
-      if (ev.terminal_reason === "aborted_streaming") {
+      if (isStop(ev)) {
         for (const uuid of state.outstanding) {
           if (!state.queued.has(uuid)) state.outstanding.delete(uuid);
         }
@@ -2482,6 +2554,19 @@ export function renderEvent(ev) {
         // whose pulse died still gets a fresh one, queued row or not: the stop
         // button is showing and something has to say what it stops.
         if (!queued) startPulse(ev.text ?? "");
+      } else if (ev.subtype === "auto_resume") {
+        resumeRow(ev.state, ev.at);
+        if (ev.state === "fired") {
+          // user_echo's bookkeeping for a message nobody typed: the turn is
+          // working, its stop button stops it, and no bubble is drawn.
+          toChrome("busy", true);
+          if (ev.uuid) state.outstanding.add(ev.uuid);
+          state.error = false;
+          if (!state.pulse) {
+            resetTurn();
+            startPulse("");
+          }
+        }
       } else if (ev.subtype === "stderr") {
         bubble("error", ev.line);
       } else if (ev.subtype === "shell") {

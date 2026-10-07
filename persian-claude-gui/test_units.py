@@ -2061,6 +2061,68 @@ except RuntimeError:
 check("a recap that failed to send leaves nothing armed to swallow the next answer",
       recap._recap_wanted is False and recap.busy is False)
 
+print("auto-resume at the five-hour wall (pcg-k02)")
+# `-p` stops at the wall and never continues (wiki/usage-limit-wall.md), so this
+# wait is the only thing that does. Every case fails silently in production: a
+# turn that never resumes, one that resumes behind a person who said no, or one
+# that starts the moment a PC that slept through the reset wakes up.
+_resume_saved = (server.AUTO_RESUME_JITTER, server.AUTO_RESUME_TICK, server.AUTO_RESUME_GRACE)
+server.AUTO_RESUME_JITTER, server.AUTO_RESUME_TICK = (0.0, 0.0), 0.05
+WALL = {"status": "rejected", "rateLimitType": "five_hour"}
+
+
+def _walled():
+    s = server.ClaudeSession(Path("D:/x"), _Hub(), "claude.exe")
+    s.sent = []
+    s._write_line = s.sent.append
+    s.alive = lambda: True
+    return s
+
+
+def _phases(s):
+    return [e.get("state") for e in s.hub.events if e.get("subtype") == "auto_resume"]
+
+
+try:
+    wall = _walled()
+    wall._arm_auto_resume({**WALL, "resetsAt": time.time() + 0.3}, wall._generation)
+    time.sleep(0.8)
+    check("a five-hour wall arms, and at its reset the TUI's own prompt goes out by itself",
+          _phases(wall) == ["armed", "fired"] and len(wall.sent) == 1
+          and wall.sent[0]["message"]["content"][0]["text"] == server.AUTO_RESUME_PROMPT)
+    check("the fired event carries the ledger uuid, so the window shows it working",
+          wall.hub.events[-1].get("uuid") == wall.sent[0]["uuid"] and wall.busy)
+
+    wall = _walled()
+    wall._arm_auto_resume({**WALL, "resetsAt": time.time() + 0.3}, wall._generation)
+    wall.send_text("خودم ادامه می‌دهم")
+    time.sleep(0.8)
+    check("a message the person sends during the wait cancels it, and nothing else goes out",
+          _phases(wall) == ["armed", "cancelled"] and len(wall.sent) == 1)
+
+    wall = _walled()
+    wall._arm_auto_resume({**WALL, "resetsAt": time.time() + 0.3}, wall._generation)
+    check("«ادامه نده» answers that it cancelled something", wall.cancel_auto_resume() is True)
+    time.sleep(0.8)
+    check("and nothing is sent at the reset", wall.sent == [] and _phases(wall) == ["armed", "cancelled"])
+
+    wall = _walled()
+    wall._arm_auto_resume({**WALL, "rateLimitType": "seven_day", "resetsAt": time.time() + 0.3},
+                          wall._generation)
+    wall._arm_auto_resume({**WALL, "resetsAt": time.time() + 3 * 86400}, wall._generation)
+    time.sleep(0.5)
+    check("a weekly wall, or one more than a day out, arms nothing (the TUI's rule)",
+          _phases(wall) == [] and wall.sent == [])
+
+    server.AUTO_RESUME_GRACE = -1.0     # every tick reads as a gap: the PC "slept"
+    wall = _walled()
+    wall._arm_auto_resume({**WALL, "resetsAt": time.time() + 0.3}, wall._generation)
+    time.sleep(0.8)
+    check("a reset slept through is offered, not sent", _phases(wall) == ["armed", "stale"]
+          and wall.sent == [])
+finally:
+    server.AUTO_RESUME_JITTER, server.AUTO_RESUME_TICK, server.AUTO_RESUME_GRACE = _resume_saved
+
 # --- v2.3: the prompt box's four routes --------------------------------------
 # History, `@` completion, `!` bash mode and the external editor. Everything
 # here fails quietly in production if it is wrong: a lost history line, a menu

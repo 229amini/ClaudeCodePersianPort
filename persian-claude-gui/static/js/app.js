@@ -45,6 +45,7 @@ import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, state, resetTurn, clearPulse,
   newRenderScope, withRenderTarget, inRenderTarget, applyChrome, setFocusedCell,
+  isStop,
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
@@ -337,7 +338,7 @@ function noteTabEvent(ev, tab) {
   // so counting those would have a reload invent a
   // dozen new messages. And not a stop either — whoever pressed it knows.
   if (ev.type === "result" && !cellOf(tab) && !ev.replayed
-      && ev.terminal_reason !== "aborted_streaming") {
+      && !isStop(ev)) {
     unread.set(tab, (unread.get(tab) ?? 0) + 1);
   }
   // The dot is derived from render state this window already holds, so it
@@ -498,11 +499,12 @@ function placeIn(cell, tab) {
     applyChrome(cell, state.chrome);   // what landed while it was in the background
     state.chrome = {};
   });
+  setChrome(entry.scope.status.cwd || "", cell);
   // Back where the reader left this conversation; a tab being opened for the
   // first time starts at its newest message, like every other chat view.
+  // AFTER setChrome: its syncHome() is what unhides a column that was empty,
+  // and a scroll written into the hidden log is dropped (pcg-256).
   cell.log.scrollTop = entry.scrollTop ?? cell.log.scrollHeight;
-
-  setChrome(entry.scope.status.cwd || "", cell);
   if (cell === focusedCell()) {
     adoptFocusedScope();
     setCurrentSession(entry.scope.status.sessionId ?? null);

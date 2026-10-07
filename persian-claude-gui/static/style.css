@@ -1586,7 +1586,12 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
    flex column and an automatic minimum size crushes its entries. */
 /* The running tool's target on the working line: one row, never a wrap — a
    long command ends in an ellipsis and its title holds the rest. */
-.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.pulse-verb { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0;
+              flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
+/* The counter and the verb hold their line too: a long command squeezed
+   «۱ دقیقه و ۴۹ ثانیه · ↓ ۱٫۵ هزار توکن» and «در حال اجرای ابزار…» onto two
+   lines each (user report 2026-10-07). Only the command gives way. */
+.pulse-meta, .pulse-tasks { flex: none; white-space: nowrap; }
 .pulse-target { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 .pulse {
   align-self: stretch;
@@ -3597,3 +3602,19 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   .perm .ask-q:not([hidden]) { min-height: 3em; }
   .perm .ask-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
 }
+
+/* The usage-wall row's one button (render.js resumeRow): quiet, secondary,
+   on the row's own line. 24px is the pointer floor (WCAG 2.5.8). */
+.resume-act {
+  min-height: 24px;
+  margin-inline-start: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--app-button-border);
+  border-radius: var(--corner-radius-small);
+  background: var(--app-button-secondary-background);
+  color: var(--app-button-secondary-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.resume-act:hover { background: var(--app-button-secondary-hover-background); }
+.resume-act:disabled { opacity: .6; cursor: default; }

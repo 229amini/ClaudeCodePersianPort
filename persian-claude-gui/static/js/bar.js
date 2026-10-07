@@ -405,7 +405,7 @@ export function limitRows(limits, now = Date.now()) {
   return rows;
 }
 
-function paintUsage(box, { detail, context, limits, onCompact }) {
+function paintUsage(box, { detail, context, limits, onCompact, fresh }) {
   box.replaceChildren();
   // The context window.
   const head = el("div", "bar-head");
@@ -419,6 +419,9 @@ function paintUsage(box, { detail, context, limits, onCompact }) {
       : pct !== null ? faNum(pct) + "٪" : FA.barLoading);
   head.append(figure);
   box.append(head);
+  // Nothing sent yet: the CLI's figure is the floor every first message starts
+  // from (system prompt, tools, memory), and no turn has been paid for.
+  if (fresh) box.append(el("p", "bar-muted", FA.barBaseline));
 
   const bar = el("div", "bar-context");
   const cats = (detail?.categories ?? []).filter((c) => c.kind === "used" && c.tokens > 0);

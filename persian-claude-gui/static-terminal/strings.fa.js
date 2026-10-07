@@ -12,6 +12,14 @@ window.FA = {
   appName: "کلاد فارسی — ترمینال",
 
   stopped: "متوقف شد",
+  // The five-hour usage wall (render.js resumeRow, server.py AUTO_RESUME_*).
+  usageWall: "به سقف مصرف رسیدید.",
+  autoResumeArmed: "ساعت {t} سقف آزاد می‌شود و کار خودش ادامه پیدا می‌کند.",
+  autoResumeCancel: "ادامه نده",
+  autoResumeFired: "سقف مصرف آزاد شد؛ کار ادامه پیدا کرد.",
+  autoResumeCancelled: "ادامهٔ خودکار لغو شد. بعد از آزاد شدن سقف، خودتان پیامی بفرستید.",
+  autoResumeStale: "سقف مصرف آزاد شده، ولی رایانه در این مدت خواب بود و کار خودش ادامه پیدا نکرد.",
+  autoResumeNow: "ادامه بده",
   removeAttachment: "حذف",
 
   thinking: "فکر",
@@ -366,6 +374,8 @@ window.FA = {
   paneMenu: "کارهای این قاب",
   paneZoom: "تمام‌صفحه",
   paneUnzoom: "خروج از تمام‌صفحه",
+  paneZoomV: "تمام‌قد",
+  paneUnzoomV: "خروج از تمام‌قد",
   paneClose: "بستن گفتگو",
   paneModel: "مدل: {name}",
   paneEffort: "میزان تفکر…",
@@ -767,6 +777,7 @@ window.FA = {
   barUsage: "زمینه و مصرف",
   barUsageTitle: "زمینه و مصرف — {n}٪ از پنجرهٔ زمینه پر است",
   barContext: "پنجرهٔ زمینه",
+  barBaseline: "هنوز پیامی فرستاده نشده. این عدد پایهٔ هر گفتگوی تازه است (دستورها، ابزارها و حافظه) و چیزی از سهمیه مصرف نشده.",
   barOf: "{used} از {max}",
   barThousand: "{n} هزار",
   barMillion: "{n} میلیون",

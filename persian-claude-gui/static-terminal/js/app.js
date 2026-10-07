@@ -49,7 +49,7 @@ import { renderMarkdown } from "./bidi.js";
 import {
   renderEvent, setStatus, state, resetTurn, clearPulse,
   newRenderScope, withRenderTarget, inRenderTarget, initTranscript, applyChrome,
-  setFocusedCell, shortModel, bubble,
+  setFocusedCell, shortModel, bubble, isStop,
 } from "./render.js";
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
@@ -189,11 +189,13 @@ function initPaneHeader(cell) {
   };
   name(menuBtn, FA.paneMenu);
   name(q("pane-zoom"), FA.paneZoom);
+  name(q("pane-vzoom"), FA.paneZoomV);
   name(q("pane-close"), FA.paneClose);
   // The menu names live values (model, cost), so it is rebuilt on every open.
   const [, menu] = kebabMenu(() => paneMenuItems(cell), menuBtn);
   cell.root.append(menu);               // a popover: its parent only owns its lifetime
   q("pane-zoom").addEventListener("click", () => toggleZoom(cell));
+  q("pane-vzoom").addEventListener("click", () => toggleZoom(cell, "v"));
   q("pane-close").addEventListener("click", (e) => closePane(cell, e.currentTarget));
   // An empty pane's one button opens the new-session page (§D8). In the home
   // state (one pane, nothing open) it is the whole page; in an empty pane of a
@@ -226,25 +228,35 @@ function paneMenuItems(cell) {
 /* FULLSCREEN (§D5): one pane fills the stage; the others stay in the DOM and
    keep receiving events (hidden, never parked). Leaving it is the same button,
    or Esc - but only when Esc would otherwise do nothing (see the Esc handler
-   at the foot of this file): a stop always wins. */
+   at the foot of this file): a stop always wins.
+   `axis` "v" is the same thing in one direction only: the pane's row takes the
+   grid's whole height and keeps its width; the rows above and below go. Same
+   state, so the two buttons are one toggle each and never both pressed. */
 let zoomed = null;
+let zoomAxis = "";
 
-function toggleZoom(cell) {
+const ZOOM_BUTTONS = [[".pane-zoom", "full", "paneUnzoom", "paneZoom"],
+                      [".pane-vzoom", "v", "paneUnzoomV", "paneZoomV"]];
+
+function toggleZoom(cell, axis = "full") {
   const grid = document.getElementById("grid");
   if (!grid) return;
-  const on = !!cell && zoomed !== cell && cells.length > 1;
+  const on = !!cell && !(zoomed === cell && zoomAxis === axis) && cells.length > 1;
   zoomed = on ? cell : null;
+  zoomAxis = on ? axis : "";
   for (const one of cells) {
     one.root.classList.toggle("zoomed", one === zoomed);
-    const btn = one.root.querySelector(".pane-zoom");
-    if (btn) {
-      const text = one === zoomed ? FA.paneUnzoom : FA.paneZoom;
+    for (const [sel, ax, onKey, offKey] of ZOOM_BUTTONS) {
+      const btn = one.root.querySelector(sel);
+      if (!btn) continue;
+      const pressed = one === zoomed && zoomAxis === ax;
+      const text = FA[pressed ? onKey : offKey];
       btn.title = text;
       btn.setAttribute("aria-label", text);
-      btn.setAttribute("aria-pressed", String(one === zoomed));
+      btn.setAttribute("aria-pressed", String(pressed));
     }
   }
-  if (on) grid.dataset.zoomed = "true";
+  if (on) grid.dataset.zoomed = axis;
   else delete grid.dataset.zoomed;
   if (on) focusCell(cells.indexOf(cell), { focusInput: true });
 }
@@ -354,6 +366,7 @@ function arrangeGrid() {
     frag.append(row);
   });
   grid.replaceChildren(frag);
+  grid.dataset.rows = String(shape.length);   // one row: nothing to grow into vertically
   applyFractions();
   cells.forEach((one, i) => { one.log.scrollTop = scrolls[i]; });
   if (active && active !== document.activeElement && document.contains(active)) {
@@ -719,7 +732,7 @@ function noteTabEvent(ev, tab) {
   // so counting those would have a reload invent a
   // dozen new messages. And not a stop either — whoever pressed it knows.
   if (ev.type === "result" && !cellOf(tab) && !ev.replayed
-      && ev.terminal_reason !== "aborted_streaming") {
+      && !isStop(ev)) {
     unread.set(tab, (unread.get(tab) ?? 0) + 1);
   }
   // How many files git sees changed in this conversation's folder (§D12),
@@ -728,7 +741,7 @@ function noteTabEvent(ev, tab) {
   // The notification centre (§D9): the same "nobody saw it" rule, widened to
   // any pane but the one the keyboard is in, and to a permission request.
   if (!ev.replayed && !(tab === focusedTab() && !document.hidden)) {
-    if (ev.type === "result" && ev.terminal_reason !== "aborted_streaming") {
+    if (ev.type === "result" && !isStop(ev)) {
       pushNotice(tab, ev.is_error ? "failed" : "done", titleOf(tab));
     } else if (ev.type === "wrapper" && ev.subtype === "permission_request") {
       pushNotice(tab, "needs", titleOf(tab));
@@ -930,11 +943,12 @@ function placeIn(cell, tab) {
     applyChrome(cell, state.chrome);   // what landed while it was in the background
     state.chrome = {};
   });
+  setChrome(entry.scope.status.cwd || "", cell);
   // Back where the reader left this conversation; a tab being opened for the
   // first time starts at its newest message, like every other chat view.
+  // AFTER setChrome: its syncHome() is what unhides a column that was empty,
+  // and a scroll written into the hidden log is dropped (pcg-256).
   cell.log.scrollTop = entry.scrollTop ?? cell.log.scrollHeight;
-
-  setChrome(entry.scope.status.cwd || "", cell);
   if (cell === focusedCell()) {
     adoptFocusedScope();
     setCurrentSession(entry.scope.status.sessionId ?? null);
