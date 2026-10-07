@@ -1351,6 +1351,32 @@ check("the deny is published BEFORE wrapper/closed",
 check("the session was stopped and its bucket dropped",
       victim.stopped and _drain(closing_hub.subscribe()) == [])
 
+print("A permission waits for the person, and the CLI can withdraw it (2026-10-07)")
+# Reported: a person away from the window for two minutes came back to no
+# dialog -- it had opened, auto-denied at 110 s and closed. The TUI waits.
+check("no timeout on a permission or a question, like the TUI",
+      server.PERMISSION_TIMEOUT is None and server.ASK_TIMEOUT is None)
+patient = server.PermissionBroker(_Hub())
+got = {}
+held_thread = threading.Thread(target=lambda: got.update(
+    r=patient.request("Write", {"file_path": "x"}, "tu-wait", cli_request_id="cli-1")),
+    daemon=True)
+held_thread.start()
+time.sleep(1.5)
+check("a request is still waiting after a while, not denied",
+      held_thread.is_alive() and "r" not in got)
+check("a cancel for some other request id touches nothing",
+      patient.cancel("cli-other") is False and len(patient._pending) == 1)
+check("the CLI's control_cancel_request releases it",
+      patient.cancel("cli-1") is True)
+held_thread.join(timeout=5)
+check("...as withdrawn, so no control_response is written back",
+      got.get("r", {}).get("withdrawn") is True)
+cancelled = [e for e in patient.hub.events if e.get("subtype") == "permission_resolved"]
+check("...and the dialog closes on a `cancelled` resolve, not a deny",
+      len(cancelled) == 1 and cancelled[0]["decision"] == "cancelled"
+      and cancelled[0]["tool_use_id"] == "tu-wait")
+
 print("ClaudeSession.busy: an in-flight COUNTER, not a boolean")
 # Two defects in one field. `busy = True` used to run AFTER _write_line, so a
 # fast result cleared it before it was set and the tab reported "working"

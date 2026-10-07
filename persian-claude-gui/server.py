@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.9.1"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.9.1"),
+    "web":      ("static",          "کلاد فارسی",            "1.9.2"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.9.2"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -70,9 +70,14 @@ STATIC_DIR, APP_TITLE, APP_VERSION = (HERE / EDITIONS[UI_EDITION][0],) + EDITION
 AUTO_ALLOW = frozenset({"Read", "Glob", "Grep", "NotebookRead", "TodoWrite"})
 
 # How long the GUI has to answer a can_use_tool request before the broker
-# denies on its own. The CLI blocks on that turn until we reply, so this is
-# also how long a walked-away-from window stalls the conversation.
-PERMISSION_TIMEOUT = 110.0
+# denies on its own: NEVER, like the TUI, which waits for the person however
+# long they are away. This was 110 s, a leftover of the deleted PreToolUse hook
+# and its 120 s limit (wiki/permission-transport.md); the in-band pipe has no
+# limit. Reported 2026-10-07: a person away from the window for two minutes
+# came back to no dialog at all -- it had opened, auto-denied and closed, and
+# the model was told "timed out". What ends a wait now: the answer, the CLI's
+# own control_cancel_request (a stop), the tab closing, the process dying.
+PERMISSION_TIMEOUT = None
 
 # AskUserQuestion is not a permission at all. The CLI routes the model's
 # question to us over this same can_use_tool pipe and reads the answer back out
@@ -82,14 +87,13 @@ PERMISSION_TIMEOUT = 110.0
 #   * it must never be auto-approved. An allow carrying no `answers` is
 #     answered "The user did not answer the questions." -- the posture would
 #     eat the question and the user would never see it.
-#   * it needs its own deadline. The CLI's own askUserQuestionTimeout defaults
-#     to "never", so PERMISSION_TIMEOUT is the ONLY thing ending a question,
-#     and 110 s is not long enough to read one and decide.
-#   * that deadline must ALLOW with no answers, never deny. Allow-with-nothing
-#     is exactly what the CLI's own Skip button sends; a deny comes back as an
-#     is_error tool_result and reads to the model as a failure.
+#   * it waits like a permission does: the CLI's own askUserQuestionTimeout
+#     defaults to "never" (this was 900 s while permissions had 110 s).
+#   * a question that ends unanswered must ALLOW with no answers, never deny.
+#     Allow-with-nothing is exactly what the CLI's own Skip button sends; a deny
+#     comes back as an is_error tool_result and reads to the model as a failure.
 ASK_TOOL = "AskUserQuestion"
-ASK_TIMEOUT = 900.0
+ASK_TIMEOUT = None
 
 # --verbose is mandatory: without it the CLI exits with
 # "When using --print, --output-format=stream-json requires --verbose".
@@ -2584,7 +2588,7 @@ class PermissionBroker:
 
     def request(self, tool_name: str, tool_input: dict, tool_use_id: str | None,
                 display_name: str | None = None, description: str | None = None,
-                suggestions: list | None = None) -> dict:
+                suggestions: list | None = None, cli_request_id: str | None = None) -> dict:
         if tool_name in AUTO_ALLOW:
             return {"decision": "allow", "reason": "auto-allow (read-only)"}
 
@@ -2628,7 +2632,8 @@ class PermissionBroker:
             # same shaped resolved event this thread would have published.
             self._pending[request_id] = {"event": waiter, "decision": None,
                                          "tool_use_id": tool_use_id,
-                                         "tool_name": tool_name}
+                                         "tool_name": tool_name,
+                                         "cli_request_id": cli_request_id}
 
         # display_name/description/permission_suggestions come straight from the
         # CLI's can_use_tool payload -- better than anything we could derive, and
@@ -2650,9 +2655,11 @@ class PermissionBroker:
         with self._lock:
             entry = self._pending.pop(request_id, None)
         if answered and entry is None:
-            # deny_all() got here first: it took the entry, published the deny
-            # and released us. Publishing again would double the event.
-            return {"decision": "deny", "reason": "the conversation was closed"}
+            # deny_all() or cancel() got here first: it took the entry,
+            # published the resolved event and released us. Publishing again
+            # would double the event.
+            return {"decision": "deny", "reason": "the conversation was closed",
+                    "withdrawn": True}
         decision = (entry or {}).get("decision")
 
         if not answered or decision not in ("allow", "deny"):
@@ -2745,6 +2752,31 @@ class PermissionBroker:
             entry["event"].set()
             self._publish_resolved(request_id, entry.get("tool_use_id"), "deny",
                                    tool_name=entry.get("tool_name"))
+
+    def cancel(self, cli_request_id: str | None) -> bool:
+        """The CLI withdrew its own can_use_tool request (`control_cancel_request`,
+        sent when the call's turn is aborted -- a stop). Nobody answered and
+        nothing ran, so the dialog goes away with a `cancelled` decision and the
+        CLI gets no reply: it is no longer waiting for one.
+
+        This used to be covered by accident: the request sat until the 110 s
+        timeout denied it. With no timeout, an ignored cancel would leave a
+        dialog asking about a call that will never run, for good.
+        """
+        if not cli_request_id:
+            return False
+        with self._lock:
+            found = next(((rid, entry) for rid, entry in self._pending.items()
+                          if entry.get("cli_request_id") == cli_request_id), None)
+            if found:
+                del self._pending[found[0]]
+        if not found:
+            return False
+        request_id, entry = found
+        entry["event"].set()
+        self._publish_resolved(request_id, entry.get("tool_use_id"), "cancelled",
+                               tool_name=entry.get("tool_name"))
+        return True
 
 
 class ClaudeSession:
@@ -2883,6 +2915,11 @@ class ClaudeSession:
             self.hub.publish({"type": "command_lifecycle",
                               "command_uuid": command_uuid,
                               "state": "discarded", "synthetic": True})
+        # Same for a dialog the old process was waiting on: nothing times it out
+        # any more (PERMISSION_TIMEOUT), and that process will never read the
+        # answer.
+        if self.broker:
+            self.broker.deny_all()
         # Detected per process, never from a version string: the capability
         # list lives on system/init, which is not emitted until the first turn
         # starts, so nothing can gate on it at spawn time.
@@ -2985,6 +3022,10 @@ class ClaudeSession:
                     self.hub.publish({"type": "command_lifecycle",
                                       "command_uuid": command_uuid,
                                       "state": "discarded", "synthetic": True})
+                # A dead process answers no dialog; without a timeout its
+                # waiters would otherwise hold forever.
+                if self.broker:
+                    self.broker.deny_all()
                 self.hub.publish({"type": "wrapper", "subtype": "cli_exited",
                                   "returncode": proc.poll()})
 
@@ -3045,6 +3086,13 @@ class ClaudeSession:
             if etype == "control_request":
                 threading.Thread(target=self._answer_control_request,
                                  args=(event, generation), daemon=True).start()
+                continue
+
+            # The CLI withdrawing one of THOSE (its turn was aborted while the
+            # dialog was up). Never rendered: the dialog closing is the news.
+            if etype == "control_cancel_request":
+                if self.broker:
+                    self.broker.cancel(event.get("request_id"))
                 continue
 
             # A /recap we asked for ourselves. It answers as an ordinary
@@ -3727,10 +3775,13 @@ class ClaudeSession:
                 display_name=request.get("display_name"),
                 description=request.get("description"),
                 suggestions=request.get("permission_suggestions") or [],
+                cli_request_id=request_id,
             )
 
         if generation != self._generation:
             return   # session restarted while the user was deciding
+        if answer.get("withdrawn"):
+            return   # the CLI cancelled it, or its process/tab is gone
 
         if answer.get("decision") == "allow":
             updated = dict(tool_input)

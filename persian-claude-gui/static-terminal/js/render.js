@@ -2948,7 +2948,9 @@ export function renderEvent(ev) {
             : ev.decision !== "allow" ? FA.permDenied
               : ev.tool_name === "ExitPlanMode" ? FA.planSaved : FA.permAllowed,
           "meta");
-        if (card) card.append(note);
+        // `cancelled`: the CLI withdrew the request (its turn was stopped).
+        // Nobody refused anything, and «متوقف شد» already says what happened.
+        if (card && ev.decision !== "cancelled") card.append(note);
         // Approved by the wrapper rather than by the user — either the
         // «خودکار» posture or an earlier «دوباره نپرس». The count, and the
         // list behind it, are the audit trail that keeps both honest.
