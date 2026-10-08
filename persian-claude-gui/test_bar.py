@@ -244,7 +244,7 @@ const NOW = Date.now();
        available_output_styles: ["default", "frugal-concise", "explain-fa", "Explanatory"],
        output_style_labels: [
          { id: "frugal-concise", title: "کار روزمره", description: "برای بیشتر کارها" },
-         { id: "explain-fa", title: "توضیح فارسی", description: "وقتی می‌خواهی بفهمی" },
+         { id: "explain-fa", title: "توضیح فارسی", description: "وقتی می‌خواهی بفهمی، نه فقط کار انجام شود. ".repeat(8) },
          { id: "default", title: "پیش‌فرض Claude", description: "رفتار استاندارد" }],
        models: [
     { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus",
@@ -261,6 +261,12 @@ const NOW = Date.now();
   out.styleTitles = [...(pop()?.querySelectorAll(":scope > .bar-row .bar-row-title") ?? [])]
     .map((t) => t.textContent).join("|");
   out.styleNote = pop()?.querySelector(":scope > .bar-row .bar-row-note")?.textContent ?? "";
+  // A style's description is drawn whole, not clamped at the model rows' two
+  // lines (dotclaude v3's explain-fa runs to five).
+  const longNote = pop()?.querySelectorAll(":scope > .bar-row .bar-row-note")[1];
+  out.styleNoteLines = longNote ? Math.round(longNote.getBoundingClientRect().height
+    / parseFloat(getComputedStyle(longNote).lineHeight)) : 0;
+  out.styleNoteWhole = !!longNote && longNote.scrollHeight <= longNote.clientHeight + 1;
   mark = calls.length;
   pop()?.querySelectorAll(":scope > .bar-row")[1]?.click(); await sleep(40);
   out.stylePost = since(mark).filter((c) => c.url === "/api/output-style").map((c) => c.body.style).join();
@@ -465,6 +471,9 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
           m.get("styleTitles") == "کار روزمره|توضیح فارسی|پیش‌فرض Claude"
           and m.get("styleNote") == "برای بیشتر کارها",
           f"{m.get('styleTitles')} / «{m.get('styleNote')}»")
+    check("...and a long description is drawn whole, past the model rows' two lines",
+          m.get("styleNoteWhole") is True and (m.get("styleNoteLines") or 0) > 2,
+          f"{m.get('styleNoteLines')} lines / whole {m.get('styleNoteWhole')}")
     check("...and a row posts that style", m.get("stylePost") == "explain-fa", str(m.get("stylePost")))
     check("after the first message the style row only says which one is in force",
           m.get("styleLocked") is True, str(m.get("styleLocked")))

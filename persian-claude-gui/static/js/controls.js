@@ -286,7 +286,7 @@ export function makeControls(root, cell) {
       : styles;
     const order = style && !offered.includes(style) ? [style, ...offered] : offered;
     return order.map((name) => ({ key: name, title: styleTitle(name),
-                                  note: styleInfo(name)?.description ?? "",
+                                  note: styleInfo(name)?.description ?? "", fullNote: true,
                                   selected: name === style }));
   }
 

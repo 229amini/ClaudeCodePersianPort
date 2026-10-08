@@ -4681,6 +4681,10 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   max-inline-size: 100%; overflow: hidden;
   color: var(--fg-muted); font-size: 12px; line-height: 1.5;
 }
+/* A response style's description is the only thing that says when to pick it,
+   and dotclaude v3's run to five lines (explain-fa): two cut it mid-sentence.
+   Drawn whole; the menu scrolls past its 560px cap instead (2026-10-09). */
+.bar-row-note.is-full { display: block; -webkit-line-clamp: none; }
 .bar-row-check { flex: none; min-inline-size: 16px; color: var(--fg-muted); text-align: center; }
 /* The «+» menu's and the palette's key hints (Ctrl+U, @, /name). */
 .bar-row-digit { flex: none; min-inline-size: 16px; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: 12px; text-align: center; }

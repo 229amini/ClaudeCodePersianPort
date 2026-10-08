@@ -44,7 +44,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from server import EDITIONS  # noqa: E402
+from server import EDITIONS, load_style_labels  # noqa: E402
 from test_layout import boot_server, find_edge, hold_sse  # noqa: E402
 
 EDITION = os.environ.get("PCG_UI", "terminal")
@@ -58,6 +58,15 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
           "bar-style", "bar-switch")
+
+FALLBACK_STYLE_LABELS = [
+    {"id": "frugal-concise", "title": "کار روزمره",
+     "description": "برای کارهای معمول روی پروژه: رفع باگ، اضافه کردن قابلیت، تغییر کد و سؤال‌های کوتاه."},
+    {"id": "explain-fa", "title": "توضیح فارسی",
+     "description": "وقتی می‌خواهی بفهمی، نه فقط کار انجام شود. پاسخ‌ها بلندترند."},
+    {"id": "advisor", "title": "مشاور",
+     "description": "وقتی باید تصمیم بگیری. یک پیشنهاد روشن با دلیل و ریسک می‌گیری."},
+]
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -134,6 +143,7 @@ SCENE_JS = r"""
 import * as APP from "/static/js/app.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SCENE = new URLSearchParams(location.search).get("scene");
+const STYLE_LABELS = {{STYLE_LABELS}};
 const TABS = [
   {tab: "t1", title: "یک‌خطی کردن نوار وضعیت", cwd: "D:\\projects\\ClaudeCodePersianPort",
    session_id: "sess-1", busy: false},
@@ -170,12 +180,8 @@ function status(tab, cwd) {
     {value: "haiku", resolvedModel: "claude-haiku-4-5", displayName: "Haiku",
      description: "Haiku 4.5 · Fastest for quick answers"}],
     output_style: "frugal-concise",
-    available_output_styles: ["default", "frugal-concise", "explain-fa", "advisor", "Explanatory"],
-    output_style_labels: [
-      {id: "frugal-concise", title: "کار روزمره", description: "برای بیشتر کارهای برنامه‌نویسی، مثل رفع باگ، افزودن قابلیت و تغییر کد. کم‌هزینه کار می‌کند و پاسخ را با نتیجه شروع می‌کند."},
-      {id: "explain-fa", title: "توضیح فارسی", description: "وقتی می‌خواهی بفهمی کدی چطور کار می‌کند یا چرا این‌طور نوشته شده است."},
-      {id: "advisor", title: "مشاور تصمیم", description: "وقتی باید بین چند راه انتخاب کنی. یک توصیهٔ روشن می‌دهد و بده‌بستان‌ها را می‌گوید."},
-      {id: "default", title: "پیش‌فرض Claude", description: "رفتار استاندارد Claude Code، بدون هیچ قاعدهٔ اضافه."}]}});
+    available_output_styles: ["default", "Explanatory", ...STYLE_LABELS.map((s) => s.id)],
+    output_style_labels: STYLE_LABELS}});
   ev(tab, {type: "wrapper", subtype: "usage", context: 42, cost: 0.4213, quota: 31,
            limits: {five_hour: {utilization: 31, resets_at: new Date(Date.now() + 16380e3).toISOString()},
                     seven_day: {utilization: 21, resets_at: new Date(Date.now() + 4 * 864e5).toISOString()},
@@ -527,7 +533,12 @@ def write_probe(now: float) -> None:
                f'try {{ sessionStorage.setItem("pcg.zoom", {float(zoom)!r}); }} catch (e) {{}}'
                f'</script>') if zoom else ""
     page = page.replace(marker, marker + NO_SSE + zoom_js + stub_script(now), 1)
-    PROBE.write_text(page.replace("</body>", SCENE_JS + "\n</body>", 1), encoding="utf-8")
+    # The style menu draws THIS machine's output-styles.fa.json (what the server
+    # sends at spawn), so a longer description in a new dotclaude version is
+    # seen in the shot, not hidden behind canned text. No file: a canned list.
+    labels = load_style_labels() or FALLBACK_STYLE_LABELS
+    scene = SCENE_JS.replace("{{STYLE_LABELS}}", json.dumps(labels, ensure_ascii=False))
+    PROBE.write_text(page.replace("</body>", scene + "\n</body>", 1), encoding="utf-8")
 
 
 def viewport_delta(browser: str) -> int:

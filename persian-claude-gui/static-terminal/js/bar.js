@@ -184,7 +184,7 @@ function menuRow(row) {
   name.dir = "auto";
   text.append(name);
   if (row.note) {
-    const note = el("span", "bar-row-note", row.note);
+    const note = el("span", "bar-row-note" + (row.fullNote ? " is-full" : ""), row.note);
     note.dir = "auto";
     text.append(note);
   }
@@ -199,8 +199,9 @@ function menuRow(row) {
   return b;
 }
 
-/* rows: [{key, title, note?, icon?, tip?, selected?, disabled?}]. A digit key
-   picks the row at that place while the menu is open.
+/* rows: [{key, title, note?, fullNote?, icon?, tip?, selected?, disabled?}]. A
+   digit key picks the row at that place while the menu is open. `fullNote`
+   draws the whole note instead of two lines (a style's description).
 
    `hint`: a quiet word at the head's far end (the mode menu's Shift+Tab).
    `footer`: [{title, icon?, value?, note?, chevron?, disabled?, onClick}] — rows
