@@ -54,6 +54,7 @@ import {
 import {
   initChrome, initCellChrome, setTabBridge, setOpenTabs, setCurrentSession,
   setChrome, refreshProjects, backfillTab, refreshWhen, kebabMenu, tabTitle,
+  copySessionId,
 } from "./chrome.js";
 import { runWindowCommand } from "./commands.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
@@ -219,8 +220,11 @@ function paneMenuItems(cell) {
   if (cells.length > 1) items.push({ icon: "", text: FA.paneEqualize, run: () => equalize() });
   items.push(null,
     { icon: "", text: FA.paneChanges, run: () => cell.changes.open() },
-    { icon: "", text: FA.paneBranch, run: () => runWindowCommand("branch", "", cell) },
-    null,
+    { icon: "", text: FA.paneBranch, run: () => runWindowCommand("branch", "", cell) });
+  if (s.sessionId) {
+    items.push({ icon: "", text: FA.copySessionId, run: () => copySessionId(s.sessionId) });
+  }
+  items.push(null,
     { icon: "", text: FA.paneCloseChat, danger: true, run: () => closeTab(cell.tab) });
   return items;
 }

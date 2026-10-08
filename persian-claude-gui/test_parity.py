@@ -159,6 +159,20 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   edit2.value = "نه";
   edit2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await sleep(30);
+  // --- 1b. copy the id (pcg-q1v): the terminal's picker hides these sessions ---
+  const clip = [];
+  Object.defineProperty(navigator, "clipboard", { configurable: true,
+    value: { writeText: async (t) => { clip.push(t); } } });
+  const row3 = nav.querySelector('li[data-session="a1"]');
+  kebabOf(row3).click(); await sleep(30);
+  const copyItem = [...row3.querySelectorAll(".kebab-item")]
+    .find((b) => b.textContent === FA.copySessionId);
+  out.copyItem = !!copyItem;
+  copyItem?.click();
+  await sleep(30);
+  out.copied = clip;
+  const cmd = [...document.querySelectorAll(".msg.meta .path")].pop();
+  out.copyCmd = cmd ? { text: cmd.textContent, dir: getComputedStyle(cmd).direction } : null;
   // --- 4. a new conversation from a message ---
   TABS_NOW.splice(0, TABS_NOW.length, { tab: "t9", cwd: "C:/kar/alef", session_id: "s-src" });
   applyTabs({ tabs: TABS_NOW, active: "t9" });
@@ -373,6 +387,11 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     check("no match says so", m.get("emptyText") == "گفتگویی پیدا نشد", f"«{m.get('emptyText')}»")
     check("Esc empties the field and the project lists come back", m.get("cleared"))
     check("a conversation's ⋯ menu offers «تغییر نام»", m.get("renameItem"))
+    cmd = m.get("copyCmd") or {}
+    check("«کپی شناسهٔ گفتگو» copies the id and shows the resume command, LTR",
+          m.get("copyItem") and m.get("copied") == ["a1"]
+          and cmd.get("text") == "claude --resume a1" and cmd.get("dir") == "ltr",
+          f"item {m.get('copyItem')}, copied {m.get('copied')}, row {cmd}")
     check("...which edits in place, starting from the current name",
           m.get("editValue") == "رفع صفحهٔ ورود" and m.get("btnHidden") is True,
           f"«{m.get('editValue')}», row hidden {m.get('btnHidden')}")

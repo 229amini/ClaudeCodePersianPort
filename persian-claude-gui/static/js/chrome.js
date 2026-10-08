@@ -21,6 +21,7 @@ import {
 /* The permission dialog moved out of this file at MA4-T1: it is per cell, and
    the sidebar is not. Same cycle rules — nothing crosses at evaluation time. */
 import { permAsking, permSeenTab } from "./perm.js";
+import { pathEl } from "./bidi.js";
 
 const FA = window.STRINGS;
 
@@ -296,7 +297,25 @@ const SVG = {
   rename: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17l-4 1 1-4z"/></svg>',
   // Two commits and a branch leaving the trunk — the ⎇ chip in icon form.
   branch: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16"/><circle cx="7" cy="5" r="1.8"/><circle cx="17" cy="9" r="1.8"/><path d="M17 11v1a4 4 0 01-4 4H7"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>',
 };
+
+/* «کپی شناسه‌ی گفتگو» (pcg-q1v): a terminal's `claude --resume` picker never
+   lists this app's sessions (they are `-p` = entrypoint sdk-cli, which the
+   picker filters out - wiki/sessions-and-history.md), but resuming by id does
+   not go through the picker. So the id is copied, and the row it leaves says
+   the whole command - LTR, isolated - so it can be read or selected even when
+   the clipboard refuses. */
+export function copySessionId(id) {
+  if (!id) return;
+  const show = (text) => {
+    const el = bubble("meta", "");
+    el.append(label(text + " "), pathEl("claude --resume " + id));
+  };
+  (navigator.clipboard?.writeText(id) ?? Promise.reject())
+    .then(() => show(FA.sessionIdCopied))
+    .catch(() => show(FA.sessionIdCopyFailed));
+}
 
 function basename(p) {
   return (p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p || "";
@@ -772,6 +791,11 @@ function sessionRow(sess, projPath, isCurrent) {
       icon: SVG.rename,
       text: FA.renameSession,
       run: () => startSessionRename(li, btn, sess, projPath),
+    },
+    {
+      icon: SVG.copy,
+      text: FA.copySessionId,
+      run: () => copySessionId(sess.session_id),
     },
     ...(isCurrent ? [] : [null, {
       icon: SVG.trash,
