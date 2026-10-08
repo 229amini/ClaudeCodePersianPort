@@ -666,6 +666,21 @@ async function layoutCase(which) {
   await sleep(200);
   out.paints.four = await stream("t1", %N%);       // focused column: renders direct
   out.paints.other = await stream("t3", %N%);      // another column: withRenderTarget
+  /* A conversation opened from the sidebar goes into an EMPTY pane first, and
+     only replaces the focused one when none is left (user report 2026-10-08). */
+  APP.setSplit(1);
+  APP.focusCell(0);
+  APP.applySwitch("t1");
+  APP.setSplit(2);
+  APP.focusCell(0);
+  await sleep(60);
+  await APP.switchTab("t2");
+  const fillFirst = {cells: APP.cells.map((c) => c.tab),
+                     focused: CELLS().findIndex((r) => r.classList.contains("focused"))};
+  await APP.switchTab("t3");
+  out.fill = {first: fillFirst, full: APP.cells.map((c) => c.tab)};
+  place4();                                        // what the blocks below measure
+  await sleep(200);
 %WEBONLY%
   document.getElementById("probe-out").textContent =
     "PROBE" + JSON.stringify(out) + "ENDPROBE";
@@ -1028,6 +1043,15 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                 f"{v['on'][0]} -> {v['off'][0]}, bottom pane {v['on'][2]}, pressed "
                 f"{v['pressed']} - want full height, same width, the other row "
                 "gone, and back on the second press")
+
+    # 5b. the sidebar fills an empty pane before it replaces the focused one
+    f = m["fill"]
+    if f["first"]["cells"] != ["t1", "t2"] or f["first"]["focused"] != 1:
+        say(f"opening t2 with pane 2 empty gave panes {f['first']['cells']}, focus "
+            f"{f['first']['focused']} - want ['t1', 't2'] and focus on pane 2")
+    if f["full"] != ["t1", "t3"]:
+        say(f"opening t3 with no empty pane gave {f['full']} - want the focused "
+            "pane replaced: ['t1', 't3']")
 
     # 6. a request for a conversation nobody is watching
     if m["permOpen"] != [True, False, False, False]:

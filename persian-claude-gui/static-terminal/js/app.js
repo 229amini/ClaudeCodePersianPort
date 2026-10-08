@@ -1054,6 +1054,12 @@ export async function switchTab(tab) {
     refreshTabs();   // it is not there any more; the list will say so
     return;
   }
+  // An empty pane is filled before the one in front of the user is replaced
+  // (user report 2026-10-08: with two or three panes, a conversation opened
+  // from the sidebar took the focused pane and the empty ones stayed empty).
+  // Not while one pane is zoomed: the empty ones are hidden behind it.
+  const free = cells.find((one) => !one.tab);
+  if (free && focusedCell().tab && !zoomed) focusCell(cells.indexOf(free));
   applySwitch(tab);
   refreshTabs();
 }
