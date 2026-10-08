@@ -57,7 +57,13 @@
   </div>
 </form>
 
-<footer id="statusline" class="statusline"></footer>
+<!-- The composer bar's context ring (render.js setStatus paints it): the web
+     edition has no status line under the composer since 2026-10-08. -->
+<button type="button" class="bar-chip bar-ring">
+  <svg viewBox="0 0 36 36" width="16" height="16" fill="none" stroke-width="4" aria-hidden="true">
+    <circle class="bar-ring-fill" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="0 100"/>
+  </svg>
+</button>
 
 <!-- js/composer.js reads this at module-evaluation time; without it the context
      notice silently no-ops, which is also what a broken one looks like. -->
@@ -837,11 +843,8 @@ ctx.hidden = true;
    self-correct minutes later once wrapper/usage's real percentage arrived.
    The fix deletes the estimate outright: the meter must keep its last real
    (wrapper/usage) value between turns, not be repainted by `result` at all. */
-const statusline = document.getElementById("statusline");
 function ctxMeterValue() {
-  return [...statusline.querySelectorAll(".sl-item")]
-    .find(i => i.querySelector(".sl-label")?.textContent === window.STRINGS.slContext + ":")
-    ?.querySelector("progress")?.value;
+  return parseFloat(document.querySelector(".bar-ring .bar-ring-fill")?.style.strokeDasharray);
 }
 window.renderEvent({ type: "wrapper", subtype: "usage", context: 55 });
 check("context notice stays away at a real, moderate percentage", ctx.hidden);

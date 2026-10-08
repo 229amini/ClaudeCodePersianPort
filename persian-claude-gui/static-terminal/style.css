@@ -2734,6 +2734,14 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   .pulse.live .pulse-glyph { animation: none; }
 }
 
+/* The working line and a run's summary row, weight 500 (user, 2026-10-08):
+   Vazirmatn 400 in muted grey at 12px read as hairline-thin. While the turn
+   runs the line is the CLI's coral — «✻ Newspapering… (1s · ↓ 2 tokens)» —
+   and only the running command stays grey; a settled line goes quiet again. */
+.pulse, details.card.run > summary { font-weight: 500; }
+.pulse.live .pulse-verb, .pulse.live .pulse-meta { color: var(--app-claude-orange); }
+.pulse.live .pulse-target { color: var(--fg-muted); font-weight: 400; }
+
 /* --- the session recap ------------------------------------------------------
    The CLI's «※ recap: …», in Persian and in the transcript: one short
    note on where the session stands and what is next, written after a turn the
@@ -4608,8 +4616,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   inset: auto;
   margin: 0;
   /* menuPopup: menu surface, #454545 hairline, 8px corners, 4px padding. */
-  min-inline-size: 260px;
-  max-inline-size: min(380px, calc(100vw - 16px));
+  min-inline-size: 280px;
+  max-inline-size: min(400px, calc(100vw - 16px));
   max-block-size: min(70vh, 560px);
   overflow-y: auto;
   padding: 4px;
@@ -4626,20 +4634,22 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 12px;
+  padding: 8px 12px 4px;
   color: var(--app-secondary-foreground);
   font-size: var(--fs-meta, 12.5px);
 }
 .bar-head-hint { font-size: 12px; }
-/* claude.ai's rows: a regular-weight name, a one-line muted note, ✓ and the
-   digit at the row's end. Tight — a menu is a list you scan, not a form. */
+/* The VS Code extension's rows (2026-10-08): an icon, a regular-weight name
+   over a muted note of up to two lines, the ✓ at the row's end, 8px 12px.
+   The 4px rows with a digit column read as a cramped table in Persian. */
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   inline-size: 100%;
   min-height: 0;
-  /* menuItem: 8px 12px, the list radius. */
+  /* menuItem: 8px 12px with a note under the title (below); a one-line row is
+     the 32px control, so 4px 12px and the floor in the control block. */
   padding: 4px 12px;
   border: 0;
   border-radius: var(--app-list-border-radius);
@@ -4647,14 +4657,16 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   color: var(--fg);
   font: inherit;
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 1.5;
   text-align: start;
   cursor: pointer;
 }
-.bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--app-list-hover-background); outline: none; }
-/* menuItemSelected: the list's active selection, white text (12:1). */
-.bar-row[aria-current="true"] { background: var(--app-list-active-background); color: var(--app-list-active-foreground); }
-.bar-row[aria-current="true"] .bar-row-note { color: var(--app-list-active-foreground); }
+.bar-row:has(.bar-row-note) { padding-block: 8px; }
+.bar-row:hover:not(:disabled), .bar-row:focus-visible { background: var(--app-list-hover-background); outline: none; }
+/* The current row is the ✓, not a filled block: the extension fills only the
+   row under the pointer, so the two never compete. */
+.bar-row[aria-current="true"] { background: none; color: var(--fg); }
+.bar-row[aria-current="true"]:hover, .bar-row[aria-current="true"]:focus-visible { background: var(--app-list-hover-background); }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
 /* `align-items: flex-start`: a title is `dir="auto"`, so a Latin one («Opus
    5.5») is an LTR box, and stretched to the row it put its text at the row's
@@ -4662,18 +4674,32 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    RTL row places it at the start like every other title. */
 .bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .bar-row-title { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-/* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
-   on the others. Both at once left two columns of air beside every name. */
-.bar-row-check { flex: none; min-inline-size: 1.4em; color: currentColor; text-align: center; }
-.bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
-.bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
-.bar-more .bar-row-digit { color: var(--fg-muted); font-size: 14px; }
-.bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
+/* Two lines, then an ellipsis: a style's "pick this when" sentence is longer
+   than a model's tagline, and one line cut it mid-thought. */
+.bar-row-note {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  max-inline-size: 100%; overflow: hidden;
+  color: var(--fg-muted); font-size: 12px; line-height: 1.5;
+}
+.bar-row-check { flex: none; min-inline-size: 16px; color: var(--fg-muted); text-align: center; }
+/* The «+» menu's and the palette's key hints (Ctrl+U, @, /name). */
+.bar-row-digit { flex: none; min-inline-size: 16px; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: 12px; text-align: center; }
+.bar-row-check:empty, .bar-row-digit:empty { display: none; }
+/* A footer row's current value («لحن پاسخ  کار روزمره») and its «‹». */
+.bar-row-value { flex: none; max-inline-size: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
+.bar-row-chevron { flex: none; color: var(--fg-muted); font-size: 14px; }
+/* Fixed after the first message: still read, never picked. */
+.bar-foot:disabled { color: var(--fg-muted); cursor: default; }
+.bar-foot:disabled .bar-row-value { color: var(--fg); }
 .bar-rule { margin: 4px 0; border: 0; border-block-start: 1px solid var(--app-input-border); }
 .bar-muted { color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 0; }
-.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 4px 8px 2px; }
+.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: 12px; line-height: 1.5; margin: 4px 12px 8px; }
+/* The model menu's question before a mid-conversation switch. */
+.bar-confirm { inline-size: min(360px, calc(100vw - 16px)); padding: 12px; }
+.bar-confirm-text { margin: 0 0 12px; line-height: 1.6; }
+.bar-confirm-acts { display: flex; gap: 8px; }
+.bar-btn.is-primary { border-color: transparent; background: var(--app-claude-orange, var(--accent)); color: #fff; }
+.bar-btn.is-primary:hover { background: color-mix(in srgb, var(--app-claude-orange, var(--accent)) 88%, #fff); }
 .bar-btn {
   min-height: 0;
   padding: 4px 12px;
@@ -4688,16 +4714,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-btn:hover { background: var(--app-list-hover-background); }
 .bar-btn:focus-visible, .bar-switch:focus-visible, .bar-slider-range:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 
-/* The slider, after claude.ai: «تلاش  زیاد» together at the start, «سریع‌تر»
-   (right) … «باهوش‌تر» (left), and a gray pill with one dot per level under a
-   light thumb. The pill is the WRAPPER's background, not the range's own track,
+/* The effort row, the extension's «Effort (High)»: the name and the level at
+   the start, a small gray pill with one dot per level under a light thumb at
+   the end. The pill is the WRAPPER's background, not the range's own track,
    so the dots can sit on it and under the thumb. */
-.bar-slider { padding: 8px 12px 12px; min-inline-size: 280px; }
-.bar-slider .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; font-size: var(--fs-ui, 13px); }
-.bar-slider-now { color: var(--fg); font-weight: 500; }
-.bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); margin: 8px 0 8px; }
+.bar-effort { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.bar-effort-name { flex: 1; min-inline-size: 0; white-space: nowrap; }
+.bar-slider-now { color: var(--fg-muted); }
 /* The extension's effort toggle: an 18px #454545 track, a 14px light thumb. */
-.bar-slider-track { position: relative; block-size: 18px; border-radius: 8px; background: var(--app-input-border); }
+.bar-slider-track { position: relative; flex: none; inline-size: 96px; block-size: 18px; border-radius: 8px; background: var(--app-input-border); }
 .bar-slider-ticks {
   position: absolute;
   inset-inline: 9px;
@@ -5149,9 +5174,10 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   block-size: 28px;
 }
 .comp-act, button.round.send, button.round.danger { inline-size: 28px; min-width: 28px; }
-/* A menu row is AT LEAST 28: a row with a description under its title grows.
-   block-size here overlapped the two lines (mode menu, 2026-10-07). */
-.bar-row { box-sizing: border-box; min-height: 28px; }
+/* A menu row is AT LEAST 32 (the extension's rows, 2026-10-08): a row with a
+   description under its title grows. block-size here overlapped the two lines
+   (mode menu, 2026-10-07). */
+.bar-row { box-sizing: border-box; min-height: 32px; }
 .perm-allow, .perm-deny, .layout-btn, .layout-panel .layout-equal, .bar-btn {
   box-sizing: border-box;
   min-height: 32px;
@@ -5172,8 +5198,6 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
 .bar-row-icon:empty { display: none; }
 .bar-row-icon svg { display: block; }
 .bar-row[aria-current="true"] .bar-row-icon { color: currentColor; }
-.bar-effort { padding: 4px 8px 8px; }
-.bar-effort .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; }
 .bar-plus { min-inline-size: 240px; }
 .bar-servers { padding-block: 4px; }
 .bar-chevron { transition: transform var(--dur, .2s) ease-out; }

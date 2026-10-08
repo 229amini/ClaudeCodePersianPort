@@ -1021,6 +1021,8 @@ export function makeComposer(root, cell) {
   /* The other half of the same seam: verbs the window ANSWERS rather than
      presses a button for. Same contract — true means "handled, do not send". */
   const LOCAL_VERBS = {
+    // The style list before the first message, which one is fixed after it.
+    "output-style": () => cell.controls.openStyleMenu(),
     export: exportTranscript,
     branch: forkSession,
     split: splitGrid,
@@ -1342,11 +1344,6 @@ export function makeComposer(root, cell) {
     refreshBashMode();
     const bashLabel = $("bash-chip-label");
     if (bashLabel) bashLabel.textContent = FA.bashChip;
-    const hint = $("composer-hint");
-    if (hint) {
-      hint.textContent = [FA.hintZwnj, FA.hintPosture, FA.hintEditor,
-                          FA.slashHint].join(" · ");
-    }
     input.focus();
   }
 

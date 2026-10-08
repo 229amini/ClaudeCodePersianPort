@@ -39,6 +39,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+# The token cookie's name is this prefix plus the server's PORT. Cookies are
+# scoped by host, never by port: with the web and the terminal edition open at
+# once (both 127.0.0.1, one Edge profile) a shared name let the window opened
+# last overwrite the other's token, and everything that authenticates by cookie
+# alone -- a sent image's <img> thumbnail -- came back 403 (2026-10-08).
 COOKIE_NAME = "pcg_token"
 
 # Bump on every release. Substituted into any .html this server sends
@@ -53,8 +58,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.11.3"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.11.3"),
+    "web":      ("static",          "کلاد فارسی",            "1.12.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.12.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -1404,6 +1409,32 @@ def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int
 
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
+# Persian titles and one-line "pick this when" descriptions for the output
+# styles, written by the user's dotclaude repo (`claude/output-styles.fa.json`,
+# installed by its `node setup.js install`) next to settings.json. Its array
+# order is the menu's order. Optional: absent or malformed, the window falls
+# back to strings.fa.js styleNames, and only styles the CLI itself advertises
+# (initialize.available_output_styles) are ever offered (2026-10-08).
+STYLE_LABELS_FILE = (Path(os.environ["CLAUDE_CONFIG_DIR"]) if os.environ.get("CLAUDE_CONFIG_DIR")
+                     else Path.home() / ".claude") / "output-styles.fa.json"
+
+
+def load_style_labels(path: Path = STYLE_LABELS_FILE) -> list[dict]:
+    """[{id, title, description}] in menu order, or [] on anything unexpected."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    styles = data.get("styles") if isinstance(data, dict) else None
+    out: list[dict] = []
+    for s in styles if isinstance(styles, list) else []:
+        if (isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+                and isinstance(s.get("title"), str) and s["title"]):
+            out.append({"id": s["id"], "title": s["title"],
+                        "description": s["description"] if isinstance(s.get("description"), str) else ""})
+    return out
+
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 NON_SGR_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-ln-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -2946,6 +2977,13 @@ class ClaudeSession:
         return bool(self._outstanding)
 
     @property
+    def started(self) -> bool:
+        """A message is already in this conversation (sent here, or before a
+        resume): its transcript exists. The CLI writes it at the first submit,
+        never at spawn, and a /clear starts a new id with no file yet."""
+        return bool(self.session_id and transcript_path(self.history_cwd, self.session_id))
+
+    @property
     def history_cwd(self) -> Path:
         """Where THIS session's transcript lives — the worktree when it has
         one, the project otherwise. `cwd` stays the answer to "which project
@@ -3975,6 +4013,9 @@ class ClaudeSession:
         info = response.get("response") if response.get("subtype") == "success" else None
         if not info or generation != self._generation:
             return
+        # Not the CLI's: the Persian labels for its styles, re-read at every
+        # spawn so an edited file shows up with the next conversation.
+        info = {**info, "output_style_labels": load_style_labels()}
         self.init_info = info
         self.hub.publish({"type": "wrapper", "subtype": "init_info", "info": info})
         # The TUI draws its statusline from the moment it starts, not after
@@ -4346,9 +4387,12 @@ class Handler(BaseHTTPRequestHandler):
         supplied = params.get("t", [None])[0] or self.headers.get("X-Auth-Token")
         if not supplied:
             jar = SimpleCookie(self.headers.get("Cookie", ""))
-            morsel = jar.get(COOKIE_NAME)
+            morsel = jar.get(self._cookie_name())
             supplied = morsel.value if morsel else None
         return bool(supplied) and secrets.compare_digest(supplied, self.token)
+
+    def _cookie_name(self) -> str:
+        return f"{COOKIE_NAME}_{self.server.server_address[1]}"
 
     def _send(self, status: int, body: bytes, content_type: str,
               extra_headers: tuple[tuple[str, str], ...] = ()) -> None:
@@ -4827,6 +4871,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST,
                                 {"error": f"unknown output style: {name}"})
                 return
+            # The user's rule (2026-10-08): the style is chosen before the first
+            # message and then fixed. It is part of the system prompt, so a change
+            # mid-conversation re-reads the whole prefix without the cache.
+            if session.started and name != session.output_style():
+                self._send_json(HTTPStatus.CONFLICT,
+                                {"error": "output style is fixed once the conversation has started",
+                                 "style": session.output_style()})
+                return
             try:
                 current = session.set_output_style(name)
             except RuntimeError as exc:
@@ -5267,7 +5319,7 @@ class Handler(BaseHTTPRequestHandler):
             # bound to 127.0.0.1 so there is no transport to secure beyond that.
             extra = ((
                 "Set-Cookie",
-                f"{COOKIE_NAME}={self.token}; Path=/; HttpOnly; SameSite=Strict",
+                f"{self._cookie_name()}={self.token}; Path=/; HttpOnly; SameSite=Strict",
             ),)
         self._send(HTTPStatus.OK, body, ctype, extra)
 

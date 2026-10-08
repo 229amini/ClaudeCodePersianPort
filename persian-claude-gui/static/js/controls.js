@@ -17,7 +17,7 @@ import { api } from "./api.js";
 /* A leaf too: the composer bar's popovers. Only the effort
    slider comes from it here; the other menus stay the in-cell .menu-popup,
    which test_layout/test_split measure staying inside its own cell. */
-import { openMenu as openBarMenu } from "./bar.js";
+import { openMenu as openBarMenu, fmtTokens } from "./bar.js";
 
 const FA = window.STRINGS;
 
@@ -77,7 +77,6 @@ export function makeControls(root, cell) {
     modelName: $("model-chip-name"),
     postureChip: $("posture-chip"),
     postureName: $("posture-chip-name"),
-    autoChip: $("auto-chip"),
     // The effort level rides in the model chip («Opus · زیاد»), as the VS
     // Code extension draws it; it is SET inside the model and mode menus.
     modelEffort: $("model-chip-effort"),
@@ -101,6 +100,7 @@ export function makeControls(root, cell) {
   function applyInitInfo(info) {
     models = Array.isArray(info?.models) ? info.models : [];
     styles = Array.isArray(info?.available_output_styles) ? info.available_output_styles : [];
+    styleLabels = Array.isArray(info?.output_style_labels) ? info.output_style_labels : [];
     if (typeof info?.output_style === "string") style = info.output_style;
     paintModel();
     paintStyle();
@@ -263,6 +263,61 @@ export function makeControls(root, cell) {
 
   let styles = [];
   let style = null;
+  /* [{id, title, description}] from the user's output-styles.fa.json, read by
+     the server at spawn (server.py load_style_labels). Its order is the menu's;
+     a style it does not name keeps strings.fa.js's label, or its own name. */
+  let styleLabels = [];
+
+  function styleInfo(name) {
+    return styleLabels.find((s) => s.id === name) ?? null;
+  }
+
+  function styleTitle(name) {
+    return styleInfo(name)?.title ?? (styleLabels.length ? name : FA.styleNames?.[name] ?? name);
+  }
+
+  /* With the labels file: exactly its styles, in its order, of those the CLI
+     offers — a style it leaves out is left out on purpose (dotclaude v2). The
+     one in force stays visible even when the file does not name it (an older
+     machine's `frugal`), under its own id. No file: everything the CLI offers. */
+  function styleRows() {
+    const offered = styleLabels.length
+      ? styleLabels.map((s) => s.id).filter((id) => styles.includes(id))
+      : styles;
+    const order = style && !offered.includes(style) ? [style, ...offered] : offered;
+    return order.map((name) => ({ key: name, title: styleTitle(name),
+                                  note: styleInfo(name)?.description ?? "",
+                                  selected: name === style }));
+  }
+
+  /* A message is already in this conversation. The style is fixed from then on
+     (the server refuses too), and a model change re-reads it all. */
+  function started() {
+    return !!cell?.log?.querySelector(".msg.user");
+  }
+
+  /* The mode menu's row for it: opens the list before the first message, says
+     which one is in force after. */
+  function styleFooter() {
+    if (styles.length < 2 || !style) return null;
+    const locked = started();
+    return { icon: "style", title: FA.styleTitle, value: styleTitle(style),
+             note: locked ? FA.styleLocked : "", chevron: !locked, disabled: locked,
+             onClick: openStyleMenu };
+  }
+
+  function openStyleMenu() {
+    if (!ui.postureChip || styles.length < 2) return false;
+    if (started()) {
+      // Deferred for the same reason as openAuditList.
+      setTimeout(() => openMenu("style", [{ title: FA.styleLockedNow.replace("{name}", styleTitle(style)) }],
+                                null, ui.postureChip));
+      return true;
+    }
+    openBarMenu(ui.postureChip, { title: FA.styleTitle, rows: styleRows(),
+                                  note: FA.styleNote, onPick: pickStyle });
+    return true;
+  }
 
   function setOutputStyle(name) {
     if (name) style = name;
@@ -274,7 +329,7 @@ export function makeControls(root, cell) {
     // One entry is not a choice — and every build has at least "default".
     ui.styleChip.hidden = styles.length < 2 || !style;
     if (ui.styleChip.hidden) return;
-    ui.styleName.textContent = FA.styleNames?.[style] ?? style;
+    ui.styleName.textContent = styleTitle(style);
     ui.styleChip.title = FA.styleTitle;
   }
 
@@ -290,6 +345,21 @@ export function makeControls(root, cell) {
       console.error("set output style failed", err);
       openMenu("style", [{ title: FA.styleFailed }]);
     }
+  }
+
+  /* --- model switch, mid-conversation ----------------------------------------
+
+     The prompt cache belongs to the model: another one reads the whole
+     conversation again, at full price. Asked once, in the menu itself, with the
+     size of what will be re-read — the prefix the last reply used (bar.js
+     noteCache, kept on the cache chip). */
+  function modelSwitchAsk(row, current) {
+    if (!started() || row.key === current?.value) return null;
+    const size = root.querySelector?.(".bar-cache")?._cache?.size;
+    return {
+      text: size ? FA.modelSwitchAsk.replace("{n}", fmtTokens(size)) : FA.modelSwitchAskPlain,
+      ok: FA.modelSwitchOk, cancel: FA.modelSwitchCancel,
+    };
   }
 
   /* --- approval pill --------------------------------------------------------- */
@@ -327,10 +397,6 @@ export function makeControls(root, cell) {
   /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
   function setAutoCount(count) {
     autoCount = Number(count) || 0;
-    if (!ui.autoChip) return;
-    ui.autoChip.hidden = autoCount === 0;
-    ui.autoChip.textContent = autoCount.toLocaleString("fa-IR") + " " + FA.autoActions;
-    ui.autoChip.title = FA.autoActionsTitle;
   }
 
   /* --- one window, N conversations -------------------------------------------
@@ -346,7 +412,7 @@ export function makeControls(root, cell) {
      `refused` is deliberately NOT in the snapshot: an effort level the CLI's own
      settings schema rejects is a fact about the build, not about a session. */
   function snapshot() {
-    return { models, chosen, resolved, styles, style, effort, posture, autoCount,
+    return { models, chosen, resolved, styles, styleLabels, style, effort, posture, autoCount,
              autoActions: autoActions.slice() };
   }
 
@@ -358,6 +424,7 @@ export function makeControls(root, cell) {
     chosen = s.chosen ?? null;
     resolved = s.resolved ?? null;
     styles = s.styles ?? [];
+    styleLabels = s.styleLabels ?? [];
     style = s.style ?? null;
     effort = s.effort ?? null;
     posture = s.posture ?? null;
@@ -518,12 +585,21 @@ export function makeControls(root, cell) {
     if (ui.menu) ui.menu.hidden = true;
   }
 
-  function toggleMenu(owner, items, onPick, anchor) {
-    if (!ui.menu.hidden && ui.menu.dataset.owner === owner) {
-      closeMenu();
-      return;
-    }
-    openMenu(owner, items, onPick, anchor);
+  /* The count alone is a number with nothing behind it. Opening it is the
+     audit trail that makes «خودکار» — and a remembered tool — defensible. No
+     endpoint: the events that produced the count carry the tool name. It sits
+     at the foot of the mode menu, under the mode that produced it, as in the
+     terminal edition: the bar carries the mode alone. */
+  function openAuditList() {
+    const rows = autoActions.length
+      ? autoActions.map((a) => ({
+          title: a.tool,
+          note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
+        }))
+      : [{ title: FA.autoActionsEmpty }];
+    // After the click that asked for it: that click is still on its way to the
+    // document, whose listener shuts this menu on any click outside it.
+    setTimeout(() => openMenu("auto", rows, null, ui.postureChip));
   }
 
   /* --- init ------------------------------------------------------------------ */
@@ -538,35 +614,18 @@ export function makeControls(root, cell) {
       e.stopPropagation();
       closeMenu();
       const current = twinOf(modelEntry());
-      const row = (m) => ({ key: m.value, title: m.displayName || m.value,
-                            note: m.description || "", selected: m === current });
-      // The newest model of each family, then «مدل‌های دیگر ›» for the rest. A
-      // family is the name's first word, in the CLI's own order, so the first
-      // of each is the newest. The «Default» alias is not a row when the list
-      // names its model (twinOf): the ✓ sits on that model.
-      const seen = new Set(), primary = [], rest = [];
-      for (const m of models) {
-        if (twinOf(m) !== m) continue;
-        const family = String(m.displayName || m.value).split(/\s+/)[0].toLowerCase();
-        if (seen.has(family)) rest.push(m);
-        else { seen.add(family); primary.push(m); }
-      }
+      // Every model in one list, the CLI's own order (the extension's menu).
+      // The «Default» alias is not a row when the list names its model
+      // (twinOf): the ✓ sits on that model.
       openBarMenu(ui.modelChip, {
         title: FA.barModel,
-        rows: primary.map(row),
-        more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null,
+        rows: models.filter((m) => twinOf(m) === m).map((m) => ({
+          key: m.value, title: m.displayName || m.value,
+          note: m.description || "", selected: m === current })),
         effort: effortTrack(),
+        confirm: (row) => modelSwitchAsk(row, current),
         onPick: pickModel,
       });
-    });
-
-    ui.styleChip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleMenu("style", styles.map((name) => ({
-        key: name,
-        title: FA.styleNames?.[name] ?? name,
-        selected: name === style,
-      })), pickStyle);
     });
 
     ui.postureChip.addEventListener("click", (e) => {
@@ -574,26 +633,19 @@ export function makeControls(root, cell) {
       closeMenu();
       openBarMenu(ui.postureChip, {
         title: FA.barMode,
+        hint: FA.barModeHint,
         rows: POSTURES.map((p) => ({ key: p.key, icon: p.key, title: p.title, note: p.note,
                                      selected: p.key === posture })),
+        footer: [
+          styleFooter(),
+          autoCount ? { title: FA.barAutoCount.replace("{n}", autoCount.toLocaleString("fa-IR")),
+                        onClick: openAuditList } : null,
+        ],
         effort: effortTrack(),
         onPick: pickPosture,
       });
     });
 
-    /* The count alone is a number with nothing behind it. Opening it is the
-       audit trail that makes «خودکار» — and a remembered tool — defensible.
-       No endpoint: the events that produced the count carry the tool name. */
-    ui.autoChip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const rows = autoActions.length
-        ? autoActions.map((a) => ({
-            title: a.tool,
-            note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
-          }))
-        : [{ title: FA.autoActionsEmpty }];
-      toggleMenu("auto", rows);
-    });
 
     /* Click-anywhere and Escape close it — the popup is a menu, not a dialog.
        On the DOCUMENT, one registration per cell, and that is right rather than
@@ -624,6 +676,6 @@ export function makeControls(root, cell) {
     applyInitInfo, setModelResolved, resetControls,
     setPostureState, setEffortState, setOutputStyle,
     setAutoCount, noteAutoAction,
-    snapshot, restore, cyclePosture, closeMenu,
+    snapshot, restore, cyclePosture, closeMenu, openStyleMenu,
   };
 }

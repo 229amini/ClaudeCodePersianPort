@@ -65,8 +65,11 @@ SHELL = {
         # 2026-10-08 it is a bar.js popover (the terminal edition's and the VS
         # Code extension's shape), so its rows are the popover's own.
         open_menu='document.querySelector(".posture-chip").click();',
-        menu_id=".bar-pop", row_sel=":scope > .bar-row", menu_name="posture menu",
-        # 7 = attach + commands + folder + model + style + posture + audit counter.
+        # The four postures; the foot rows (the response style, the audit count)
+        # are not choices of this list.
+        menu_id=".bar-pop", row_sel=":scope > .bar-row:not(.bar-foot)", menu_name="posture menu",
+        # At least 7 visible: attach + commands + mode + model + cache + ring + send
+        # (2026-10-08: the folder, style and audit chips left the bar).
         chips=7, chip_row=".comp-row", rows=4, drawer_test="",
         # MA4-T2: the same window with four columns in it. The picker is opened
         # again after the split, through the chip the user presses, because
@@ -81,7 +84,7 @@ SHELL = {
             '  cRoot.querySelector(".posture-chip").click();'
             '  await sleep(200);'
             '  const m4 = document.querySelector(".bar-pop");'
-            '  const rows4 = [...m4.querySelectorAll(":scope > .bar-row")];'
+            '  const rows4 = [...m4.querySelectorAll(":scope > .bar-row:not(.bar-foot)")];'
             '  split4 = {cells: document.querySelectorAll("#grid .cell").length,'
             '            cell: box(cRoot), comp: box(cRoot.querySelector(".comp-box")),'
             '            menu: box(m4), rows: rows4.length,'
@@ -276,14 +279,22 @@ const SCROLLERS = new Set(%SCROLLERS%);
   // edition's, since 2026-10-08) is light-dismissed by the kebab below, and a
   // box read after that is a detached element's 0x0.
   const menuBox = box(menu);
-  let overlap = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
-    overlap = Math.max(overlap, Math.round(a.bottom - b.top));
-  }
-  // A row that gave up its own height is the same defect one step earlier:
-  // scrollHeight is what it wanted, clientHeight what the flex box left it.
-  const squashed = rows.filter((r) => r.scrollHeight > r.clientHeight + 1).length;
+  let overlap = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+
+    const a = rows[i - 1].getBoundingClientRect(), b = rows[i].getBoundingClientRect();
+
+    overlap = Math.max(overlap, Math.round(a.bottom - b.top));
+
+  }
+
+  // A row that gave up its own height is the same defect one step earlier:
+
+  // scrollHeight is what it wanted, clientHeight what the flex box left it.
+
+  const squashed = rows.filter((r) => r.scrollHeight > r.clientHeight + 1).length;
+
 
   // F5: the terminal edition's agent drawer, measured against the sidebar.
   let drawer = null;

@@ -2678,6 +2678,24 @@ with tempfile.TemporaryDirectory() as tmp:
     else:
         print("  skip  git is not installed here")
 
+print("load_style_labels: the user's Persian style list (2026-10-08)")
+with tempfile.TemporaryDirectory() as tmp:
+    labels = Path(tmp) / "output-styles.fa.json"
+    check("no file is no labels", server.load_style_labels(labels) == [])
+    labels.write_text("{not json", encoding="utf-8")
+    check("a malformed file is no labels, not an error", server.load_style_labels(labels) == [])
+    labels.write_text(json.dumps({"version": 2, "styles": [
+        {"id": "frugal-concise", "title": "کار روزمره", "description": "برای بیشتر کارها"},
+        {"id": "advisor", "title": "مشاور تصمیم"},
+        {"id": "", "title": "بی‌شناسه"},
+        {"id": "Learning"},
+        "not a style",
+    ]}, ensure_ascii=False), encoding="utf-8-sig")
+    got = server.load_style_labels(labels)
+    check("the file's order, a missing description as empty, the malformed entries dropped (BOM read)",
+          got == [{"id": "frugal-concise", "title": "کار روزمره", "description": "برای بیشتر کارها"},
+                  {"id": "advisor", "title": "مشاور تصمیم", "description": ""}])
+
 print(("FAIL — " + ", ".join(fails)) if fails else "PASS — all unit checks"
       + (f" ({len(skipped)} Windows-only skipped)" if skipped else ""))
 sys.exit(1 if fails else 0)

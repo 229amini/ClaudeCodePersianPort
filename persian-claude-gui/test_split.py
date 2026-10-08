@@ -107,7 +107,8 @@ LOG_SHARE = {"terminal": 60, "web": 40}[EDITION]
 # selectors and the two verbs differ - every assertion below is shared.
 SHELL = {
     "web": dict(
-        parts=["log", "perm", "menu-popup", "composer", "statusline"],
+        # No status line under the composer since 2026-10-08.
+        parts=["log", "perm", "menu-popup", "composer"],
         # The posture menu is a bar.js popover since 2026-10-08: top layer,
         # placed against its chip and the window, found in the document.
         # Through the chip the user presses, not a back door: positionMenu()
@@ -468,6 +469,7 @@ async function layoutCase(which) {
      bead was reported in. */
   out.slBox = CELLS().map((r) => {
     const sl = r.querySelector(".statusline");
+    if (!sl) return {x: 0, y: 0, w: 0, h: 0, scroll: 0, rows: 0};   // web, since 2026-10-08
     return {...box(sl), scroll: sl.scrollHeight,
             rows: Math.round(sl.scrollHeight / (parseFloat(getComputedStyle(sl).lineHeight) || 1))};
   });
@@ -818,7 +820,7 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
         say(f"/split 4 drew {m['cells']} cells")
     # 2. each one is a whole window
     for at, counts in enumerate(m["parts"], 1):
-        if counts != [1, 1, 1, 1, 1]:
+        if counts != [1] * len(SH["parts"]):
             say(f"cell {at} has {'/'.join(SH['parts'])} = {counts}, not one each")
     if m["placed"] != ["t1", "t2", "t3", "t4"]:
         say(f"the four tabs did not land one per column: {m['placed']}")
@@ -908,7 +910,7 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
                     "fields wrap and the transcript pays for every row")
             # The web edition keeps the 2026-09-08 rule: nothing hidden, the
             # stack scrolls, so it must hold more than it shows.
-            elif EDITION == "web" and sl["scroll"] <= sl["h"] + 2:
+            elif EDITION == "web" and sl["h"] and sl["scroll"] <= sl["h"] + 2:
                 say(f"the status stack of cell {at} holds {sl['scroll']}px in "
                     f"{sl['h']}px of box - it fits, so a field was dropped to "
                     "make it fit rather than scrolled to")

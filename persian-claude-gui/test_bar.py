@@ -151,7 +151,7 @@ const NOW = Date.now();
   const rowSel = pop() ? ".bar-row" : ".menu-row";
   const rows = [...(menu?.querySelectorAll(rowSel) ?? [])];
   out.modelRows = rows.length;
-  out.modelDigits = rows.map((r) => r.querySelector(".bar-row-digit, .menu-digit")?.textContent).join();
+  out.modelDigits = rows.filter((r) => r.querySelector(".bar-row-digit, .menu-digit")?.textContent).length;
   out.modelCheck = rows.map((r) => (r.querySelector(".bar-row-check, .menu-check")?.textContent ? "v" : "-")).join("");
   mark = calls.length;
   // A click on the chip takes focus off the prompt; a digit typed INTO the
@@ -187,10 +187,8 @@ const NOW = Date.now();
   out.menuStays = !!pop();   // a level is not a pick: the menu stays open
   pop()?.hidePopover(); await sleep(20);
 
-  // claude.ai's model shape: the newest of each
-  // family, then «More models ›» with the rest; and the mode menu's footer is
-  // what «خودکار» approved, opening its list. bar.js menus only — the web
-  // edition's in-cell menu is its own (P4).
+  // The extension's model menu: every model in one list, the CLI's order; and
+  // the mode menu's footer is what «خودکار» approved, opening its list.
   ev({ type: "wrapper", subtype: "init_info", info: { output_style: "default",
        available_output_styles: ["default"], models: [
     { value: "default", resolvedModel: "claude-sonnet-5-5", displayName: "Default (recommended)" },
@@ -201,49 +199,88 @@ const NOW = Date.now();
   q(".model-chip")?.click(); await sleep(40);
   out.barMenus = !!pop()?.classList.contains("bar-menu");
   if (out.barMenus) {
-    out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-more):not(.bar-foot) .bar-row-title")]
+    out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-foot) .bar-row-title")]
       .map((t) => t.textContent).join("|");
     out.tip = pop().querySelector(":scope > .bar-row")?.title ?? "";
     // The alias is not a row: the chip and the check name the model it means.
     out.chipName = q(".model-chip-name")?.textContent ?? "";
     out.checked = pop().querySelector(':scope > .bar-row[aria-current="true"] .bar-row-title')?.textContent ?? "";
     // Geometry, never text: a Latin title sits at the START of its RTL row,
-    // and the current row shows the check where the others show a digit.
+    // and no row draws a digit (the keys still pick).
     const row0 = pop().querySelector(":scope > .bar-row");
     const t0 = row0.querySelector(".bar-row-title").getBoundingClientRect();
     const r0 = row0.getBoundingClientRect();
     out.titleGap = Math.round(r0.right - t0.right);
     const cur = pop().querySelector(':scope > .bar-row[aria-current="true"]');
-    out.curDigitShown = !!cur && cur.querySelector(".bar-row-digit").getClientRects().length > 0;
+    out.curDigitShown = !!cur?.querySelector(".bar-row-digit");
     // The menu opens over its own bar: it shares an edge with its chip.
     const chipR = q(".model-chip").getBoundingClientRect(), menuR = pop().getBoundingClientRect();
     out.menuOnChip = Math.min(Math.abs(menuR.left - chipR.left), Math.abs(menuR.right - chipR.right)) <= 1
       || menuR.left <= 9 || menuR.right >= innerWidth - 9;
     out.notes = pop().querySelectorAll(":scope > .bar-row .bar-row-note").length;
     out.noteLine = pop().querySelector(":scope > .bar-row .bar-row-note")?.textContent ?? "";
-    pop().querySelector(".bar-more")?.click(); await sleep(30);
-    out.flyout = [...pop().querySelectorAll(".bar-flyout .bar-row-title")].map((t) => t.textContent).join("|");
-    const fr = pop().querySelector(".bar-flyout")?.getBoundingClientRect();
-    const mr = pop().getBoundingClientRect();
-    out.flyoutBeside = !!fr && (fr.right <= mr.left + 1 || fr.left >= mr.right - 1);
-    out.flyoutBottom = !!fr && (Math.abs(fr.bottom - mr.bottom) <= 1 || fr.top <= 9);
-    mark = calls.length;
-    [...pop().querySelectorAll(".bar-flyout .bar-row")].at(-1)?.click(); await sleep(40);
-    out.setFromFlyout = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
-      .map((c) => c.body.params.model).join();
+    pop().hidePopover(); await sleep(20);
    }
-   if (out.barMenus && FA.barAutoCount) {   // the terminal edition's footer
+   if (out.barMenus && FA.barAutoCount) {
     ev({ type: "wrapper", subtype: "posture", posture: "autoApprove", auto_count: 3 });
     await sleep(30);
     q(".posture-chip")?.click(); await sleep(40);
     out.foot = pop()?.querySelector(".bar-foot .bar-row-title")?.textContent ?? "";
     out.wantFoot = FA.barAutoCount.replace("{n}", "۳");
     pop()?.querySelector(".bar-foot")?.click(); await sleep(40);
-    out.auditOpen = !!document.querySelector("dialog.picker[open]")
-      && (document.querySelector("dialog.picker")?.textContent ?? "").includes(FA.autoActionsTitle);
+    // The terminal edition's inline picker, or the web edition's in-cell menu.
+    const list = document.querySelector("dialog.picker[open]") ?? q(".menu-popup:not([hidden])");
+    out.auditOpen = !!list && (list.textContent ?? "").includes(FA.autoActionsTitle);
     document.querySelector("dialog.picker")?.close?.();
+    if (q(".menu-popup")) q(".menu-popup").hidden = true;
     out.noChip = !document.querySelector(".auto-chip");
   }
+
+  // The response style (2026-10-08): titled from the user's labels file, only
+  // the styles it names, chosen before the first message and fixed after it;
+  // and another model mid-conversation asks before it switches.
+  ev({ type: "wrapper", subtype: "posture", posture: "ask", auto_count: 0 });
+  ev({ type: "wrapper", subtype: "init_info", info: { output_style: "frugal-concise",
+       available_output_styles: ["default", "frugal-concise", "explain-fa", "Explanatory"],
+       output_style_labels: [
+         { id: "frugal-concise", title: "کار روزمره", description: "برای بیشتر کارها" },
+         { id: "explain-fa", title: "توضیح فارسی", description: "وقتی می‌خواهی بفهمی" },
+         { id: "default", title: "پیش‌فرض Claude", description: "رفتار استاندارد" }],
+       models: [
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus",
+      description: "Opus 5.5", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh"] },
+    { value: "sonnet", resolvedModel: "claude-sonnet-5-5", displayName: "Sonnet",
+      description: "Sonnet 5.5", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh"] }] } });
+  await sleep(30);
+  const styleFoot = () => [...(pop()?.querySelectorAll(".bar-foot") ?? [])]
+    .find((b) => b.textContent.includes(FA.styleTitle));
+  q(".posture-chip")?.click(); await sleep(40);
+  out.styleValue = styleFoot()?.querySelector(".bar-row-value")?.textContent ?? "";
+  out.styleOpenable = !!styleFoot() && !styleFoot().disabled;
+  styleFoot()?.click(); await sleep(40);
+  out.styleTitles = [...(pop()?.querySelectorAll(":scope > .bar-row .bar-row-title") ?? [])]
+    .map((t) => t.textContent).join("|");
+  out.styleNote = pop()?.querySelector(":scope > .bar-row .bar-row-note")?.textContent ?? "";
+  mark = calls.length;
+  pop()?.querySelectorAll(":scope > .bar-row")[1]?.click(); await sleep(40);
+  out.stylePost = since(mark).filter((c) => c.url === "/api/output-style").map((c) => c.body.style).join();
+  ev({ type: "wrapper", subtype: "user_echo", uuid: "u-first", text: "سلام" });
+  await sleep(40);
+  q(".posture-chip")?.click(); await sleep(40);
+  out.styleLocked = !!styleFoot()?.disabled && (styleFoot()?.textContent ?? "").includes(FA.styleLocked);
+  pop()?.hidePopover(); await sleep(20);
+  q(".model-chip")?.click(); await sleep(40);
+  mark = calls.length;
+  pop()?.querySelector(':scope > .bar-row:not([aria-current="true"])')?.click(); await sleep(40);
+  out.asked = !!pop()?.classList.contains("bar-confirm")
+    && !since(mark).some((c) => c.url === "/api/control");
+  pop()?.querySelector(".bar-confirm .is-primary")?.click(); await sleep(40);
+  out.switched = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
+    .map((c) => c.body.params.model).join();
+  // That message's turn ends, so what follows starts idle.
+  ev({ type: "result", subtype: "success", is_error: false, duration_ms: 10 });
+  ev({ type: "command_lifecycle", command_uuid: "u-first", state: "completed" });
+  await sleep(40);
 
   // «+»: files, a project file, and the MCP switches behind one row.
   q(".bar-plus-btn")?.click(); await sleep(80);
@@ -385,8 +422,8 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
     check("before the first message the panel says its figure is a baseline, after it not",
           m.get("baselineFresh") is True and m.get("baselineAfter") is False,
           f"fresh {m.get('baselineFresh')}, after {m.get('baselineAfter')}")
-    check("the model menu numbers its rows and checks the current one",
-          m.get("modelRows") == 2 and m.get("modelDigits") == "۱,۲" and m.get("modelCheck") == "v-",
+    check("the model menu checks the current one and draws no digits",
+          m.get("modelRows") == 2 and m.get("modelDigits") == 0 and m.get("modelCheck") == "v-",
           f"{m.get('modelRows')} rows / {m.get('modelDigits')} / {m.get('modelCheck')}")
     check("a digit picks from the model menu", m.get("setModel") == "sonnet", str(m.get("setModel")))
     if m.get("actBox"):
@@ -407,27 +444,33 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
               f"«{m.get('sentLater')}» / strip hidden {m.get('stripAfter')}")
     check("bar-menu shape in both editions", m.get("barMenus") is True, str(m.get("barMenus")))
     if m.get("barMenus"):
-        check("the model menu lists the newest of each family, the description as the line under it",
-              m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("noteLine") == "complex work",
+        check("the model menu lists every model in one list, the description as the line under it",
+              m.get("primary") == "Opus 5.5|Sonnet 5.5|Opus 5" and m.get("noteLine") == "complex work",
               f"{m.get('primary')} / «{m.get('noteLine')}»")
-        check("«مدل‌های دیگر» opens the rest in a flyout beside the menu",
-              m.get("flyout") == "Opus 5" and m.get("flyoutBeside"),
-              f"{m.get('flyout')} / beside {m.get('flyoutBeside')}")
-        check("...its bottom edge on the menu's, so it grows up and not over the bar",
-              m.get("flyoutBottom") is True, str(m.get("flyoutBottom")))
         check("the «Default» alias is the model it resolves to: no row of its own, the check on that model",
               m.get("checked") == "Opus 5.5" and m.get("chipName") == "Opus 5.5",
               f"checked «{m.get('checked')}», chip «{m.get('chipName')}»")
-        check("a Latin title sits at the start of its RTL row, and the current row shows only the check",
+        check("a Latin title sits at the start of its RTL row, and no row draws a digit",
               isinstance(m.get("titleGap"), int) and m.get("titleGap") <= 16 and m.get("curDigitShown") is False,
               f"gap {m.get('titleGap')}px, digit shown {m.get('curDigitShown')}")
         check("the menu shares an edge with its chip", m.get("menuOnChip") is True, str(m.get("menuOnChip")))
-        check("a flyout row picks its model", m.get("setFromFlyout") == "claude-opus-5",
-              str(m.get("setFromFlyout")))
     if "foot" in m:
         check("the audit count is the mode menu's footer, and it opens the list; no bar chip",
               m.get("foot") == m.get("wantFoot") and m.get("auditOpen") and m.get("noChip"),
               f"«{m.get('foot')}» / list {m.get('auditOpen')} / no chip {m.get('noChip')}")
+    check("the style row names the style in force and opens the list before the first message",
+          m.get("styleOpenable") is True and m.get("styleValue") == "کار روزمره",
+          f"open {m.get('styleOpenable')} / «{m.get('styleValue')}»")
+    check("...exactly the labels file's styles, in its order, each with its description",
+          m.get("styleTitles") == "کار روزمره|توضیح فارسی|پیش‌فرض Claude"
+          and m.get("styleNote") == "برای بیشتر کارها",
+          f"{m.get('styleTitles')} / «{m.get('styleNote')}»")
+    check("...and a row posts that style", m.get("stylePost") == "explain-fa", str(m.get("stylePost")))
+    check("after the first message the style row only says which one is in force",
+          m.get("styleLocked") is True, str(m.get("styleLocked")))
+    check("another model mid-conversation asks first, and switches only on yes",
+          m.get("asked") is True and m.get("switched") == "sonnet",
+          f"asked {m.get('asked')} / switched «{m.get('switched')}»")
     check("the mode menu lists the four postures and a digit picks",
           m.get("modeRows") == 4 and m.get("posture") == "plan", f"{m.get('modeRows')} / {m.get('posture')}")
     check("the mode menu carries an icon per row and the effort track",

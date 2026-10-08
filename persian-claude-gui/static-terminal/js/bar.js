@@ -7,13 +7,12 @@
    CSS px, the controls' own state — comes in as arguments, so each edition
    keeps the state it already had and this only draws.
 
-   Five popovers, all `[popover=auto]` (so a second one, Esc or a click
+   Four popovers, all `[popover=auto]` (so a second one, Esc or a click
    outside closes the first, for free):
 
-     openMenu     numbered rows (an icon, a title, a one-line note), a ✓ on
-                  the current one, a digit picks; optionally the effort track
-                  under them (the VS Code extension's mode and model menus)
-     openSlider   the effort levels alone, as one track
+     openMenu     rows (an icon, a title, a note), a ✓ on the current one, a
+                  digit picks; footer rows, the effort row and a confirm step
+                  (the VS Code extension's mode and model menus)
      openUsage    the context window by category, then each plan limit
      openPlus     attach a file, mention a project file, and the MCP servers
                   folded behind one row
@@ -64,6 +63,8 @@ const ICONS = {
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3-3 3 3"/>',
   mention: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
   plug: '<path d="M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/>',
+  effort: '<path d="M4 15a8 8 0 0 1 16 0"/><path d="m12 15 3.5-4.5"/><circle cx="12" cy="15" r="1"/>',
+  style: '<path d="M20 14a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 12h5"/>',
 };
 
 function icon(name) {
@@ -162,12 +163,15 @@ export function isOpen() {
   return !!open?.isConnected;
 }
 
-/* --- 1. a numbered menu ---------------------------------------------------- */
+/* --- 1. a menu ------------------------------------------------------------ */
 
-/* One row: the name (and a one-line note) at the start, then ✓ and the digit
-   at the end — claude.ai's order, mirrored by the RTL row. `tip` is a hover
-   title for what does not fit a one-line row (a model's description). */
-function menuRow(row, digit) {
+/* One row, the VS Code extension's: an icon, the name over a note (two lines
+   at most), and the ✓ on the current one at the row's end. `value` is a quiet
+   word before the end (the mode menu's «لحن پاسخ  کار روزمره»), `chevron`
+   says the row opens another list. `tip` is a hover title. No digit is drawn:
+   the extension shows none and a column of numerals beside Persian names was
+   the clutter; the digit KEYS still pick while the menu is open. */
+function menuRow(row) {
   const b = el("button", "bar-row");
   b.type = "button";
   b.disabled = !!row.disabled;
@@ -184,34 +188,62 @@ function menuRow(row, digit) {
     note.dir = "auto";
     text.append(note);
   }
-  b.append(text, el("span", "bar-row-check", row.selected ? "✓" : ""),
-           el("span", "bar-row-digit", digit));
+  b.append(text);
+  if (row.value) {
+    const value = el("span", "bar-row-value", row.value);
+    value.dir = "auto";
+    b.append(value);
+  }
+  b.append(el("span", "bar-row-check", row.selected ? "✓" : ""));
+  if (row.chevron) b.append(el("span", "bar-row-chevron", "‹"));
   return b;
 }
 
-/* rows: [{key, title, note?, tip?, selected?, disabled?}]. The digit is the
-   row's place in the list, never part of its text (the choice.js rule), and it
-   is a key while the menu is open.
+/* rows: [{key, title, note?, icon?, tip?, selected?, disabled?}]. A digit key
+   picks the row at that place while the menu is open.
 
    `hint`: a quiet word at the head's far end (the mode menu's Shift+Tab).
-   `more`: {title, rows} — the rest of a long list behind one row that opens a
-   flyout beside the menu (claude.ai's «More models ›»). Its rows take no digit.
-   `footer`: {title, onClick} — one row under a rule that is not a choice (the
-   mode menu's count of what «خودکار» approved, which opens that list).
-   `effort`: {title, levels, current, label, onPick} — the effort track under
-   the rows, so the level is set where the model and the mode are (the
-   extension carries no separate effort chip). Picking a level does not close
-   the menu; picking a row does. */
-export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, footer, effort }) {
+   `footer`: [{title, icon?, value?, note?, chevron?, disabled?, onClick}] — rows
+   under a rule that are not choices of THIS list (the mode menu's response
+   style, and its count of what «خودکار» approved).
+   `effort`: {title, levels, current, label, onPick} — the effort row at the
+   foot, «تلاش (زیاد)» and a small track, so the level is set where the model
+   and the mode are. Picking a level does not close the menu; a row does.
+   `note`: a muted line at the very foot.
+   `confirm(row)`: null to pick at once, or {text, ok, cancel} to ask first,
+   inside the same popover (the model menu mid-conversation: a new model
+   re-reads the whole conversation without the cache). */
+export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, effort, note, confirm }) {
   if (toggledShut(anchor)) return null;
   const pick = (row) => {
     close();
     anchor.focus();
     onPick?.(row);
   };
-  let flyout = null;
-  const shut = () => { flyout?.remove(); flyout = null; };
-  const { pop } = popover(anchor, "bar-menu", title, (box) => {
+  let relayout = () => {};
+  let asking = false;
+  const ask = (row) => {
+    const q = confirm?.(row);
+    if (!q) { pick(row); return; }
+    const pop = open;
+    asking = true;
+    pop.replaceChildren();
+    pop.classList.add("bar-confirm");
+    const text = el("p", "bar-confirm-text", q.text);
+    text.dir = "auto";
+    const acts = el("div", "bar-confirm-acts");
+    const ok = el("button", "bar-btn is-primary", q.ok);
+    ok.type = "button";
+    ok.addEventListener("click", () => pick(row));
+    const no = el("button", "bar-btn", q.cancel);
+    no.type = "button";
+    no.addEventListener("click", () => { close(); anchor.focus(); });
+    acts.append(ok, no);
+    pop.append(text, acts);
+    relayout();
+    ok.focus();
+  };
+  const made = popover(anchor, "bar-menu", title, (box) => {
     if (title) {
       const head = el("div", "bar-head");
       head.append(el("span", "", title));
@@ -222,105 +254,44 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
       }
       box.append(head);
     }
-    rows.forEach((row, i) => {
-      const b = menuRow(row, i < 9 ? faNum(i + 1) : "");
-      b.addEventListener("click", () => pick(row));
-      b.addEventListener("mouseenter", shut);
-      box.append(b);
-    });
-    if (more?.rows?.length) {
-      box.append(el("hr", "bar-rule"));
-      const b = menuRow({ title: more.title }, "");
-      b.classList.add("bar-more");
-      b.setAttribute("aria-haspopup", "menu");
-      b.setAttribute("aria-expanded", "false");
-      const chevron = b.querySelector(".bar-row-digit");
-      chevron.textContent = "‹";
-      const openFlyout = () => {
-        if (flyout) return;
-        flyout = el("div", "bar-pop bar-flyout");
-        flyout.setAttribute("role", "menu");
-        for (const row of more.rows) {
-          const r = menuRow(row, "");
-          r.addEventListener("click", () => pick(row));
-          flyout.append(r);
-        }
-        b.after(flyout);
-        b.setAttribute("aria-expanded", "true");
-        // Beside the menu, on the side the chevron points to (the start of an
-        // RTL row is its right, so «‹» opens leftward; no room there, the other
-        // side and the chevron says so). BOTTOM edges together, as claude.ai:
-        // the menu sits above its chip, so a list hung from the row's top grew
-        // down over the bar and the prompt.
-        const pr = pop.getBoundingClientRect();
-        const w = flyout.offsetWidth, h = flyout.offsetHeight;
-        const vw = toCss ? toCss(innerWidth) : innerWidth;
-        const vh = toCss ? toCss(innerHeight) : innerHeight;
-        const cv = toCss ?? ((v) => v);
-        let left = cv(pr.left) - GAP / 2 - w;
-        if (left < EDGE) {
-          left = Math.min(cv(pr.right) + GAP / 2, vw - w - EDGE);
-          chevron.textContent = "›";
-        }
-        const top = Math.max(EDGE, Math.min(cv(pr.bottom) - h, vh - h - EDGE));
-        flyout.style.left = left + "px";
-        flyout.style.top = top + "px";
-        flyout.addEventListener("keydown", (e) => {
-          const items = [...flyout.querySelectorAll(".bar-row")];
-          if (e.key === "ArrowRight" || e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            shut();
-            b.setAttribute("aria-expanded", "false");
-            b.focus();
-          } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            e.stopPropagation();
-            const at = items.indexOf(document.activeElement);
-            const next = e.key === "ArrowDown" ? at + 1 : at - 1;
-            items[(next + items.length) % items.length]?.focus();
-          }
-        });
-      };
-      b.addEventListener("mouseenter", openFlyout);
-      b.addEventListener("click", () => {
-        openFlyout();
-        (flyout.querySelector('.bar-row[aria-current="true"]')
-          ?? flyout.querySelector(".bar-row"))?.focus();
-      });
-      b.addEventListener("keydown", (e) => {
-        if (e.key !== "ArrowLeft") return;
-        e.preventDefault();
-        b.click();
-      });
+    for (const row of rows) {
+      const b = menuRow(row);
+      b.addEventListener("click", () => ask(row));
       box.append(b);
     }
-    if (footer) {
+    const foot = (footer ?? []).filter(Boolean);
+    if (foot.length) {
       box.append(el("hr", "bar-rule"));
-      const f = menuRow({ title: footer.title }, "");
-      f.classList.add("bar-foot");
-      f.addEventListener("mouseenter", shut);
-      f.addEventListener("click", () => {
-        close();
-        footer.onClick?.();
-      });
-      box.append(f);
+      for (const f of foot) {
+        const b = menuRow(f);
+        b.classList.add("bar-foot");
+        b.addEventListener("click", () => {
+          close();
+          f.onClick?.();
+        });
+        box.append(b);
+      }
     }
     if (effort?.levels?.length) {
-      box.append(el("hr", "bar-rule"));
-      const track = effortControl(effort);
-      track.addEventListener("mouseenter", shut);
-      box.append(track);
+      if (!foot.length) box.append(el("hr", "bar-rule"));
+      box.append(effortControl(effort));
+    }
+    if (note) {
+      const p = el("p", "bar-note", note);
+      p.dir = "auto";
+      box.append(p);
     }
   }, toCss);
+  relayout = made.relayout;
+  const { pop } = made;
   pop.addEventListener("keydown", (e) => {
-    if (e.target.closest?.(".bar-flyout")) return;
+    if (asking) return;
     if (e.target.matches?.(".bar-slider-range")) return;   // its own arrows and digits
     const rowsEl = [...pop.querySelectorAll(":scope > .bar-row:not(:disabled)")];
     const digit = /^Digit([1-9])$/.exec(e.code) || /^Numpad([1-9])$/.exec(e.code);
     if (digit && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const row = rows[Number(digit[1]) - 1];
-      if (row && !row.disabled) { e.preventDefault(); pick(row); }
+      if (row && !row.disabled) { e.preventDefault(); ask(row); }
       return;
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -335,19 +306,19 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, more, foote
   return pop;
 }
 
-/* --- 2. the effort slider -------------------------------------------------- */
+/* --- 2. the effort control ------------------------------------------------- */
 
-/* One stop per level the current model advertises, in its own order (lowest
+/* One row, the extension's «Effort (High)» with a small track at its end: one
+   stop per level the current model advertises, in its own order (lowest
    first). A native range input: the arrows, Home/End and the screen reader's
    value all come with it. `change`, not `input`: dragging across three stops
    is one decision, not three writes. */
 function effortControl({ title, levels, current, label, onPick }) {
   const wrap = el("div", "bar-effort");
-  const head = el("div", "bar-head");
-  const now = el("span", "bar-slider-now", label(current));
-  head.append(el("span", "", title), now);
-  const ends = el("div", "bar-slider-ends");
-  ends.append(el("span", "", FA.barFaster), el("span", "", FA.barSmarter));
+  wrap.append(icon("effort"));
+  const name = el("span", "bar-effort-name");
+  const now = el("span", "bar-slider-now", "(" + label(current) + ")");
+  name.append(title + " ", now);
   const range = el("input", "bar-slider-range");
   range.type = "range";
   range.min = "0";
@@ -360,23 +331,14 @@ function effortControl({ title, levels, current, label, onPick }) {
   for (let i = 0; i < levels.length; i++) ticks.append(el("span", "bar-tick"));
   range.addEventListener("input", () => {
     const level = levels[Number(range.value)];
-    now.textContent = label(level);
+    now.textContent = "(" + label(level) + ")";
     range.setAttribute("aria-valuetext", label(level));
   });
   range.addEventListener("change", () => onPick?.(levels[Number(range.value)]));
   const track = el("div", "bar-slider-track");
   track.append(ticks, range);
-  wrap.append(head, ends, track);
+  wrap.append(name, track);
   return wrap;
-}
-
-export function openSlider(anchor, { title, levels, current, label, onPick, toCss }) {
-  if (toggledShut(anchor)) return null;
-  const { pop } = popover(anchor, "bar-slider", title, (box) => {
-    box.append(...effortControl({ title, levels, current, label, onPick }).childNodes);
-  }, toCss);
-  pop.querySelector(".bar-slider-range")?.focus();
-  return pop;
 }
 
 /* --- 3. the context + usage panel ------------------------------------------ */

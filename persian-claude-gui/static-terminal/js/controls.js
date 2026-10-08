@@ -19,7 +19,7 @@ import { api } from "./api.js";
 import { optionList, dialogHint } from "./choice.js";
 /* Two more leaves: the composer bar's popovers and the
    screen-px -> CSS-px conversion they are placed with under app zoom. */
-import { openMenu } from "./bar.js";
+import { openMenu, fmtTokens } from "./bar.js";
 import { cssPx } from "./prefs.js";
 
 const FA = window.STRINGS;
@@ -49,10 +49,20 @@ export function effortLabel(level) {
   return FA.effortLevels?.[level] ?? level;
 }
 
+/* [{id, title, description}] from the user's output-styles.fa.json, read by
+   the server at every spawn (server.py load_style_labels). One file per
+   machine, so module level: every cell's init_info carries the same list. Its
+   order is the menu's. */
+let styleLabels = [];
+
+function styleInfo(name) {
+  return styleLabels.find((s) => s.id === name) ?? null;
+}
+
 /* Same contract as effortLabel(): a machine can add its own style file, so a
    name with no Persian label is shown as itself rather than guessed at. */
 export function styleLabel(name) {
-  return FA.styleNames?.[name] ?? name;
+  return styleInfo(name)?.title ?? (styleLabels.length ? name : FA.styleNames?.[name] ?? name);
 }
 
 /* --- one control set per cell ----------------------------------------------
@@ -115,6 +125,7 @@ export function makeControls(root, cell) {
   function applyInitInfo(info) {
     models = Array.isArray(info?.models) ? info.models : [];
     styles = Array.isArray(info?.available_output_styles) ? info.available_output_styles : [];
+    if (Array.isArray(info?.output_style_labels)) styleLabels = info.output_style_labels;
     if (typeof info?.output_style === "string") style = info.output_style;
     paintModel();
     paintStyle();
@@ -274,6 +285,47 @@ export function makeControls(root, cell) {
   let styles = [];
   let style = null;
 
+  /* With the labels file: exactly its styles, in its order, of those the CLI
+     offers — a style it leaves out is left out on purpose (dotclaude v2). The
+     one in force stays visible even when the file does not name it (an older
+     machine's `frugal`), under its own id. No file: everything the CLI offers. */
+  function styleRows() {
+    const offered = styleLabels.length
+      ? styleLabels.map((s) => s.id).filter((id) => styles.includes(id))
+      : styles;
+    const order = style && !offered.includes(style) ? [style, ...offered] : offered;
+    return order.map((name) => ({ key: name, title: styleLabel(name),
+                                  note: styleInfo(name)?.description ?? "",
+                                  selected: name === style }));
+  }
+
+  /* A message is already in this conversation. The style is fixed from then on
+     (the user's rule, 2026-10-08; the server refuses too), and a model change
+     re-reads all of it. */
+  function started() {
+    return !!cell?.log?.querySelector(".msg.user");
+  }
+
+  /* The mode menu's row for it: opens the list before the first message, says
+     which one is in force after. */
+  function styleFooter() {
+    if (styles.length < 2 || !style) return null;
+    const locked = started();
+    return { icon: "style", title: FA.styleTitle, value: styleLabel(style),
+             note: locked ? FA.styleLocked : "", chevron: !locked, disabled: locked,
+             onClick: openStyleMenu };
+  }
+
+  function openStyleMenu() {
+    if (!ui.postureChip || ui.postureChip.hidden) return openStylePicker();
+    if (started()) {
+      reportPicker("style", FA.styleTitle, FA.styleLockedNow.replace("{name}", styleLabel(style)));
+      return true;
+    }
+    return openMenu(ui.postureChip, { title: FA.styleTitle, toCss: cssPx, rows: styleRows(),
+                                      note: FA.styleNote, onPick: pickStyle });
+  }
+
   function setOutputStyle(name) {
     if (name) style = name;
     paintStyle();
@@ -285,7 +337,7 @@ export function makeControls(root, cell) {
     // One entry is not a choice — and every build has at least "default".
     ui.styleChip.hidden = styles.length < 2 || !style;
     if (ui.styleChip.hidden) return;
-    ui.styleName.textContent = FA.styleNames?.[style] ?? style;
+    ui.styleName.textContent = styleLabel(style);
     ui.styleChip.title = FA.styleTitle;
   }
 
@@ -300,6 +352,21 @@ export function makeControls(root, cell) {
       console.error("set output style failed", err);
       reportPicker("style", FA.styleTitle, FA.styleFailed);
     }
+  }
+
+  /* --- model switch, mid-conversation ----------------------------------------
+
+     The prompt cache belongs to the model: another one reads the whole
+     conversation again, at full price. Asked once, in the menu itself, with the
+     size of what will be re-read — the prefix the last reply used (bar.js
+     noteCache, kept on the cache chip). */
+  function modelSwitchAsk(row, current) {
+    if (!started() || row.key === current?.value) return null;
+    const size = root.querySelector?.(".bar-cache")?._cache?.size;
+    return {
+      text: size ? FA.modelSwitchAsk.replace("{n}", fmtTokens(size)) : FA.modelSwitchAskPlain,
+      ok: FA.modelSwitchOk, cancel: FA.modelSwitchCancel,
+    };
   }
 
   /* --- approval pill --------------------------------------------------------- */
@@ -482,7 +549,14 @@ export function makeControls(root, cell) {
       title: m.displayName || m.value,
       note: m.description || "",
       selected: m === current,
-    })), pickModel);
+    })), (item) => {
+      // Mid-conversation a change has a price: asked in the same inline list,
+      // the way the bar's menu asks in its popover.
+      const q = item && modelSwitchAsk(item, current);
+      if (!q) { pickModel(item); return; }
+      openPicker("model-confirm", q.text, [{ key: "yes", title: q.ok }, { key: "no", title: q.cancel }],
+                 (answer) => { if (answer?.key === "yes") pickModel(item); });
+    });
   }
 
   function openEffortPicker() {
@@ -492,9 +566,11 @@ export function makeControls(root, cell) {
   }
 
   function openStylePicker() {
-    return openPicker("style", FA.styleTitle, styles.map((name) => ({
-      key: name, title: FA.styleNames?.[name] ?? name, selected: name === style,
-    })), pickStyle);
+    if (started() && style) {
+      reportPicker("style", FA.styleTitle, FA.styleLockedNow.replace("{name}", styleLabel(style)));
+      return true;
+    }
+    return openPicker("style", FA.styleTitle, styleRows(), pickStyle);
   }
 
   /* The posture list. Shift+Tab still CYCLES -- that is the TUI's key and it does
@@ -529,25 +605,16 @@ export function makeControls(root, cell) {
      truth, and a failure still reports through the inline picker. */
   function openModelMenu() {
     const current = twinOf(modelEntry());
-    const row = (m) => ({ key: m.value, title: m.displayName || m.value,
-                          note: m.description || "", selected: m === current });
-    // claude.ai's shape: the newest model of each family, then «More models ›»
-    // for the rest. A family is the name's first word, read off the CLI's own
-    // list in the CLI's own order, so the first of each is the newest. The
+    // Every model in one list, the CLI's own order (the extension's menu). The
     // «Default» alias is not a row when the list names its model (twinOf): the
     // ✓ sits on that model, which is what the alias means.
-    const seen = new Set(), primary = [], rest = [];
-    for (const m of models) {
-      if (twinOf(m) !== m) continue;
-      const family = String(m.displayName || m.value).split(/\s+/)[0].toLowerCase();
-      if (seen.has(family)) rest.push(m);
-      else { seen.add(family); primary.push(m); }
-    }
     return openMenu(ui.modelChip, {
       title: FA.barModel, toCss: cssPx,
-      rows: primary.map(row),
-      more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null,
+      rows: models.filter((m) => twinOf(m) === m).map((m) => ({
+        key: m.value, title: m.displayName || m.value,
+        note: m.description || "", selected: m === current })),
       effort: effortTrack(),
+      confirm: (row) => modelSwitchAsk(row, current),
       onPick: pickModel,
     });
   }
@@ -561,8 +628,11 @@ export function makeControls(root, cell) {
       title: FA.barMode, hint: FA.slPostureHint, toCss: cssPx,
       rows: POSTURES.map((p) => ({ key: p.key, icon: p.key, title: p.title, note: p.note,
                                    selected: p.key === posture })),
-      footer: autoCount ? { title: FA.barAutoCount.replace("{n}", autoCount.toLocaleString("fa-IR")),
-                            onClick: openAuditList } : null,
+      footer: [
+        styleFooter(),
+        autoCount ? { title: FA.barAutoCount.replace("{n}", autoCount.toLocaleString("fa-IR")),
+                      onClick: openAuditList } : null,
+      ],
       effort: effortTrack(),
       onPick: pickPosture,
     });
@@ -596,7 +666,7 @@ export function makeControls(root, cell) {
     setAutoCount, noteAutoAction,
     snapshot, restore, cyclePosture,
     openPicker, pickerOpen, closePicker,
-    openModelPicker, openEffortPicker, openStylePicker, openPosturePicker,
+    openModelPicker, openEffortPicker, openStylePicker, openStyleMenu, openPosturePicker,
     openAuditList,
   };
 }

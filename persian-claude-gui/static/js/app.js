@@ -141,7 +141,6 @@ function makeCell(root) {
     tab: "",
     cwd: "",            // the folder of the conversation in this column
     log: root.querySelector(".log"),
-    statusline: root.querySelector(".statusline"),
     queueStrip: null,   // built lazily by render.js paintQueued()
     // The render scope a column uses while it holds no conversation. A cell
     // always has a scope, so setStatus() and paintQueued() always have

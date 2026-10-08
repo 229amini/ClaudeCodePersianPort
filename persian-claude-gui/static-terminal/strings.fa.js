@@ -734,6 +734,18 @@ window.FA = {
     Learning: "آموزشی",
   },
   styleFailed: "تغییر لحن پاسخ ممکن نشد",
+  /* The style is chosen before the first message and then fixed (user rule,
+     2026-10-08): it is part of the system prompt, so a change mid-conversation
+     re-reads the whole conversation without the cache. */
+  styleLocked: "پس از اولین پیام ثابت می‌ماند",
+  styleNote: "لحن فقط پیش از اولین پیام گفتگو انتخاب می‌شود.",
+  styleLockedNow: "لحن این گفتگو «{name}» است و پس از اولین پیام عوض نمی‌شود. برای لحن دیگر، گفتگوی تازه‌ای شروع کنید.",
+  /* Picking another model mid-conversation: the cache belongs to the model,
+     so the new one reads the whole conversation again. {n} is a token count. */
+  modelSwitchAsk: "با عوض‌کردن مدل، کل این گفتگو (حدود {n} توکن) دوباره خوانده می‌شود، چون حافظهٔ موقت (کش) مدل فعلی به مدل تازه نمی‌رسد. مدل عوض شود؟",
+  modelSwitchAskPlain: "با عوض‌کردن مدل، کل این گفتگو دوباره خوانده می‌شود، چون حافظهٔ موقت (کش) مدل فعلی به مدل تازه نمی‌رسد. مدل عوض شود؟",
+  modelSwitchOk: "عوض کن",
+  modelSwitchCancel: "انصراف",
 
   postureTitle: "سطح اجازه",
   posturePlan: "طرح‌ریزی",
@@ -772,11 +784,8 @@ window.FA = {
      editions). */
   barMode: "حالت",
   barModel: "مدل",
-  barMoreModels: "مدل‌های دیگر",
   barAutoCount: "{n} کار بی‌پرسش انجام شد",
   barEffort: "تلاش",
-  barFaster: "سریع‌تر",
-  barSmarter: "باهوش‌تر",
   barUsage: "زمینه و مصرف",
   barUsageTitle: "زمینه و مصرف — {n}٪ از پنجرهٔ زمینه پر است",
   barContext: "پنجرهٔ زمینه",

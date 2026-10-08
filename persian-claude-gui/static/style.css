@@ -798,8 +798,7 @@ pre, code, .path, .diff, .tool-output, .mono {
 .cell > .context-notice,
 .cell > .agents-strip,
 .cell > .queue-strip,
-.cell > .composer,
-.cell > .statusline { flex: none; }
+.cell > .composer { flex: none; }
 
 /* The in-flow dialog is the exception: it GROWS, so it is the one piece of
    chrome that has to be allowed to shrink and scroll inside itself. Capped
@@ -861,6 +860,26 @@ pre, code, .path, .diff, .tool-output, .mono {
   min-height: 40px;
 }
 .topbar-name { font-weight: 700; font-size: 12px; }
+
+/* The folder picker (2026-10-08): the topbar's path IS the button, so the
+   composer bar carries no folder chip. Quiet until hovered. */
+.topbar .proj-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.topbar .proj-chip:hover { background: var(--app-list-hover-background); color: var(--fg); }
+.topbar .proj-chip:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: -1px; }
+.topbar .proj-chip svg { flex: none; }
+.cell.home .topbar .proj-chip { display: none; }
 
 /* cwd in chrome: LTR + isolate, the plan §B-10 item 2 discipline. */
 .topbar-cwd {
@@ -938,7 +957,6 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex: 1.2 1 0;
   min-height: 0;
 }
-.cell.home > .statusline { order: 1; }
 
 .greeting {
   display: flex;
@@ -1652,6 +1670,14 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   .pulse.live .pulse-glyph { animation: none; }
 }
 
+/* The working line and a run's summary row, weight 500 (user, 2026-10-08):
+   Vazirmatn 400 in muted grey at 12px read as hairline-thin. While the turn
+   runs the line is the CLI's coral — «✻ Newspapering… (1s · ↓ 2 tokens)» —
+   and only the running command stays grey; a settled line goes quiet again. */
+.pulse, details.card.run > summary { font-weight: 500; }
+.pulse.live .pulse-verb, .pulse.live .pulse-meta { color: var(--app-claude-orange); }
+.pulse.live .pulse-target { color: var(--fg-muted); font-weight: 400; }
+
 /* --- the session recap ------------------------------------------------------
    The CLI's «※ recap: …», in Persian and in the transcript: one short
    note on where the session stands and what is next, written after a turn the
@@ -1869,20 +1895,6 @@ button.round svg { width: 16px; height: 16px; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: inherit;     /* a folder name is a name, not code */
-}
-
-/* `.composer .composer-hint`, not `.composer-hint`: this used to be an id
-   (1,0,0), which beat `.meta`'s font-size (0,1,0) outright. Converting it to
-   a bare class (0,1,0) tied `.meta` on specificity, and `.meta` sits LATER in
-   this file, so it started winning on source order — a bigger font wrapped
-   the hint onto more lines and grew the composer tall enough to push the
-   posture menu off the top of a 500px-wide window. Same trap the file already
-   names for `.perm .perm-source` vs `.perm p`. */
-.composer .composer-hint {
-  font-size: 12px;
-  text-align: center;
-  padding-top: 4px;
-  min-height: 1.4em;
 }
 
 /* --- attachments ------------------------------------------------------------- */
@@ -2165,70 +2177,6 @@ button.round svg { width: 16px; height: 16px; }
    would otherwise hide the button the menu is anchored to. */
 .proj-top:has(.kebab-menu:popover-open) .sess-act,
 .proj-sessions li:has(.kebab-menu:popover-open) .sess-act { display: inline-flex; }
-
-/* --- statusline -------------------------------------------------------------- */
-.statusline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  align-items: center;
-  /* Under the composer, on its column and flush with its start edge: a wrapped
-     second row reads as the rest of a list, not an orphan centred under the
-     first (pcg-rf8.12). Same gutter rule as .log. */
-  justify-content: flex-start;
-  padding: 4px max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
-  color: var(--fg);
-  /* The Twelve Floor Rule: the labels are Persian. */
-  font-size: 12px;
-  line-height: 1.6;
-  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-}
-.statusline .sl-item { display: flex; gap: 4px; align-items: center; }
-/* Label quiet, value readable: the value is what the eye is looking for. */
-.statusline .sl-label { color: var(--fg-muted); }
-
-/* The percentages that mean something at a glance. <progress> is native, so
-   the value is announced without an aria dance; only the paint is ours. */
-.statusline .sl-meter { display: flex; gap: 8px; align-items: center; }
-.statusline progress {
-  appearance: none;
-  inline-size: 44px;
-  block-size: 4px;
-  border: 0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.statusline progress::-webkit-progress-bar {
-  background: color-mix(in srgb, var(--fg-muted) 25%, transparent);
-}
-.statusline progress::-webkit-progress-value {
-  background: var(--fg-muted);
-  border-radius: 4px;
-  transition: inline-size .3s ease;
-}
-.statusline progress[data-level="warn"]::-webkit-progress-value { background: var(--warn); }
-.statusline progress[data-level="high"]::-webkit-progress-value { background: var(--accent); }
-
-/* cwd is a Windows path sitting inside RTL chrome — the exact regression
-   plan §B-10 item 2 sweeps for. It must stay .path + <bdi>. */
-.statusline .path {
-  max-width: 46ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: none;
-}
-
-/* The machine's own statusline script. It is `.path`, so it already gets the
-   monospace stack and the LTR isolate — but NOT the 46 ch cap, which is meant
-   for the cwd and was chopping the script's last field to «claude-op…».
-   This must stay AFTER the rule above: same specificity, so source order is
-   the only thing deciding it. */
-.statusline .sl-custom {
-  max-width: none;
-  opacity: .95;
-}
-.statusline .sl-custom span:not(:empty) { padding-block: 2px; }
 
 /* --- permission dialog --------------------------------------------------------
    v2.4-style non-modal placement (MA4-T0): shown with show(), not showModal(),
@@ -3065,8 +3013,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 }
 
 /* A SHORT cell (MA3-T4 defect 3, ported). Four columns of an 800px window are
-   ~385px tall and of a 622px window ~296px; the chrome — topbar, prompt, the
-   hint under it and the status line — was taking most of that, so what was left
+   ~385px tall and of a 622px window ~296px; the chrome — topbar, prompt, and
+   then the hint and the status line under it — was taking most of that, so what was left
    of the conversation was one or two clipped lines. The column stopped being a
    conversation and became a frame around one.
 
@@ -3074,8 +3022,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    container: a window-height media query cannot tell a 4-way split at 800px
    from a single cell at 800px, and only one of those is short. */
 @container (max-height: 460px) {
-  .composer .composer-hint { display: none; }
-  /* ...and the STATUS LINE, which is the piece that actually ate the column
+  /* (The STATUS LINE that used to sit here was the piece that ate the column
      (pcg-6nf.11, measured 2026-09-08 in a 1052x711 window at split 4): a
      RESUMED session names its model, folder, mode, context, quota, cost,
      session id AND the machine's own statusLine script all at once, and at
@@ -3085,12 +3032,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      a field the user was reading that silently disappears is worse than one
      they have to scroll to. `3.2em` is two lines of THIS element's own font
      (line-height 1.6, and 1em here is already the .74em below), plus its own
-     padding because `* { box-sizing: border-box }`. */
-  .statusline {
-    padding-block: 2px 4px;
-    max-height: calc(3.2em + 8px);
-    overflow-y: auto;
-  }
+     padding because `* { box-sizing: border-box }`. It is gone since
+     2026-10-08: the bar's chips and ring say all of it.) */
   .topbar { min-height: 0; padding-block: 4px 2px; }
   /* The prompt may still be several lines; it may no longer eat the transcript
      to be so. js/composer.js autoGrow() writes an inline `height` off the
@@ -3142,8 +3085,8 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   inset: auto;
   margin: 0;
   /* menuPopup: menu surface, #454545 hairline, 8px corners, 4px padding. */
-  min-inline-size: 260px;
-  max-inline-size: min(380px, calc(100vw - 16px));
+  min-inline-size: 280px;
+  max-inline-size: min(400px, calc(100vw - 16px));
   max-block-size: min(70vh, 560px);
   overflow-y: auto;
   padding: 4px;
@@ -3160,20 +3103,22 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 12px;
+  padding: 8px 12px 4px;
   color: var(--app-secondary-foreground);
   font-size: var(--fs-meta, 12.5px);
 }
 .bar-head-hint { font-size: 12px; }
-/* claude.ai's rows: a regular-weight name, a one-line muted note, ✓ and the
-   digit at the row's end. Tight — a menu is a list you scan, not a form. */
+/* The VS Code extension's rows (2026-10-08): an icon, a regular-weight name
+   over a muted note of up to two lines, the ✓ at the row's end, 8px 12px.
+   The 4px rows with a digit column read as a cramped table in Persian. */
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   inline-size: 100%;
   min-height: 0;
-  /* menuItem: 8px 12px, the list radius. */
+  /* menuItem: 8px 12px with a note under the title (below); a one-line row is
+     the 32px control, so 4px 12px and the floor in the control block. */
   padding: 4px 12px;
   border: 0;
   border-radius: var(--app-list-border-radius);
@@ -3181,14 +3126,16 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   color: var(--fg);
   font: inherit;
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 1.5;
   text-align: start;
   cursor: pointer;
 }
-.bar-row:hover:not(:disabled), .bar-row:focus-visible, .bar-more[aria-expanded="true"] { background: var(--app-list-hover-background); outline: none; }
-/* menuItemSelected: the list's active selection, white text (12:1). */
-.bar-row[aria-current="true"] { background: var(--app-list-active-background); color: var(--app-list-active-foreground); }
-.bar-row[aria-current="true"] .bar-row-note { color: var(--app-list-active-foreground); }
+.bar-row:has(.bar-row-note) { padding-block: 8px; }
+.bar-row:hover:not(:disabled), .bar-row:focus-visible { background: var(--app-list-hover-background); outline: none; }
+/* The current row is the ✓, not a filled block: the extension fills only the
+   row under the pointer, so the two never compete. */
+.bar-row[aria-current="true"] { background: none; color: var(--fg); }
+.bar-row[aria-current="true"]:hover, .bar-row[aria-current="true"]:focus-visible { background: var(--app-list-hover-background); }
 .bar-row:disabled { color: var(--fg-faint, var(--fg-muted)); cursor: not-allowed; }
 /* `align-items: flex-start`: a title is `dir="auto"`, so a Latin one («Opus
    5.5») is an LTR box, and stretched to the row it put its text at the row's
@@ -3196,18 +3143,32 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
    RTL row places it at the start like every other title. */
 .bar-row-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .bar-row-title { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.bar-row-note { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-/* ONE slot at the row's end, as claude.ai: the ✓ on the current row, the digit
-   on the others. Both at once left two columns of air beside every name. */
-.bar-row-check { flex: none; min-inline-size: 1.4em; color: currentColor; text-align: center; }
-.bar-row-digit { flex: none; min-inline-size: 1.4em; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: var(--fs-meta, 12.5px); text-align: center; }
-.bar-row-check:empty, .bar-row-digit:empty, .bar-row[aria-current="true"] > .bar-row-digit { display: none; }
-.bar-more .bar-row-digit { color: var(--fg-muted); font-size: 14px; }
-.bar-foot .bar-row-title { color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); }
-.bar-flyout { position: fixed; min-inline-size: 180px; z-index: 1; }
+/* Two lines, then an ellipsis: a style's "pick this when" sentence is longer
+   than a model's tagline, and one line cut it mid-thought. */
+.bar-row-note {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  max-inline-size: 100%; overflow: hidden;
+  color: var(--fg-muted); font-size: 12px; line-height: 1.5;
+}
+.bar-row-check { flex: none; min-inline-size: 16px; color: var(--fg-muted); text-align: center; }
+/* The «+» menu's and the palette's key hints (Ctrl+U, @, /name). */
+.bar-row-digit { flex: none; min-inline-size: 16px; color: var(--fg-faint, var(--fg-muted)); font: inherit; font-size: 12px; text-align: center; }
+.bar-row-check:empty, .bar-row-digit:empty { display: none; }
+/* A footer row's current value («لحن پاسخ  کار روزمره») and its «‹». */
+.bar-row-value { flex: none; max-inline-size: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
+.bar-row-chevron { flex: none; color: var(--fg-muted); font-size: 14px; }
+/* Fixed after the first message: still read, never picked. */
+.bar-foot:disabled { color: var(--fg-muted); cursor: default; }
+.bar-foot:disabled .bar-row-value { color: var(--fg); }
 .bar-rule { margin: 4px 0; border: 0; border-block-start: 1px solid var(--app-input-border); }
 .bar-muted { color: var(--fg-muted); font-size: var(--fs-meta, 12px); margin: 0; }
-.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: var(--fs-meta, 12px); margin: 4px 8px 2px; }
+.bar-note { color: var(--fg-faint, var(--fg-muted)); font-size: 12px; line-height: 1.5; margin: 4px 12px 8px; }
+/* The model menu's question before a mid-conversation switch. */
+.bar-confirm { inline-size: min(360px, calc(100vw - 16px)); padding: 12px; }
+.bar-confirm-text { margin: 0 0 12px; line-height: 1.6; }
+.bar-confirm-acts { display: flex; gap: 8px; }
+.bar-btn.is-primary { border-color: transparent; background: var(--app-claude-orange, var(--accent)); color: #fff; }
+.bar-btn.is-primary:hover { background: color-mix(in srgb, var(--app-claude-orange, var(--accent)) 88%, #fff); }
 .bar-btn {
   min-height: 0;
   padding: 4px 12px;
@@ -3222,16 +3183,15 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .bar-btn:hover { background: var(--app-list-hover-background); }
 .bar-btn:focus-visible, .bar-switch:focus-visible, .bar-slider-range:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
 
-/* The slider, after claude.ai: «تلاش  زیاد» together at the start, «سریع‌تر»
-   (right) … «باهوش‌تر» (left), and a gray pill with one dot per level under a
-   light thumb. The pill is the WRAPPER's background, not the range's own track,
+/* The effort row, the extension's «Effort (High)»: the name and the level at
+   the start, a small gray pill with one dot per level under a light thumb at
+   the end. The pill is the WRAPPER's background, not the range's own track,
    so the dots can sit on it and under the thumb. */
-.bar-slider { padding: 8px 12px 12px; min-inline-size: 280px; }
-.bar-slider .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; font-size: var(--fs-ui, 13px); }
-.bar-slider-now { color: var(--fg); font-weight: 500; }
-.bar-slider-ends { display: flex; justify-content: space-between; color: var(--fg-muted); font-size: var(--fs-meta, 12.5px); margin: 8px 0 8px; }
+.bar-effort { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.bar-effort-name { flex: 1; min-inline-size: 0; white-space: nowrap; }
+.bar-slider-now { color: var(--fg-muted); }
 /* The extension's effort toggle: an 18px #454545 track, a 14px light thumb. */
-.bar-slider-track { position: relative; block-size: 18px; border-radius: 8px; background: var(--app-input-border); }
+.bar-slider-track { position: relative; flex: none; inline-size: 96px; block-size: 18px; border-radius: 8px; background: var(--app-input-border); }
 .bar-slider-ticks {
   position: absolute;
   inset-inline: 9px;
@@ -3651,9 +3611,10 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   block-size: 28px;
 }
 .comp-act, button.round.send, button.round.danger { inline-size: 28px; min-width: 28px; }
-/* A menu row is AT LEAST 28: a row with a description under its title grows.
-   block-size here overlapped the two lines (mode menu, 2026-10-07). */
-.bar-row { box-sizing: border-box; min-height: 28px; }
+/* A menu row is AT LEAST 32 (the extension's rows, 2026-10-08): a row with a
+   description under its title grows. block-size here overlapped the two lines
+   (mode menu, 2026-10-07). */
+.bar-row { box-sizing: border-box; min-height: 32px; }
 .perm-allow, .perm-deny, .layout-btn, .layout-panel .layout-equal, .bar-btn {
   box-sizing: border-box;
   min-height: 32px;
@@ -3674,8 +3635,6 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
 .bar-row-icon:empty { display: none; }
 .bar-row-icon svg { display: block; }
 .bar-row[aria-current="true"] .bar-row-icon { color: currentColor; }
-.bar-effort { padding: 4px 8px 8px; }
-.bar-effort .bar-head { padding-inline: 0; justify-content: flex-start; gap: 8px; }
 .bar-plus { min-inline-size: 240px; }
 .bar-servers { padding-block: 4px; }
 .bar-chevron { transition: transform var(--dur, .2s) ease-out; }

@@ -41,23 +41,19 @@ const FA = window.STRINGS;
    NOT resolved at module-evaluation time any more (MA4-T2): the columns are
    stamped from a <template> by app.js, which runs last, so there is no `.log`
    in the document while this module is evaluating. setFocusedCell() below is
-   what points these two at the column the keyboard is in — which is exactly
+   what points it at the column the keyboard is in — which is exactly
    what "the default render target" has meant since the grid existed.
    spec-test.html carries its own `.log` and is its own cell, so the same call
    still lands it correctly there. */
 let log = null;
-/* `let` for the same reason `log` is: withRenderTarget() points it at the cell
-   the scope belongs to. A background scope has no cell, so it points at nothing
-   and setStatus() below returns before it is touched. */
-let statusline = null;
 
 /* WHICH CELL THE KEYBOARD IS IN (MA4-T2). app.js owns focus and tells this
    module; nothing here decides it. Two jobs in one call:
 
      - the DEFAULT render target. `state` mirrors the focused column's scope
        (app.js routeEvent), so an event for the focused tab is rendered with no
-       withRenderTarget around it — and `log`/`statusline` have to be that
-       column's, or it would paint into the one beside it.
+       withRenderTarget around it — and `log` has to be that column's, or it
+       would paint into the one beside it.
      - the WINDOW-level gate below. A placed but unfocused column paints its own
        topbar and status line (that is `state.cell`), but it must not repaint the
        one sidebar, project list or agents strip: four conversations answering at
@@ -67,7 +63,6 @@ let focusedRef = null;
 export function setFocusedCell(cell) {
   focusedRef = cell;
   log = cell?.log ?? null;
-  statusline = cell?.statusline ?? null;
 }
 
 function onFocused() {
@@ -1331,13 +1326,8 @@ export function inRenderTarget() {
 
 export function withRenderTarget(target, scope, fn) {
   const savedLog = log;
-  const savedStatusline = statusline;
   const savedState = { ...state };
   log = target;
-  // Beside `log`, and for the same reason: the status line belongs to the CELL
-  // the scope is on screen in. A background scope names no cell, so nothing here
-  // has a status line to paint -- which is what setStatus() already checks.
-  statusline = scope.cell?.statusline ?? null;
   Object.assign(state, scope);
   targetDepth += 1;
   try {
@@ -1346,7 +1336,6 @@ export function withRenderTarget(target, scope, fn) {
     targetDepth -= 1;
     Object.assign(scope, state);   // what the replay built stays with the scope
     log = savedLog;
-    statusline = savedStatusline;
     Object.assign(state, savedState);
   }
 }
@@ -1910,20 +1899,6 @@ function renderRaw(event) {
 
 /* --- statusline ----------------------------------------------------------- */
 
-/* A percentage the user has to act on (context left, quota burned) reads far
-   faster as a bar than as digits. <progress> is the native element for it:
-   it carries the value accessibly and needs no JS to stay in sync. */
-function meter(pct) {
-  const wrap = document.createElement("span");
-  wrap.className = "sl-meter";
-  const bar = document.createElement("progress");
-  bar.max = 100;
-  bar.value = Math.max(0, Math.min(100, pct));
-  bar.dataset.level = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
-  wrap.append(bar, label(Math.round(pct) + "%", "mono"));
-  return wrap;
-}
-
 /* Everything in the statusline except the folder belongs to ONE conversation:
    the session id, what it cost, how full its context is, and the machine's own
    statusLine output. Carrying them into the next session is a lie that looks
@@ -1947,10 +1922,12 @@ export function setStatus(patch) {
   // state.status IS the tab's own statusline data (the scope carries it), so a
   // background tab has already recorded everything above; only the paint needs
   // a cell to land in, and app.js repaints from the scope at switch time.
-  if (!state.cell || !statusline) return;
-  statusline.replaceChildren();
+  if (!state.cell) return;
   const s = state.status;
-  // The composer bar's ◔: the same figure, as a ring.
+  // The composer bar's ◔: the context figure, as a ring. There is no status
+  // line under the composer any more (2026-10-08): the model, the mode and
+  // the effort are the bar's chips, the context and the plan limits its ring
+  // and panel, the folder the topbar — the terminal edition's bar.
   const ring = state.cell.root?.querySelector(".bar-ring");
   if (ring) paintRing(ring, s.context);
   paintCache(state.cell.root?.querySelector(".bar-cache"), s.cache);
@@ -1961,45 +1938,6 @@ export function setStatus(patch) {
     log.dataset.sid = sid;
     loadPins(sid);
     paintPinRail(log, sid);
-  }
-
-  const items = [
-    [FA.slModel, s.model && label(s.model, "mono")],
-    [FA.slFolder, s.cwd && pathEl(s.cwd)],
-    [FA.slMode, s.mode && label(s.mode, "mono")],
-    [FA.slContext, s.context !== undefined && meter(s.context)],
-    [FA.slCost, s.cost !== undefined && label("$" + s.cost.toFixed(4), "mono")],
-    [FA.slQuota, s.quota !== undefined && meter(s.quota)],
-    [FA.slSession, s.sessionId && label(s.sessionId.slice(0, 8), "mono")],
-  ];
-
-  for (const [name, valueEl] of items) {
-    if (!valueEl) continue;
-    const wrap = document.createElement("span");
-    wrap.className = "sl-item";
-    wrap.append(label(name + ":", "sl-label"), valueEl);
-    statusline.append(wrap);
-  }
-
-  // The machine's own statusLine command output, inherited rather than
-  // reimplemented (plan §B-7). It is terminal text: keep it LTR-isolated, and
-  // keep its colours — the script uses them to mean something (which mode is
-  // on, how full the context is). server.py parsed the SGR codes into runs;
-  // building spans from data is also why none of this can inject markup.
-  if (s.custom?.length) {
-    const bdi = pathEl("");
-    bdi.classList.add("sl-custom");
-    for (const seg of s.custom) {
-      const span = document.createElement("span");
-      span.textContent = seg.text;
-      if (seg.fg) span.style.color = seg.fg;
-      if (seg.bg) span.style.background = seg.bg;
-      if (seg.bold) span.style.fontWeight = "600";
-      if (seg.dim) span.style.opacity = ".65";
-      if (seg.italic) span.style.fontStyle = "italic";
-      bdi.append(span);
-    }
-    statusline.append(bdi);
   }
 }
 

@@ -23,9 +23,6 @@ window.FA = {
   autoResumeStale: "سقف مصرف آزاد شده، ولی رایانه در این مدت خواب بود و کار خودش ادامه پیدا نکرد.",
   autoResumeNow: "ادامه بده",
   removeAttachment: "حذف",
-  slashHint: "برای دیدن دستورها / را بزنید",
-  hintZwnj: "نیم‌فاصله: Shift+Space",
-  hintPosture: "سطح اجازه: Shift+Tab",
 
   thinking: "فکر",
 
@@ -328,13 +325,6 @@ window.FA = {
   idleTitle: "مدتی از این گفتگو گذشته",
   idleBody: "اگر سراغ کار تازه‌ای می‌روید، گفتگوی تازه شروع کنید — پاسخ‌ها سریع‌تر و دقیق‌تر می‌مانند.",
 
-  slModel: "مدل",
-  slFolder: "پوشه",
-  slCost: "هزینه",
-  slMode: "حالت",
-  slSession: "نشست",
-  slContext: "متن",
-  slQuota: "سهمیه ۵ ساعته",
   slNone: "—",
 
   /* model picker + approval posture — every label the CLI itself supplies
@@ -366,6 +356,18 @@ window.FA = {
     Learning: "آموزشی",
   },
   styleFailed: "تغییر لحن پاسخ ممکن نشد",
+  /* The style is chosen before the first message and then fixed (user rule,
+     2026-10-08): it is part of the system prompt, so a change mid-conversation
+     re-reads the whole conversation without the cache. */
+  styleLocked: "پس از اولین پیام ثابت می‌ماند",
+  styleNote: "لحن فقط پیش از اولین پیام گفتگو انتخاب می‌شود.",
+  styleLockedNow: "لحن این گفتگو «{name}» است و پس از اولین پیام عوض نمی‌شود. برای لحن دیگر، گفتگوی تازه‌ای شروع کنید.",
+  /* Picking another model mid-conversation: the cache belongs to the model,
+     so the new one reads the whole conversation again. {n} is a token count. */
+  modelSwitchAsk: "با عوض‌کردن مدل، کل این گفتگو (حدود {n} توکن) دوباره خوانده می‌شود، چون حافظهٔ موقت (کش) مدل فعلی به مدل تازه نمی‌رسد. مدل عوض شود؟",
+  modelSwitchAskPlain: "با عوض‌کردن مدل، کل این گفتگو دوباره خوانده می‌شود، چون حافظهٔ موقت (کش) مدل فعلی به مدل تازه نمی‌رسد. مدل عوض شود؟",
+  modelSwitchOk: "عوض کن",
+  modelSwitchCancel: "انصراف",
 
   postureTitle: "سطح اجازه",
   posturePlan: "طرح‌ریزی",
@@ -377,7 +379,6 @@ window.FA = {
   postureAutoApprove: "تأیید همه",
   postureAutoApproveNote: "همه‌چیز را بدون پرسش انجام می‌دهد و شمار اقدام‌ها را نشان می‌دهد",
   postureFailed: "تغییر سطح اجازه ممکن نشد",
-  autoActions: "اقدام خودکار",
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
@@ -407,7 +408,6 @@ window.FA = {
      the placeholder is the only thing telling the user why. */
   editorWaiting: "در ویرایشگر بیرونی باز است؛ ذخیره کنید تا برگردد",
   editorFailed: "باز کردن ویرایشگر ناموفق بود",
-  hintEditor: "ویرایشگر بیرونی: Ctrl+G",
 
   /* /export — the window writes what it drew, so these two labels are what a
      reader of the saved file sees instead of the bubbles. */
@@ -461,10 +461,10 @@ window.FA = {
   /* The composer bar (COMPOSER-BAR.md, js/bar.js — the same keys in both
      editions). */
   barMode: "حالت",
+  barModeHint: "shift+tab برای تغییر",
+  barAutoCount: "{n} کار بی‌پرسش انجام شد",
   barModel: "مدل",
   barEffort: "تلاش",
-  barFaster: "سریع‌تر",
-  barSmarter: "باهوش‌تر",
   barUsage: "زمینه و مصرف",
   barUsageTitle: "زمینه و مصرف — {n}٪ از پنجرهٔ زمینه پر است",
   barContext: "پنجرهٔ زمینه",
@@ -490,7 +490,6 @@ window.FA = {
   barConnectors: "اتصال‌ها (سرورهای MCP)",
   barConnectorsNote: "روشن یا خاموش کردن یک سرور برای همین پوشه ذخیره می‌شود.",
   barNoServers: "هیچ سرور MCP‌ای تعریف نشده است.",
-  barMoreModels: "مدل‌های دیگر",
   barMention: "اشاره به فایلی از پروژه",
   barPalette: "فرمان‌ها",
   barPaletteFilter: "جستجوی فرمان…",

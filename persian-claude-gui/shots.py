@@ -56,7 +56,8 @@ SIZES = ((1852, 1044), (1280, 800), (1052, 711))
 SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", "panes6",
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
-          "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0")
+          "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
+          "bar-style", "bar-switch")
 
 NO_SSE = '<script>window.EventSource = function () { return { close() {} }; };</script>'
 
@@ -168,7 +169,13 @@ function status(tab, cwd) {
      supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"]},
     {value: "haiku", resolvedModel: "claude-haiku-4-5", displayName: "Haiku",
      description: "Haiku 4.5 · Fastest for quick answers"}],
-    output_style: "default", available_output_styles: ["default"]}});
+    output_style: "frugal-concise",
+    available_output_styles: ["default", "frugal-concise", "explain-fa", "advisor", "Explanatory"],
+    output_style_labels: [
+      {id: "frugal-concise", title: "کار روزمره", description: "برای بیشتر کارهای برنامه‌نویسی، مثل رفع باگ، افزودن قابلیت و تغییر کد. کم‌هزینه کار می‌کند و پاسخ را با نتیجه شروع می‌کند."},
+      {id: "explain-fa", title: "توضیح فارسی", description: "وقتی می‌خواهی بفهمی کدی چطور کار می‌کند یا چرا این‌طور نوشته شده است."},
+      {id: "advisor", title: "مشاور تصمیم", description: "وقتی باید بین چند راه انتخاب کنی. یک توصیهٔ روشن می‌دهد و بده‌بستان‌ها را می‌گوید."},
+      {id: "default", title: "پیش‌فرض Claude", description: "رفتار استاندارد Claude Code، بدون هیچ قاعدهٔ اضافه."}]}});
   ev(tab, {type: "wrapper", subtype: "usage", context: 42, cost: 0.4213, quota: 31,
            limits: {five_hour: {utilization: 31, resets_at: new Date(Date.now() + 16380e3).toISOString()},
                     seven_day: {utilization: 21, resets_at: new Date(Date.now() + 4 * 864e5).toISOString()},
@@ -350,6 +357,19 @@ async function run() {
     document.querySelector(".ch-file").open = true;
     return;
   }
+  if (SCENE === "bar-style") {
+    // Before the first message: the mode menu's style row opens the list.
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    await sleep(120);
+    document.querySelector("#grid .cell .posture-chip")?.click();
+    await sleep(120);
+    document.querySelector(".bar-pop .bar-foot")?.click();
+    await sleep(200);
+    return;
+  }
   if (SCENE.startsWith("bar-")) {
     useTabs([TABS[0]], "t1");
     APP.applyTabs({tabs: [TABS[0]], active: "t1"});
@@ -366,9 +386,15 @@ async function run() {
                                 cache_creation: {ephemeral_1h_input_tokens: 9000}}}});
     await sleep(120);
     const cls = {"bar-model": "model-chip", "bar-slash": "bar-slash-btn", "bar-mode": "posture-chip",
-                 "bar-usage": "bar-ring", "bar-plus": "bar-plus-btn"}[SCENE];
+                 "bar-usage": "bar-ring", "bar-plus": "bar-plus-btn",
+                 "bar-switch": "model-chip"}[SCENE];
     document.querySelector("#grid .cell ." + cls)?.click();
     await sleep(200);
+    // Mid-conversation, another model asks first.
+    if (SCENE === "bar-switch") {
+      document.querySelector('.bar-pop .bar-row[data-key="claude-fable-5-1"]')?.click();
+      await sleep(200);
+    }
     return;
   }
   if (SCENE === "queue") {

@@ -105,7 +105,7 @@ def main() -> int:
     # carries the mode alone) but not the window: the mode menu's footer opens
     # the same list, which is the only defence «خودکار» has.
     controls = read(JS / "controls.js")
-    check('class="auto-chip' not in html and "footer: autoCount" in controls
+    check('class="auto-chip' not in html and "autoCount ? { title: FA.barAutoCount" in controls
           and "onClick: openAuditList" in controls,
           "the audit count moved from a bar chip into the mode menu, still opening its list")
 

@@ -104,7 +104,16 @@
          conversation in it, so an empty column says so too. -->
     <span class="cell-badge" aria-hidden="true"></span>
     <bdi class="topbar-name"></bdi>
-    <span class="topbar-cwd path"></span>
+    <!-- The folder picker (js/chrome.js projChip): the path IS the button, so
+         the composer bar carries no folder chip (2026-10-08, the VS Code
+         extension's bar). -->
+    <button type="button" class="proj-chip" title="باز کردن پوشهٔ دیگر">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+      </svg>
+      <span class="topbar-cwd path"></span>
+    </button>
   </header>
 
   <main class="log" aria-live="polite" aria-label="گفتگو"></main>
@@ -232,7 +241,7 @@
 
       <!-- aria-label, not a <label for>: the textarea lost its id (T0), and a
            label association needs a real id, not a class. -->
-      <textarea class="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید…"
+      <textarea class="input" rows="1" dir="auto" placeholder="پیام خود را بنویسید — نیم‌فاصله: Shift+Space"
                 autocomplete="off" spellcheck="false" aria-label="پیام"></textarea>
 
       <div class="comp-row">
@@ -266,40 +275,13 @@
           </svg>
         </button>
 
-        <button type="button" class="chip-btn proj-chip" title="">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-          </svg>
-          <bdi class="proj-chip-name path"></bdi>
-        </button>
 
-        <!-- Model picker and approval pill are rendered entirely from what
-             `initialize` returned (js/controls.js). Hidden until it arrives —
-             a hardcoded model list would be wrong on any other plan. -->
-        <button type="button" class="chip-btn model-chip" hidden>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3l2.2 5.1 5.3.6-4 3.6 1.2 5.2L12 14.9 7.3 17.5l1.2-5.2-4-3.6 5.3-.6z"/>
-          </svg>
-          <span class="model-chip-name" dir="auto"></span>
-          <!-- The reasoning effort, beside the name (the extension's «Opus 5.5
-               High»). Set in the model and mode menus; hidden for a model that
-               takes none — Haiku (js/controls.js). -->
-          <span class="model-chip-effort" dir="auto" hidden></span>
-        </button>
-
-        <!-- Output style. The set comes from `initialize.available_output_styles`
-             and is per-machine (a user can drop in their own), so nothing here
-             is hardcoded; hidden unless the CLI offers more than one. -->
-        <button type="button" class="chip-btn style-chip" hidden>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span class="style-chip-name" dir="auto"></span>
-        </button>
-
+        <!-- The mode (with the response style and what «تأیید همه» approved at
+             its foot), then at the far end the model with its effort — the
+             terminal edition's bar and the VS Code extension's. Rendered from
+             what `initialize` returned (js/controls.js); hidden until it
+             arrives, since a hardcoded model list would be wrong on any other
+             plan. -->
         <button type="button" class="chip-btn posture-chip" hidden>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -308,13 +290,15 @@
           <span class="posture-chip-name" dir="auto"></span>
         </button>
 
-        <!-- Audit counter for the "خودکار" posture: approvals the wrapper gave
-             on the user's behalf. Never hidden behind a menu. A button, not a
-             span: it opens the list of those approvals, so it has to be
-             clickable AND reachable from the keyboard. -->
-        <button type="button" class="chip-btn is-info auto-chip" hidden></button>
-
         <span class="comp-spacer"></span>
+
+        <button type="button" class="chip-btn model-chip" hidden>
+          <span class="model-chip-name" dir="auto"></span>
+          <!-- The reasoning effort, beside the name (the extension's «Opus 5.5
+               High»). Set in the model and mode menus; hidden for a model that
+               takes none — Haiku (js/controls.js). -->
+          <span class="model-chip-effort" dir="auto" hidden></span>
+        </button>
 
         <!-- The prompt cache: minutes left while warm (bar.js paintCache, from
              each reply's usage). Hidden until a reply has said anything. -->
@@ -347,10 +331,8 @@
         </button>
       </div>
     </div>
-    <div class="meta composer-hint"></div>
   </form>
 
-  <footer class="statusline" aria-label="نوار وضعیت"></footer>
   </section>
 </template>
 
