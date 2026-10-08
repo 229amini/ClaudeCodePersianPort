@@ -1420,7 +1420,11 @@ STYLE_LABELS_FILE = (Path(os.environ["CLAUDE_CONFIG_DIR"]) if os.environ.get("CL
 
 
 def load_style_labels(path: Path = STYLE_LABELS_FILE) -> list[dict]:
-    """[{id, title, description}] in menu order, or [] on anything unexpected."""
+    """[{id, title, description}] in menu order, or [] on anything unexpected.
+
+    Only the user's own styles: entries marked `"source": "built-in"` (the
+    CLI's default/Proactive/Concise/...) are dropped — the user asked for the
+    styles they defined, not Claude's (2026-10-08)."""
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
@@ -1428,7 +1432,8 @@ def load_style_labels(path: Path = STYLE_LABELS_FILE) -> list[dict]:
     styles = data.get("styles") if isinstance(data, dict) else None
     out: list[dict] = []
     for s in styles if isinstance(styles, list) else []:
-        if (isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+        if (isinstance(s, dict) and s.get("source") != "built-in"
+                and isinstance(s.get("id"), str) and s["id"]
                 and isinstance(s.get("title"), str) and s["title"]):
             out.append({"id": s["id"], "title": s["title"],
                         "description": s["description"] if isinstance(s.get("description"), str) else ""})

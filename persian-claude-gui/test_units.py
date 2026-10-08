@@ -2689,10 +2689,11 @@ with tempfile.TemporaryDirectory() as tmp:
         {"id": "advisor", "title": "مشاور تصمیم"},
         {"id": "", "title": "بی‌شناسه"},
         {"id": "Learning"},
+        {"id": "Concise", "source": "built-in", "title": "مختصر"},
         "not a style",
     ]}, ensure_ascii=False), encoding="utf-8-sig")
     got = server.load_style_labels(labels)
-    check("the file's order, a missing description as empty, the malformed entries dropped (BOM read)",
+    check("the file's order, a missing description as empty, the malformed and built-in entries dropped (BOM read)",
           got == [{"id": "frugal-concise", "title": "کار روزمره", "description": "برای بیشتر کارها"},
                   {"id": "advisor", "title": "مشاور تصمیم", "description": ""}])
 
