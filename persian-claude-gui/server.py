@@ -1114,7 +1114,7 @@ def _scan_agent_launch(event: dict, pending: dict) -> None:
         inp = part.get("input") or {}
         if not tool_use_id:
             continue
-        # A background COMMAND (pcg-hl0): until 2026-10-08 it was registered by
+        # A background COMMAND (pcg-1p3): until 2026-10-08 it was registered by
         # its task-notification alone, i.e. only once it had FINISHED, so the
         # panel never showed one running. Its ack carries the task id. EVERY
         # shell call is a candidate, not only run_in_background ones: a

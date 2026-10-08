@@ -2365,7 +2365,7 @@ export function renderEvent(ev) {
           : JSON.stringify(part.content, null, 2);
         // A background command started, or a task was stopped: the panel
         // learns of both from the transcript (server.py), so ask it now
-        // rather than at the end of the turn (pcg-hl0).
+        // rather than at the end of the turn (pcg-1p3).
         if (onFocused() && BG_TASK_CHANGE.test(toolResultText(part.content))) refreshAgents();
         // Tool output is often Persian (a file the model just read back, an
         // error message in Persian). The box stays LTR; the lines decide for

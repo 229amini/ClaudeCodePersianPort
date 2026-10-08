@@ -427,7 +427,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a duplicate notification overwrites (last one wins)",
           registry2[AGENT_A]["summary"] == 'Agent "Do the async thing" finished AGAIN')
 
-print("build_agent_registry: background commands are seen at LAUNCH, not at finish (pcg-hl0)")
+print("build_agent_registry: background commands are seen at LAUNCH, not at finish (pcg-1p3)")
 
 
 def _shell_use(tool_use_id, name, inp, ts="2026-10-08T10:00:00.000Z"):
