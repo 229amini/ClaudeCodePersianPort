@@ -149,6 +149,7 @@ const TASK_NOTE = /^\s*<task-notification>/;
 // no isSynthetic. Replay already drops these (server.py CLI_ENVELOPE_RE).
 const CLI_SELF = /^\s*<(local-command-[a-z]+|command-(name|message|args)|system-reminder)>/;
 const ASYNC_LAUNCH = /^\s*Async agent launched/;
+const BG_TASK_CHANGE = /^\s*(Command running in background with ID:|Command did not complete within .* moved to the background|Monitor started \(task|\{"message":"Successfully stopped task)/;
 
 /* Plain text out of a tool_result's own `content` — either a bare string or
    the usual [{"type": "text", ...}] block array. Measured: 36 of 38 real
@@ -2808,6 +2809,10 @@ export function renderEvent(ev) {
         const text = typeof part.content === "string"
           ? part.content
           : JSON.stringify(part.content, null, 2);
+        // A background command started, or a task was stopped: the panel
+        // learns of both from the transcript (server.py), so ask it now
+        // rather than at the end of the turn (pcg-hl0).
+        if (onFocused() && BG_TASK_CHANGE.test(toolResultText(part.content))) refreshAgents();
         // Tool output is often Persian (a file the model just read back, an
         // error message in Persian). The box stays LTR; the lines decide for
         // themselves — spec rule 8.

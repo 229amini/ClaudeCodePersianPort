@@ -53,8 +53,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.11.2"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.11.2"),
+    "web":      ("static",          "کلاد فارسی",            "1.11.3"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.11.3"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -1013,6 +1013,11 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
 AGENT_ID_RE = re.compile(r"^[0-9a-f]{6,40}$")
 TASK_NOTIFICATION_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.DOTALL)
 ASYNC_AGENT_ID_RE = re.compile(r"agentId:\s*([0-9a-f]{6,40})")
+# A background command's launch ack, when the sibling toolUseResult is absent
+# (the live stream): "Command running in background with ID: b70grb4eh. ..."
+BG_COMMAND_ID_RE = re.compile(
+    r"(?:running in background with ID:|moved to the background \(ID:|Monitor started \(task)\s*([A-Za-z0-9_-]{4,40})")
+BG_COMMAND_TOOLS = ("Bash", "PowerShell", "Monitor")
 
 
 def subagents_dir(cwd: Path, session_id: str) -> Path | None:
@@ -1103,13 +1108,27 @@ def _scan_agent_launch(event: dict, pending: dict) -> None:
     agentType under the tool_use id, awaiting the launch ack (the join key,
     wiki/background-agents.md)."""
     for part in (_msg_content(event) or []):
-        if not (isinstance(part, dict) and part.get("type") == "tool_use"
-                and part.get("name") == "Agent"):
+        if not (isinstance(part, dict) and part.get("type") == "tool_use"):
             continue
         tool_use_id = part.get("id")
+        inp = part.get("input") or {}
         if not tool_use_id:
             continue
-        inp = part.get("input") or {}
+        # A background COMMAND (pcg-hl0): until 2026-10-08 it was registered by
+        # its task-notification alone, i.e. only once it had FINISHED, so the
+        # panel never showed one running. Its ack carries the task id. EVERY
+        # shell call is a candidate, not only run_in_background ones: a
+        # foreground command that outlives its timeout is moved to the
+        # background by the CLI, and the ack is the first word of it.
+        if part.get("name") in BG_COMMAND_TOOLS:
+            command = str(inp.get("command") or "")
+            pending[tool_use_id] = {
+                "kind": "command",
+                "description": inp.get("description") or command[:80] or None,
+            }
+            continue
+        if part.get("name") != "Agent":
+            continue
         # A synchronous agent (run_in_background: false) never acks, so this
         # entry is simply never claimed — harmless, not worth pruning for the
         # lifetime of one project's cache entry.
@@ -1132,6 +1151,17 @@ def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
     life of the process (3 such entries across this machine's 315 real
     transcripts, all stuck at completed=False).
     """
+    tur = event.get("toolUseResult")
+    # TaskStop writes no task-notification, so a stopped command (or agent)
+    # would read "running" for the life of the process. Its result names the
+    # task; nothing else needs to join.
+    if (isinstance(tur, dict) and tur.get("task_id")
+            and str(tur.get("message") or "").startswith("Successfully stopped task")):
+        entry = registry.get(tur["task_id"])
+        if entry is not None and not entry.get("completed"):
+            entry["completed"] = True
+            entry["stopped"] = True
+            entry["finishedAt"] = iso_epoch(event.get("timestamp"))
     for part in (_msg_content(event) or []):
         if not (isinstance(part, dict) and part.get("type") == "tool_result"):
             continue
@@ -1139,7 +1169,20 @@ def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
         launch = pending.pop(tool_use_id, None) if tool_use_id else None
         if launch is None:
             continue
-        tur = event.get("toolUseResult")
+        if launch.get("kind") == "command":
+            task_id = tur.get("backgroundTaskId") if isinstance(tur, dict) else None
+            if not task_id:
+                match = BG_COMMAND_ID_RE.search(_tool_result_text(part.get("content")))
+                task_id = match.group(1) if match else None
+            if not task_id:
+                continue
+            entry = registry.setdefault(task_id, {"completed": False, "finishedAt": None,
+                                                  "summary": None})
+            entry.update({"id": task_id, "kind": "command",
+                          "description": launch.get("description"),
+                          "agentType": None, "model": None,
+                          "startedAt": iso_epoch(event.get("timestamp"))})
+            continue
         agent_id = model = description = None
         if isinstance(tur, dict) and tur.get("isAsync") and tur.get("status") == "async_launched":
             agent_id = tur.get("agentId")
@@ -1200,7 +1243,8 @@ def _scan_notification(event: dict, registry: dict) -> None:
 # The cheap pre-filter: a line mentioning none of these three cannot carry any
 # of the three markers, and skipping it costs one substring scan instead of a
 # json.loads. It is a FILTER, never a route — see _scan_agent_line().
-_AGENT_MARKERS = ('"name":"Agent"', '"tool_result"', "task-notification")
+_AGENT_MARKERS = ('"name":"Agent"', '"tool_result"', "task-notification",
+                  '"name":"Bash"', '"name":"PowerShell"', '"name":"Monitor"')
 
 
 def _scan_agent_line(line: str, registry: dict, pending: dict) -> None:
@@ -1287,6 +1331,8 @@ def _agent_status(entry: dict, live: bool, spawned_at: float | None) -> str:
     "running" forever. An entry with no `startedAt` (unparseable timestamp)
     is given the benefit of the doubt rather than assumed orphaned.
     """
+    if entry.get("stopped"):
+        return "stopped"
     if entry.get("completed"):
         return "completed"
     if not live:

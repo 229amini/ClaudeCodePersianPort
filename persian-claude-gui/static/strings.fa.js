@@ -143,7 +143,7 @@ window.FA = {
   agentRunning: "در حال اجرا",
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
-  agentsWaiting: "در انتظار {n} عامل پس‌زمینه…",
+  agentsWaiting: "در انتظار {n} کار پس‌زمینه…",
   /* The Background tasks panel, after claude.ai/code's. */
   tasksTitle: "کارهای پس‌زمینه",
   tasksRunning: "در حال اجرا",

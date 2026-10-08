@@ -427,6 +427,72 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a duplicate notification overwrites (last one wins)",
           registry2[AGENT_A]["summary"] == 'Agent "Do the async thing" finished AGAIN')
 
+print("build_agent_registry: background commands are seen at LAUNCH, not at finish (pcg-hl0)")
+
+
+def _shell_use(tool_use_id, name, inp, ts="2026-10-08T10:00:00.000Z"):
+    return _line({"type": "assistant", "timestamp": ts, "message": {"role": "assistant",
+                  "content": [{"type": "tool_use", "id": tool_use_id, "name": name, "input": inp}]}})
+
+
+def _shell_ack(tool_use_id, text, tur=None, ts="2026-10-08T10:00:01.000Z"):
+    record = {"type": "user", "timestamp": ts, "message": {"role": "user", "content": [
+        {"tool_use_id": tool_use_id, "type": "tool_result", "content": text}]}}
+    if tur is not None:
+        record["toolUseResult"] = tur
+    return _line(record)
+
+
+bg_lines = [
+    # run_in_background, with the toolUseResult the transcript carries
+    _shell_use("toolu_bg1", "Bash", {"command": "sleep 99", "description": "Long run",
+                                     "run_in_background": True}),
+    _shell_ack("toolu_bg1", "Command running in background with ID: bgaaaa111. Output ...",
+               {"stdout": "", "backgroundTaskId": "bgaaaa111"}),
+    # run_in_background, text only (the live stream has no toolUseResult)
+    _shell_use("toolu_bg2", "PowerShell", {"command": "Start-Sleep 99", "run_in_background": True}),
+    _shell_ack("toolu_bg2", "Command running in background with ID: bgbbbb222. Output ..."),
+    # a FOREGROUND command the CLI moved to the background at its timeout
+    _shell_use("toolu_bg3", "Bash", {"command": "rm -rf wb", "description": "Delete workspaces"}),
+    _shell_ack("toolu_bg3", "Command did not complete within its 600s timeout and was moved "
+               "to the background (ID: bgcccc333). Output is being written to: x",
+               {"backgroundTaskId": "bgcccc333", "timedOutAfterMs": 600000}),
+    # a Monitor
+    _shell_use("toolu_bg4", "Monitor", {"command": "tail -f log", "description": "Watch the log"}),
+    _shell_ack("toolu_bg4", "Monitor started (task bgdddd444, expires in 30m ...)"),
+    # an ordinary foreground command: no entry
+    _shell_use("toolu_fg", "Bash", {"command": "ls", "description": "List"}),
+    _shell_ack("toolu_fg", "a.txt"),
+    # TaskStop on the first; it writes no task-notification
+    _shell_ack("toolu_stop", '{"message":"Successfully stopped task: bgaaaa111 (sleep 99)",'
+               '"task_id":"bgaaaa111"}',
+               {"message": "Successfully stopped task: bgaaaa111 (sleep 99)",
+                "task_id": "bgaaaa111", "task_type": "local_bash"},
+               ts="2026-10-08T10:00:05.000Z"),
+    # the second finishes normally
+    _notification("bgbbbb222", "toolu_bg2", 'Background command "Start-Sleep 99" completed',
+                  "2026-10-08T10:00:09.000Z", as_queue_op=True, with_result=False),
+]
+
+with tempfile.TemporaryDirectory() as tmp:
+    transcript = Path(tmp) / "bg.jsonl"
+    transcript.write_text("\n".join(bg_lines) + "\n", encoding="utf-8")
+    reg = server.build_agent_registry(transcript)
+    status = {k: server._agent_status(e, True, None) for k, e in reg.items()}
+    check("four background tasks registered, the foreground `ls` is not",
+          set(reg) == {"bgaaaa111", "bgbbbb222", "bgcccc333", "bgdddd444"})
+    check("a running command reads running, with its own description",
+          status.get("bgcccc333") == "running"
+          and reg["bgcccc333"]["description"] == "Delete workspaces"
+          and reg["bgcccc333"]["kind"] == "command")
+    check("a Monitor reads running", status.get("bgdddd444") == "running")
+    check("no description falls back to the command",
+          reg["bgbbbb222"]["description"] == "Start-Sleep 99")
+    check("TaskStop marks it stopped (no notification is ever written)",
+          status.get("bgaaaa111") == "stopped")
+    check("a notification still completes a launch-registered command",
+          status.get("bgbbbb222") == "completed")
+
 print("build_agent_registry: the route is the parsed shape, not substring order")
 # The three cheap markers ('"name":"Agent"', '"tool_result"',
 # "task-notification") may FILTER a line but must never DECIDE its route: a
