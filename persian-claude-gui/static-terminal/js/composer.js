@@ -489,7 +489,10 @@ export function makeComposer(root, cell) {
     head.className = "ctx-head";
     head.setAttribute("dir", "auto");
     head.append(label(title, "ctx-title"), label(body, "ctx-body"));
-    notice.append(head);
+    const main = document.createElement("div");
+    main.className = "ctx-main";
+    main.append(ctxIcon(compact ? (urgent ? 100 : lastContext) : null), head);
+    notice.append(main);
 
     const row = document.createElement("div");
     row.className = "ctx-actions";
@@ -559,16 +562,32 @@ export function makeComposer(root, cell) {
     paintQueued();
   }
 
+  /* A ring filled to the context used, the bar's ◔ in small; a clock for the
+     idle hint (`pct` null), which is about time, not room. */
+  function ctxIcon(pct) {
+    const span = document.createElement("span");
+    span.className = "ctx-icon";
+    span.setAttribute("aria-hidden", "true");
+    const fill = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    span.innerHTML = pct === null
+      ? '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" '
+        + 'stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.25"/>'
+        + '<path d="M8 4.5V8l2.5 1.5"/></svg>'
+      : '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" '
+        + 'stroke-width="2"><circle cx="8" cy="8" r="6" stroke-opacity=".3"/>'
+        + `<circle cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${fill} 100" `
+        + 'transform="rotate(-90 8 8)"/></svg>';
+    return span;
+  }
+
   function ctxButton(text, note, cls, onClick) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ctx-btn " + cls;
     button.setAttribute("dir", "auto");
     button.append(label(text, "ctx-btn-text"));
-    // v2.5: the notice is a one-line warning row now, so the
-    // per-action explanation moves to the hover. The node stays — it is what
-    // the spec harness reads — and the title is where a line-long row can still
-    // say «خلاصه می‌شود و همین گفتگو ادامه پیدا می‌کند» without becoming a card.
+    // The per-action explanation is the hover: the node stays (the spec
+    // harness reads it), the title is where it is shown.
     if (note) {
       button.append(label(note, "ctx-btn-note"));
       button.title = note;
@@ -1664,12 +1683,22 @@ export function makeComposer(root, cell) {
     const plusBtn = $("bar-plus-btn");
     const slashBtn = $("bar-slash-btn");
     const ringBtn = $("bar-ring");
+    /* One dialog at a time. The first one of a session can take seconds to
+       appear (a cold tkinter child, server.py pick_files), and a second press
+       meanwhile opened a second dialog: the same image picked twice was attached
+       twice and sent twice (2026-10-09). The same file twice is dropped too. */
+    let picking = false;
     const pickFiles = async () => {
+      if (picking) return;
+      picking = true;
       try {
         const { paths } = await api("/api/attach/pick", {});
-        if (paths?.length) setAttachments([...attachments, ...paths]);
+        const fresh = (paths ?? []).filter((p) => !attachments.includes(p));
+        if (fresh.length) setAttachments([...attachments, ...fresh]);
       } catch (err) {
         bubble("error", FA.pasteFailed);
+      } finally {
+        picking = false;
       }
     };
     // `@` at the caret, as if typed: the file list opens off the input event.

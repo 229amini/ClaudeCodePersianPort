@@ -949,7 +949,7 @@ pre, code, .path, .diff, .tool-output, .mono {
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
-  padding-block-end: 24px;
+  padding-block-end: 4px;   /* the folder line belongs to the prompt under it */
   flex: 1 1 0;
 }
 .cell.home::after {
@@ -975,51 +975,118 @@ pre, code, .path, .diff, .tool-output, .mono {
 .greeting { max-inline-size: 100%; }
 .greeting-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* --- home action cards ------------------------------------------------------ */
-/* Same reading column as the composer below them, so the home state reads as
-   one block rather than two centred things of different widths. */
-.home-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  width: min(var(--app-column-max), calc(100% - 40px));
-  margin-block-start: 24px;
+/* --- the home state around the prompt ---------------------------------------
+   claude.ai's start page: the greeting, the folder the first message runs in
+   right above the prompt, then suggestions and this folder's recent
+   conversations under it. All of it on the composer's own reading column, so
+   the page reads as one block. The prompt itself is live even with no
+   conversation open (js/composer.js setBlank). */
+/* The composer's own column formula (.composer padding), not a width of its
+   own: a `calc(100% - 24px)` width drifted 8px off the prompt's edge in a
+   narrow cell. */
+.home-where,
+.home-below {
+  align-self: stretch;
+  padding-inline: max(20px, calc((100% - var(--app-column-max)) / 2));
 }
-
+.home-where {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-block-start: 24px;
+  color: var(--app-secondary-foreground);
+  font-size: var(--fs-meta);
+}
 /* A <button>, so it inherits the coral button:hover unless it says otherwise —
    the sidebar rows learned this the hard way. (0,2,0) beats button:hover's
    (0,1,1) regardless of source order. */
-.home-card {
-  display: flex;
+.home-where .hw-folder {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  min-height: 62px;
-  padding: 12px 16px;
-  /* pcg-rf8 R7: VS Code's welcome-page tile (welcomePage.tileBackground),
-     with the list's hover. */
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  block-size: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--corner-radius-medium);
+  background: none;
+  color: var(--app-primary-foreground);
+  font-size: var(--fs-ui);
+}
+.home-where .hw-folder:hover { background: var(--app-list-hover-background); }
+.home-where .hw-folder:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: -1px; }
+.hw-folder svg { flex: none; color: var(--accent); }
+.hw-folder .hw-caret { color: var(--app-secondary-foreground); }
+.hw-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.home-below { display: none; }
+.cell.home > .home-below {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-block-start: 12px;
+}
+.home-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.home-suggest .hs-chip {
+  min-height: 0;
+  block-size: 28px;
+  padding: 0 12px;
+  /* pcg-rf8 R7: VS Code's welcome-page tile (welcomePage.tileBackground). */
   border: 1px solid var(--app-primary-border-color);
   border-radius: var(--corner-radius-medium);
   background: #2b2b2b;
-  color: var(--app-primary-foreground);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
-}
-.home-card:hover { background: var(--app-list-hover-background); border-color: var(--app-input-border); }
-.home-card:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
-.home-card svg { flex: none; color: var(--accent); }
-
-.hc-text { display: flex; flex-direction: column; min-width: 0; }
-.hc-title { font-size: 12px; font-weight: 500; }
-.hc-note {
   color: var(--app-secondary-foreground);
-  font-size: var(--app-font-size-min-fa);
-  line-height: 1.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--fs-ui);
+  font-weight: 400;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
+.home-suggest .hs-chip:hover { background: var(--app-list-hover-background); color: var(--app-primary-foreground); }
+.home-suggest .hs-help {
+  min-height: 0;
+  block-size: 28px;
+  margin-inline-start: auto;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--app-secondary-foreground);
+  font-size: var(--fs-ui);
+  font-weight: 400;
+}
+.home-suggest .hs-help:hover { background: none; color: var(--app-primary-foreground); text-decoration: underline; }
+.home-suggest :focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: 1px; }
+
+.home-recent[hidden] { display: none; }
+.hr-title {
+  margin: 0 0 4px;
+  padding-inline: 8px;
+  color: var(--app-secondary-foreground);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+.hr-list { margin: 0; padding: 0; list-style: none; }
+.hr-list .hr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  inline-size: 100%;
+  min-height: 0;
+  block-size: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--corner-radius-medium);
+  background: none;
+  color: var(--app-primary-foreground);
+  font-size: var(--fs-ui);
+  font-weight: 400;
+  text-align: start;
+}
+.hr-list .hr-row:hover { background: var(--app-list-hover-background); }
+.hr-list .hr-row:focus-visible { outline: 1px solid var(--app-focus-border); outline-offset: -1px; }
+/* Sized to its text, not `flex: 1`: a dir=auto box as wide as the row put an
+   English title against the far (left) edge. The sidebar's .sess-preview rule. */
+.hr-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-when { flex: none; margin-inline-start: auto; color: var(--app-secondary-foreground); font-size: var(--fs-meta); }
 
 /* --- session hover preview --------------------------------------------------- */
 /* Positioned in px from a measured rect (js/chrome.js), so no inset here. */
@@ -2392,55 +2459,63 @@ button.round svg { width: 16px; height: 16px; }
 /* Inside the permission dialog the box already has one background. */
 .perm-params .diff { background: none; padding: 0; max-height: 18em; }
 
-/* --- context notice ----------------------------------------------------------
-   Sits above the composer, in the flow — not a floating toast. This is a
-   decision the user has to make before the conversation can continue, and a
-   toast that times out would hide it. */
+/* The context notice (composer.js paintNotice), above the prompt, in the flow:
+   a decision the user has to make, so never a toast that times out.
+   2026-10-09, the user on the amber box with underlined links: «خیلی بد بود».
+   Now a calm card on the ground colour. Only the icon carries the warning tint
+   (red when urgent); the title and its sentence stack beside it; the actions
+   are real buttons at the inline end, under the text in a narrow pane. Each
+   action's explanation rides in its `title`. */
 .context-notice {
-  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
-  /* pcg-rf8 R6: the extension's .notice [KPdslw], a card tinted with the
-     warning accent, the error red when urgent. */
   --tint: var(--app-warning-accent);
+  margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--app-primary-foreground), var(--tint) 50%);
+  border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-large);
-  background: color-mix(in srgb, var(--app-secondary-background), var(--tint) 25%);
+  background: var(--app-secondary-background);
   color: var(--app-primary-foreground);
+  font-size: 13px;
   line-height: 1.4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 16px;
+  gap: 8px 12px;
 }
 .context-notice[hidden] { display: none; }   /* beats the flex above */
-.context-notice.urgent { --tint: var(--app-error-foreground); }
+.context-notice.urgent {
+  --tint: var(--app-error-foreground);
+  border-color: color-mix(in srgb, var(--app-input-border), var(--tint) 50%);
+}
+.ctx-main { display: flex; align-items: flex-start; gap: 8px; flex: 1 1 14rem; min-width: 0; }
+.ctx-icon { flex: none; inline-size: 16px; block-size: 16px; margin-block-start: 2px; color: var(--tint); }
+.ctx-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ctx-title { font-weight: 500; }
+.ctx-body { color: var(--fg-muted); font-size: 12px; }
 
-.ctx-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 16rem; min-width: 0; }
-.ctx-title { font-weight: 600; }
-.ctx-body { font-size: 12px; }
-
-.ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ctx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-inline-start: auto; }
 .ctx-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-small);
-  background: var(--app-secondary-background);
-  color: inherit;
+  background: none;
+  color: var(--app-primary-foreground);
   font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
-/* VS Code's own buttons: secondary on the ground, primary in button blue. */
 .ctx-btn:hover { background: var(--app-list-hover-background); }
 .ctx-btn.primary { background: var(--app-button-background); border-color: transparent; color: var(--app-button-foreground); }
 .ctx-btn.primary:hover { background: var(--app-button-hover-background); }
-.ctx-btn.ghost { background: none; border-color: transparent; color: inherit; }
-.ctx-btn.ghost:hover { background: var(--app-ghost-button-hover-background); }
-.ctx-btn-text { font-weight: 600; font-size: 12px; }
-.ctx-btn-note { font-size: 12px; opacity: .8; }
+.ctx-btn.ghost { border-color: transparent; color: var(--fg-muted); }
+.ctx-btn.ghost:hover { background: var(--app-ghost-button-hover-background); color: var(--app-primary-foreground); }
+.ctx-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ctx-btn-text { font-weight: 500; }
+/* The note stays in the DOM (the spec harness reads it) and in the title. */
+.ctx-btn-note { display: none; }
 
 /* --- the queued-message strip ------------------------------------------------
    A message sent while the CLI is still answering is not delivered: it waits in
@@ -3006,9 +3081,7 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
   .agents-strip { margin-inline: 12px; }
   .perm { margin-inline: 12px; }
   .replay-banner { width: calc(100% - 24px); }
-  /* Two columns of 97px fit neither a title nor its note: the cards grew to
-     215px tall and clipped their own text. One column, full width. */
-  .home-cards { grid-template-columns: minmax(0, 1fr); width: calc(100% - 24px); }
+  .home-where, .home-below { padding-inline: 12px; }
   .greeting { font-size: 20px; gap: 12px; }
 }
 
@@ -3048,7 +3121,10 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
      wrong one: a picker the user cannot find is a feature that is gone. */
   .comp-row { gap: 4px; }
   .chip-btn { padding: 0 8px; }
-  .home-cards { display: none; }
+  /* No room under the prompt: the suggestions and the recent list pushed the
+     greeting off the top of a 760x480 window's quarter. The prompt sends on its
+     own and the sidebar lists the same conversations. */
+  .cell.home > .home-below { display: none; }
   .greeting { font-size: 20px; }
 }
 }
@@ -3161,6 +3237,13 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* A footer row's current value («لحن پاسخ  کار روزمره») and its «‹». */
 .bar-row-value { flex: none; max-inline-size: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
 .bar-row-chevron { flex: none; color: var(--fg-muted); font-size: 14px; }
+/* The model menu, after the extension's (2026-10-09 reference): names only,
+   ✓ on the current one and a digit on each other, the older models in a list
+   beside it. As narrow as its names; the effort row at its foot sets the floor. */
+.bar-menu.is-compact { min-inline-size: 240px; }
+.bar-sub { min-inline-size: 180px; }
+.bar-row-check.is-digit { color: var(--fg-faint, var(--fg-muted)); font-size: 12px; }
+.bar-more[aria-expanded="true"] { background: var(--app-list-hover-background); }
 /* Fixed after the first message: still read, never picked. */
 .bar-foot:disabled { color: var(--fg-muted); cursor: default; }
 .bar-foot:disabled .bar-row-value { color: var(--fg); }
@@ -3551,6 +3634,36 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .diff-side-close:hover, .diff-side-close:focus-visible { background: var(--surface-2); color: var(--fg); outline: none; }
 .diff-side-body { flex: 1 1 auto; min-block-size: 0; overflow: auto; padding: 8px; }
 .diff-side-edit + .diff-side-edit { margin-block-start: 8px; }
+/* What was approved without asking (marks.js openAudit), in the same panel:
+   rows to read, not to pick -- no button, no hover, no highlight. */
+.audit-title { font-weight: 500; }
+.audit-count { color: var(--fg-muted); }
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+  border-block-end: 1px solid var(--border);
+  font-size: 13px;
+}
+.audit-row:last-child { border-block-end: 0; }
+.audit-top { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; }
+.audit-tool { font-family: var(--app-monospace-font-family); font-weight: 500; }
+.audit-why, .audit-time { color: var(--fg-muted); font-size: 12px; }
+.audit-time { margin-inline-start: auto; }
+.audit-target.path {
+  display: block;
+  padding: 0;
+  background: none;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.audit-empty { margin: 0; padding: 8px 4px; color: var(--fg-muted); font-size: 13px; }
 @container (max-width: 640px) {
   .diff-open > .log { margin-inline-end: 0; }
   .diff-side { inline-size: 100%; border-inline-start: 0; }

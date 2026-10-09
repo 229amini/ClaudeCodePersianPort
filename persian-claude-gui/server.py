@@ -100,6 +100,22 @@ PERMISSION_TIMEOUT = None
 ASK_TOOL = "AskUserQuestion"
 ASK_TIMEOUT = None
 
+# The audit list's second line: what an auto-approved call touched. First key
+# present wins, in the order the built-in tools name their subject; an MCP tool
+# with none of them gets no line rather than a guess.
+AUDIT_TARGET_KEYS = ("file_path", "notebook_path", "command", "url", "pattern",
+                     "query", "path", "skill", "description", "prompt")
+
+
+def audit_target(tool_input) -> str:
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in AUDIT_TARGET_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:240]
+    return ""
+
 # --verbose is mandatory: without it the CLI exits with
 # "When using --print, --output-format=stream-json requires --verbose".
 #
@@ -2702,7 +2718,9 @@ class PermissionBroker:
             remembered = not asking and tool_name in self.session_allow
             auto = not asking and self.auto_approve
             if remembered or auto:
-                self.auto_log.append({"tool_name": tool_name, "at": time.time(),
+                at = time.time()
+                target = audit_target(tool_input)
+                self.auto_log.append({"tool_name": tool_name, "at": at, "target": target,
                                       "why": "remembered" if remembered else "posture"})
                 count = len(self.auto_log)
 
@@ -2714,7 +2732,7 @@ class PermissionBroker:
             # «محتاط» too.
             self._publish_resolved(request_id, tool_use_id, "allow", auto=True,
                                    auto_count=count, tool_name=tool_name,
-                                   why="remembered")
+                                   why="remembered", target=target, at=at)
             return {"decision": "allow", "reason": "session allow-rule"}
 
         if auto:
@@ -2722,7 +2740,8 @@ class PermissionBroker:
             # running count and each tool card gets its "allowed" note.
             self._publish_resolved(request_id, tool_use_id, "allow",
                                    auto=True, auto_count=count,
-                                   tool_name=tool_name, why="posture")
+                                   tool_name=tool_name, why="posture",
+                                   target=target, at=at)
             return {"decision": "allow", "reason": "auto-approve posture"}
 
         waiter = threading.Event()
@@ -2786,8 +2805,9 @@ class PermissionBroker:
     def _publish_resolved(self, request_id: str, tool_use_id: str | None,
                           decision: str, auto: bool = False,
                           auto_count: int = 0, tool_name: str | None = None,
-                          why: str | None = None) -> None:
-        self.hub.publish({
+                          why: str | None = None, target: str | None = None,
+                          at: float | None = None) -> None:
+        event = {
             "type": "wrapper",
             "subtype": "permission_resolved",
             "request_id": request_id,
@@ -2800,7 +2820,14 @@ class PermissionBroker:
             # card is not there yet.
             "tool_name": tool_name,
             "why": why,
-        })
+        }
+        if auto:
+            # What the list shows under the tool: the path or command it ran
+            # on, and when. Only on the silent paths -- an asked request has
+            # its dialog and its card.
+            event["target"] = target or ""
+            event["at"] = at
+        self.hub.publish(event)
 
     def respond(self, request_id: str, decision: str, remember: bool,
                 tool_name: str | None, answers: dict | None = None,
@@ -4045,8 +4072,9 @@ class ClaudeSession:
         model = resolve_model(effective.get("model"), info.get("models"))
         if model and generation == self._generation:
             self.hub.publish({"type": "wrapper", "subtype": "model", "model": model})
-        level = effective.get("effortLevel")
-        self.publish_effort(level if isinstance(level, str) else None)
+        # effective.effortLevel is NOT the level in force any more (see
+        # _effort_state): publish_effort reads `applied` itself.
+        self.publish_effort()
 
     # --- reasoning effort ---------------------------------------------------
     #
@@ -4068,13 +4096,38 @@ class ClaudeSession:
     # to the user's own value. So "max" is offered by the CLI and refused by the
     # CLI. Never report success from the ack -- only from effective.
 
-    def effort(self) -> str | None:
+    # 2.1.294 (measured 2026-10-09) moved the truth. get_settings now carries
+    # `applied` = {model, effort, ultracode, ultracodeAvailable, ...}, computed
+    # rather than echoed: a garbage level leaves applied.effort unchanged, "max"
+    # lands there, and Haiku 4.5 reports effort None. effective.effortLevel is
+    # the SETTINGS merge and stays "high" through a max or an ultracode -- it was
+    # the right field on 2.1.223 and is the wrong one now. Read `applied`, fall
+    # back to `effective` on a build without it.
+    #
+    # ULTRACODE («اولترا») is the CLI's sixth effort stop: apply_flag_settings
+    # {"effortLevel": "ultracode"} turns on xhigh plus standing workflow
+    # orchestration (applied.effort "xhigh", applied.ultracode true). Any other
+    # level turns it back off. applied.ultracodeAvailable is per model (false on
+    # Haiku 4.5) and decides whether the stop is offered at all.
+
+    def _effort_state(self) -> tuple[str | None, bool]:
+        """(the level in force, with "ultracode" for ultracode; available?)"""
         response = self.control("get_settings", timeout=10.0)
         if response.get("subtype") != "success":
-            return None
-        effective = ((response.get("response") or {}).get("effective") or {})
-        level = effective.get("effortLevel")
-        return level if isinstance(level, str) else None
+            return None, False
+        body = response.get("response") or {}
+        applied = body.get("applied")
+        if isinstance(applied, dict):
+            if applied.get("ultracode") is True:
+                return "ultracode", True
+            level = applied.get("effort")
+            return (level if isinstance(level, str) else None,
+                    applied.get("ultracodeAvailable") is True)
+        level = (body.get("effective") or {}).get("effortLevel")
+        return (level if isinstance(level, str) else None), False
+
+    def effort(self) -> str | None:
+        return self._effort_state()[0]
 
     def set_effort(self, level: str) -> str | None:
         """Apply a level and return what is ACTUALLY in force afterwards.
@@ -4082,18 +4135,22 @@ class ClaudeSession:
         The caller compares: a returned level that is not the requested one
         means the CLI refused it, quietly, with a cheerful success.
         """
-        self.control("apply_flag_settings", timeout=10.0,
-                     settings={"effortLevel": level})
+        settings: dict = {"effortLevel": level}
+        if level != "ultracode":
+            settings["ultracode"] = False
+        self.control("apply_flag_settings", timeout=10.0, settings=settings)
         return self.effort()
 
     def publish_effort(self, level: str | None = None) -> None:
         try:
-            current = level if level is not None else self.effort()
+            current, available = self._effort_state()
         except RuntimeError:
             return   # the process went away; nothing to report
-        if current:
-            self.hub.publish({"type": "wrapper", "subtype": "effort",
-                              "effort": current})
+        current = level if level is not None else current
+        # Published with no level too: a model that takes none (Haiku 4.5)
+        # still has to retract the ultracode stop the last one offered.
+        self.hub.publish({"type": "wrapper", "subtype": "effort",
+                          "effort": current, "ultracode_available": available})
 
     # --- output style -------------------------------------------------------
     #
@@ -4842,6 +4899,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK,
                             {"ok": True, "response": response.get("response") or {}})
+            # A new model brings its own effort and its own ultracode
+            # availability (none on Haiku 4.5): the effort stops follow it.
+            if subtype == "set_model":
+                threading.Thread(target=session.publish_effort, daemon=True).start()
         elif parsed.path == "/api/effort":
             # One level string, never a settings blob: apply_flag_settings takes
             # arbitrary settings and must not be reachable from the page.
@@ -4862,6 +4923,8 @@ class Handler(BaseHTTPRequestHandler):
             session.publish_effort(current)
             self._send_json(HTTPStatus.OK,
                             {"ok": current == level, "effort": current})
+            # (ultracode on a model without it comes back as the old level:
+            # the same refusal path as any other level the CLI dropped.)
         elif parsed.path == "/api/output-style":
             # One style name, never a settings blob -- same reason as /api/effort.
             # Validated against what the CLI advertised, because nothing

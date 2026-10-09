@@ -21,6 +21,8 @@ import { optionList, dialogHint } from "./choice.js";
    screen-px -> CSS-px conversion they are placed with under app zoom. */
 import { openMenu, fmtTokens } from "./bar.js";
 import { cssPx } from "./prefs.js";
+/* A leaf: the side panel beside the transcript, where the audit list opens. */
+import { openAudit, auditOpen } from "./marks.js";
 
 const FA = window.STRINGS;
 
@@ -223,6 +225,23 @@ export function makeControls(root, cell) {
      path here is a real path, not defensive padding. */
 
   let effort = null;
+  /* «اولترا» (ultracode): the CLI's sixth stop, offered only where get_settings
+     says this model can take it (server.py _effort_state; none on Haiku 4.5). */
+  let ultracodeOk = false;
+  /* system/init.per_turn_effort_active: true means the CLI sends the effort
+     inside the conversation and a change keeps the prompt cache; false means
+     it is the top-level parameter and a change rewrites the cached prefix.
+     Null until a turn has said (measured true on 2.1.294, 2026-10-09). */
+  let perTurnEffort = null;
+
+  function setUltracodeAvailable(on) {
+    ultracodeOk = !!on;
+    paintEffort();
+  }
+
+  function setPerTurnEffort(on) {
+    perTurnEffort = on;
+  }
 
 
   function setEffortState(level) {
@@ -234,7 +253,8 @@ export function makeControls(root, cell) {
     const entry = modelEntry();
     const levels = entry?.supportsEffort && Array.isArray(entry.supportedEffortLevels)
       ? entry.supportedEffortLevels : [];
-    return levels.filter((level) => !refused.has(level));
+    const offered = ultracodeOk && levels.length ? [...levels, "ultracode"] : levels;
+    return offered.filter((level) => !refused.has(level));
   }
 
 
@@ -249,7 +269,43 @@ export function makeControls(root, cell) {
   function effortTrack() {
     const levels = effortLevels();
     return levels.length ? { title: FA.barEffort, levels, current: effort, label: effortLabel,
+                             confirm: effortSwitchAsk,
                              onPick: (level) => pickEffort({ key: level }) } : null;
+  }
+
+  /* A level change asks first only when it really costs: mid-conversation,
+     and only when the CLI says the change rewrites the cached prefix
+     (perTurnEffort false). On 2.1.294 it does not — the effort rides inside
+     the conversation — and a question about a cost that is not there would be
+     a wrong one. Ultracode on or off is a level like the others. */
+  function effortSwitchAsk(level) {
+    if (!started() || level === effort || perTurnEffort !== false) return null;
+    const size = root.querySelector?.(".bar-cache")?._cache?.size;
+    return {
+      text: size ? FA.effortSwitchAsk.replace("{n}", fmtTokens(size)) : FA.effortSwitchAskPlain,
+      ok: FA.modelSwitchOk, cancel: FA.modelSwitchCancel,
+    };
+  }
+
+  /* The model menu after the extension's (2026-10-09 reference): the CLI's
+     aliases — opus, fable, sonnet, haiku, the current generation — on the
+     list itself, every pinned id (claude-…) under «مدل‌های بیشتر». The
+     description is the hover title, not a second line. The model in use is
+     always on the first list, wherever it came from. */
+  function modelGroups(current) {
+    const list = models.filter((m) => twinOf(m) === m);
+    const alias = (m) => !/^claude-/.test(m.value);
+    let top = list.filter(alias);
+    let rest = list.filter((m) => !alias(m));
+    if (!top.length) { top = list; rest = []; }
+    if (current && rest.includes(current)) {
+      top = [...top, current];
+      rest = rest.filter((m) => m !== current);
+    }
+    const row = (m) => ({ key: m.value, title: m.displayName || m.value,
+                          tip: m.description || "", selected: m === current });
+    return { rows: top.map(row),
+             more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null };
   }
 
   async function pickEffort(item) {
@@ -317,13 +373,16 @@ export function makeControls(root, cell) {
   }
 
   function openStyleMenu() {
-    if (!ui.postureChip || ui.postureChip.hidden) return openStylePicker();
+    // From its own chip on the bar, or from the mode menu's row under it.
+    const anchor = ui.styleChip && !ui.styleChip.hidden ? ui.styleChip
+      : ui.postureChip && !ui.postureChip.hidden ? ui.postureChip : null;
+    if (!anchor) return openStylePicker();
     if (started()) {
       reportPicker("style", FA.styleTitle, FA.styleLockedNow.replace("{name}", styleLabel(style)));
       return true;
     }
-    return openMenu(ui.postureChip, { title: FA.styleTitle, toCss: cssPx, rows: styleRows(),
-                                      note: FA.styleNote, onPick: pickStyle });
+    return openMenu(anchor, { title: FA.styleTitle, toCss: cssPx, rows: styleRows(),
+                              note: FA.styleNote, onPick: pickStyle });
   }
 
   function setOutputStyle(name) {
@@ -414,11 +473,13 @@ export function makeControls(root, cell) {
   /* What was approved without asking, so the counter can be opened and read.
      Fed by permission_resolved events, which the SSE hub replays to a reloading
      window — so the list survives a refresh exactly as far as the count does. */
-  const autoActions = [];   // [{tool, why}]
+  const autoActions = [];   // [{tool, why, target, at}]
   let autoCount = 0;
 
-  function noteAutoAction(toolName, why) {
-    autoActions.push({ tool: toolName || "?", why });
+  function noteAutoAction(toolName, why, target, at) {
+    autoActions.push({ tool: toolName || "?", why, target: target || "", at });
+    // An open list follows along, without taking the keyboard from the prompt.
+    if (auditOpen(cell.log)) openAudit(cell.log, autoActions, { focus: false });
   }
 
   /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
@@ -439,8 +500,8 @@ export function makeControls(root, cell) {
      `refused` is deliberately NOT in the snapshot: an effort level the CLI's own
      settings schema rejects is a fact about the build, not about a session. */
   function snapshot() {
-    return { models, chosen, resolved, styles, style, effort, posture, autoCount,
-             cliMode, autoActions: autoActions.slice() };
+    return { models, chosen, resolved, styles, style, effort, ultracodeOk, perTurnEffort,
+             posture, autoCount, cliMode, autoActions: autoActions.slice() };
   }
 
   /* A tab that has never been looked at has no snapshot — hence the defaults on
@@ -453,6 +514,8 @@ export function makeControls(root, cell) {
     styles = s.styles ?? [];
     style = s.style ?? null;
     effort = s.effort ?? null;
+    ultracodeOk = s.ultracodeOk ?? false;
+    perTurnEffort = s.perTurnEffort ?? null;
     posture = s.posture ?? null;
     cliMode = s.cliMode ?? null;
     autoActions.length = 0;
@@ -585,15 +648,13 @@ export function makeControls(root, cell) {
 
   /* The count alone is a number with nothing behind it. Opening it is the audit
      trail that makes the auto posture -- and a remembered tool -- defensible. No
-     endpoint: the events that produced the count carry the tool name. */
+     endpoint: the events that produced the count carry the tool, its path or
+     command, and the time. A list to read beside the transcript (marks.js
+     openAudit), not a picker: nothing in it is chosen, so no row is a button
+     and no key walks it (the user, 2026-10-09). */
   function openAuditList() {
-    const rows = autoActions.length
-      ? autoActions.map((a) => ({
-          key: "", title: a.tool,
-          note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
-        }))
-      : [{ key: "", title: FA.autoActionsEmpty }];
-    return openPicker("auto", FA.autoActionsTitle, rows, null);
+    closePicker();
+    return !!openAudit(cell.log, autoActions);
   }
 
   /* --- init ------------------------------------------------------------------ */
@@ -605,14 +666,11 @@ export function makeControls(root, cell) {
      truth, and a failure still reports through the inline picker. */
   function openModelMenu() {
     const current = twinOf(modelEntry());
-    // Every model in one list, the CLI's own order (the extension's menu). The
-    // «Default» alias is not a row when the list names its model (twinOf): the
-    // ✓ sits on that model, which is what the alias means.
+    // The «Default» alias is not a row when the list names its model (twinOf):
+    // the ✓ sits on that model, which is what the alias means.
+    const { rows, more } = modelGroups(current);
     return openMenu(ui.modelChip, {
-      title: FA.barModel, toCss: cssPx,
-      rows: models.filter((m) => twinOf(m) === m).map((m) => ({
-        key: m.value, title: m.displayName || m.value,
-        note: m.description || "", selected: m === current })),
+      title: FA.barModel, toCss: cssPx, rows, more, digits: true, compact: true,
       effort: effortTrack(),
       confirm: (row) => modelSwitchAsk(row, current),
       onPick: pickModel,
@@ -641,6 +699,7 @@ export function makeControls(root, cell) {
   function initControls() {
     ui.modelChip?.addEventListener("click", openModelMenu);
     ui.postureChip?.addEventListener("click", openModeMenu);
+    ui.styleChip?.addEventListener("click", () => openStyleMenu());
     if (!ui.picker) return;   // spec-test.html carries no composer chrome
 
     /* Escape inside the dialog closes it. Bound here rather than on the document
@@ -663,6 +722,7 @@ export function makeControls(root, cell) {
   return {
     applyInitInfo, setModelResolved, resetControls,
     setPostureState, setEffortState, setOutputStyle, setCliMode,
+    setUltracodeAvailable, setPerTurnEffort,
     setAutoCount, noteAutoAction,
     snapshot, restore, cyclePosture,
     openPicker, pickerOpen, closePicker,

@@ -130,55 +130,22 @@
       <span class="greeting-text"></span>
     </h1>
 
-    <!-- Four ways in, none of them new capability: each card presses something
-         the user could already have reached (js/chrome.js). No server code was
-         added for this section. -->
-    <div class="home-cards">
-      <button type="button" class="home-card home-resume" hidden>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <!-- The note is the session's own title: user text, either script. -->
-          <span class="hc-note" dir="auto"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card home-open">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+    <!-- Where the first message will run (claude.ai's project line). The
+         topbar's folder button is hidden in the home state, so without this
+         line nothing on the page said which folder a message lands in. The
+         button is the folder picker (js/chrome.js). -->
+    <div class="home-where">
+      <span class="hw-label"></span>
+      <button type="button" class="hw-folder">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
         </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card home-explain">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20.5 14.5a3 3 0 01-3 3H8.5l-4.5 3.2V6a3 3 0 013-3h10.5a3 3 0 013 3z"/>
+        <bdi class="hw-name"></bdi>
+        <svg class="hw-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 10l5 5 5-5"/>
         </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
-      </button>
-
-      <button type="button" class="home-card home-help">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.2"/>
-          <path d="M9.4 9.2a2.6 2.6 0 115.1.9c-.5 1.5-2 1.7-2 3.2"/>
-          <circle cx="12.4" cy="16.8" r=".4" fill="currentColor"/>
-        </svg>
-        <span class="hc-text">
-          <span class="hc-title"></span>
-          <span class="hc-note"></span>
-        </span>
       </button>
     </div>
   </section>
@@ -289,6 +256,15 @@
           </svg>
           <span class="posture-chip-name" dir="auto"></span>
         </button>
+        <!-- The response style, beside the mode and opened straight from the bar
+             (the user, 2026-10-09: not only as a row inside the mode menu). Its
+             list opens before the first message; after it, the chip says the
+             style is fixed (js/controls.js openStyleMenu). Hidden with one style. -->
+        <button type="button" class="chip-btn style-chip" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 12h5"/></svg>
+          <span class="style-chip-name" dir="auto"></span>
+        </button>
 
         <span class="comp-spacer"></span>
 
@@ -332,6 +308,18 @@
       </div>
     </div>
   </form>
+
+  <!-- Under the prompt in the home state only: suggestions that type
+       themselves into the box and send (no hidden prompt — the chip's label is
+       the message), then this folder's recent conversations. Both built by
+       js/chrome.js. -->
+  <section class="home-below">
+    <div class="home-suggest"></div>
+    <div class="home-recent" hidden>
+      <h2 class="hr-title"></h2>
+      <ul class="hr-list"></ul>
+    </div>
+  </section>
 
   </section>
 </template>

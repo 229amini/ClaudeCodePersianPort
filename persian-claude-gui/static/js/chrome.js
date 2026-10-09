@@ -33,7 +33,7 @@ const ui = {
   btnNew: document.getElementById("btn-new"),
 };
 
-/* THE CELL-LOCAL HALF (MA4-T2). The topbar, the home state and its four cards,
+/* THE CELL-LOCAL HALF (MA4-T2). The topbar, the home state and its folder line,
    the folder chip and the replay banner belong to ONE column, and there are up
    to four of them — so they are looked up inside the cell that owns them rather
    than once at load, where every lookup would have found cell 1. Cached on the
@@ -48,7 +48,8 @@ function cui(cell) {
       topbarName: q("topbar-name"), topbarCwd: q("topbar-cwd"),
       projChip: q("proj-chip"), projChipName: q("proj-chip-name"),
       home: q("home"), greeting: q("greeting-text"), banner: q("replay-banner"),
-      cardResume: q("home-resume"),
+      hwName: q("hw-name"), hwFolder: q("hw-folder"),
+      recent: q("home-recent"), recentList: q("hr-list"),
     };
   }
   return cell.chromeUI;
@@ -67,7 +68,8 @@ function focusedRef() {
 
 let currentCwd = "";
 let currentSession = null;
-let lastSession = null;   // newest OTHER session here: {id, path, label}
+let recentHere = [];      // newest sessions of the window's folder, for the home list
+const RECENT_MAX = 5;
 const expanded = new Set();   // lowercased project paths open in the sidebar
 let autoExpanded = null;      // the project `expanded` was last auto-opened for
 let lastProjects = [];        // what /api/projects last answered, for a repaint
@@ -394,8 +396,10 @@ export function setChrome(cwd, cell = null) {
   const path = target ? target.cwd || "" : currentCwd;
   // `currentCwd` is what the WINDOW is working in — the folder «گفتگوی جدید»
   // opens and the one a replay falls back to — so it follows the focused
-  // column, never whichever conversation happened to speak last.
-  if (!target || target === focusedRef()) currentCwd = path;
+  // column, never whichever conversation happened to speak last. A column with
+  // no conversation has no folder of its own and keeps the window's: it used to
+  // wipe it, and the home page then had no folder to name or to open one in.
+  if (path && (!target || target === focusedRef())) currentCwd = path;
   // render.js calls this on system/init with a bare cwd, before any projects
   // fetch, so the folder name is what shows for a moment; the debounced
   // refreshProjects() that follows corrects it to the override.
@@ -428,35 +432,82 @@ function syncHome(cell) {
   const empty = cell.log.childElementCount === 0;
   if (empty) {
     u.greeting.textContent = greetingText();
-    syncResumeCard(cell);
+    syncWhere(cell);
+    syncRecent(cell);
   }
   cell.root.classList.toggle("home", empty);
 }
 
-/* Every column's home state at once: `lastSession` is a fact about the WINDOW's
-   current folder, and each empty column offers it. */
+/* Every column's home state at once: the recent list is a fact about the
+   WINDOW's current folder, and each empty column offers it. */
 function syncHomeAll() {
   for (const cell of tabBridge?.cells?.() ?? []) syncHome(cell);
 }
 
-/* The «ادامه آخرین گفتگو» card is the only one whose availability is data-
-   dependent: a brand-new folder has nothing to resume, and offering a dead
-   button is worse than offering three. */
-function syncResumeCard(cell) {
-  const card = cui(cell).cardResume;
-  if (!card) return;
-  card.hidden = !lastSession;
-  if (lastSession) {
-    card.querySelector(".hc-note").textContent = lastSession.label;
-  }
+/* The folder the first message will run in: this column's conversation's own
+   folder, and in a column with none, the window's (openHere below). */
+function homeFolder(cell) {
+  return (cell?.tab && cell.cwd) || currentCwd;
 }
 
-function cardText(cell, cls, title, note) {
-  const el = cell.root.querySelector("." + cls);
-  if (!el) return null;
-  el.querySelector(".hc-title").textContent = title;
-  if (note !== undefined) el.querySelector(".hc-note").textContent = note;
-  return el;
+function syncWhere(cell) {
+  const u = cui(cell);
+  if (!u.hwName) return;
+  const path = homeFolder(cell);
+  u.hwName.textContent = path ? displayName(path) : FA.homeNoFolder;
+  u.hwFolder.title = path ? path + "\n" + FA.homeChangeFolder : FA.homeChangeFolder;
+}
+
+/* This folder's newest conversations. A row open in a tab already switches
+   to it, as the sidebar's does — resuming it twice would be two CLIs writing
+   one transcript. Hidden when there is nothing, never a dead heading. */
+function syncRecent(cell) {
+  const u = cui(cell);
+  if (!u.recent) return;
+  u.recent.hidden = !recentHere.length;
+  u.recentList.replaceChildren(...recentHere.map((sess) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "hr-row";
+    const title = label(sess.title || sess.preview || sess.session_id.slice(0, 8), "hr-name");
+    title.setAttribute("dir", "auto");   // user text: either script
+    btn.title = sess.preview || "";
+    btn.append(title, label(whenLabel(sess.modified), "hr-when"));
+    btn.addEventListener("click", () => {
+      const liveTab = openTabs.find((t) => t.session_id === sess.session_id)?.tab;
+      if (liveTab) tabBridge?.switchTo(liveTab);
+      else resumeSession(sess.session_id, sess.path);
+    });
+    li.append(btn);
+    return li;
+  }));
+}
+
+/* Sending from a column with no conversation in it (js/composer.js): open one
+   in the folder the home page names and put it in THIS column, then hand back
+   its tab for the message. Null when it could not be opened; the reason has
+   already been said. */
+export async function openHere(cell) {
+  const folder = homeFolder(cell);
+  if (!folder) {
+    // No folder at all yet: the picker is the only honest first step.
+    cui(cell).projChip?.click();
+    return null;
+  }
+  try {
+    const data = await api("/api/project/open", { path: folder });
+    await tabBridge?.switchTo(data.tab);
+    if (cell.tab !== data.tab) return null;
+    setStatus({ cwd: data.cwd });
+    setCurrentSession(null);
+    setChrome(data.cwd, cell);
+    refreshProjects();
+    return data.tab;
+  } catch (err) {
+    reportOpenFailure(err);
+    return null;
+  }
 }
 
 /* --- sidebar data ---------------------------------------------------------- */
@@ -497,14 +548,12 @@ async function loadProjects() {
 
   const here = (data.projects ?? []).find(
     (p) => p.path.toLowerCase() === currentCwd.toLowerCase());
-  const prev = (here?.sessions ?? []).find((s) => s.session_id !== currentSession);
-  lastSession = prev && {
-    id: prev.session_id,
-    path: here.path,
-    label: prev.title || prev.preview || prev.session_id.slice(0, 8),
-  };
-  // Every empty column offers the same «ادامه» card: `lastSession` is a fact
-  // about the folder the window is working in, not about one conversation.
+  // Newest first, as the sidebar lists them (server.py list_projects). A worktree
+  // session is left to the sidebar, whose chip is what says where it ran.
+  recentHere = (here?.sessions ?? []).filter((s) => !s.worktree)
+    .slice(0, RECENT_MAX).map((s) => ({ ...s, path: here.path }));
+  // Every empty column offers the same list: it is a fact about the folder the
+  // window is working in, not about one conversation.
   syncHomeAll();
 }
 
@@ -1424,26 +1473,33 @@ export function initCellChrome(cell) {
   new MutationObserver(() => syncHome(cell)).observe(cell.log, { childList: true });
   u.home.hidden = false;    // visibility is class-driven from here on
 
-  /* Home action cards. Every one of them presses a control that already
-     exists — no second implementation to keep in sync, and a card whose
-     control is missing simply never fires. Same idiom as the composer's
-     lifecycle verbs. Each card presses THIS column's control: the folder chip
-     and the composer it submits are the ones beside it, not cell 1's. */
-  cardText(cell, "home-resume", FA.homeResume)
-    ?.addEventListener("click", () => {
-      if (lastSession) resumeSession(lastSession.id, lastSession.path);
-    });
-  cardText(cell, "home-open", FA.homeOpen, FA.homeOpenNote)
-    ?.addEventListener("click", () => u.projChip.click());
-  cardText(cell, "home-explain", FA.homeExplain, FA.homeExplainNote)
-    ?.addEventListener("click", () => {
-      // The card's own label goes into the composer verbatim, so the user
-      // sees exactly what is about to be sent — no hidden prompt.
-      cell.composer.input.value = FA.homeExplain;
+  /* The home state presses controls that already exist — the folder picker,
+     the composer's own send, the help button — so there is no second
+     implementation to keep in sync. Each presses THIS column's control: the
+     folder chip and the composer are the ones beside it, not cell 1's. */
+  cell.root.querySelector(".hw-label").textContent = FA.homeWhere;
+  u.hwFolder?.addEventListener("click", () => u.projChip.click());
+  cell.root.querySelector(".hr-title").textContent = FA.homeRecent;
+  const suggest = cell.root.querySelector(".home-suggest");
+  for (const text of FA.homeSuggest) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "hs-chip";
+    chip.textContent = text;
+    chip.addEventListener("click", () => {
+      // The chip's own label goes into the composer verbatim, so the user
+      // sees exactly what is being sent — no hidden prompt.
+      cell.composer.input.value = text;
       cell.root.querySelector(".composer").requestSubmit();
     });
-  cardText(cell, "home-help", FA.homeHelp, FA.homeHelpNote)
-    ?.addEventListener("click", () => document.getElementById("btn-help").click());
+    suggest.append(chip);
+  }
+  const help = document.createElement("button");
+  help.type = "button";
+  help.className = "hs-help";
+  help.textContent = FA.homeHelp;
+  help.addEventListener("click", () => document.getElementById("btn-help").click());
+  suggest.append(help);
 
   u.projChip?.addEventListener("click", async () => {
     // Blocks in a child process while the native dialog is up.

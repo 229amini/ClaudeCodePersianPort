@@ -168,9 +168,10 @@ export function isOpen() {
 /* One row, the VS Code extension's: an icon, the name over a note (two lines
    at most), and the ✓ on the current one at the row's end. `value` is a quiet
    word before the end (the mode menu's «لحن پاسخ  کار روزمره»), `chevron`
-   says the row opens another list. `tip` is a hover title. No digit is drawn:
-   the extension shows none and a column of numerals beside Persian names was
-   the clutter; the digit KEYS still pick while the menu is open. */
+   says the row opens another list. `tip` is a hover title. `digit` is drawn
+   where the ✓ would be on every OTHER row — the extension's model menu
+   (2026-10-09 reference: «Opus 5.5 ✓ / Fable 5.1 2 / Sonnet 5.5 3»); the
+   digit keys pick while the menu is open either way. */
 function menuRow(row) {
   const b = el("button", "bar-row");
   b.type = "button";
@@ -194,9 +195,27 @@ function menuRow(row) {
     value.dir = "auto";
     b.append(value);
   }
-  b.append(el("span", "bar-row-check", row.selected ? "✓" : ""));
+  const mark = el("span", "bar-row-check", row.selected ? "✓" : row.digit ? faNum(row.digit) : "");
+  if (!row.selected && row.digit) mark.classList.add("is-digit");
+  b.append(mark);
   if (row.chevron) b.append(el("span", "bar-row-chevron", "‹"));
   return b;
+}
+
+/* The «more» list, beside the menu rather than inside it: the extension's
+   «More models ›» flyout. A popover NESTED in the menu's own DOM, so the
+   menu is its popover ancestor and stays open under it; Esc and a click
+   outside close the innermost first, for free. Forward is LEFT in this RTL
+   shell, so it opens to the menu's left and flips right when there is no room. */
+function placeSide(sub, row, menu, toCss) {
+  const m = menu.getBoundingClientRect(), r = row.getBoundingClientRect();
+  const vw = toCss(innerWidth), vh = toCss(innerHeight);
+  const w = sub.offsetWidth, h = sub.offsetHeight;
+  let left = toCss(m.left) - GAP - w;
+  if (left < EDGE) left = Math.min(toCss(m.right) + GAP, vw - w - EDGE);
+  const top = Math.min(Math.max(EDGE, toCss(r.top)), vh - h - EDGE);
+  sub.style.left = Math.max(EDGE, left) + "px";
+  sub.style.top = Math.max(EDGE, top) + "px";
 }
 
 /* rows: [{key, title, note?, fullNote?, icon?, tip?, selected?, disabled?}]. A
@@ -213,8 +232,14 @@ function menuRow(row) {
    `note`: a muted line at the very foot.
    `confirm(row)`: null to pick at once, or {text, ok, cancel} to ask first,
    inside the same popover (the model menu mid-conversation: a new model
-   re-reads the whole conversation without the cache). */
-export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, effort, note, confirm }) {
+   re-reads the whole conversation without the cache). `effort.confirm(level)`
+   is the same question for a level.
+   `digits`: draw each row's place where the ✓ is not (the model menu).
+   `more`: {title, rows} — a «more» row under a rule whose list opens beside
+   the menu (the extension's «More models ›»); its rows pick like these.
+   `compact`: as narrow as its rows, not the 280px floor (rows with no note). */
+export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, effort, note, confirm,
+                                   digits, more, compact }) {
   if (toggledShut(anchor)) return null;
   const pick = (row) => {
     close();
@@ -223,9 +248,7 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
   };
   let relayout = () => {};
   let asking = false;
-  const ask = (row) => {
-    const q = confirm?.(row);
-    if (!q) { pick(row); return; }
+  const confirmIn = (q, onOk) => {
     const pop = open;
     asking = true;
     pop.replaceChildren();
@@ -235,7 +258,7 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
     const acts = el("div", "bar-confirm-acts");
     const ok = el("button", "bar-btn is-primary", q.ok);
     ok.type = "button";
-    ok.addEventListener("click", () => pick(row));
+    ok.addEventListener("click", onOk);
     const no = el("button", "bar-btn", q.cancel);
     no.type = "button";
     no.addEventListener("click", () => { close(); anchor.focus(); });
@@ -244,7 +267,54 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
     relayout();
     ok.focus();
   };
-  const made = popover(anchor, "bar-menu", title, (box) => {
+  const ask = (row) => {
+    const q = confirm?.(row);
+    if (!q) { pick(row); return; }
+    confirmIn(q, () => pick(row));
+  };
+  const effortPick = (level) => {
+    const q = effort.confirm?.(level);
+    if (!q) { effort.onPick?.(level); return; }
+    confirmIn(q, () => { close(); anchor.focus(); effort.onPick?.(level); });
+  };
+  let sub = null;
+  const closeSub = () => {
+    if (sub?.isConnected && sub.matches(":popover-open")) sub.hidePopover();
+    sub = null;
+  };
+  const openSub = (moreBtn, box) => {
+    if (sub?.isConnected) return;
+    sub = el("div", "bar-pop bar-menu bar-sub");
+    sub.popover = "auto";
+    sub.setAttribute("role", "menu");
+    sub.setAttribute("aria-label", more.title);
+    for (const row of more.rows) {
+      const b = menuRow(row);
+      b.addEventListener("click", () => ask(row));
+      sub.append(b);
+    }
+    sub.addEventListener("toggle", (e) => {
+      moreBtn.setAttribute("aria-expanded", String(e.newState === "open"));
+      if (e.newState === "closed") sub?.remove();
+    });
+    sub.addEventListener("keydown", (e) => {
+      const list = [...sub.querySelectorAll(".bar-row:not(:disabled)")];
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const at = list.indexOf(document.activeElement);
+        const next = e.key === "ArrowDown" ? at + 1 : at - 1;
+        list[(next + list.length) % list.length]?.focus();
+      } else if (e.key === "ArrowRight") {   // back, in RTL
+        e.preventDefault();
+        closeSub();
+        moreBtn.focus();
+      }
+    });
+    box.append(sub);
+    sub.showPopover();
+    placeSide(sub, moreBtn, box, toCss ?? ((v) => v));
+  };
+  const made = popover(anchor, "bar-menu" + (compact ? " is-compact" : ""), title, (box) => {
     if (title) {
       const head = el("div", "bar-head");
       head.append(el("span", "", title));
@@ -255,9 +325,31 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
       }
       box.append(head);
     }
-    for (const row of rows) {
-      const b = menuRow(row);
+    rows.forEach((row, i) => {
+      const b = menuRow(digits && i < 9 ? { ...row, digit: i + 1 } : row);
       b.addEventListener("click", () => ask(row));
+      // Another row under the pointer shuts the «more» list it left open.
+      b.addEventListener("mouseenter", closeSub);
+      box.append(b);
+    });
+    if (more?.rows?.length) {
+      box.append(el("hr", "bar-rule"));
+      const b = menuRow({ title: more.title, chevron: true });
+      b.classList.add("bar-more");
+      b.setAttribute("aria-haspopup", "menu");
+      b.setAttribute("aria-expanded", "false");
+      const show = () => openSub(b, box);
+      b.addEventListener("click", () => {
+        show();
+        sub?.querySelector(".bar-row:not(:disabled)")?.focus();
+      });
+      b.addEventListener("mouseenter", show);
+      b.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft") return;   // forward, in RTL
+        e.preventDefault();
+        show();
+        sub?.querySelector(".bar-row:not(:disabled)")?.focus();
+      });
       box.append(b);
     }
     const foot = (footer ?? []).filter(Boolean);
@@ -275,7 +367,7 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
     }
     if (effort?.levels?.length) {
       if (!foot.length) box.append(el("hr", "bar-rule"));
-      box.append(effortControl(effort));
+      box.append(effortControl({ ...effort, onPick: effortPick }));
     }
     if (note) {
       const p = el("p", "bar-note", note);
@@ -287,6 +379,7 @@ export function openMenu(anchor, { title, hint, rows, onPick, toCss, footer, eff
   const { pop } = made;
   pop.addEventListener("keydown", (e) => {
     if (asking) return;
+    if (e.target.closest?.(".bar-sub")) return;            // the «more» list keys itself
     if (e.target.matches?.(".bar-slider-range")) return;   // its own arrows and digits
     const rowsEl = [...pop.querySelectorAll(":scope > .bar-row:not(:disabled)")];
     const digit = /^Digit([1-9])$/.exec(e.code) || /^Numpad([1-9])$/.exec(e.code);

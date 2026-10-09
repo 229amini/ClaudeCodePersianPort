@@ -734,11 +734,13 @@ const APPLY = {
   model:       (cell, id) => cell.controls.setModelResolved(id),
   outputStyle: (cell, name) => cell.controls.setOutputStyle(name),
   effort:      (cell, level) => cell.controls.setEffortState(level),
+  ultracode:   (cell, on) => cell.controls.setUltracodeAvailable(on),
+  perTurnEffort: (cell, on) => cell.controls.setPerTurnEffort(on),
   // One value, because the pill and its counter are set together and a partial
   // restore is this project's oldest defect family.
   posture:     (cell, p) => cell.controls.setPostureState(p?.name, p?.autoCount ?? 0),
   autoActions: (cell, list) => {
-    for (const a of list ?? []) cell.controls.noteAutoAction(a.tool, a.why);
+    for (const a of list ?? []) cell.controls.noteAutoAction(a.tool, a.why, a.target, a.at);
   },
   autoCount:   (cell, n) => cell.controls.setAutoCount(n),
   context:     (cell, pct) => cell.composer.noteContext(pct),
@@ -1989,6 +1991,12 @@ export function renderEvent(ev) {
         // The model this turn actually ran on: the only real confirmation that
         // a set_model took effect (its own ack is empty).
         toChrome("model", ev.model);
+        // Whether an effort change keeps the prompt cache (true: the CLI sends
+        // the effort inside the conversation) or rewrites it (false). The
+        // effort track asks before a costly change only (controls.js).
+        if (typeof ev.per_turn_effort_active === "boolean") {
+          toChrome("perTurnEffort", ev.per_turn_effort_active);
+        }
         // Same class of evidence for the output style: this is the CLI naming
         // what the turn ran under, not us reading back our own write.
         toChrome("outputStyle", ev.output_style);
@@ -2555,10 +2563,11 @@ export function renderEvent(ev) {
           // audit list is the whole defence of «خودکار», so a background tab
           // keeps every entry instead of the last one.
           if (state.cell) {
-            state.cell.controls.noteAutoAction(ev.tool_name, ev.why);
+            state.cell.controls.noteAutoAction(ev.tool_name, ev.why, ev.target, ev.at);
             state.cell.controls.setAutoCount(ev.auto_count);
           } else {
-            (state.chrome.autoActions ??= []).push({ tool: ev.tool_name, why: ev.why });
+            (state.chrome.autoActions ??= []).push({ tool: ev.tool_name, why: ev.why,
+                                                      target: ev.target, at: ev.at });
             state.chrome.autoCount = ev.auto_count;
           }
         }
@@ -2588,6 +2597,10 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "effort") {
         // Read back out of get_settings, never taken from an ack.
         toChrome("effort", ev.effort);
+        // Whether «اولترا» (ultracode) can be offered for this model at all.
+        if (typeof ev.ultracode_available === "boolean") {
+          toChrome("ultracode", ev.ultracode_available);
+        }
       } else if (ev.subtype === "usage") {
         // Measured by the CLI itself (get_context_usage / get_usage) — the
         // only source of `context`; the `result` case publishes no estimate.

@@ -294,11 +294,22 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 12px 12px 8px;
 }
 .side-head .mark { color: var(--accent); flex: none; }
-.brand { font-weight: var(--wt-title); font-size: 14px; }   /* 16 wrapped «کلاد فارسی — ترمینال» in the 248px sidebar */
+/* ONE line, always: at 12px gaps «کلاد فارسی — ترمینال» wrapped beside the bell
+   and the rail toggle, and the head grew to two lines (2026-10-09). The 8px gap
+   is what makes it fit; the ellipsis only guards a larger font. */
+.brand {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--wt-title);
+  font-size: 14px;
+}
 
 /* «گفتگوی جدید» and the layout button share a row; the row carries
    the margins the new-chat button used to. */
@@ -1127,6 +1138,9 @@ body.rail .tab-unread {
   margin-inline-start: auto;
   inline-size: 28px;
   block-size: 28px;
+  /* The generic `button { min-height: 44px }` beat the block-size above and
+     drew a 28x44 slab beside the bell (2026-10-09). */
+  min-height: 0;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -3771,71 +3785,62 @@ body.rail .side-zoom { display: none; }
 /* Inside the permission dialog the box already has one background. */
 .perm-params .diff { background: none; padding: 0; max-height: 18em; }
 
-/* --- context notice ----------------------------------------------------------
-   Sits above the composer, in the flow — not a floating toast. This is a
-   decision the user has to make before the conversation can continue, and a
-   toast that times out would hide it. */
-/* v2.5 (V2-PLAN §3.4, last row of the context pair): this used to be a card
-   with a heading and three stacked buttons — a dialog in everything but name,
-   in a window whose whole premise is that the terminal does not have those.
-   The TUI writes a WARNING ROW: one dim line where the prompt is, saying what
-   is wrong and which command fixes it. So the markup is unchanged (the ids and
-   classes the 174 spec assertions read are all still here, and the actions
-   still press exactly what they pressed) and only its shape moved: one line,
-   the buttons inline, the per-button explanations dropped to their titles. */
-/* pcg-rf8 R6: the extension's .notice [KPdslw] - a card tinted with the
-   warning accent, the error red when urgent. Padding trimmed 10->6 block so a
-   4-up cell keeps its transcript. */
+/* The context notice (composer.js paintNotice), above the prompt, in the flow:
+   a decision the user has to make, so never a toast that times out.
+   2026-10-09, the user on the amber box with underlined links: «خیلی بد بود».
+   Now a calm card on the ground colour. Only the icon carries the warning tint
+   (red when urgent); the title and its sentence stack beside it; the actions
+   are real buttons at the inline end, under the text in a narrow pane. Each
+   action's explanation rides in its `title`. */
 .context-notice {
   --tint: var(--app-warning-accent);
   margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
-  padding: 4px 12px;
-  border: 1px solid color-mix(in srgb, var(--app-primary-foreground), var(--tint) 50%);
+  padding: 8px 12px;
+  border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-large);
-  background: color-mix(in srgb, var(--app-secondary-background), var(--tint) 25%);
+  background: var(--app-secondary-background);
   color: var(--app-primary-foreground);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   line-height: 1.4;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
+  align-items: center;
+  gap: 8px 12px;
 }
 .context-notice[hidden] { display: none; }   /* beats the flex above */
-.context-notice.urgent { --tint: var(--app-error-foreground); }
+.context-notice.urgent {
+  --tint: var(--app-error-foreground);
+  border-color: color-mix(in srgb, var(--app-input-border), var(--tint) 50%);
+}
+.ctx-main { display: flex; align-items: flex-start; gap: 8px; flex: 1 1 14rem; min-width: 0; }
+.ctx-icon { flex: none; inline-size: 16px; block-size: 16px; margin-block-start: 2px; color: var(--tint); }
+.ctx-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ctx-title { font-weight: 500; }
+.ctx-body { color: var(--fg-muted); font-size: 12px; }
 
-/* One line: the title and the sentence after it, the way a terminal warning
-   reads. `flex: 1 1 auto` rather than a fixed basis — it must give way to the
-   actions on a narrow window instead of pushing them onto a third row. */
-.ctx-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
-            flex: 1 1 auto; min-width: 0; }
-.ctx-title { font-weight: 600; color: var(--app-primary-foreground); }
-.ctx-body { color: var(--app-primary-foreground); }
-
-.ctx-actions { display: flex; gap: 4px 12px; flex-wrap: wrap; }
-/* A command you can press, not a card. Underlined on hover, like the CLI's own
-   hint text — nothing here is a primary action, because the decision is the
-   user's and both answers are ordinary. */
+.ctx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-inline-start: auto; }
 .ctx-btn {
   display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--corner-radius-small);
   background: none;
-  /* Primary text, underlined: the link blue is ~4.1:1 on the amber tint. */
   color: var(--app-primary-foreground);
-  text-decoration: underline;
-  text-underline-offset: 3px;
   font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
-.ctx-btn:hover { color: #fff; }
-.ctx-btn.primary:hover { color: #fff; }
-.ctx-btn-text { font-weight: var(--wt-title); }
-/* The note stays in the DOM — it is the button's own explanation and rides in
-   its `title` — but a warning row has no room to print it. */
+.ctx-btn:hover { background: var(--app-list-hover-background); }
+.ctx-btn.primary { background: var(--app-button-background); border-color: transparent; color: var(--app-button-foreground); }
+.ctx-btn.primary:hover { background: var(--app-button-hover-background); }
+.ctx-btn.ghost { border-color: transparent; color: var(--fg-muted); }
+.ctx-btn.ghost:hover { background: var(--app-ghost-button-hover-background); color: var(--app-primary-foreground); }
+.ctx-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ctx-btn-text { font-weight: 500; }
+/* The note stays in the DOM (the spec harness reads it) and in the title. */
 .ctx-btn-note { display: none; }
 
 /* --- the queued-message strip ------------------------------------------------
@@ -4692,6 +4697,13 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 /* A footer row's current value («لحن پاسخ  کار روزمره») and its «‹». */
 .bar-row-value { flex: none; max-inline-size: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
 .bar-row-chevron { flex: none; color: var(--fg-muted); font-size: 14px; }
+/* The model menu, after the extension's (2026-10-09 reference): names only,
+   ✓ on the current one and a digit on each other, the older models in a list
+   beside it. As narrow as its names; the effort row at its foot sets the floor. */
+.bar-menu.is-compact { min-inline-size: 240px; }
+.bar-sub { min-inline-size: 180px; }
+.bar-row-check.is-digit { color: var(--fg-faint, var(--fg-muted)); font-size: 12px; }
+.bar-more[aria-expanded="true"] { background: var(--app-list-hover-background); }
 /* Fixed after the first message: still read, never picked. */
 .bar-foot:disabled { color: var(--fg-muted); cursor: default; }
 .bar-foot:disabled .bar-row-value { color: var(--fg); }
@@ -5082,6 +5094,36 @@ button.ag-close:hover { background: var(--surface-2); color: var(--fg); }
 .diff-side-close:hover, .diff-side-close:focus-visible { background: var(--surface-2); color: var(--fg); outline: none; }
 .diff-side-body { flex: 1 1 auto; min-block-size: 0; overflow: auto; padding: 8px; }
 .diff-side-edit + .diff-side-edit { margin-block-start: 8px; }
+/* What was approved without asking (marks.js openAudit), in the same panel:
+   rows to read, not to pick -- no button, no hover, no highlight. */
+.audit-title { font-weight: 500; }
+.audit-count { color: var(--fg-muted); }
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+  border-block-end: 1px solid var(--border);
+  font-size: 13px;
+}
+.audit-row:last-child { border-block-end: 0; }
+.audit-top { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; }
+.audit-tool { font-family: var(--app-monospace-font-family); font-weight: 500; }
+.audit-why, .audit-time { color: var(--fg-muted); font-size: 12px; }
+.audit-time { margin-inline-start: auto; }
+.audit-target.path {
+  display: block;
+  padding: 0;
+  background: none;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.audit-empty { margin: 0; padding: 8px 4px; color: var(--fg-muted); font-size: 13px; }
 @container (max-width: 640px) {
   .diff-open > .log { margin-inline-end: 0; }
   .diff-side { inline-size: 100%; border-inline-start: 0; }

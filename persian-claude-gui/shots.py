@@ -57,7 +57,7 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
-          "bar-style", "bar-switch")
+          "bar-style", "bar-switch", "audit", "ctx", "idle")
 
 FALLBACK_STYLE_LABELS = [
     {"id": "frugal-concise", "title": "کار روزمره",
@@ -81,7 +81,7 @@ def _projects(now: float) -> dict:
     def sess(sid: str, preview: str, ago: float, title: str | None = None) -> dict:
         return {"session_id": sid, "preview": preview, "modified": now - ago, "title": title}
 
-    return {"current_cwd": "", "current_session": None, "projects": [
+    return {"current_cwd": "D:\\projects\\ClaudeCodePersianPort", "current_session": None, "projects": [
         {"path": "D:\\projects\\ClaudeCodePersianPort", "modified": now - 300, "git": True,
          "pinned": True, "archived": False, "sessions": [
              sess("sess-1", "نوار وضعیت را یک خطی کن", 300, "یک‌خطی کردن نوار وضعیت"),
@@ -312,6 +312,40 @@ async function run() {
     ev("t1", {type: "command_lifecycle", command_uuid: "u-long", state: "completed"});
     await sleep(120);
     document.querySelector("#grid .cell .change-row")?.click();
+    await sleep(200);
+    return;
+  }
+  if (SCENE === "audit" || SCENE === "ctx" || SCENE === "idle") {
+    // audit: what «تأیید همه» approved, the list beside the transcript.
+    // ctx / idle: the notice above the prompt at 90 % context, and after an
+    // hour away.
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    turn("t1", 1);
+    ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000});
+    ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+    await sleep(120);
+    const cell = APP.cells[0];
+    if (SCENE === "audit") {
+      const now = Date.now() / 1000;
+      const done = [["Write", "D:\\projects\\ClaudeCodePersianPort\\static\\strings.fa.js", "posture"],
+                    ["Bash", "python persian-claude-gui\\run_spec_test.py", "posture"],
+                    ["Edit", "D:\\projects\\ClaudeCodePersianPort\\static-terminal\\js\\controls.js", "remembered"],
+                    ["WebFetch", "https://code.claude.com/docs/en/settings", "posture"]];
+      ev("t1", {type: "wrapper", subtype: "posture", posture: "autoApprove", auto_count: done.length});
+      done.forEach(([tool, target, why], i) => ev("t1", {type: "wrapper", subtype: "permission_resolved",
+        request_id: "ra" + i, tool_use_id: "ua" + i, decision: "allow", auto: true,
+        auto_count: i + 1, tool_name: tool, why, target, at: now - (done.length - i) * 240}));
+      await sleep(60);
+      cell.controls.openAuditList();
+    } else if (SCENE === "ctx") {
+      cell.composer.noteContext(90);
+    } else {
+      cell.composer.setBusy(true); cell.composer.setBusy(false);
+      cell.composer.checkIdle(Date.now() + 2 * 3600e3);
+    }
     await sleep(200);
     return;
   }

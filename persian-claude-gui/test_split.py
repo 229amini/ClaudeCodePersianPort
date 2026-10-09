@@ -286,7 +286,10 @@ const CASE = new URLSearchParams(location.search).get("case") || "";
 function shot() {
   return {split: document.getElementById("grid").dataset.split,
           cells: APP.cells.map((c) => c.tab),
-          blank: APP.cells.map((c) => !!c.root.querySelector("textarea.input")?.disabled),
+          // Web: the box stays live and a send opens a conversation (data-blank);
+          // terminal: the box is shut.
+          blank: APP.cells.map((c) => !!(c.root.querySelector("textarea.input")?.disabled
+                                         || c.root.querySelector("form.composer")?.dataset.blank === "1")),
           widths: APP.cells.map((c) => Math.round(c.root.getBoundingClientRect().width)),
           seg: [...(document.getElementById("split-seg")?.children ?? [])]
                  .filter((b) => b.getAttribute("aria-pressed") === "true")
@@ -512,6 +515,10 @@ async function layoutCase(which) {
   await sleep(120);
 
   /* --- a permission for a conversation no column is showing ---------------- */
+  // The slash step above typed into the last column, and a live box takes the
+  // keyboard with it (a blank column's box is no longer shut, 2026-10-09).
+  APP.focusCell(0);
+  await sleep(50);
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t9",
     request_id: "r1", tool_name: "Write",
     tool_input: {file_path: "D:\\\\projects\\\\p9\\\\a.md", content: "x"}});
@@ -1137,7 +1144,7 @@ def check_layout(restore: dict, fresh: dict, bad: list[str]) -> None:
             "['t2', '', 't4', 't1'] - the map is positional and a dead tab "
             "leaves its own column blank")
     if got["blank"] != [False, True, False, False]:
-        say(f"the message box of each restored column is disabled={got['blank']} "
+        say(f"the message box of each restored column is blank={got['blank']} "
             "- the column left blank by a dead tab has nothing to send to")
     if EDITION == "web" and got["seg"] != ["4"]:
         say(f"the split control reads {got['seg']} after a restore, not «4» - "

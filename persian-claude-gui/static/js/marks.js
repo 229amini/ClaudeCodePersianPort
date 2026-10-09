@@ -18,6 +18,8 @@
      foldLong()    a user message over ~15 lines clipped, «بیشتر»
      openDiff()    a change-card row's edits in a panel BESIDE the transcript
                   the transcript reflows narrower, ✕ / Esc close
+     openAudit()   the same panel: what was approved without asking, a list
+                   to read, not to pick from
 
    Every word the strip and the rail draw is CSS `content: attr(data-…)`, not
    a text node (the fold toggle's rule, render.js): a message's textContent is
@@ -322,51 +324,41 @@ export function foldLong(msg, text) {
    margin — no new wrapper around .log, whose flex box is load-bearing (the
    prompt vanished the last time a pane's display changed). Its block edges are
    copied from the transcript's own box and kept there by a ResizeObserver. */
-const panels = new WeakMap();     // log -> {panel, sync, ro}
+const panels = new WeakMap();     // log -> {panel, head, close, body, sync, ro}
 
-export function openDiff(log, { path, added = 0, removed = 0, nodes }) {
-  if (!log?.parentElement) return null;
+/* The one side panel per transcript. Its head is filled by whoever opens it
+   (a file's name and stat, or the audit list's title and count); the ✕ stays. */
+function sidePanel(log) {
   let p = panels.get(log);
-  if (!p) {
-    const panel = el("section", "diff-side");
-    panel.setAttribute("role", "region");
-    panel.tabIndex = -1;
-    const head = el("div", "diff-side-head");
-    const name = el("bdi", "diff-side-file path");
-    name.dir = "ltr";
-    const stat = el("span", "change-stat");
-    stat.dir = "ltr";
-    const close = el("button", "diff-side-close", "✕");
-    close.type = "button";
-    close.title = FA.diffClose;
-    close.setAttribute("aria-label", FA.diffClose);
-    close.addEventListener("click", () => closeDiff(log));
-    head.append(name, stat, close);
-    const body = el("div", "diff-side-body");
-    panel.append(head, body);
-    panel.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      closeDiff(log);
-    });
-    const sync = () => {
-      panel.style.top = log.offsetTop + "px";
-      panel.style.height = log.offsetHeight + "px";
-    };
-    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(sync) : null;
-    p = { panel, name, stat, body, sync, ro };
-    panels.set(log, p);
-  }
-  p.name.textContent = String(path).split(/[\\/]/).pop() || String(path);
-  p.name.title = path;
-  p.panel.setAttribute("aria-label", path);
-  p.stat.replaceChildren(el("span", "d-add", "+" + added), el("span", "d-del", "−" + removed));
-  p.body.replaceChildren(...nodes().map((n) => {
-    const block = el("div", "diff-side-edit");
-    block.append(n);
-    return block;
-  }));
+  if (p) return p;
+  const panel = el("section", "diff-side");
+  panel.setAttribute("role", "region");
+  panel.tabIndex = -1;
+  const head = el("div", "diff-side-head");
+  const close = el("button", "diff-side-close", "✕");
+  close.type = "button";
+  close.title = FA.diffClose;
+  close.setAttribute("aria-label", FA.diffClose);
+  close.addEventListener("click", () => closeDiff(log));
+  const body = el("div", "diff-side-body");
+  panel.append(head, body);
+  panel.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeDiff(log);
+  });
+  const sync = () => {
+    panel.style.top = log.offsetTop + "px";
+    panel.style.height = log.offsetHeight + "px";
+  };
+  const ro = typeof ResizeObserver === "function" ? new ResizeObserver(sync) : null;
+  p = { panel, head, close, body, sync, ro };
+  panels.set(log, p);
+  return p;
+}
+
+function showSide(log, p, focus = true) {
   if (p.panel.previousElementSibling !== log) log.after(p.panel);
   const atEnd = isAtEnd(log);
   log.parentElement.classList.add("diff-open");
@@ -375,8 +367,84 @@ export function openDiff(log, { path, added = 0, removed = 0, nodes }) {
   if (atEnd) log.scrollTop = log.scrollHeight;
   p.sync();
   p.ro?.observe(log);
-  p.panel.focus({ preventScroll: true });
+  if (focus) p.panel.focus({ preventScroll: true });
   return p.panel;
+}
+
+export function openDiff(log, { path, added = 0, removed = 0, nodes }) {
+  if (!log?.parentElement) return null;
+  const p = sidePanel(log);
+  const name = el("bdi", "diff-side-file path", String(path).split(/[\\/]/).pop() || String(path));
+  name.dir = "ltr";
+  name.title = path;
+  const stat = el("span", "change-stat");
+  stat.dir = "ltr";
+  stat.append(el("span", "d-add", "+" + added), el("span", "d-del", "−" + removed));
+  p.head.replaceChildren(name, stat, p.close);
+  p.panel.dataset.kind = "diff";
+  p.panel.setAttribute("aria-label", path);
+  p.body.replaceChildren(...nodes().map((n) => {
+    const block = el("div", "diff-side-edit");
+    block.append(n);
+    return block;
+  }));
+  return showSide(log, p);
+}
+
+/* --- 8. what was approved without asking, beside the transcript -------------
+
+   A record, not a menu: nothing in it is picked, so no row is a button, none
+   is highlighted and no key walks it (the user, 2026-10-09: «صرفا لیست نشون
+   بده»). Newest first. Each row: the tool, what it touched (a path or a
+   command, `.path` LTR), the time it ran, and «دوباره نپرس» when an earlier
+   answer approved it rather than the posture.
+
+   items: [{tool, why, target, at}]. `focus: false` repaints an open list in
+   place when a new entry arrives, without taking the keyboard. */
+export function openAudit(log, items, { focus = true } = {}) {
+  if (!log?.parentElement) return null;
+  const p = sidePanel(log);
+  const title = el("span", "audit-title", FA.autoActionsTitle);
+  const count = el("span", "audit-count", faNum(items.length));
+  p.head.replaceChildren(title, count, p.close);
+  p.panel.dataset.kind = "audit";
+  p.panel.setAttribute("aria-label", FA.autoActionsTitle);
+  if (!items.length) {
+    p.body.replaceChildren(el("p", "audit-empty", FA.autoActionsEmpty));
+  } else {
+    const list = el("ol", "audit-list");
+    for (const a of [...items].reverse()) {
+      const row = el("li", "audit-row");
+      const top = el("div", "audit-top");
+      const tool = el("bdi", "audit-tool", a.tool || "?");
+      tool.dir = "ltr";
+      top.append(tool);
+      if (a.why === "remembered") top.append(el("span", "audit-why", FA.autoWhyRemembered));
+      const at = toMs(a.at);
+      if (isFinite(at)) {
+        const time = el("time", "audit-time",
+                        new Intl.DateTimeFormat("fa-IR", { timeStyle: "short" }).format(new Date(at)));
+        time.dateTime = new Date(at).toISOString();
+        time.title = fmtExact(at);
+        top.append(time);
+      }
+      row.append(top);
+      if (a.target) {
+        const target = el("bdi", "audit-target path", a.target);
+        target.dir = "ltr";
+        target.title = a.target;
+        row.append(target);
+      }
+      list.append(row);
+    }
+    p.body.replaceChildren(list);
+  }
+  return showSide(log, p, focus);
+}
+
+export function auditOpen(log) {
+  const p = log && panels.get(log);
+  return !!p?.panel.isConnected && p.panel.dataset.kind === "audit";
 }
 
 export function closeDiff(log) {

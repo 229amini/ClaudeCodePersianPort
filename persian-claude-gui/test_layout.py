@@ -241,8 +241,18 @@ const SCROLLERS = new Set(%SCROLLERS%);
   };
 
   // The home state, which is what the window opens on.
+  // The CONTENT edges of the web edition's folder line and suggestions: they
+  // are drawn on the prompt's column and must start and end where it does.
+  const inner = (sel) => {
+    const el = document.querySelector(sel);
+    if (!el || getComputedStyle(el).display === "none") return null;
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    return {l: Math.round(r.left + parseFloat(cs.paddingLeft)),
+            r: Math.round(r.right - parseFloat(cs.paddingRight))};
+  };
   const home = {compBox: box(document.querySelector(".comp-box")),
                 home: box(document.querySelector("%HOMESEL%")),
+                homeEdges: {where: inner(".home-where"), below: inner(".home-below")},
                 clipped: clipped()};
 
   // ...and then the state it spends the rest of its life in. A transcript is
@@ -387,6 +397,7 @@ const SCROLLERS = new Set(%SCROLLERS%);
     stage: box(document.getElementById("stage")),
     compBox: home.compBox,
     home: home.home,
+    homeEdges: home.homeEdges,
     comp: compNow, chips,
     menu: menuBox,
     rows: rows.length,
@@ -534,6 +545,15 @@ def main() -> int:
                     failures.append(f"{where}: {name} is above the window (y={rect['y']})")
             if m["clipped"]:
                 failures.append(f"{where}: content wider than its box - {m['clipped'][:4]}")
+            # Web home state: the folder line and the suggestions sit on the
+            # prompt's own column, edge for edge (drifted 8px off it in a narrow
+            # cell, 2026-10-09).
+            box_ = m["compBox"]
+            for name, span in (m.get("homeEdges") or {}).items():
+                if span and (abs(span["l"] - box_["x"]) > 1
+                             or abs(span["r"] - (box_["x"] + box_["w"])) > 1):
+                    failures.append(f"{where}: the home {name} spans {span['l']}-{span['r']}, "
+                                    f"the prompt {box_['x']}-{box_['x'] + box_['w']}")
             # The composer row: every visible chip must sit inside
             # the composer box at one line of height. Before the fix the row
             # could not wrap and the last chips were pushed out of the box. The

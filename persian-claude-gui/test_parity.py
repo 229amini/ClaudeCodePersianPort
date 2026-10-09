@@ -279,7 +279,7 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
     && runs().every(shown);
   out.offNote = log.textContent.includes(FA.focusOff);
   // --- 3. the approve-all posture's names ---
-  out.postureNames = [FA.postureAutoApprove, FA.slPostureAutoApprove, FA.autoWhyPosture];
+  out.postureNames = [FA.postureAutoApprove, FA.slPostureAutoApprove];
   out.cliAuto = FA.slPostureAuto;
   out.escNoPost = calls.filter((c) => c.url.startsWith("/api/session/rename")).length === 1
     && !row2.querySelector(".sess-rename") && row2.querySelector(".sess")?.hidden === false;
@@ -408,8 +408,8 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
     # The web edition has no terminal state line, so no state-line string.
     if EDITION == "web":
         names = [n for n in names if n is not None]
-    check("the approve-all posture, its state line and its audit note never say «خودکار»",
-          len(names) == (2 if EDITION == "web" else 3)
+    check("the approve-all posture and its state line never say «خودکار»",
+          len(names) == (1 if EDITION == "web" else 2)
           and all(n and "خودکار" not in n for n in names)
           and m.get("cliAuto") not in names, f"{names}")
     web = (HERE / "static" / "strings.fa.js").read_text(encoding="utf-8")

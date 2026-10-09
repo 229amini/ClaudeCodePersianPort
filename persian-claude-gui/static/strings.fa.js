@@ -240,9 +240,9 @@ window.FA = {
   tabUnread: "{n} پاسخ تازه",
   maxTabs: "بیشتر از ۶ گفتگو هم‌زمان باز نمی‌شود؛ اول یکی را ببندید",
   permOtherSession: "این درخواست از گفتگوی دیگری است:",
-  // The composer's placeholder while no conversation is open at all: there is
-  // nothing to send to, so the box says what to do instead of failing a send.
-  composerBlank: "برای شروع، گفتگویی باز کنید",
+  // The composer's placeholder while no conversation is open at all: sending
+  // from here opens one in the folder the home page names (js/composer.js).
+  composerBlank: "بنویسید تا گفتگوی تازه‌ای شروع شود",
 
   removeProject: "حذف پروژه و گفتگوهایش",
   projectOpenNote: "این پروژه باز است؛ برای حذفش اول پروژه‌ی دیگری را باز کنید",
@@ -264,17 +264,14 @@ window.FA = {
   greetEvening: "عصر بخیر! چه کاری انجام دهیم؟",
   greetNight: "شب‌زنده‌داری؟",
 
-  /* Home action cards. `homeExplain` is both the card's label and the text it
-     puts in the composer, so the user sees exactly what they are about to
-     send — no hidden prompt. */
-  homeResume: "ادامه آخرین گفتگو",
-  homeResumeNote: "همان‌جا که رهایش کردید",
-  homeOpen: "باز کردن پوشه",
-  homeOpenNote: "روی پروژه دیگری کار کنید",
-  homeExplain: "این پوشه را برایم توضیح بده",
-  homeExplainNote: "شروع سریع در همین پروژه",
+  /* The home state. Each suggestion is both the chip's label and the message
+     it sends, so the user sees exactly what goes — no hidden prompt. */
+  homeWhere: "پوشه:",
+  homeNoFolder: "انتخاب پوشه",
+  homeChangeFolder: "عوض کردن پوشه",
+  homeSuggest: ["این پوشه را برایم توضیح بده", "چه کارهایی از دستت برمی‌آید؟"],
   homeHelp: "راهنما",
-  homeHelpNote: "چطور با این برنامه کار کنم؟",
+  homeRecent: "گفتگوهای اخیر این پوشه",
 
   previewEmpty: "متنی برای پیش‌نمایش نیست",
 
@@ -314,7 +311,7 @@ window.FA = {
      is «/compact or /clear» and they mean different things: compact keeps the
      thread, clear starts over. The percentage is prose, so Persian digits. */
   ctxTitle: "گفتگو دارد پر می‌شود",
-  ctxBody: "{n}٪ از حافظه گفتگو استفاده شده است.",
+  ctxBody: "{n} درصد از حافظهٔ گفتگو پر شده است.",
   ctxTitleFull: "حافظه گفتگو پر شد",
   ctxBodyFull: "برای ادامه، گفتگو را فشرده کنید یا یکی تازه شروع کنید.",
   ctxCompact: "فشرده کردن گفتگو",
@@ -343,6 +340,9 @@ window.FA = {
     high: "زیاد",
     xhigh: "خیلی زیاد",
     max: "بیشینه",
+    // ultracode: xhigh plus standing multi-agent workflows (the CLI's
+    // sixth /effort stop). Offered only where the CLI says it can run.
+    ultracode: "اولترا",
   },
   effortRefused: "این میزان روی این نسخه اعمال نمی‌شود",
   /* Output styles. The CLI advertises the set — «default» plus whatever style
@@ -382,7 +382,6 @@ window.FA = {
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
-  autoWhyPosture: "سطح اجازه: تأیید همه",
 
   /* --- the CLI features the terminal edition already had (E3) ---------------
      Every string below belongs to something the real `claude` does in a
@@ -464,6 +463,12 @@ window.FA = {
   barModeHint: "shift+tab برای تغییر",
   barAutoCount: "{n} کار بی‌پرسش انجام شد",
   barModel: "مدل",
+  // The model menu's «More models ›»: every pinned (older) model.
+  barMoreModels: "مدل‌های بیشتر",
+  // Asked before an effort change only when the CLI says it rewrites the
+  // cached prefix (system/init.per_turn_effort_active false).
+  effortSwitchAsk: "با عوض‌کردن میزان تفکر، حافظهٔ موقت (کش) این گفتگو از نو ساخته می‌شود و کل آن (حدود {n} توکن) دوباره خوانده می‌شود. عوض شود؟",
+  effortSwitchAskPlain: "با عوض‌کردن میزان تفکر، حافظهٔ موقت (کش) این گفتگو از نو ساخته می‌شود و کل آن دوباره خوانده می‌شود. عوض شود؟",
   barEffort: "تلاش",
   barUsage: "زمینه و مصرف",
   barUsageTitle: "زمینه و مصرف — {n}٪ از پنجرهٔ زمینه پر است",

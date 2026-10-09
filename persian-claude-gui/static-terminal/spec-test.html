@@ -780,7 +780,7 @@ check("context notice offers compact AND clear, plus a way out",
   ctxBtns[0] === window.STRINGS.ctxCompact && ctxBtns[1] === window.STRINGS.ctxClear,
   ctxBtns.join(" | ") || "no actions");
 check("context percentage is written in Persian digits (rule 5)",
-  ctx.querySelector(".ctx-body")?.textContent === "۹۱٪ از حافظه گفتگو استفاده شده است.",
+  ctx.querySelector(".ctx-body")?.textContent === "۹۱ درصد از حافظهٔ گفتگو پر شده است.",
   ctx.querySelector(".ctx-body")?.textContent ?? "no body");
 
 // A compact or a clear drops the number; the notice must let go by itself.

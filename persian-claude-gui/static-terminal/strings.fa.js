@@ -503,7 +503,7 @@ window.FA = {
      is «/compact or /clear» and they mean different things: compact keeps the
      thread, clear starts over. The percentage is prose, so Persian digits. */
   ctxTitle: "گفتگو دارد پر می‌شود",
-  ctxBody: "{n}٪ از حافظه گفتگو استفاده شده است.",
+  ctxBody: "{n} درصد از حافظهٔ گفتگو پر شده است.",
   ctxTitleFull: "حافظه گفتگو پر شد",
   ctxBodyFull: "برای ادامه، گفتگو را فشرده کنید یا یکی تازه شروع کنید.",
   ctxCompact: "فشرده کردن گفتگو",
@@ -721,6 +721,9 @@ window.FA = {
     high: "زیاد",
     xhigh: "خیلی زیاد",
     max: "بیشینه",
+    // ultracode: xhigh plus standing multi-agent workflows (the CLI's
+    // sixth /effort stop). Offered only where the CLI says it can run.
+    ultracode: "اولترا",
   },
   effortRefused: "این میزان روی این نسخه اعمال نمی‌شود",
   /* Output styles. The CLI advertises the set — «default» plus whatever style
@@ -763,7 +766,6 @@ window.FA = {
   autoActionsTitle: "کارهایی که بدون پرسش انجام شدند",
   autoActionsEmpty: "هنوز چیزی بدون پرسش انجام نشده",
   autoWhyRemembered: "چون گفتید دوباره نپرس",
-  autoWhyPosture: "سطح اجازه: تأیید همه",
   /* Message marks (js/marks.js, pcg-8ip — the same keys in both editions). */
   markJustNow: "همین حالا",
   markMinutesAgo: "{n} دقیقهٔ پیش",
@@ -784,6 +786,12 @@ window.FA = {
      editions). */
   barMode: "حالت",
   barModel: "مدل",
+  // The model menu's «More models ›»: every pinned (older) model.
+  barMoreModels: "مدل‌های بیشتر",
+  // Asked before an effort change only when the CLI says it rewrites the
+  // cached prefix (system/init.per_turn_effort_active false).
+  effortSwitchAsk: "با عوض‌کردن میزان تفکر، حافظهٔ موقت (کش) این گفتگو از نو ساخته می‌شود و کل آن (حدود {n} توکن) دوباره خوانده می‌شود. عوض شود؟",
+  effortSwitchAskPlain: "با عوض‌کردن میزان تفکر، حافظهٔ موقت (کش) این گفتگو از نو ساخته می‌شود و کل آن دوباره خوانده می‌شود. عوض شود؟",
   barAutoCount: "{n} کار بی‌پرسش انجام شد",
   barEffort: "تلاش",
   barUsage: "زمینه و مصرف",

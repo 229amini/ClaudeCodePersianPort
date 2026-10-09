@@ -381,6 +381,15 @@
         <button type="button" class="bar-chip posture-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
           <span class="posture-chip-name"></span>
         </button>
+        <!-- The response style, beside the mode and opened straight from the bar
+             (the user, 2026-10-09: not only as a row inside the mode menu). Its
+             list opens before the first message; after it, the chip says the
+             style is fixed (js/controls.js openStyleMenu). Hidden with one style. -->
+        <button type="button" class="bar-chip style-chip" aria-haspopup="dialog" aria-expanded="false" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 12h5"/></svg>
+          <span class="style-chip-name" dir="auto"></span>
+        </button>
 
         <span class="comp-spacer"></span>
 

@@ -218,10 +218,9 @@ back_ok = wait_for("wrapper/posture",
 
 # Reasoning effort. The point of this check is that apply_flag_settings acks an
 # EMPTY object for a level it then ignores, so only the get_settings read-back
-# means anything -- /api/effort reports that, never the ack. "max" is the live
-# proof: every model advertises it in supportedEffortLevels and the settings
-# schema (low/medium/high/xhigh) drops it. If this check ever starts failing on
-# "max", the CLI grew a fifth level and the chip will pick it up on its own.
+# means anything -- /api/effort reports that, never the ack. "max" was the live
+# proof until 2.1.294, which accepts it (measured 2026-10-09); a level no model
+# advertises is the refusal now, acked "success" and changing nothing.
 #
 # It must also never write the user's REAL settings file. The CLI's own /effort
 # persists to userSettings; apply_flag_settings only creates a session overlay,
@@ -230,10 +229,10 @@ user_settings = Path.home() / ".claude" / "settings.json"
 settings_before = user_settings.read_bytes() if user_settings.exists() else b""
 
 effort_low = post("/api/effort", {"level": "low"})
-effort_bad = post("/api/effort", {"level": "max"})
-print("POST /api/effort low ->", effort_low, " max ->", effort_bad)
+effort_bad = post("/api/effort", {"level": "bogus"})
+print("POST /api/effort low ->", effort_low, " bogus ->", effort_bad)
 effort_ok = (effort_low.get("ok") and effort_low.get("effort") == "low"
-             and not effort_bad.get("ok") and effort_bad.get("effort") != "max")
+             and not effort_bad.get("ok") and effort_bad.get("effort") == "low")
 # Output style, the same apply_flag_settings route with the opposite problem:
 # `outputStyle` has NO schema behind it (measured 2026-08-08), so a nonsense
 # name is accepted and echoed back by both read-backs. Nothing downstream can

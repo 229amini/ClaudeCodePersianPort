@@ -12,7 +12,7 @@ import { openPlus, openUsage, openPalette, paletteGroups } from "./bar.js";
    evaluation time. `/branch` needs the one tab-switch path the sidebar already
    uses — a second one would send into a conversation the server thinks is
    parked (app.js switchTab). */
-import { switchToTab, splitView } from "./chrome.js";
+import { switchToTab, splitView, openHere } from "./chrome.js";
 import { toggleFocus } from "./focus.js";
 
 const FA = window.STRINGS;
@@ -72,6 +72,7 @@ export function makeComposer(root, cell) {
   /* The invitation to type, as index.html writes it — restored when a
      conversation comes back (setBlank below borrows the line). */
   const askPlaceholder = input?.placeholder ?? "";
+  let opening = false;   // a blank column's first send is opening its conversation
   const attachRow = $("attachments");
   const slashPopup = $("slash-popup");
 
@@ -139,16 +140,19 @@ export function makeComposer(root, cell) {
     autoGrow();
   }
 
-  /* No conversation is open at all (app.js blankView): every tab-less endpoint
-     routes by the server's active tab, so a send lands on a 404 and the user gets
-     the generic «ارسال ناموفق بود» — which reads as "your message failed" when
-     the truth is that there is nowhere to send it yet. The box is closed and says
-     so instead; app.js opens it again the moment a tab is on screen. */
+  /* No conversation is open in this column (app.js blank). A tab-less send
+     would route by the server's active tab and 404, so the submit below opens a
+     conversation first (chrome.js openHere) — the box stays live, the way the VS
+     Code extension's and claude.ai's do. It used to be shut instead, which left
+     a page where nothing could be typed and the one card that sent, sent
+     nowhere. `data-blank` is what the layout gate reads. */
   function setBlank(blank) {
     if (!input) return;
-    input.disabled = !!blank;
+    // A column changing conversation also opens a box the external editor
+    // shut for the previous one (E4/F2): that shut belonged to the other tab.
+    input.disabled = false;
+    composer.dataset.blank = blank ? "1" : "";
     input.placeholder = blank ? FA.composerBlank : askPlaceholder;
-    if (sendBtn) sendBtn.disabled = !!blank;
   }
 
   /* --- the context notice ----------------------------------------------------
@@ -236,7 +240,10 @@ export function makeComposer(root, cell) {
     head.className = "ctx-head";
     head.setAttribute("dir", "auto");
     head.append(label(title, "ctx-title"), label(body, "ctx-body"));
-    notice.append(head);
+    const main = document.createElement("div");
+    main.className = "ctx-main";
+    main.append(ctxIcon(compact ? (urgent ? 100 : lastContext) : null), head);
+    notice.append(main);
 
     const row = document.createElement("div");
     row.className = "ctx-actions";
@@ -312,13 +319,34 @@ export function makeComposer(root, cell) {
     paintQueued();
   }
 
+  /* A ring filled to the context used, the bar's ◔ in small; a clock for the
+     idle hint (`pct` null), which is about time, not room. */
+  function ctxIcon(pct) {
+    const span = document.createElement("span");
+    span.className = "ctx-icon";
+    span.setAttribute("aria-hidden", "true");
+    const fill = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    span.innerHTML = pct === null
+      ? '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" '
+        + 'stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.25"/>'
+        + '<path d="M8 4.5V8l2.5 1.5"/></svg>'
+      : '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" '
+        + 'stroke-width="2"><circle cx="8" cy="8" r="6" stroke-opacity=".3"/>'
+        + `<circle cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${fill} 100" `
+        + 'transform="rotate(-90 8 8)"/></svg>';
+    return span;
+  }
+
   function ctxButton(text, note, cls, onClick) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ctx-btn " + cls;
     button.setAttribute("dir", "auto");
     button.append(label(text, "ctx-btn-text"));
-    if (note) button.append(label(note, "ctx-btn-note"));
+    if (note) {
+      button.append(label(note, "ctx-btn-note"));
+      button.title = note;
+    }
     button.addEventListener("click", onClick);
     return button;
   }
@@ -1115,6 +1143,15 @@ export function makeComposer(root, cell) {
         input.style.height = "auto";
         return;
       }
+      // Nothing to send to in this column yet: open a conversation here first.
+      // The box keeps its text until that worked, so a failure loses nothing.
+      if (cell && !cell.tab && composer.dataset.blank === "1") {
+        if (opening) return;
+        opening = true;
+        setBusy(true);
+        const tab = await openHere(cell).finally(() => { opening = false; });
+        if (!tab) return void setBusy(false);
+      }
       // `tab` explicit, like every other session-scoped request here (MA4 §2):
       // a tab-less body routes by the SERVER's active tab, and click-then-Enter
       // beats the /api/tab/activate POST that keeps the two agreeing.
@@ -1185,12 +1222,22 @@ export function makeComposer(root, cell) {
       }
     });
 
+    /* One dialog at a time. The first one of a session can take seconds to
+       appear (a cold tkinter child, server.py pick_files), and a second press
+       meanwhile opened a second dialog: the same image picked twice was attached
+       twice and sent twice (2026-10-09). The same file twice is dropped too. */
+    let picking = false;
     const pickFiles = async () => {
+      if (picking) return;
+      picking = true;
       try {
         const { paths } = await api("/api/attach/pick", {});
-        if (paths?.length) setAttachments([...attachments, ...paths]);
+        const fresh = (paths ?? []).filter((p) => !attachments.includes(p));
+        if (fresh.length) setAttachments([...attachments, ...fresh]);
       } catch (err) {
         bubble("error", FA.sendFailed);
+      } finally {
+        picking = false;
       }
     };
 

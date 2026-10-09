@@ -18,6 +18,8 @@ import { api } from "./api.js";
    slider comes from it here; the other menus stay the in-cell .menu-popup,
    which test_layout/test_split measure staying inside its own cell. */
 import { openMenu as openBarMenu, fmtTokens } from "./bar.js";
+/* A leaf: the side panel beside the transcript, where the audit list opens. */
+import { openAudit, auditOpen } from "./marks.js";
 
 const FA = window.STRINGS;
 
@@ -199,6 +201,23 @@ export function makeControls(root, cell) {
      path here is a real path, not defensive padding. */
 
   let effort = null;
+  /* «اولترا» (ultracode): the CLI's sixth stop, offered only where get_settings
+     says this model can take it (server.py _effort_state; none on Haiku 4.5). */
+  let ultracodeOk = false;
+  /* system/init.per_turn_effort_active: true means the CLI sends the effort
+     inside the conversation and a change keeps the prompt cache; false means
+     it is the top-level parameter and a change rewrites the cached prefix.
+     Null until a turn has said (measured true on 2.1.294, 2026-10-09). */
+  let perTurnEffort = null;
+
+  function setUltracodeAvailable(on) {
+    ultracodeOk = !!on;
+    paintEffort();
+  }
+
+  function setPerTurnEffort(on) {
+    perTurnEffort = on;
+  }
 
   function setEffortState(level) {
     if (level) effort = level;
@@ -209,7 +228,8 @@ export function makeControls(root, cell) {
     const entry = modelEntry();
     const levels = entry?.supportsEffort && Array.isArray(entry.supportedEffortLevels)
       ? entry.supportedEffortLevels : [];
-    return levels.filter((level) => !refused.has(level));
+    const offered = ultracodeOk && levels.length ? [...levels, "ultracode"] : levels;
+    return offered.filter((level) => !refused.has(level));
   }
 
   function effortLabel(level) {
@@ -227,7 +247,43 @@ export function makeControls(root, cell) {
   function effortTrack() {
     const levels = effortLevels();
     return levels.length ? { title: FA.barEffort, levels, current: effort, label: effortLabel,
+                             confirm: effortSwitchAsk,
                              onPick: (level) => pickEffort({ key: level }) } : null;
+  }
+
+  /* A level change asks first only when it really costs: mid-conversation,
+     and only when the CLI says the change rewrites the cached prefix
+     (perTurnEffort false). On 2.1.294 it does not — the effort rides inside
+     the conversation — and a question about a cost that is not there would be
+     a wrong one. Ultracode on or off is a level like the others. */
+  function effortSwitchAsk(level) {
+    if (!started() || level === effort || perTurnEffort !== false) return null;
+    const size = root.querySelector?.(".bar-cache")?._cache?.size;
+    return {
+      text: size ? FA.effortSwitchAsk.replace("{n}", fmtTokens(size)) : FA.effortSwitchAskPlain,
+      ok: FA.modelSwitchOk, cancel: FA.modelSwitchCancel,
+    };
+  }
+
+  /* The model menu after the extension's (2026-10-09 reference): the CLI's
+     aliases — opus, fable, sonnet, haiku, the current generation — on the
+     list itself, every pinned id (claude-…) under «مدل‌های بیشتر». The
+     description is the hover title, not a second line. The model in use is
+     always on the first list, wherever it came from. */
+  function modelGroups(current) {
+    const list = models.filter((m) => twinOf(m) === m);
+    const alias = (m) => !/^claude-/.test(m.value);
+    let top = list.filter(alias);
+    let rest = list.filter((m) => !alias(m));
+    if (!top.length) { top = list; rest = []; }
+    if (current && rest.includes(current)) {
+      top = [...top, current];
+      rest = rest.filter((m) => m !== current);
+    }
+    const row = (m) => ({ key: m.value, title: m.displayName || m.value,
+                          tip: m.description || "", selected: m === current });
+    return { rows: top.map(row),
+             more: rest.length ? { title: FA.barMoreModels, rows: rest.map(row) } : null };
   }
 
   async function pickEffort(item) {
@@ -307,15 +363,18 @@ export function makeControls(root, cell) {
   }
 
   function openStyleMenu() {
-    if (!ui.postureChip || styles.length < 2) return false;
+    // From its own chip on the bar, or from the mode menu's row under it.
+    const anchor = ui.styleChip && !ui.styleChip.hidden ? ui.styleChip : ui.postureChip;
+    if (!anchor || styles.length < 2) return false;
     if (started()) {
-      // Deferred for the same reason as openAuditList.
+      // After the click that asked for it: that click is still on its way to
+      // the document, whose listener shuts this menu on any click outside it.
       setTimeout(() => openMenu("style", [{ title: FA.styleLockedNow.replace("{name}", styleTitle(style)) }],
-                                null, ui.postureChip));
+                                null, anchor));
       return true;
     }
-    openBarMenu(ui.postureChip, { title: FA.styleTitle, rows: styleRows(),
-                                  note: FA.styleNote, onPick: pickStyle });
+    openBarMenu(anchor, { title: FA.styleTitle, rows: styleRows(),
+                          note: FA.styleNote, onPick: pickStyle });
     return true;
   }
 
@@ -387,11 +446,13 @@ export function makeControls(root, cell) {
   /* What was approved without asking, so the counter can be opened and read.
      Fed by permission_resolved events, which the SSE hub replays to a reloading
      window — so the list survives a refresh exactly as far as the count does. */
-  const autoActions = [];   // [{tool, why}]
+  const autoActions = [];   // [{tool, why, target, at}]
   let autoCount = 0;
 
-  function noteAutoAction(toolName, why) {
-    autoActions.push({ tool: toolName || "?", why });
+  function noteAutoAction(toolName, why, target, at) {
+    autoActions.push({ tool: toolName || "?", why, target: target || "", at });
+    // An open list follows along, without taking the keyboard from the prompt.
+    if (auditOpen(cell.log)) openAudit(cell.log, autoActions, { focus: false });
   }
 
   /* Persian digits: this is prose chrome, not a technical value (spec rule 5). */
@@ -412,8 +473,8 @@ export function makeControls(root, cell) {
      `refused` is deliberately NOT in the snapshot: an effort level the CLI's own
      settings schema rejects is a fact about the build, not about a session. */
   function snapshot() {
-    return { models, chosen, resolved, styles, styleLabels, style, effort, posture, autoCount,
-             autoActions: autoActions.slice() };
+    return { models, chosen, resolved, styles, styleLabels, style, effort, ultracodeOk,
+             perTurnEffort, posture, autoCount, autoActions: autoActions.slice() };
   }
 
   /* A tab that has never been looked at has no snapshot — hence the defaults on
@@ -427,6 +488,8 @@ export function makeControls(root, cell) {
     styleLabels = s.styleLabels ?? [];
     style = s.style ?? null;
     effort = s.effort ?? null;
+    ultracodeOk = s.ultracodeOk ?? false;
+    perTurnEffort = s.perTurnEffort ?? null;
     posture = s.posture ?? null;
     autoActions.length = 0;
     if (s.autoActions) autoActions.push(...s.autoActions);
@@ -529,7 +592,7 @@ export function makeControls(root, cell) {
      with a ✓ on the current one. The digit is the row's place in the list,
      never part of its text, and a key while the menu is open. */
   const MENU_TITLES = { model: FA.barModel, posture: FA.barMode,
-                        style: FA.styleTitle, auto: FA.autoActionsTitle };
+                        style: FA.styleTitle };
   let menuItems = [];
   let menuPick = null;
 
@@ -587,19 +650,14 @@ export function makeControls(root, cell) {
 
   /* The count alone is a number with nothing behind it. Opening it is the
      audit trail that makes «خودکار» — and a remembered tool — defensible. No
-     endpoint: the events that produced the count carry the tool name. It sits
-     at the foot of the mode menu, under the mode that produced it, as in the
-     terminal edition: the bar carries the mode alone. */
+     endpoint: the events that produced the count carry the tool, its path or
+     command, and the time. It sits at the foot of the mode menu, under the
+     mode that produced it, as in the terminal edition: the bar carries the
+     mode alone. A list to read beside the transcript (marks.js openAudit),
+     not a menu: nothing in it is picked. */
   function openAuditList() {
-    const rows = autoActions.length
-      ? autoActions.map((a) => ({
-          title: a.tool,
-          note: a.why === "remembered" ? FA.autoWhyRemembered : FA.autoWhyPosture,
-        }))
-      : [{ title: FA.autoActionsEmpty }];
-    // After the click that asked for it: that click is still on its way to the
-    // document, whose listener shuts this menu on any click outside it.
-    setTimeout(() => openMenu("auto", rows, null, ui.postureChip));
+    closeMenu();
+    return !!openAudit(cell.log, autoActions);
   }
 
   /* --- init ------------------------------------------------------------------ */
@@ -614,18 +672,21 @@ export function makeControls(root, cell) {
       e.stopPropagation();
       closeMenu();
       const current = twinOf(modelEntry());
-      // Every model in one list, the CLI's own order (the extension's menu).
       // The «Default» alias is not a row when the list names its model
       // (twinOf): the ✓ sits on that model.
+      const { rows, more } = modelGroups(current);
       openBarMenu(ui.modelChip, {
-        title: FA.barModel,
-        rows: models.filter((m) => twinOf(m) === m).map((m) => ({
-          key: m.value, title: m.displayName || m.value,
-          note: m.description || "", selected: m === current })),
+        title: FA.barModel, rows, more, digits: true, compact: true,
         effort: effortTrack(),
         confirm: (row) => modelSwitchAsk(row, current),
         onPick: pickModel,
       });
+    });
+
+    ui.styleChip?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeMenu();
+      openStyleMenu();
     });
 
     ui.postureChip.addEventListener("click", (e) => {
@@ -675,7 +736,8 @@ export function makeControls(root, cell) {
   return {
     applyInitInfo, setModelResolved, resetControls,
     setPostureState, setEffortState, setOutputStyle,
+    setUltracodeAvailable, setPerTurnEffort,
     setAutoCount, noteAutoAction,
-    snapshot, restore, cyclePosture, closeMenu, openStyleMenu,
+    snapshot, restore, cyclePosture, closeMenu, openStyleMenu, openAuditList,
   };
 }

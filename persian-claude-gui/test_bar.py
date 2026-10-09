@@ -151,8 +151,13 @@ const NOW = Date.now();
   const rowSel = pop() ? ".bar-row" : ".menu-row";
   const rows = [...(menu?.querySelectorAll(rowSel) ?? [])];
   out.modelRows = rows.length;
-  out.modelDigits = rows.filter((r) => r.querySelector(".bar-row-digit, .menu-digit")?.textContent).length;
-  out.modelCheck = rows.map((r) => (r.querySelector(".bar-row-check, .menu-check")?.textContent ? "v" : "-")).join("");
+  // The extension's model menu (2026-10-09 reference): the check on the current
+  // row, its place on every other one.
+  out.modelDigits = rows.filter((r) => r.querySelector(".bar-row-check.is-digit")?.textContent).length;
+  out.modelCheck = rows.map((r) => {
+    const c = r.querySelector(".bar-row-check, .menu-check");
+    return c?.textContent === "✓" ? "v" : c?.classList.contains("is-digit") ? c.textContent : "-";
+  }).join("");
   mark = calls.length;
   // A click on the chip takes focus off the prompt; a digit typed INTO the
   // prompt is text, and the web menu rightly leaves it alone.
@@ -199,7 +204,7 @@ const NOW = Date.now();
   q(".model-chip")?.click(); await sleep(40);
   out.barMenus = !!pop()?.classList.contains("bar-menu");
   if (out.barMenus) {
-    out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-foot) .bar-row-title")]
+    out.primary = [...pop().querySelectorAll(":scope > .bar-row:not(.bar-foot):not(.bar-more) .bar-row-title")]
       .map((t) => t.textContent).join("|");
     out.tip = pop().querySelector(":scope > .bar-row")?.title ?? "";
     // The alias is not a row: the chip and the check name the model it means.
@@ -219,20 +224,44 @@ const NOW = Date.now();
       || menuR.left <= 9 || menuR.right >= innerWidth - 9;
     out.notes = pop().querySelectorAll(":scope > .bar-row .bar-row-note").length;
     out.noteLine = pop().querySelector(":scope > .bar-row .bar-row-note")?.textContent ?? "";
-    pop().hidePopover(); await sleep(20);
+    // A pinned id (claude-...) is under the «more» row, in a list beside the menu.
+    const moreBtn = pop().querySelector(":scope > .bar-more");
+    out.moreTitle = moreBtn?.querySelector(".bar-row-title")?.textContent ?? "";
+    moreBtn?.click(); await sleep(60);
+    const sub = pop()?.querySelector(".bar-sub");
+    out.subTitles = [...(sub?.querySelectorAll(".bar-row-title") ?? [])].map((t) => t.textContent).join("|");
+    out.subOpen = !!sub?.matches(":popover-open") && !!pop()?.matches(":popover-open");
+    if (sub) {
+      const s = sub.getBoundingClientRect(), m = pop().getBoundingClientRect();
+      out.subBeside = s.right <= m.left + 1 || s.left >= m.right - 1;
+      out.subInside = s.left >= 0 && s.right <= innerWidth && s.top >= 0 && s.bottom <= innerHeight;
+    }
+    mark = calls.length;
+    sub?.querySelector(".bar-row")?.click(); await sleep(40);
+    out.subPick = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
+      .map((c) => c.body.params.model).join();
+    pop()?.hidePopover(); await sleep(20);
    }
    if (out.barMenus && FA.barAutoCount) {
     ev({ type: "wrapper", subtype: "posture", posture: "autoApprove", auto_count: 3 });
+    ev({ type: "wrapper", subtype: "permission_resolved", request_id: "ra", tool_use_id: "ua",
+         decision: "allow", auto: true, auto_count: 3, tool_name: "Write", why: "posture",
+         target: "C:\kar\app.py", at: 1760000000 });
     await sleep(30);
     q(".posture-chip")?.click(); await sleep(40);
     out.foot = pop()?.querySelector(".bar-foot .bar-row-title")?.textContent ?? "";
     out.wantFoot = FA.barAutoCount.replace("{n}", "۳");
     pop()?.querySelector(".bar-foot")?.click(); await sleep(40);
-    // The terminal edition's inline picker, or the web edition's in-cell menu.
-    const list = document.querySelector("dialog.picker[open]") ?? q(".menu-popup:not([hidden])");
-    out.auditOpen = !!list && (list.textContent ?? "").includes(FA.autoActionsTitle);
-    document.querySelector("dialog.picker")?.close?.();
-    if (q(".menu-popup")) q(".menu-popup").hidden = true;
+    // A list to read beside the transcript, not a menu or a picker.
+    const list = document.querySelector('.diff-side[data-kind="audit"]');
+    const row = list?.querySelector(".audit-row");
+    out.auditOpen = !!list && (list.textContent ?? "").includes(FA.autoActionsTitle)
+      && row?.querySelector(".audit-tool")?.textContent === "Write"
+      && row?.querySelector(".audit-target.path")?.textContent === "C:\kar\app.py"
+      && !!row?.querySelector("time.audit-time")
+      && !list.querySelector(".diff-side-body button, .diff-side-body [tabindex]")
+      && !document.querySelector("dialog.picker[open]") && (q(".menu-popup")?.hidden ?? true);
+    list?.querySelector(".diff-side-close")?.click(); await sleep(20);
     out.noChip = !document.querySelector(".auto-chip");
   }
 
@@ -283,6 +312,46 @@ const NOW = Date.now();
   pop()?.querySelector(".bar-confirm .is-primary")?.click(); await sleep(40);
   out.switched = since(mark).filter((c) => c.url === "/api/control" && c.body.subtype === "set_model")
     .map((c) => c.body.params.model).join();
+  pop()?.hidePopover(); await sleep(20);
+  // Ultracode: a sixth stop only where the CLI says it can run.
+  const track = async () => {
+    q(".model-chip")?.click(); await sleep(40);
+    return pop()?.querySelector(".bar-effort .bar-slider-range");
+  };
+  ev({ type: "wrapper", subtype: "effort", effort: "medium", ultracode_available: false });
+  await sleep(20);
+  let r = await track();
+  out.ultraOff = r ? r.max : "none";
+  pop()?.hidePopover(); await sleep(20);
+  ev({ type: "wrapper", subtype: "effort", effort: "medium", ultracode_available: true });
+  await sleep(20);
+  r = await track();
+  out.ultraOn = r ? r.max : "none";
+  // An effort change mid-conversation that KEEPS the cache (the CLI's
+  // per_turn_effort_active true, 2.1.294) asks nothing and posts at once.
+  ev({ type: "system", subtype: "init", model: "claude-opus-5-5", cwd: "C:/kar",
+       permissionMode: "default", session_id: "s1", per_turn_effort_active: true });
+  await sleep(20);
+  mark = calls.length;
+  if (r) { r.value = r.max; r.dispatchEvent(new Event("input")); r.dispatchEvent(new Event("change")); }
+  await sleep(40);
+  out.ultraPost = since(mark).filter((c) => c.url === "/api/effort").map((c) => c.body.level).join();
+  out.cheapAsked = !!pop()?.classList.contains("bar-confirm");
+  out.ultraLabel = pop()?.querySelector(".bar-slider-now")?.textContent ?? "";
+  pop()?.hidePopover(); await sleep(20);
+  // One that REWRITES the cache (false) asks first, and posts only on yes.
+  ev({ type: "wrapper", subtype: "effort", effort: "medium", ultracode_available: true });
+  ev({ type: "system", subtype: "init", model: "claude-opus-5-5", cwd: "C:/kar",
+       permissionMode: "default", session_id: "s1", per_turn_effort_active: false });
+  await sleep(20);
+  r = await track();
+  mark = calls.length;
+  if (r) { r.value = "3"; r.dispatchEvent(new Event("change")); }
+  await sleep(40);
+  out.costAsked = !!pop()?.classList.contains("bar-confirm") && !since(mark).some((c) => c.url === "/api/effort");
+  pop()?.querySelector(".bar-confirm .is-primary")?.click(); await sleep(40);
+  out.costPost = since(mark).filter((c) => c.url === "/api/effort").map((c) => c.body.level).join();
+  pop()?.hidePopover(); await sleep(20);
   // That message's turn ends, so what follows starts idle.
   ev({ type: "result", subtype: "success", is_error: false, duration_ms: 10 });
   ev({ type: "command_lifecycle", command_uuid: "u-first", state: "completed" });
@@ -428,8 +497,8 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
     check("before the first message the panel says its figure is a baseline, after it not",
           m.get("baselineFresh") is True and m.get("baselineAfter") is False,
           f"fresh {m.get('baselineFresh')}, after {m.get('baselineAfter')}")
-    check("the model menu checks the current one and draws no digits",
-          m.get("modelRows") == 2 and m.get("modelDigits") == 0 and m.get("modelCheck") == "v-",
+    check("the model menu checks the current one and numbers the others",
+          m.get("modelRows") == 2 and m.get("modelDigits") == 1 and m.get("modelCheck") == "v۲",
           f"{m.get('modelRows')} rows / {m.get('modelDigits')} / {m.get('modelCheck')}")
     check("a digit picks from the model menu", m.get("setModel") == "sonnet", str(m.get("setModel")))
     if m.get("actBox"):
@@ -450,9 +519,17 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
               f"«{m.get('sentLater')}» / strip hidden {m.get('stripAfter')}")
     check("bar-menu shape in both editions", m.get("barMenus") is True, str(m.get("barMenus")))
     if m.get("barMenus"):
-        check("the model menu lists every model in one list, the description as the line under it",
-              m.get("primary") == "Opus 5.5|Sonnet 5.5|Opus 5" and m.get("noteLine") == "complex work",
-              f"{m.get('primary')} / «{m.get('noteLine')}»")
+        check("the model menu lists the CLI's aliases, names only, the description as a hover title",
+              m.get("primary") == "Opus 5.5|Sonnet 5.5" and m.get("notes") == 0
+              and m.get("tip") == "complex work",
+              f"{m.get('primary')} / {m.get('notes')} notes / tip «{m.get('tip')}»")
+        check("...a pinned model is under «مدل‌های بیشتر», in a list beside the menu, both open",
+              m.get("moreTitle") == "مدل‌های بیشتر" and m.get("subTitles") == "Opus 5"
+              and m.get("subOpen") is True and m.get("subBeside") is True and m.get("subInside") is True,
+              f"«{m.get('moreTitle')}» / {m.get('subTitles')} / open {m.get('subOpen')} / "
+              f"beside {m.get('subBeside')} / on screen {m.get('subInside')}")
+        check("...and a row there picks that model", m.get("subPick") == "claude-opus-5",
+              str(m.get("subPick")))
         check("the «Default» alias is the model it resolves to: no row of its own, the check on that model",
               m.get("checked") == "Opus 5.5" and m.get("chipName") == "Opus 5.5",
               f"checked «{m.get('checked')}», chip «{m.get('chipName')}»")
@@ -461,7 +538,8 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
               f"gap {m.get('titleGap')}px, digit shown {m.get('curDigitShown')}")
         check("the menu shares an edge with its chip", m.get("menuOnChip") is True, str(m.get("menuOnChip")))
     if "foot" in m:
-        check("the audit count is the mode menu's footer, and it opens the list; no bar chip",
+        check("the audit count is the mode menu's footer, and it opens a read-only list "
+              "beside the transcript (tool, path, time; nothing to click); no bar chip",
               m.get("foot") == m.get("wantFoot") and m.get("auditOpen") and m.get("noChip"),
               f"«{m.get('foot')}» / list {m.get('auditOpen')} / no chip {m.get('noChip')}")
     check("the style row names the style in force and opens the list before the first message",
@@ -480,6 +558,16 @@ def checks(m: dict, fa_limits: tuple[str, ...]) -> list[tuple[str, bool, str]]:
     check("another model mid-conversation asks first, and switches only on yes",
           m.get("asked") is True and m.get("switched") == "sonnet",
           f"asked {m.get('asked')} / switched «{m.get('switched')}»")
+    check("«اولترا» is a sixth effort stop only where the CLI offers ultracode",
+          m.get("ultraOff") == "3" and m.get("ultraOn") == "4", f"{m.get('ultraOff')} / {m.get('ultraOn')}")
+    check("...picking it posts «ultracode», labelled «اولترا»",
+          m.get("ultraPost") == "ultracode" and m.get("ultraLabel") == "(اولترا)",
+          f"{m.get('ultraPost')} / {m.get('ultraLabel')}")
+    check("an effort change that keeps the cache asks nothing mid-conversation",
+          m.get("cheapAsked") is False, str(m.get("cheapAsked")))
+    check("one that rewrites the cache (per_turn_effort_active false) asks, and posts only on yes",
+          m.get("costAsked") is True and m.get("costPost") == "xhigh",
+          f"asked {m.get('costAsked')} / posted «{m.get('costPost')}»")
     check("the mode menu lists the four postures and a digit picks",
           m.get("modeRows") == 4 and m.get("posture") == "plan", f"{m.get('modeRows')} / {m.get('posture')}")
     check("the mode menu carries an icon per row and the effort track",
