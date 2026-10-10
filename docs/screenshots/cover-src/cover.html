@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Source of docs/screenshots/cover.png. Re-render after a UI change:
+     1. copy the terminal edition's `shots.py` conversation-1280x800.png over
+        docs/screenshots/terminal-conversation.png;
+     2. python docs/screenshots/cover-src/render.py
+     Fonts are the app's own vendored Vazirmatn, so nothing is fetched. -->
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Vazirmatn; font-weight: 400; src: url(../../../persian-claude-gui/static/fonts/Vazirmatn-Regular.woff2); }
+  @font-face { font-family: Vazirmatn; font-weight: 500; src: url(../../../persian-claude-gui/static/fonts/Vazirmatn-Medium.woff2); }
+  @font-face { font-family: Vazirmatn; font-weight: 700; src: url(../../../persian-claude-gui/static/fonts/Vazirmatn-Bold.woff2); }
+  html, body { margin: 0; width: 2400px; height: 1350px; overflow: hidden; }
+  body {
+    font-family: Vazirmatn, sans-serif; color: #f2efe9;
+    background:
+      radial-gradient(1200px 900px at 100% 0%, rgba(217,119,87,.22), transparent 60%),
+      radial-gradient(900px 700px at 0% 100%, rgba(217,119,87,.08), transparent 60%),
+      #121212;
+    position: relative;
+  }
+  .copy { position: absolute; inset-inline-start: 160px; top: 250px; width: 820px; }
+  .mark {
+    width: 96px; height: 96px; border-radius: 22px; display: grid; place-items: center;
+    background: rgba(217,119,87,.14); border: 1px solid rgba(217,119,87,.35); color: #d97757;
+  }
+  h1 { font-size: 168px; font-weight: 700; line-height: 1.1; margin: 48px 0 8px; letter-spacing: -1px; }
+  .sub { font-size: 50px; font-weight: 500; margin: 0 0 72px; color: #e8e4dc; }
+  .sub bdi { direction: ltr; unicode-bidi: isolate; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { font-size: 36px; margin: 0 0 26px; color: #cfcac1; display: flex; align-items: center; gap: 22px; }
+  li::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: #d97757; flex: none; }
+  li bdi { direction: ltr; unicode-bidi: isolate; }
+  .tag {
+    display: inline-block; margin-top: 46px; font-size: 26px; color: #d97757;
+    border: 1px solid rgba(217,119,87,.4); border-radius: 999px; padding: 6px 22px;
+  }
+  .stage { position: absolute; left: -60px; top: 230px; perspective: 2400px; }
+  .win {
+    width: 1440px; border-radius: 18px; overflow: hidden; background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 60px 140px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.03);
+    transform: rotateY(14deg) rotateX(3deg); transform-origin: left center;
+  }
+  .bar {
+    height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 22px;
+    background: #181818; border-bottom: 1px solid #2c2c2c; font-size: 22px; color: #bdb7ad;
+  }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #3c3c3c; }
+  .bar span { margin-inline-end: 12px; }
+  .win img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="win">
+      <div class="bar"><span>کلاد فارسی — ترمینال</span><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+      <img src="../terminal-conversation.png" alt="">
+    </div>
+  </div>
+  <div class="copy">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" width="54" height="54" fill="none" stroke="currentColor"
+           stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17.1 7.4L11.9 12l5.2 4.6"/><path d="M6.9 16.6h4"/>
+      </svg>
+    </div>
+    <h1>کلاد فارسی</h1>
+    <p class="sub"><bdi>Claude Code</bdi> به فارسی، روی ویندوز</p>
+    <ul>
+      <li>راست‌به‌چپ، با فارسی و انگلیسی در یک خط</li>
+      <li>نیم‌فاصله با <bdi>Shift+Space</bdi></li>
+      <li>چند گفتگو کنار هم، در دو نسخهٔ پنجره‌ای و ترمینالی</li>
+      <li>رایگان و متن‌باز</li>
+    </ul>
+    <span class="tag">طراحی تازه · نسخهٔ ۱.۱۳</span>
+  </div>
+</body>
+</html>

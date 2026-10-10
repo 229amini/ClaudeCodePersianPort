@@ -54,7 +54,11 @@
   گفتگوی اصلی دست نمی‌خورد.
 - **نمای متمرکز** (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd>): پرسش‌ها و پاسخ‌ها
   می‌مانند و مراحل هر کار پشت یک سطر جمع می‌شوند.
-- **مدل، میزان تفکر و مصرف** در نوار زیر جای نوشتن پیام، مثل claude.ai/code.
+- **ظاهری از روی افزونهٔ Claude Code برای VS Code:** همان اندازه‌ها و فاصله‌ها، با رنگ
+  نارنجی کلاد. زیر کادر پیام، «+» فایل پیوست می‌کند، «/» فهرست فرمان‌ها را باز می‌کند، و
+  منوی مدل و منوی حالت سطح تلاش و لحن پاسخ را هم دارند.
+- **سقف پنج‌ساعتهٔ مصرف:** اگر وسط کار به سقف برسید، پنجره بعد از باز شدنش کار را خودش
+  ادامه می‌دهد.
 - **نصب با دوبار کلیک.** اگر پایتون یا Claude Code نصب نباشد، نصب‌کننده نصبشان می‌کند و هر
   جا کاری از شما لازم باشد، به فارسی می‌گوید.
 - **روی کامپیوتر خودتان.** برنامه فقط به `127.0.0.1` گوش می‌دهد و چیزی به جایی نمی‌فرستد.
@@ -164,9 +168,12 @@ project keeps the CLI and replaces only the screen.
   (the source conversation is left as it was).
 - **Focus view** (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> or `/focus`): each turn's tool
   steps collapse behind one row, so only questions and answers stay open.
-- **Composer bar modelled on claude.ai/code**: model picker, effort slider, output style,
-  a context and plan-usage panel, MCP server toggles, file attachments and slash-command
-  completion.
+- **Look and composer bar after the Claude Code VS Code extension** (1.13 / 0.13): its sizes
+  and spacing in Claude orange; attach, `@` mentions and MCP toggles behind «+», a command
+  palette behind «/», model and mode menus carrying the effort level and the response style,
+  a context and plan-usage ring, and a prompt-cache clock.
+- **The five-hour usage limit**: a turn cut off by it continues by itself once the limit
+  resets, the way the TUI does.
 - **CLI features beyond chat**: `AskUserQuestion` as a real form, plan mode with the plan
   rendered as markdown, a message queue you can cancel from or send now, `!` shell mode, `@`
   file mentions, input history with ↑ and <kbd>Ctrl</kbd>+<kbd>R</kbd>, `/export` and
