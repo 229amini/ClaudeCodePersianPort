@@ -57,7 +57,7 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
-          "bar-style", "bar-switch", "audit", "ctx", "idle")
+          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter")
 
 FALLBACK_STYLE_LABELS = [
     {"id": "frugal-concise", "title": "کار روزمره",
@@ -283,6 +283,39 @@ async function run() {
                   file_path: "D:\\projects\\ClaudeCodePersianPort\\static\\strings.fa.js",
                   content: "window.FA = {\n  phIdle: \"پیام خود را بنویسید\",\n};\n"}});
     }
+    return;
+  }
+  if (SCENE === "beforeafter") {
+    // The launch clip's "after" half: the question and the CLI's own answer
+    // from the 2026-10-05 before/after capture (docs/launch/before-after.png),
+    // re-drawn by the shipping renderer so the clip shows the current design.
+    const baTab = {...TABS[0], title: "رنگ دکمهٔ ذخیره"};
+    useTabs([baTab], "t1");
+    APP.applyTabs({tabs: [baTab], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    ev("t1", {type: "wrapper", subtype: "user_echo", uuid: "u-ba",
+              timestamp: new Date(Date.now() - 60e3).toISOString(), text:
+      "در یک پاراگراف کوتاه فارسی توضیح بده که اگر فایل D:\\projects\\app\\style.css را عوض کنی، " +
+      "رنگ دکمهٔ «ذخیره» در صفحهٔ settings.html چطور تغییر می‌کند. از هیچ ابزاری استفاده نکن، فقط جواب بده."});
+    ev("t1", {type: "assistant", uuid: "a-ba", timestamp: new Date(Date.now() - 50e3).toISOString(),
+              message: {content: [{type: "text", text:
+      "فایل‌ها را ندیده‌ام، پس جواب شرطی است.\n\n" +
+      "صفحه باید این فایل را با تگ لینک بارگذاری کند:\n\n" +
+      "- `<link rel=\"stylesheet\" href=\"style.css\">`\n\n" +
+      "بعد از آن، اگر در این فایل رنگ قاعده‌ای را که به کلاس یا شناسهٔ دکمهٔ «ذخیره» اشاره می‌کند عوض کنی، " +
+      "با بارگذاری دوبارهٔ صفحه رنگ دکمه هم عوض می‌شود. این ویژگی‌ها رنگ را تعیین می‌کنند:\n\n" +
+      "- `background-color`\n- `color`\n\n" +
+      "در سه حالت تغییر تو دیده نمی‌شود: قاعده‌ای با انتخابگر دقیق‌تر وجود داشته باشد، رنگ به‌صورت درون‌خطی " +
+      "روی خود دکمه نوشته شده باشد، یا فایل دیگری بعد از این فایل بارگذاری شود و همان ویژگی را دوباره تعیین کند. " +
+      "همین اتفاق وقتی هم می‌افتد که قاعدهٔ دیگری این علامت را داشته باشد:\n\n" +
+      "- `!important`\n\n" +
+      "ممکن است مرورگر هنوز نسخهٔ قبلی را از حافظهٔ موقت نشان دهد. برای دیدن تغییر، صفحه را کامل دوباره بارگذاری کن:\n\n" +
+      "- `Ctrl+F5`"}]}});
+    ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 9000, total_cost_usd: 0.05});
+    ev("t1", {type: "command_lifecycle", command_uuid: "u-ba", state: "completed"});
+    await sleep(200);
+    document.querySelector(".log")?.scrollTo(0, 0);
     return;
   }
   if (SCENE === "lw0") {
