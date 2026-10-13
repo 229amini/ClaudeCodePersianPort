@@ -14,6 +14,7 @@ import { openPlus, openUsage, openPalette, paletteGroups } from "./bar.js";
    parked (app.js switchTab). */
 import { switchToTab, splitView, openHere } from "./chrome.js";
 import { toggleFocus } from "./focus.js";
+import { openLogin } from "./login.js";
 
 const FA = window.STRINGS;
 
@@ -485,6 +486,8 @@ export function makeComposer(root, cell) {
     { name: "branch", description: FA.cmdBranchDesc },
     { name: "split", description: FA.cmdSplitDesc },
     { name: "focus", description: FA.cmdFocusDesc },
+    { name: "login", description: FA.cmdLoginDesc },
+    { name: "logout", description: FA.cmdLogoutDesc },
   ];
 
   function allCommands() {
@@ -1060,6 +1063,9 @@ export function makeComposer(root, cell) {
       note(toggleFocus() ? FA.focusOn : FA.focusOff);
       return true;
     },
+    // -p answers "/login isn't available"; js/login.js runs `claude auth login`.
+    login: openLogin,
+    logout: openLogin,
   };
 
   /* Returns true when the text was a lifecycle verb and must not be sent.

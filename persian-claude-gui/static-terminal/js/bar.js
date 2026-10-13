@@ -889,7 +889,7 @@ const PALETTE_GROUP = {
   chat: ["clear", "compact", "rewind", "branch", "rename", "resume", "export"],
   model: ["model", "effort", "output-style", "permissions", "fast", "context", "usage", "cost"],
   project: ["init", "memory", "add-dir", "agents", "hooks", "mcp", "review", "security-review",
-            "status", "help"],
+            "status", "help", "login", "logout"],
 };
 
 export function paletteGroups(commands) {

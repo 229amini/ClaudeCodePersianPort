@@ -37,6 +37,7 @@ import { focusSessions, chooseProject, switchToTab, splitView } from "./chrome.j
 import { effortLabel, styleLabel } from "./controls.js";
 import { unfoldAgents } from "./agents.js";
 import { toggleFocus } from "./focus.js";
+import { openLogin } from "./login.js";
 
 const FA = window.STRINGS;
 
@@ -320,7 +321,7 @@ const COMPOSER_VERBS = ["bash", "model", "effort", "output-style",
 const HELP_ORDER = ["help", "resume", "status", "copy", "export", "branch",
                     "btw", "bash", "tasks", "focus", "split", "cd", "add-dir", "memory",
                     "config", "hooks", "keybindings", "model", "effort",
-                    "output-style", "permissions", "clear"];
+                    "output-style", "permissions", "clear", "login", "logout"];
 
 function helpRows() {
   const rows = HELP_ORDER.map((verb) => ({
@@ -376,6 +377,9 @@ export const WINDOW_COMMANDS = {
   tasks,
   focus: focusView,
   split: splitGrid,
+  // -p answers "/login isn't available"; js/login.js runs `claude auth login`.
+  login: openLogin,
+  logout: openLogin,
 };
 
 /* Returns false when the verb is not one of ours, or when the one it names had

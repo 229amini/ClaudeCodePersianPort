@@ -104,6 +104,9 @@ ALLOWED_LATIN = {
     # the protocol's own name, as the user's config and the CLI's /mcp spell it
     # (the composer bar's «اتصال‌ها», 2026-09-29)
     "mcp",
+    # the button on Anthropic's sign-in page, which is English: the sheet has
+    # to name what the person will actually see there (js/login.js)
+    "authorize",
 }
 
 

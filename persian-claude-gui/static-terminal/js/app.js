@@ -68,6 +68,7 @@ import { initNotices, pushNotice, markRead, togglePanel } from "./notices.js";
 import { makeChanges } from "./changes.js";
 import { initZoom, readPref, writePref, cssPx } from "./prefs.js";
 import { initFocus } from "./focus.js";
+import { initLogin } from "./login.js";
 
 const FA = window.STRINGS;
 
@@ -1407,6 +1408,7 @@ initNewSession({
 initChrome();
 initZoom();
 initFocus();   // pcg-ahh.5: Focus view, the window's own preference   // §D13: does nothing unless ZOOM_MODE (prefs.js) says "css"
+initLogin();   // nobody signed in: the sign-in sheet before the first message
 
 /* --- transport ------------------------------------------------------------ */
 

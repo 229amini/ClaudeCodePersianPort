@@ -333,6 +333,167 @@ def find_claude() -> str:
     raise SystemExit("claude CLI not found. Install it, then re-run.")
 
 
+# --- login ------------------------------------------------------------------
+#
+# `/login` sent as text in -p answers "isn't available in this environment".
+# `claude auth login` is the working path, and it runs on pipes: it prints the
+# OAuth URL, then blocks on stdin for the code Anthropic's callback page shows
+# (measured 2026-10-14, claude 2.1.296 -- wiki/cli-login.md). The window shows
+# the link, the person pastes the code, we write it to that stdin.
+
+AUTH_STATUS_TIMEOUT = 20
+LOGIN_URL_TIMEOUT = 30      # spawn -> the URL is printed
+LOGIN_CODE_TIMEOUT = 60     # code written -> the process exits
+LOGIN_URL_RE = re.compile(r"https://\S+/oauth/authorize\?\S+")
+
+
+def auth_status(claude_bin: str) -> dict:
+    """`claude auth status --json`, trimmed to what the window shows.
+    `loggedIn` is None when the CLI could not be asked at all."""
+    try:
+        done = subprocess.run([claude_bin, "auth", "status", "--json"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=AUTH_STATUS_TIMEOUT,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        data = json.loads(done.stdout)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return {"loggedIn": None}
+    if not isinstance(data, dict):
+        return {"loggedIn": None}
+    return {"loggedIn": bool(data.get("loggedIn")),
+            **{k: data[k] for k in ("email", "subscriptionType", "authMethod")
+               if isinstance(data.get(k), str)}}
+
+
+class LoginFlow:
+    """At most one `claude auth login` at a time, for the whole window: a login
+    is per machine, not per tab. Bytes, read in chunks -- the code prompt ends
+    without a newline, so a line reader would never see it."""
+
+    def __init__(self, claude_bin: str) -> None:
+        self.claude_bin = claude_bin
+        self.proc: subprocess.Popen | None = None
+        self._out = bytearray()
+        self._lock = threading.Lock()
+
+    def _text(self) -> str:
+        with self._lock:
+            return self._out.decode("utf-8", "replace")
+
+    def _pump(self, proc: subprocess.Popen) -> None:
+        while True:
+            try:
+                chunk = proc.stdout.read1(4096)
+            except (OSError, ValueError):
+                return
+            if not chunk:
+                return
+            with self._lock:
+                self._out += chunk
+
+    def _tail(self) -> str:
+        """The CLI's last words, for an error line: the URL and prompt cut."""
+        lines = [ln.strip() for ln in self._text().splitlines()]
+        lines = [ln for ln in lines if ln and "oauth/authorize" not in ln
+                 and not ln.startswith(("Opening browser", "Paste code"))]
+        return lines[-1] if lines else ""
+
+    def begin(self) -> dict:
+        self.cancel()
+        with self._lock:
+            self._out = bytearray()
+        try:
+            proc = subprocess.Popen(
+                [self.claude_bin, "auth", "login", "--claudeai"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as err:
+            return {"error": str(err)}
+        self.proc = proc
+        threading.Thread(target=self._pump, args=(proc,), daemon=True).start()
+        deadline = time.monotonic() + LOGIN_URL_TIMEOUT
+        while time.monotonic() < deadline:
+            found = LOGIN_URL_RE.search(self._text())
+            if found:
+                return {"url": found.group(0)}
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        self.cancel()
+        return {"error": self._tail() or "no login link"}
+
+    def _take(self, proc: subprocess.Popen) -> bool:
+        """Claim a finished login exactly once: the pasted code and the browser
+        callback can end the same process, and only one of them may report it
+        (and respawn the tabs)."""
+        with self._lock:
+            if self.proc is not proc:
+                return False
+            self.proc = None
+            return True
+
+    def submit(self, code: str) -> dict:
+        proc = self.proc
+        if proc is None:
+            return {"ok": False, "error": "no login in progress"}
+        if proc.poll() is not None:   # the browser's callback got there first
+            if not self._take(proc):
+                return {"ok": False, "error": "no login in progress"}
+            return {"ok": proc.returncode == 0}
+        mark = len(self._text())
+        try:
+            proc.stdin.write(code.encode("utf-8") + b"\n")
+            proc.stdin.flush()
+            proc.wait(timeout=LOGIN_CODE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.cancel()
+            return {"ok": False, "error": "timed out"}
+        except OSError:
+            pass
+        rc = proc.poll()
+        if not self._take(proc):
+            return {"ok": False, "error": "no login in progress"}
+        said = self._text()[mark:].strip()
+        if rc == 0:
+            return {"ok": True}
+        return {"ok": False, "error": said.splitlines()[-1] if said else f"exit {rc}"}
+
+    def state(self) -> dict:
+        """The OTHER way a login ends. The CLI also listens on a localhost port
+        and opens the browser with THAT as the redirect (the printed link is the
+        manual one), so approving in the browser signs in with no code at all
+        -- the process simply exits. The window polls this."""
+        proc = self.proc
+        if proc is None:
+            return {"state": "idle"}
+        rc = proc.poll()
+        if rc is None:
+            return {"state": "waiting"}
+        if not self._take(proc):
+            return {"state": "idle"}
+        return {"state": "done", "ok": rc == 0}
+
+    def cancel(self) -> None:
+        with self._lock:
+            proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+
+def auth_logout(claude_bin: str) -> bool:
+    try:
+        done = subprocess.run([claude_bin, "auth", "logout"], capture_output=True,
+                              timeout=AUTH_STATUS_TIMEOUT,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -3142,6 +3303,24 @@ class ClaudeSession:
     def alive(self) -> bool:
         return bool(self.proc and self.proc.poll() is None)
 
+    def respawn(self) -> None:
+        """Same conversation, new process: after a login or logout, so the CLI
+        reads the credentials now on disk. The generation bump goes FIRST, so
+        the old reader's exit is not reported as a crash."""
+        old = self.proc
+        self._generation += 1
+        if old and old.poll() is None:
+            try:
+                old.stdin.close()
+            except OSError:
+                pass
+            try:
+                old.terminate()
+                old.wait(timeout=5)
+            except (subprocess.TimeoutExpired, OSError):
+                old.kill()
+        self.start(resume_id=self.session_id if self.started else None)
+
     def _read_stdout(self, proc: subprocess.Popen, generation: int) -> None:
         # try/finally, not a plain loop-then-tail: this thread is the ONLY thing
         # that can tell a window its CLI is gone, and the window's "still
@@ -4292,6 +4471,7 @@ class Handler(BaseHTTPRequestHandler):
     token: str = ""
     hub: Hub
     claude_bin: str = ""
+    login: "LoginFlow | None" = None
     # Open conversations, insertion-ordered (that is the tab strip's order), and
     # which one an endpoint means when it is given no `tab`.
     sessions: dict[str, ClaudeSession] = {}
@@ -4363,6 +4543,44 @@ class Handler(BaseHTTPRequestHandler):
         # and nothing of a closed tab is ever replayed to a new one.
         session.hub.publish({"type": "wrapper", "subtype": "closed"})
         cls.hub.drop(tab)
+
+    def _auth(self, verb: str, body: dict) -> None:
+        """/api/auth/{login,code,flow,cancel,logout} -- see LoginFlow. A login or a
+        logout that took respawns every idle tab on the same conversation, so
+        the CLI under it is using the account now on disk. A busy one keeps
+        its turn; it picks the change up at its next respawn."""
+        cls = type(self)
+        if cls.login is None:
+            cls.login = LoginFlow(cls.claude_bin)
+        if verb == "login":
+            reply = cls.login.begin()
+            self._send_json(HTTPStatus.OK if "url" in reply else HTTPStatus.BAD_GATEWAY, reply)
+            return
+        if verb == "cancel":
+            cls.login.cancel()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+        if verb == "code":
+            code = body.get("code")
+            if not isinstance(code, str) or not code.strip() or len(code) > 4096:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "bad code"})
+                return
+            reply = cls.login.submit(code.strip())
+        elif verb == "flow":
+            reply = cls.login.state()
+            if reply["state"] != "done":
+                self._send_json(HTTPStatus.OK, reply)
+                return
+        else:   # logout
+            cls.login.cancel()
+            reply = {"ok": auth_logout(cls.claude_bin)}
+        if reply.get("ok"):
+            with _SESSIONS_LOCK:
+                idle = [s for s in cls.sessions.values() if not s.busy]
+            for session in idle:
+                session.respawn()
+            reply["status"] = auth_status(cls.claude_bin)
+        self._send_json(HTTPStatus.OK, reply)
 
     @classmethod
     def tabs_payload(cls) -> dict:
@@ -4504,6 +4722,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         elif parsed.path == "/api/tabs":
             self._send_json(HTTPStatus.OK, self.tabs_payload())
+        elif parsed.path == "/api/auth":
+            self._send_json(HTTPStatus.OK, auth_status(self.claude_bin))
         elif parsed.path == "/api/image":
             key = params.get("path", [""])[0]
             image = Path(key)
@@ -4733,7 +4953,10 @@ class Handler(BaseHTTPRequestHandler):
         # active tab, which is how the pre-tabs window keeps working.
         tab = body.get("tab") if isinstance(body.get("tab"), str) else None
 
-        if parsed.path == "/api/message":
+        if parsed.path in ("/api/auth/login", "/api/auth/code", "/api/auth/flow",
+                           "/api/auth/cancel", "/api/auth/logout"):
+            self._auth(parsed.path.rsplit("/", 1)[1], body)
+        elif parsed.path == "/api/message":
             session = self._target(tab)
             if session is None:
                 return
@@ -5450,6 +5673,8 @@ def idle_watchdog(hub: Hub, sessions: dict[str, ClaudeSession],
     while True:
         if hub.idle_seconds() > IDLE_SHUTDOWN_SECONDS:
             stop_all(sessions)
+            if Handler.login:
+                Handler.login.cancel()   # a login left waiting for its code
             threading.Thread(target=httpd.shutdown, daemon=True).start()
             return
         time.sleep(1.0)

@@ -121,7 +121,8 @@ const LIFECYCLE_VERBS = {
 /* The window-local verbs the «/» palette offers whether or not the CLI's own
    list carries them (bar.js paletteGroups gives them their Persian names). */
 const WINDOW_VERBS = ["clear", "model", "effort", "output-style", "permissions", "export",
-                      "branch", "resume", "memory", "hooks", "status", "help"];
+                      "branch", "resume", "memory", "hooks", "status", "help",
+                      "login", "logout"];
 
 /* The window-local commands that TAKE an argument, and are this module's own:
    `!` is a composer mode, so `/bash ls` is the same call the `!` line makes
