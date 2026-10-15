@@ -784,10 +784,16 @@ SEG_JS = """
   const seg = document.getElementById("split-seg");
   const segBtns = [...(seg ? seg.children : [])];
   out.seg = {labels: segBtns.map((b) => b.textContent.trim())};
+  // From ONE pane: the column «۲» adds must take an open conversation that is
+  // not on screen, not stay blank (reported 2026-10-15).
+  seg.querySelector('[data-split="1"]').click();
+  await sleep(250);
   seg.querySelector('[data-split="2"]').click();
   await sleep(250);
   out.seg.two = {split: document.getElementById("grid").dataset.split,
                  cells: CELLS().length,
+                 filled: CELLS().length - [...CELLS()].filter((c) =>
+                   !TABS.some((t) => APP.cellOf(t.tab)?.root === c)).length,
                  pressed: segBtns.map((b) => b.getAttribute("aria-pressed")),
                  sidebar: [...document.querySelectorAll("#open-tabs .tab-row")]
                             .map((r) => r.dataset.tab)};
@@ -1001,6 +1007,10 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             pressed = [b == "true" for b in got["pressed"]]
             if pressed != [want == 1, want == 2, want == 4]:
                 say(f"pressing «{want}» marked {got['pressed']} pressed")
+        if seg["two"]["filled"] != 2:
+            say(f"«۱» then «۲» with four conversations open left "
+                f"{2 - seg['two']['filled']} column(s) blank - the added column "
+                "must take an open conversation not on screen")
         if sorted(seg["two"]["sidebar"]) != ["t1", "t2", "t3", "t4"]:
             say("pressing «2» dropped a conversation from the sidebar: "
                 f"{seg['two']['sidebar']}")

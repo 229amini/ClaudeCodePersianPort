@@ -212,6 +212,19 @@ export function setSplit(n) {
   return true;
 }
 
+/* What the segmented control and `/split` do: setSplit, then the columns it
+   added take the open conversations not on screen, in the sidebar's order.
+   Two conversations open and «۲» picked used to leave the second column blank
+   (reported 2026-10-15) -- the terminal edition's arrange() already did this.
+   restoreLayout() calls setSplit alone: a reload puts back what WAS there. */
+function arrange(n) {
+  if (!setSplit(n)) return false;
+  const free = tabList.map((t) => t.tab).filter((one) => !cellOf(one));
+  for (const cell of cells) if (!cell.tab && free.length) placeIn(cell, free.shift());
+  paintTabs();
+  return true;
+}
+
 /* --- the window bar's segmented control -------------------------------------
 
    The web edition is a window for someone who will never type a command, so
@@ -236,7 +249,7 @@ function paintSplitControl(active) {
       b.dataset.split = String(n);
       b.textContent = n.toLocaleString("fa-IR");
       b.title = (FA.splitOptionTitle ?? "").replace("{n}", b.textContent);
-      b.addEventListener("click", () => setSplit(n));
+      b.addEventListener("click", () => arrange(n));
       seg.append(b);
     }
   }
@@ -790,7 +803,7 @@ setTabBridge({
   // is the entry module and its body runs last.
   focused: focusedCell,
   cells: () => cells,
-  split: setSplit,
+  split: arrange,
 });
 
 initChrome();
