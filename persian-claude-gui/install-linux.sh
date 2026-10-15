@@ -148,8 +148,12 @@ EOF
   say "launcher: $LAUNCHER"
 fi
 
+# The first address, not `hostname`: a VM's or a LAN box's name rarely
+# resolves from the Windows side (measured: "ubunto" on a VMware guest).
+ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+ADDR="${ADDR:-$(hostname)}"
 echo
-say "done. From Windows:  connect.bat $USER@$(hostname)$( [ "$PORT" != 8765 ] && echo " -RemotePort $PORT")"
-say "by hand:  ssh -N -L $PORT:127.0.0.1:$PORT $USER@$(hostname)"
+say "done. From Windows:  connect.bat $USER@$ADDR$( [ "$PORT" != 8765 ] && echo " -RemotePort $PORT")"
+say "by hand:  ssh -N -L $PORT:127.0.0.1:$PORT $USER@$ADDR"
 say "          then open http://127.0.0.1:$PORT/?t=<the line in $TOKEN_FILE>"
 say "sign in once on this machine if you have not: claude  (or /login in the window)"

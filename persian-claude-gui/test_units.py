@@ -2374,17 +2374,17 @@ print("`!` bash mode: run it here, tag it the way the TUI tags it")
 shell_dir = Path(tempfile.mkdtemp(prefix="pcg-shell-"))
 try:
     ran = server.run_shell("echo pcg-hello", shell_dir)
-    check_win("the command runs in the session's own folder and reports its code",
-              ran["code"] == 0 and "pcg-hello" in ran["stdout"])
-    check_win("a failure is a result, not an exception",
-              server.run_shell("exit 3", shell_dir)["code"] == 3)
+    check("the command runs in the session's own folder and reports its code",
+          ran["code"] == 0 and "pcg-hello" in ran["stdout"])
+    check("a failure is a result, not an exception",
+          server.run_shell("exit 3", shell_dir)["code"] == 3)
     tagged = server.bash_message("echo pcg-hello", ran)
     check("the message opens with <bash-input>, which is what the reader matches",
           tagged.startswith("<bash-input>echo pcg-hello</bash-input>"))
-    check_win("and carries stdout in the TUI's own tag",
-              "<bash-stdout>" in tagged and "pcg-hello" in tagged)
-    check_win("no stderr, no empty <bash-stderr>",
-              "<bash-stderr>" not in tagged)
+    check("and carries stdout in the TUI's own tag",
+          "<bash-stdout>" in tagged and "pcg-hello" in tagged)
+    check("no stderr, no empty <bash-stderr>",
+          "<bash-stderr>" not in tagged)
     check("stderr gets its own tag when there is any",
           "<bash-stderr>boom</bash-stderr>" in server.bash_message(
               "x", {"code": 1, "stdout": "", "stderr": "boom"}))

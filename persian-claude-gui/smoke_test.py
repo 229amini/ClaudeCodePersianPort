@@ -16,6 +16,7 @@ comes back cheerful. Nothing here is asserted from an ack alone.
 """
 import atexit
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -48,7 +49,11 @@ def _cleanup() -> None:
     plain kill orphans the claude child, and Windows will not delete a folder
     that is some process's cwd.
     """
-    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    else:   # Linux (wiki/linux-ssh.md): the claude children first, then the server
+        subprocess.run(["pkill", "-KILL", "-P", str(proc.pid)], capture_output=True)
+        proc.kill()
     try:
         proc.wait(timeout=10)           # taskkill only signals; the cwd is held until it exits
     except Exception:
