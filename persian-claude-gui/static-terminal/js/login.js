@@ -17,7 +17,7 @@
    ========================================================================= */
 "use strict";
 
-import { api, token } from "./api.js";
+import { api, token, remote } from "./api.js";
 
 const FA = window.STRINGS;
 let sheet = null;
@@ -169,10 +169,15 @@ async function begin(why = "") {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(); }
   });
+  /* A remote window (api.js `remote`): the CLI's browser opens on the SERVER,
+     and its localhost callback lives there too, so the link and the code are
+     the only way in -- the sheet says so instead of "a browser opens". */
   paint(FA.loginTitle, [
-    el("p", { textContent: FA.loginStep1 }),
-    el("p", { className: "meta", textContent: FA.loginWaiting }),
-    el("p", {}, FA.loginStep2 + " ", link),
+    ...(remote ? [el("p", {}, FA.loginStepRemote + " ", link)] : [
+      el("p", { textContent: FA.loginStep1 }),
+      el("p", { className: "meta", textContent: FA.loginWaiting }),
+      el("p", {}, FA.loginStep2 + " ", link),
+    ]),
     el("p", { textContent: FA.loginStep3 }),
     el("div", { className: "login-row" }, input, submit),
     err,

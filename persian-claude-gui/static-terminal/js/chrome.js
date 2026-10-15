@@ -11,7 +11,8 @@
    ========================================================================= */
 "use strict";
 
-import { api, token } from "./api.js";
+import { api, token, remote } from "./api.js";
+import { pickServerFolder } from "./folders.js";
 /* Cyclic with render.js on purpose (see the note there): the sidebar replays
    old transcripts through the shipping renderer — plan §B-4's "one renderer,
    two sources". Nothing below runs at module-evaluation time; initChrome() is
@@ -750,7 +751,8 @@ export async function chooseProject(path) {
   let folder = (path ?? "").trim();
   if (!folder) {
     try {
-      folder = (await api("/api/project/pick", {})).path;
+      folder = remote ? (await pickServerFolder(currentCwd))?.path
+                      : (await api("/api/project/pick", {})).path;
     } catch (err) {
       bubble("error", FA.sendFailed);
       return;
@@ -832,14 +834,15 @@ function projEl(proj, projects) {
         loadProjects();
       },
     },
-    {
-      // The one action here that is about the FOLDER rather than about the
-      // conversation. The server opens it through the shell, so whatever the
-      // user has set as their file manager is what appears.
+    // The one action here that is about the FOLDER rather than about the
+    // conversation. The server opens it through the shell, so whatever the
+    // user has set as their file manager is what appears -- on the server's
+    // own screen, which is why a remote window does not offer it.
+    ...(remote ? [] : [{
       icon: SVG.explorer,
       text: FA.openInExplorer,
       run: () => api("/api/project/reveal", { path: proj.path }),
-    },
+    }]),
     null,
     {
       icon: proj.archived ? SVG.unarchive : SVG.archive,

@@ -306,6 +306,16 @@ EDGE_CANDIDATES = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
+# A Linux desktop: any Chromium takes --app=, in this order of preference.
+LINUX_BROWSERS = ("microsoft-edge", "microsoft-edge-stable", "google-chrome",
+                  "google-chrome-stable", "chromium", "chromium-browser", "brave-browser")
+
+# `--serve` (wiki/linux-ssh.md): the window is on ANOTHER machine, at the end of
+# an SSH tunnel. Nothing may open on this machine's screen then -- no tkinter
+# dialog, no editor, no file manager -- because nobody is looking at it, and the
+# server outlives every window instead of following the last one out.
+REMOTE = False
+SERVE_PORT = 8765
 
 # Seconds with zero SSE clients before the server tears itself down.
 IDLE_SHUTDOWN_SECONDS = 10.0
@@ -327,10 +337,77 @@ def find_claude() -> str:
     found = shutil.which("claude")
     if found:
         return found
-    fallback = Path.home() / ".local" / "bin" / "claude.exe"
-    if fallback.exists():
-        return str(fallback)
+    # A systemd --user unit starts with a PATH that has no ~/.local/bin in it,
+    # which is where the native installer puts the CLI on Linux too.
+    for fallback in (Path.home() / ".local" / "bin" / "claude.exe",
+                     Path.home() / ".local" / "bin" / "claude",
+                     Path.home() / ".claude" / "local" / "claude"):
+        if fallback.exists():
+            return str(fallback)
     raise SystemExit("claude CLI not found. Install it, then re-run.")
+
+
+def has_desktop() -> bool:
+    """Is there a screen on THIS machine that the person is looking at?"""
+    if REMOTE:
+        return False
+    if sys.platform in ("win32", "darwin"):
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def desktop_open(target: Path) -> None:
+    """What a double-click does: `startfile` on Windows, xdg-open on a Linux
+    desktop. Raises OSError where there is no desktop to open it on."""
+    if not has_desktop():
+        raise OSError("no desktop on this machine")
+    if sys.platform == "win32":
+        os.startfile(str(target))   # noqa: S606 - Windows-only by design
+        return
+    opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
+    if not opener:
+        raise OSError("xdg-open not found")
+    subprocess.Popen([opener, str(target)], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+def shell_command(command: str, shell: str | None = None) -> str | list[str]:
+    """argv for running `command` the way the user's own shell would.
+
+    Windows: `cmd /s /c "<command>"`, never shell=True -- cmd strips the outer
+    quote pair of a command that starts with a quoted exe path, which is exactly
+    what every statusLine running node or python out of "C:\\Program Files\\…"
+    looks like. `/s /c` is the documented form: strip one pair, pass the rest.
+    POSIX: `<shell> -c`, `/bin/sh` unless the caller names one."""
+    if sys.platform == "win32":
+        return f'{os.environ.get("COMSPEC", "cmd.exe")} /s /c "{command}"'
+    return [shell or "/bin/sh", "-c", command]
+
+
+def config_dir() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "persian-claude"
+
+
+def persistent_token() -> str:
+    """`--serve`'s token: the same one across restarts, so a window reopened
+    after the server came back up (or a second SSH tunnel) still gets in.
+    0600, because whoever reads it IS this user as far as the window goes."""
+    path = config_dir() / "token"
+    try:
+        saved = path.read_text(encoding="ascii").strip()
+        if len(saved) >= 32:
+            os.chmod(path, 0o600)
+            return saved
+    except (OSError, UnicodeDecodeError):
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fresh = secrets.token_urlsafe(32)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="ascii") as handle:
+        handle.write(fresh + "\n")
+    return fresh
 
 
 # --- login ------------------------------------------------------------------
@@ -1720,17 +1797,12 @@ def ansi_segments(text: str) -> list[dict]:
 
 
 def run_statusline(command: str, payload: dict) -> list[dict] | None:
-    # NOT shell=True. That becomes `cmd /c <command>`, and cmd strips the outer
-    # quote pair of a command that starts with a quoted exe path — which is
-    # exactly what every statusLine running node or python out of
-    # "C:\Program Files\…" looks like. It failed with rc=1 and empty stdout,
-    # and this function swallowed it, so plan §B-7 passthrough was silently
-    # dead. `/s /c "<command>"` is the documented form: strip one outer pair,
-    # pass the rest through verbatim.
-    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    # NOT shell=True: on Windows that is `cmd /c`, which failed with rc=1 and
+    # empty stdout on every quoted exe path, and this function swallowed it, so
+    # plan §B-7 passthrough was silently dead. See shell_command().
     try:
         done = subprocess.run(
-            f'{comspec} /s /c "{command}"',
+            shell_command(command),
             input=json.dumps(payload, ensure_ascii=False),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -2232,13 +2304,11 @@ def _clip(text: str) -> str:
 
 
 def run_shell(command: str, cwd: Path) -> dict:
-    """The user's own shell, in the session's folder. `/s /c "<command>"` is the
-    same form run_statusline() uses, and for the same reason: cmd eats the outer
-    quote pair of anything else."""
-    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    """The user's own shell, in the session's folder: cmd on Windows, $SHELL
+    elsewhere (shell_command)."""
     try:
         done = subprocess.run(
-            f'{comspec} /s /c "{command}"', cwd=str(cwd),
+            shell_command(command, os.environ.get("SHELL")), cwd=str(cwd),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=SHELL_TIMEOUT,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -2408,7 +2478,7 @@ def edit_externally(text: str) -> tuple[str, bool]:
     draft.write_text(text, encoding="utf-8")
     before = draft.stat().st_mtime_ns
     try:
-        os.startfile(str(draft))   # noqa: S606 — Windows-only by design
+        desktop_open(draft)
     except OSError:
         draft.unlink(missing_ok=True)
         return text, False
@@ -2478,7 +2548,10 @@ FILE_SEEDS = {".json": "{}\n", ".md": ""}
 
 
 def open_known_file(what: str, cwd: Path | None) -> tuple[str | None, str | None]:
-    """Open one of the files above. Returns (path, error)."""
+    """Open one of the files above. Returns (path, error).
+
+    With no desktop here (`--serve`) the file is still made and its path still
+    returned: the window names it, for the person's own `ssh` and editor."""
     target = known_files(cwd).get(what)
     if target is None:
         return None, "unknown file"
@@ -2487,7 +2560,8 @@ def open_known_file(what: str, cwd: Path | None) -> tuple[str | None, str | None
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(FILE_SEEDS.get(target.suffix.lower(), ""),
                               encoding="utf-8")
-        os.startfile(str(target))   # noqa: S606 - Windows-only by design
+        if has_desktop():
+            desktop_open(target)
     except OSError as exc:
         return None, str(exc)
     return str(target), None
@@ -2505,7 +2579,8 @@ def export_transcript(text: str) -> tuple[str | None, str | None]:
         stamp = time.strftime("%Y%m%d-%H%M%S")
         target = EDITOR_DIR / f"export-{stamp}-{uuid.uuid4().hex[:6]}.md"
         target.write_text(text, encoding="utf-8")
-        os.startfile(str(target))   # noqa: S606 - Windows-only by design
+        if has_desktop():
+            desktop_open(target)
     except OSError as exc:
         return None, str(exc)
     return str(target), None
@@ -2590,6 +2665,34 @@ def pick_files(interpreter: Path) -> list[str]:
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [str(Path(line)) for line in (done.stdout or "").splitlines() if line.strip()]
+
+
+FS_MAX_DIRS = 2000
+
+
+def list_dirs(raw: str) -> dict | None:
+    """The in-page folder browser's one read (`--serve`, where a tkinter dialog
+    would open on a screen nobody is looking at). Folder NAMES under one folder,
+    hidden ones left out -- a typed path still reaches them. None: not a folder."""
+    base = Path(raw).expanduser() if raw.strip() else Path.home()
+    try:
+        base = base.resolve()
+        if not base.is_dir():
+            return None
+        names = []
+        with os.scandir(base) as entries:
+            for entry in entries:
+                try:
+                    if not entry.name.startswith(".") and entry.is_dir():
+                        names.append(entry.name)
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    names.sort(key=str.casefold)
+    return {"path": str(base), "parent": str(base.parent) if base.parent != base else None,
+            "home": str(Path.home()), "git": (base / ".git").exists(),
+            "dirs": names[:FS_MAX_DIRS], "more": len(names) > FS_MAX_DIRS}
 
 
 def pick_folder(interpreter: Path) -> str | None:
@@ -4672,7 +4775,14 @@ class Handler(BaseHTTPRequestHandler):
         return bool(supplied) and secrets.compare_digest(supplied, self.token)
 
     def _cookie_name(self) -> str:
-        return f"{COOKIE_NAME}_{self.server.server_address[1]}"
+        # The port the BROWSER sees, off the Host header: two SSH tunnels to
+        # two servers that both listen on 8765 arrive as 127.0.0.1:8701 and
+        # :8702, and named after the server's own port they would share one
+        # cookie. Locally the two numbers are the same one.
+        port = self.headers.get("Host", "").rpartition(":")[2]
+        if not port.isdigit():
+            port = str(self.server.server_address[1])
+        return f"{COOKIE_NAME}_{port}"
 
     def _send(self, status: int, body: bytes, content_type: str,
               extra_headers: tuple[tuple[str, str], ...] = ()) -> None:
@@ -5236,6 +5346,9 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(text, str):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "no text"})
                 return
+            if not has_desktop():
+                self._send_json(HTTPStatus.CONFLICT, {"error": "no desktop"})
+                return
             edited, changed = edit_externally(text)
             self._send_json(HTTPStatus.OK, {"text": edited, "changed": changed})
         elif parsed.path == "/api/open-file":
@@ -5249,7 +5362,8 @@ class Handler(BaseHTTPRequestHandler):
             if error is not None:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": error})
                 return
-            self._send_json(HTTPStatus.OK, {"ok": True, "path": path})
+            self._send_json(HTTPStatus.OK, {"ok": True, "path": path,
+                                            "opened": has_desktop()})
         elif parsed.path == "/api/export":
             # `/export`. The transcript is already text in the window (the
             # reader built it), so the server's whole job is a file and a
@@ -5268,7 +5382,18 @@ class Handler(BaseHTTPRequestHandler):
             flashed = flash_window(title[:512]) if isinstance(title, str) else 0
             self._send_json(HTTPStatus.OK, {"ok": True, "flashed": flashed})
         elif parsed.path == "/api/attach/pick":
+            # No desktop here: the dialog would open where nobody looks and the
+            # request would hang five minutes. The page uploads instead.
+            if not has_desktop():
+                self._send_json(HTTPStatus.CONFLICT, {"error": "no desktop"})
+                return
             self._send_json(HTTPStatus.OK, {"paths": pick_files(Path(sys.executable))})
+        elif parsed.path == "/api/fs/dirs":
+            listing = list_dirs(str(body.get("path") or ""))
+            if listing is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
+                return
+            self._send_json(HTTPStatus.OK, listing)
         elif parsed.path == "/api/attach/paste":
             path = save_pasted_file(str(body.get("media_type") or ""),
                                     str(body.get("data") or ""),
@@ -5294,6 +5419,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND,
                             {"ok": ok})
         elif parsed.path == "/api/project/pick":
+            if not has_desktop():   # the page has its own browser (/api/fs/dirs)
+                self._send_json(HTTPStatus.CONFLICT, {"error": "no desktop"})
+                return
             chosen = pick_folder(Path(sys.executable))
             # `git` too: the new-session page offers a branch of its own only
             # in a repo, and a folder picked here was always taken for none.
@@ -5382,7 +5510,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a folder"})
                 return
             try:
-                os.startfile(str(target.resolve()))   # noqa: S606 — Windows-only by design
+                desktop_open(target.resolve())
             except OSError as exc:
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
                 return
@@ -5604,6 +5732,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.suffix.lower() == ".html":
             body = body.replace(b"{{VERSION}}", APP_VERSION.encode("utf-8"))
             body = body.replace(b"{{TITLE}}", APP_TITLE.encode("utf-8"))
+            # Where the window is: "remote" turns the native dialogs into the
+            # page's own (folders.js) -- this machine's screen is not the one
+            # being looked at.
+            body = body.replace(b"{{HOST}}", b"local" if has_desktop() else b"remote")
         extra: tuple[tuple[str, str], ...] = ()
         if set_cookie:
             # Host-only, session-scoped, not readable from JS. The server is
@@ -5656,6 +5788,14 @@ def launch_window(url: str) -> None:
             subprocess.Popen([candidate, f"--app={url}"],
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             return
+    if sys.platform.startswith("linux"):
+        for name in LINUX_BROWSERS:
+            found = shutil.which(name)
+            if found:
+                subprocess.Popen([found, f"--app={url}"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return
     # Degraded but working: a normal browser tab (plan Phase 0 decision matrix).
     import webbrowser
     webbrowser.open(url)
@@ -5680,9 +5820,12 @@ def idle_watchdog(hub: Hub, sessions: dict[str, ClaudeSession],
         time.sleep(1.0)
 
 
-def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
-    token = secrets.token_urlsafe(32)
-    port = free_port()
+def serve(cwd: Path, open_window: bool, verbose: bool,
+          port: int = 0, keep_alive: bool = False) -> None:
+    # --serve keeps one token across restarts (persistent_token); a window
+    # launched from a shortcut gets a fresh one every time, as it always has.
+    token = persistent_token() if keep_alive else secrets.token_urlsafe(32)
+    port = port or free_port()
     endpoint = f"http://127.0.0.1:{port}"
     hub = Hub()
 
@@ -5696,22 +5839,34 @@ def serve(cwd: Path, open_window: bool, verbose: bool) -> None:
     # the app must not open a conversation). --cwd still seeds the recents list
     # below, so the shortcut's project is one click away.
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:
+        raise SystemExit(f"cannot listen on 127.0.0.1:{port} ({exc}). "
+                         "Is the server already running?") from exc
     httpd.daemon_threads = True
     httpd.verbose = verbose  # type: ignore[attr-defined]
 
     url = f"{endpoint}/?t={token}"
     if verbose:
         print(f"[server] cwd     : {cwd}")
-        print(f"[server] listening: {url}", flush=True)
+        if keep_alive:
+            # The token stays in its file, not in a log a systemd journal keeps.
+            print(f"[server] listening: {endpoint}/?t=<{config_dir() / 'token'}>",
+                  flush=True)
+        else:
+            print(f"[server] listening: {url}", flush=True)
 
     remember_recent(cwd)
     # Fill _META_CACHE while Edge is still starting, so the sidebar's first
     # /api/projects waits on a scan already under way instead of starting one.
     threading.Thread(target=list_projects, daemon=True).start()
-    threading.Thread(target=idle_watchdog,
-                     args=(hub, Handler.sessions, httpd, 30.0),
-                     daemon=True).start()
+    # --serve outlives every window: an SSH drop must not take the
+    # conversations with it, and the next tunnel finds them still running.
+    if not keep_alive:
+        threading.Thread(target=idle_watchdog,
+                         args=(hub, Handler.sessions, httpd, 30.0),
+                         daemon=True).start()
     if open_window:
         launch_window(url)
 
@@ -5727,7 +5882,7 @@ def main() -> None:
     # The edition decides the static folder, the window title and the version
     # number, and nothing else. Rebinding the module globals every reader
     # already looks at beats threading a parameter through serve().
-    global UI_EDITION, STATIC_DIR, APP_TITLE, APP_VERSION
+    global UI_EDITION, STATIC_DIR, APP_TITLE, APP_VERSION, REMOTE
 
     parser = argparse.ArgumentParser(description="Persian RTL front-end for Claude Code")
     parser.add_argument("--cwd", default=os.getcwd(),
@@ -5737,11 +5892,23 @@ def main() -> None:
     parser.add_argument("--quiet", action="store_true", help="suppress console logging")
     parser.add_argument("--ui", choices=sorted(EDITIONS), default=UI_EDITION,
                         help="which UI edition to serve (default: $PCG_UI, else web)")
+    parser.add_argument("--serve", action="store_true",
+                        help="for a window on another machine (SSH tunnel): no window "
+                             f"here, port {SERVE_PORT} unless --port, a token kept in "
+                             "~/.config/persian-claude/token, and no idle shutdown")
+    parser.add_argument("--port", type=int, default=0,
+                        help="listen on this port (default: a free one; "
+                             f"{SERVE_PORT} with --serve)")
     args = parser.parse_args()
 
+    REMOTE = args.serve
     UI_EDITION = args.ui
     folder, APP_TITLE, APP_VERSION = EDITIONS[UI_EDITION]
     STATIC_DIR = HERE / folder
+    if REMOTE:
+        # Several servers open at once are several windows with one title
+        # otherwise; the taskbar has to say which machine each one is.
+        APP_TITLE = f"{APP_TITLE} — {socket.gethostname()}"
 
     # The desktop shortcut runs pythonw.exe, a GUI-subsystem binary with no
     # console: sys.stderr is None there. print() is a silent no-op in that
@@ -5749,8 +5916,10 @@ def main() -> None:
     # send_response, before a single byte reaches the socket, so the window
     # gets ERR_EMPTY_RESPONSE instead of the UI. No console -> no logging.
     serve(cwd=Path(args.cwd).resolve(),
-          open_window=not args.no_window,
-          verbose=not args.quiet and sys.stderr is not None)
+          open_window=not (args.no_window or args.serve),
+          verbose=not args.quiet and sys.stderr is not None,
+          port=args.port or (SERVE_PORT if args.serve else 0),
+          keep_alive=args.serve)
 
 
 if __name__ == "__main__":

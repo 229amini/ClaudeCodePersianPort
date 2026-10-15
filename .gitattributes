@@ -1,0 +1,4 @@
+# Shell scripts run on Linux: a CRLF checkout (core.autocrlf=true on the Windows
+# author PCs) turns `#!/usr/bin/env bash` into "bash\r: No such file".
+*.sh text eol=lf
+*.bat text eol=crlf

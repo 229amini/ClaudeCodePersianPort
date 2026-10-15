@@ -30,7 +30,7 @@
    ========================================================================= */
 "use strict";
 
-import { api } from "./api.js";
+import { api, remote } from "./api.js";
 import { pathEl } from "./bidi.js";
 import { bubble, label, glyph, state, postureText } from "./render.js";
 import { focusSessions, chooseProject, switchToTab, splitView } from "./chrome.js";
@@ -126,6 +126,20 @@ function transcriptText(cell) {
 function exportTranscript(arg, cell) {
   const text = transcriptText(cell);
   if (!text) { note(FA.cmdExportEmpty); return true; }
+  if (remote) {
+    // A file on the server is not one the person can open from here: the
+    // browser saves it on THIS machine instead (api.js `remote`).
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+    const name = `export-${stamp}.md`;
+    const link = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" })),
+      download: name,
+    });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+    notePath(FA.cmdExportedDownload, name);
+    return true;
+  }
   api("/api/export", { text })
     .then((data) => notePath(FA.cmdExported, data.path))
     .catch(() => bubble("error", FA.cmdExportFailed));
@@ -239,7 +253,8 @@ function openFile(what, cell) {
   // server resolves the project file off `session.cwd` for `tab or self.active`,
   // and the active tab is not necessarily the column this was typed in.
   api("/api/open-file", { what, tab: cell?.tab })
-    .then((data) => notePath(FA.cmdOpened, data.path))
+    // `opened: false`: no desktop on the server -- the file is there, named.
+    .then((data) => notePath(data.opened === false ? FA.cmdOpenRemote : FA.cmdOpened, data.path))
     .catch(() => bubble("error", FA.cmdOpenFailed));
   return true;
 }

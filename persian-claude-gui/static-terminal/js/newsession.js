@@ -19,7 +19,8 @@
    project, close a tab, set a posture, send a message. No new route.
    ========================================================================= */
 
-import { api } from "./api.js";
+import { api, remote } from "./api.js";
+import { pickServerFolder } from "./folders.js";
 import { pathEl } from "./bidi.js";
 
 const MAX_PANES = 6;          // = server.py MAX_TABS
@@ -289,7 +290,9 @@ function countBlock(n) {
 /* `slot`: the one conversation whose row asked, or null for all of them. */
 async function pickFolder(slot) {
   try {
-    const got = await api("/api/project/pick", {});
+    const start = slot === null ? model.slots[0]?.path : model.slots[slot]?.path;
+    const got = remote ? (await pickServerFolder(start ?? "")) ?? {}
+                       : await api("/api/project/pick", {});
     const picked = got.path;
     if (picked) {
       const known = model.projects.find((p) => samePath(p.path, picked));

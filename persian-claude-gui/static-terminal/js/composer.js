@@ -12,7 +12,7 @@
 "use strict";
 
 import { pathEl } from "./bidi.js";
-import { api, token } from "./api.js";
+import { api, token, remote } from "./api.js";
 import { bubble, label, paintQueued, toggleThinking, state, runQueueNow } from "./render.js";
 import { openPlus, openUsage, openPalette, paletteGroups } from "./bar.js";
 import { runWindowCommand } from "./commands.js";
@@ -1216,6 +1216,8 @@ export function makeComposer(root, cell) {
 
   async function editExternally() {
     if (editing) return;
+    // The editor would open on the server's screen (api.js `remote`).
+    if (remote) { bubble("error", FA.editorRemote); return; }
     editing = true;
     const wasPlaceholder = input.placeholder;
     input.disabled = true;
@@ -1689,7 +1691,18 @@ export function makeComposer(root, cell) {
        meanwhile opened a second dialog: the same image picked twice was attached
        twice and sent twice (2026-10-09). The same file twice is dropped too. */
     let picking = false;
+    /* A remote window (api.js `remote`): the files are on THIS machine and
+       the server's dialog would open on its own screen, so the browser's
+       picker reads them and they go up the way a drop does. */
+    const uploadPicker = Object.assign(document.createElement("input"),
+                                       { type: "file", multiple: true, hidden: true });
+    uploadPicker.addEventListener("change", async () => {
+      const files = [...(uploadPicker.files ?? [])];
+      uploadPicker.value = "";
+      if (files.length) await attachBytes(files);
+    });
     const pickFiles = async () => {
+      if (remote) { uploadPicker.click(); return; }
       if (picking) return;
       picking = true;
       try {

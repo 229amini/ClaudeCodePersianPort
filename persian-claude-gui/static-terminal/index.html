@@ -4,8 +4,9 @@
      in an RTL column they point away from what they connect unless something
      flips them. "on" is the plan's recommendation and can be judged by looking
      at it: set it to "off" here and every glyph draws exactly as the terminal
-     does. Nothing but style.css reads it. -->
-<html dir="rtl" lang="fa" data-mirror-glyphs="on">
+     does. Nothing but style.css reads it.
+     data-host: server.py fills it, "remote" under --serve (js/api.js). -->
+<html dir="rtl" lang="fa" data-mirror-glyphs="on" data-host="{{HOST}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -12,6 +12,11 @@
    therefore drives no server: token is null and every caller no-ops. */
 export const token = new URLSearchParams(location.search).get("t");
 
+/* "remote": this window is not on the server's machine (`server.py --serve`,
+   an SSH tunnel), so a native dialog or an editor would open on a screen nobody
+   is looking at. The server substitutes {{HOST}}; anything else reads local. */
+export const remote = document.documentElement.dataset.host === "remote";
+
 export async function api(path, body) {
   const url = path + (path.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(token);
   const options = body === undefined

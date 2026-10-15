@@ -72,6 +72,65 @@ quoted = f'"{sys.executable}" -c "import sys; sys.stdout.write(sys.stdin.read())
 check_win("quoted exe path survives",
           server.run_statusline(quoted, {"cwd": "D:/x"}) == [{"text": '{"cwd": "D:/x"}'}])
 check("a failing command is None", server.run_statusline("exit 1", {}) is None)
+check("and a command's output comes back on this OS's own shell",
+      server.run_statusline("echo pcg-sl", {}) == [{"text": "pcg-sl"}])
+
+print("--serve on Linux (wiki/linux-ssh.md): shell, folders, token, cookie")
+if os.name == "nt":
+    check("Windows keeps cmd /s /c", server.shell_command("x").endswith('/s /c "x"'))
+else:
+    check("POSIX runs sh -c", server.shell_command("x") == ["/bin/sh", "-c", "x"])
+    check("and `!` takes the user's $SHELL", server.shell_command("x", "/bin/zsh")[0] == "/bin/zsh")
+_fs = Path(tempfile.mkdtemp(prefix="pcg-fs-"))
+try:
+    for name in ("b-dir", "A-dir", ".hidden", "پوشه"):
+        (_fs / name).mkdir()
+    (_fs / "file.txt").write_text("x", encoding="utf-8")
+    (_fs / ".git").mkdir()
+    listing = server.list_dirs(str(_fs))
+    check("list_dirs: folders only, hidden left out, sorted without case",
+          listing["dirs"] == ["A-dir", "b-dir", "پوشه"])
+    check("and it says whether the folder is a repo, and where up is",
+          listing["git"] is True and listing["parent"] == str(_fs.resolve().parent))
+    check("a file is not a folder", server.list_dirs(str(_fs / "file.txt")) is None)
+    check("nor is a path that does not exist", server.list_dirs(str(_fs / "nope")) is None)
+    check("an empty path starts at home", server.list_dirs("")["path"] == str(Path.home().resolve()))
+
+    _real_xdg = os.environ.get("XDG_CONFIG_HOME")
+    os.environ["XDG_CONFIG_HOME"] = str(_fs / "cfg")
+    try:
+        first = server.persistent_token()
+        check("persistent_token: the same token across restarts",
+              len(first) >= 32 and server.persistent_token() == first)
+        token_file = _fs / "cfg" / "persian-claude" / "token"
+        check("kept in the config folder", token_file.read_text(encoding="ascii").strip() == first)
+        if os.name != "nt":
+            check("and readable by this user alone", (token_file.stat().st_mode & 0o777) == 0o600)
+        token_file.write_text("short\n", encoding="ascii")
+        check("a damaged file is replaced, not trusted", server.persistent_token() != "short")
+    finally:
+        if _real_xdg is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = _real_xdg
+finally:
+    shutil.rmtree(_fs, ignore_errors=True)
+
+
+class _CookieProbe:
+    _cookie_name = server.Handler._cookie_name
+
+    def __init__(self, host, port=8765):
+        self.headers = {"Host": host} if host is not None else {}
+        self.server = type("S", (), {"server_address": ("127.0.0.1", port)})()
+
+
+check("the cookie is named for the port the BROWSER sees (two tunnels, one remote port)",
+      _CookieProbe("127.0.0.1:8701")._cookie_name() == "pcg_token_8701"
+      and _CookieProbe("127.0.0.1:8702")._cookie_name() == "pcg_token_8702")
+check("and falls back to the server's own port with no Host",
+      _CookieProbe(None)._cookie_name() == "pcg_token_8765"
+      and _CookieProbe("[::1]:9000")._cookie_name() == "pcg_token_9000")
 
 print("statusline_payload: the CLI's own shape (fKn, 2.1.284)")
 # A statusLine script prints what it is handed. With six fields it printed the
@@ -2423,10 +2482,11 @@ print("open_known_file: a KEY into a fixed map, never a path off the request")
 # itself by demanding an existing FOLDER; a file has no such check, so the only
 # defence that holds is that the page cannot name the string at all.
 opened: list[str] = []
-# getattr: `os.startfile` exists only on Windows, and the stub is the whole
-# point here, so the check runs anywhere and the attribute is put back as found.
-_real_startfile = getattr(server.os, "startfile", None)
-server.os.startfile = lambda path: opened.append(str(path))
+# desktop_open is the one door to the shell (startfile / xdg-open), so the stub
+# there runs anywhere; has_desktop is pinned so a headless box opens "too".
+_real_desktop_open, _real_has_desktop = server.desktop_open, server.has_desktop
+server.desktop_open = lambda path: opened.append(str(path))
+server.has_desktop = lambda: True
 _seed_home = Path(tempfile.mkdtemp(prefix="pcg-home-"))
 _seed_proj = Path(tempfile.mkdtemp(prefix="pcg-proj-"))
 _real_home = server.Path.home
@@ -2457,11 +2517,21 @@ try:
           and Path(out_path).read_text(encoding="utf-8") == "گفتگو\nline two")
     check("and it is handed to the shell, not polled like a draft",
           opened == [out_path])
+
+    print("no desktop here (--serve): files are still made, nothing is opened")
+    # The REAL door, which raises with no desktop: a caller that still knocked
+    # would come back with an error (and edit_externally would not wait 300 s).
+    server.has_desktop = lambda: False
+    server.desktop_open = _real_desktop_open
+    opened.clear()
+    remote_path, remote_err = server.open_known_file("memory", None)
+    check("open_known_file still names the file and opens nothing",
+          remote_err is None and Path(remote_path).is_file() and not opened)
+    remote_out, remote_out_err = server.export_transcript("x")
+    check("and so does export_transcript", remote_out_err is None and not opened)
+    check("Ctrl+G's editor never starts", server.edit_externally("draft") == ("draft", False))
 finally:
-    if _real_startfile is None:
-        del server.os.startfile
-    else:
-        server.os.startfile = _real_startfile
+    server.desktop_open, server.has_desktop = _real_desktop_open, _real_has_desktop
     server.Path.home = _real_home
     shutil.rmtree(_seed_home, ignore_errors=True)
     shutil.rmtree(_seed_proj, ignore_errors=True)
