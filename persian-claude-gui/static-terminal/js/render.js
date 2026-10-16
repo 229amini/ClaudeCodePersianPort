@@ -22,6 +22,7 @@ import {
 import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
+import { cliUpdateRow } from "./cliupdate.js";
 /* A leaf (it imports only api.js): the usage wall's account buttons. */
 import { wallAccounts, withMail } from "./login.js";
 import { paintRing, noteCache, paintCache } from "./bar.js";
@@ -2874,6 +2875,10 @@ export function renderEvent(ev) {
         stopRow();
       } else if (ev.is_error && !wall) {
         bubble("error", ev.result ?? String(ev.subtype ?? "error"));
+        // Too old a CLI for the model: the button that updates it. Live only
+        // -- a replayed one was answered (or not) when it happened.
+        const tooOld = !ev.replayed && cliUpdateRow(ev.result);
+        if (tooOld) append(tooOld);
         // The hard limit. The CLI's own wording for it, in English, in a turn
         // that produced nothing: "Context exceeds the N-token limit by M tokens
         // — run /compact or /clear to continue." No percentage arrives with it,

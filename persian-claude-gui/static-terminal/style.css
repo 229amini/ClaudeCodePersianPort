@@ -5446,3 +5446,9 @@ button.folders-row {
 button.folders-row:hover, button.folders-row:focus-visible { background: var(--app-list-hover-background); }
 button.folders-row.up { color: var(--fg-muted); }
 .folders-error { margin: 8px 0 0; color: var(--danger); }
+
+/* «Claude Code is too old for this model» (js/cliupdate.js): the button under
+   the error row. */
+.cli-update { margin: 0 0 12px; }
+.cli-update p { margin: 0 0 8px; }
+.cli-update .meta { margin: 8px 0 0; color: var(--fg-muted); }

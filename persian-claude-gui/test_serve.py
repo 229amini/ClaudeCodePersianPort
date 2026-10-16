@@ -82,7 +82,8 @@ def stop(proc):
 
 
 cfg = Path(tempfile.mkdtemp(prefix="pcg-serve-cfg-"))
-env = dict(os.environ, XDG_CONFIG_HOME=str(cfg), PYTHONIOENCODING="utf-8")
+env = dict(os.environ, XDG_CONFIG_HOME=str(cfg), PYTHONIOENCODING="utf-8",
+           DISABLE_AUTOUPDATER="1")   # no `claude update` mid-test
 port = free_port()
 proc = boot(port, env)
 try:

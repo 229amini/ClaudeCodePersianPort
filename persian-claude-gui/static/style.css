@@ -3904,3 +3904,9 @@ button.side-item { inline-size: 100%; border: 0; background: none; font-family: 
   padding: 0;
   list-style: none;
 }
+
+/* «Claude Code is too old for this model» (js/cliupdate.js): the button under
+   the error row. */
+.cli-update { margin: 0 0 12px; }
+.cli-update p { margin: 0 0 8px; }
+.cli-update .meta { margin: 8px 0 0; color: var(--fg-muted); }

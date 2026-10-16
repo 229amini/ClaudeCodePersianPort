@@ -442,6 +442,103 @@ def auth_status(claude_bin: str) -> dict:
                if isinstance(data.get(k), str)}}
 
 
+CLI_UPDATE_TIMEOUT = 600
+CLI_UPDATE_EVERY = 24 * 3600    # --serve outlives every window; check daily
+CLI_UPDATE_FIRST = 60           # after start: the first turn's spawn goes first
+CLI_VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
+
+
+def cli_version(claude_bin: str) -> str | None:
+    try:
+        done = subprocess.run([claude_bin, "--version"], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=AUTH_STATUS_TIMEOUT,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    found = CLI_VERSION_RE.search(done.stdout)
+    return found.group(0) if found else None
+
+
+def autoupdate_allowed() -> bool:
+    """The CLI updates itself only in its interactive REPL, never under -p --
+    so a machine that only ever runs this window stays on the version it was
+    installed with until a model it does not know is asked for (2026-10-16:
+    2.1.259 refused claude-opus-5-5, which needs 2.1.280). The window does
+    what the REPL would, and honours the same two switches that stop it."""
+    if os.environ.get("DISABLE_AUTOUPDATER") not in (None, "", "0"):
+        return False
+    for path in (Path.home() / ".claude.json", USER_SETTINGS):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("autoUpdates") is False:
+            return False
+    return True
+
+
+class CliUpdate:
+    """At most one `claude update` at a time, for the whole machine. When the
+    version changed, every tab gets a new process on the same conversation
+    (idle ones now, busy ones after their turn), the way an account switch
+    does -- a running process keeps the old binary until it is respawned."""
+
+    job: "CliUpdate | None" = None
+    _lock = threading.Lock()
+
+    def __init__(self, claude_bin: str, on_done) -> None:
+        self.claude_bin = claude_bin
+        self.on_done = on_done
+        self.lines: list[str] = []
+        self.rc: int | None = None
+        self.before: str | None = None
+        self.after: str | None = None
+
+    @classmethod
+    def start(cls, claude_bin: str, on_done) -> "CliUpdate":
+        with cls._lock:
+            if cls.job and cls.job.rc is None:
+                return cls.job
+            cls.job = CliUpdate(claude_bin, on_done)
+        threading.Thread(target=cls.job._run, daemon=True).start()
+        return cls.job
+
+    def _run(self) -> None:
+        self.before = cli_version(self.claude_bin)
+        try:
+            done = subprocess.run([self.claude_bin, "update"], capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+                                  timeout=CLI_UPDATE_TIMEOUT,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.lines = (done.stdout + done.stderr).strip().splitlines()[-40:]
+            rc = done.returncode
+        except (OSError, subprocess.TimeoutExpired) as err:
+            self.lines = [str(err)]
+            rc = 1
+        self.after = cli_version(self.claude_bin)
+        if rc == 0 and self.after and self.after != self.before:
+            try:
+                self.on_done()
+            except Exception:                                      # noqa: BLE001
+                pass
+        self.rc = rc
+
+    def state(self) -> dict:
+        return {"running": self.rc is None, "rc": self.rc, "before": self.before,
+                "after": self.after, "lines": self.lines[-12:]}
+
+
+def cli_update_loop(claude_bin: str, on_done, every: float | None) -> None:
+    """The background half: one check soon after start, then (EVERY) daily."""
+    time.sleep(CLI_UPDATE_FIRST)
+    while True:
+        if autoupdate_allowed():
+            CliUpdate.start(claude_bin, on_done)
+        if not every:
+            return
+        time.sleep(every)
+
+
 class LoginFlow:
     """At most one `claude auth login` at a time, for the whole window: a login
     is per machine, not per tab. Bytes, read in chunks -- the code prompt ends
@@ -5457,6 +5554,16 @@ class Handler(BaseHTTPRequestHandler):
             self._accounts(parsed.path.rsplit("/", 1)[1], body)
         elif parsed.path.startswith("/api/servers/"):
             self._servers(parsed.path[len("/api/servers/"):], body)
+        elif parsed.path == "/api/cli/update":
+            # The person asked for it (the error row's button): no
+            # autoUpdates check -- that switch is about doing it unasked.
+            cls = type(self)
+            self._send_json(HTTPStatus.OK, CliUpdate.start(
+                cls.claude_bin, lambda: cls.respawn_for_account()).state())
+        elif parsed.path == "/api/cli/update/state":
+            job = CliUpdate.job
+            self._send_json(HTTPStatus.OK, job.state() if job else
+                            {"running": False, "rc": None, "lines": []})
         elif parsed.path == "/api/message":
             session = self._target(tab)
             if session is None:
@@ -6257,6 +6364,13 @@ def serve(cwd: Path, open_window: bool, verbose: bool,
     if not keep_alive:
         threading.Thread(target=idle_watchdog,
                          args=(hub, Handler.sessions, httpd, 30.0),
+                         daemon=True).start()
+    # A real window or --serve only: --no-window is a dev or test run, and a
+    # `claude update` landing mid-test would respawn its tabs under it.
+    if open_window or keep_alive:
+        threading.Thread(target=cli_update_loop,
+                         args=(Handler.claude_bin, lambda: Handler.respawn_for_account(),
+                               CLI_UPDATE_EVERY if keep_alive else None),
                          daemon=True).start()
     if open_window:
         launch_window(url)

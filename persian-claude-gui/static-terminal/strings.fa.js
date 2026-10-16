@@ -534,6 +534,13 @@ window.FA = {
   accountSignedOut: "با هیچ حسابی وارد نشده‌اید. یکی از حساب‌های قبلی را انتخاب کنید یا با حساب دیگری وارد شوید.",
   accountContinueOn: "ادامه با {a}",
   accountAddAtWall: "ورود با حساب دیگر",
+  // Claude Code too old for the model (cliupdate.js, server.py CliUpdate).
+  cliOld: "نسخهٔ Claude Code روی این رایانه ({v}) برای این مدل قدیمی است؛ دست‌کم نسخهٔ {need} لازم است.",
+  cliUpdateBtn: "به‌روزرسانی Claude Code",
+  cliUpdating: "در حال به‌روزرسانی… چند دقیقه طول می‌کشد.",
+  cliUpdated: "Claude Code به نسخهٔ {v} رسید. پیامتان را دوباره بفرستید.",
+  cliUpdateSame: "نسخهٔ تازه‌تری پیدا نشد ({v}).",
+  cliUpdateFailed: "به‌روزرسانی انجام نشد.",
   // Linux servers over SSH (servers.js, servers.py, wiki/linux-ssh.md).
   sideAccounts: "حساب‌ها",
   sideServers: "سرورها",
