@@ -12,6 +12,7 @@ persian-claude-gui/run.vbs
 
 # Offline install payload: the folder and its README are tracked; the installers are not.
 payload/*.exe
+payload/*.msi
 
 # Python
 __pycache__/

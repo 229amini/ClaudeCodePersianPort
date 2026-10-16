@@ -70,6 +70,87 @@ if ($edge) { Ok "مرورگر Edge پیدا شد" }
 else { Warn "Edge پیدا نشد — برنامه در مرورگر پیش‌فرض باز می‌شود" }
 Log "  edge => $edge"
 
+# The UI needs a current Chromium: every rule in style.css sits in an @layer
+# (Chromium 99; older drops the whole sheet and the window renders as bare
+# unstyled HTML, reported 2026-10-15) and the menus use the Popover API
+# (Chromium 114). An offline or locked-down PC can keep the Edge it shipped with
+# for years, so check the version and update it here.
+$EdgeMinMajor = 114
+
+function Get-EdgeMajor {
+    # An update applied while Edge is running is staged as new_msedge.exe and
+    # only swapped in on the next launch; it still counts as installed.
+    $dir = Split-Path $edge
+    $best = 0
+    foreach ($exe in @($edge, (Join-Path $dir 'new_msedge.exe'))) {
+        if (-not (Test-Path $exe)) { continue }
+        $v = (Get-Item $exe).VersionInfo.ProductVersion
+        if ($v -match '^(\d+)\.' -and [int]$Matches[1] -gt $best) { $best = [int]$Matches[1] }
+    }
+    return $best
+}
+
+if ($edge) {
+    $edgeMajor = Get-EdgeMajor
+    Log "  edge major => $edgeMajor (need $EdgeMinMajor)"
+    if ($edgeMajor -ge $EdgeMinMajor) {
+        Ok "نسخهٔ Edge به‌روز است ($edgeMajor)"
+    } else {
+        Warn "نسخهٔ Edge قدیمی است ($edgeMajor) — در حال به‌روزرسانی. اگر ویندوز اجازه خواست، «Yes» را بزنید."
+
+        # Edge is a machine-wide install, so every route below needs admin:
+        # one UAC prompt each, and a refused prompt just moves to the next.
+        $msi = $null
+        if ($Payload -and (Test-Path $Payload)) {
+            $msi = Get-ChildItem -Path $Payload -Filter 'MicrosoftEdgeEnterprise*.msi' -ErrorAction SilentlyContinue |
+                   Select-Object -First 1 -ExpandProperty FullName
+        }
+        if ($msi) {
+            try {
+                Note "نصب Edge از حافظهٔ جانبی"
+                $p = Start-Process msiexec.exe -Verb RunAs -Wait -PassThru `
+                    -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart'
+                Log "  edge msi exit $($p.ExitCode)"
+            } catch { Log "  edge msi failed: $($_.Exception.Message)" }
+        }
+
+        $updater = "${env:ProgramFiles(x86)}\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe"
+        if ((Get-EdgeMajor) -lt $EdgeMinMajor -and (Test-Path $updater)) {
+            try {
+                Note "دریافت آخرین نسخهٔ Edge از اینترنت"
+                $p = Start-Process $updater -Verb RunAs -PassThru `
+                    -ArgumentList '/ua', '/installsource', 'ondemand'
+                # The updater can hand off and exit early, or hang on a dead
+                # network: wait for the process, then poll the version.
+                if (-not $p.WaitForExit(600000)) { Log "  edge updater still running after 10 min" }
+                Log "  edge updater exit $($p.ExitCode)"
+                $deadline = (Get-Date).AddMinutes(5)
+                while ((Get-EdgeMajor) -lt $EdgeMinMajor -and (Get-Date) -lt $deadline) { Start-Sleep 5 }
+            } catch { Log "  edge updater failed: $($_.Exception.Message)" }
+        }
+
+        if ((Get-EdgeMajor) -lt $EdgeMinMajor -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+            try {
+                Note "به‌روزرسانی Edge با winget"
+                & winget upgrade --id Microsoft.Edge -e --silent `
+                    --accept-source-agreements --accept-package-agreements 2>&1 |
+                    ForEach-Object { Log "  winget: $_" }
+            } catch { Log "  winget failed: $($_.Exception.Message)" }
+        }
+
+        $edgeMajor = Get-EdgeMajor
+        Log "  edge major after update => $edgeMajor"
+        if ($edgeMajor -ge $EdgeMinMajor) {
+            Ok "Edge به‌روز شد ($edgeMajor). اگر Edge باز است، یک بار ببندید و دوباره باز کنید."
+        } else {
+            # Not fatal: the rest of the install is sound, and updating Edge
+            # later fixes the window without re-running setup.
+            Warn "به‌روزرسانی Edge انجام نشد. تا Edge به‌روز نشود، ظاهر برنامه به هم ریخته است."
+            Warn "در Edge به آدرس edge://settings/help بروید، یا فایل MicrosoftEdgeEnterpriseX64.msi را کنار نصب آفلاین بگذارید."
+        }
+    }
+}
+
 # ---------------------------------------------------------------- 2. python
 Step "بررسی پایتون"
 

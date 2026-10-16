@@ -13,7 +13,15 @@ Put two files here:
     Windows x64). setup.ps1 copies it to the same place on the target. The CLI
     updates itself later, once it is online.
 
-Neither file is committed -- .gitignore keeps *.exe out.
+Optional third file, only for a PC whose Edge is older than 114 (the window
+then renders as bare unstyled HTML):
+
+  MicrosoftEdgeEnterpriseX64.msi
+    https://www.microsoft.com/edge/business/download (Stable, Windows 64-bit)
+    (~170 MB. setup.ps1 -Payload looks for MicrosoftEdgeEnterprise*.msi and
+    installs it before trying Edge Update or winget.)
+
+None of these files is committed -- .gitignore keeps *.exe and *.msi out.
 
 The app itself still needs the internet to talk to Claude, and logging in
 needs it once. -Payload is for a machine where the DOWNLOADS are blocked
