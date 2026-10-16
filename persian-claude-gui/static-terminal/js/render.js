@@ -3041,6 +3041,17 @@ export function renderEvent(ev) {
         if (!queued) startPulse(ev.text ?? "");
       } else if (ev.subtype === "shell") {
         renderShell(ev);
+        // Its output went to the model as a turn: user_echo's bookkeeping,
+        // with the shell row standing in for the bubble.
+        if (ev.uuid) {
+          toChrome("busy", true);
+          state.outstanding.add(ev.uuid);
+          state.error = false;
+          if (!state.pulse) {
+            resetTurn();
+            startPulse("");
+          }
+        }
       } else if (ev.subtype === "auto_resume") {
         resumeRow(ev.state, ev.at, ev.account);
         if (ev.state === "fired") {

@@ -4203,8 +4203,10 @@ class ClaudeSession:
         if not recap:
             self.cancel_auto_resume()
         if not self._titled and self._first_prompt is None:
+            # A `!` line is not a prompt: its tags would become the title.
             self._first_prompt = next(
-                (b.get("text") for b in blocks if b.get("type") == "text"), None)
+                (b.get("text") for b in blocks if b.get("type") == "text"
+                 and not b.get("text", "").startswith(BASH_INPUT_PREFIX)), None)
         # The uuid is what turns the lifecycle channel ON for this message: the
         # CLI emits no lifecycle events at all for a frame without one, and it
         # validates the format, so uuid4 rather than anything of our own.
@@ -5844,9 +5846,10 @@ class Handler(BaseHTTPRequestHandler):
                                             "mode": mode})
         elif parsed.path == "/api/shell":
             # `!` bash mode. The CLI cannot run this line for us (§5.1), so the
-            # wrapper runs it in the session's own folder and parks the tagged
-            # output for the next message -- which is what the TUI does with
-            # it, and the reason this is not display-only.
+            # wrapper runs it in the session's own folder and sends the tagged
+            # output as a turn of its own, so the model answers it -- what the
+            # TUI does (user report, 2026-10-17; it used to be parked for the
+            # next message). A CLI that cannot take it still gets it parked.
             session = self._target(tab)
             if session is None:
                 return
@@ -5855,13 +5858,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "empty command"})
                 return
             result = run_shell(command, session.cwd)
-            session.park_context(bash_message(command, result))
+            tagged = bash_message(command, result)
+            # Anything parked earlier rides in front, as it would on a message.
+            blocks = [{"type": "text", "text": t}
+                      for t in session.take_context() + [tagged]]
+            try:
+                command_uuid = session.send_blocks(blocks)
+            except RuntimeError:
+                command_uuid = None
+                for block in blocks:
+                    session.park_context(block["text"])
             # The row is published rather than returned so it lands in the tab
-            # that ran it, in transcript order, like every other row.
+            # that ran it, in transcript order, like every other row. The uuid
+            # is user_echo's: the window counts the turn as working on it.
             session.hub.publish({
                 "type": "wrapper", "subtype": "shell", "command": command,
                 "stdout": result["stdout"], "stderr": result["stderr"],
-                "code": result["code"],
+                "code": result["code"], "uuid": command_uuid,
             })
             self._send_json(HTTPStatus.OK, {"ok": True, **result})
         elif parsed.path == "/api/editor":

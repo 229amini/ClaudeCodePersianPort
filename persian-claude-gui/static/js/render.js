@@ -2548,6 +2548,17 @@ export function renderEvent(ev) {
         // from the same event — a row built from the fetch answer would exist
         // exactly once and vanish on the next refresh.
         renderShell(ev);
+        // Its output went to the model as a turn: user_echo's bookkeeping,
+        // with the shell row standing in for the bubble.
+        if (ev.uuid) {
+          toChrome("busy", true);
+          state.outstanding.add(ev.uuid);
+          state.error = false;
+          if (!state.pulse) {
+            resetTurn();
+            startPulse("");
+          }
+        }
       } else if (ev.subtype === "permission_request") {
         pulsePhase("waiting");
         // NEVER gated: one modal queue serves every open tab, and a background
