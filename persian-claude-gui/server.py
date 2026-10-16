@@ -332,19 +332,38 @@ MIME_TYPES = {
 }
 
 
+def _version_key(text: str | None) -> tuple:
+    found = CLI_VERSION_RE.search(text or "")
+    return tuple(int(p) for p in found.group(0).split(".")) if found else ()
+
+
 def find_claude() -> str:
-    """Locate the real CLI. Never assume PATH resolves it under pythonw."""
-    found = shutil.which("claude")
-    if found:
-        return found
-    # A systemd --user unit starts with a PATH that has no ~/.local/bin in it,
-    # which is where the native installer puts the CLI on Linux too.
-    for fallback in (Path.home() / ".local" / "bin" / "claude.exe",
-                     Path.home() / ".local" / "bin" / "claude",
-                     Path.home() / ".claude" / "local" / "claude"):
-        if fallback.exists():
-            return str(fallback)
-    raise SystemExit("claude CLI not found. Install it, then re-run.")
+    """Locate the real CLI. Never assume PATH resolves it under pythonw.
+
+    PATH's `claude` is not necessarily the one the person runs: a systemd unit
+    starts with a PATH that has no ~/.local/bin in it (where the native
+    installer puts the self-updating CLI, on Linux too), and on 212.80.8.2
+    (2026-10-17) PATH found a frozen /usr/local/bin/claude -> 2.1.259 while the
+    shell ran ~/.local/bin/claude 2.1.301 -- so the window refused a model the
+    person's own terminal served. With more than one install, take the newest."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for path in (shutil.which("claude"),
+                 Path.home() / ".local" / "bin" / "claude.exe",
+                 Path.home() / ".local" / "bin" / "claude",
+                 Path.home() / ".claude" / "local" / "claude"):
+        if not path or not Path(path).is_file():
+            continue
+        real = os.path.realpath(path)
+        if real not in seen:
+            seen.add(real)
+            candidates.append(str(path))
+    if not candidates:
+        raise SystemExit("claude CLI not found. Install it, then re-run.")
+    if len(candidates) == 1:
+        return candidates[0]
+    # max() keeps the first of equals, so PATH's wins a tie or an unreadable version.
+    return max(candidates, key=lambda c: _version_key(cli_version(c)))
 
 
 def has_desktop() -> bool:
