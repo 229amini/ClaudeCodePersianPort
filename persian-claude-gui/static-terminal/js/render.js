@@ -22,6 +22,8 @@ import {
 import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
+/* A leaf (it imports only api.js): the usage wall's account buttons. */
+import { wallAccounts, withMail } from "./login.js";
 import { paintRing, noteCache, paintCache } from "./bar.js";
 import { scheduleFocus } from "./focus.js";
 import { decorate, setPinned, paintRail, jumpTo, changeCard, pinLabel, markTurnEnd, thumbs,
@@ -109,7 +111,7 @@ const USAGE_WALL = /^You've hit your (?:\w+ )?limit/;
 const AUTO_RESUME = /^Your claude\.ai usage limit has reset\. Continue the task/;
 const RESUME_TIME = new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit" });
 
-function resumeRow(phase, at = null) {
+function resumeRow(phase, at = null, account = null) {
   let row = [...log.querySelectorAll(".auto-resume")].at(-1);
   if (phase === "armed" || !row || row.dataset.phase !== "armed") {
     row = bubble("assistant");
@@ -120,7 +122,8 @@ function resumeRow(phase, at = null) {
     ? FA.autoResumeArmed.replace("{t}", at ? RESUME_TIME.format(new Date(at * 1000)) : "")
     : { fired: FA.autoResumeFired, cancelled: FA.autoResumeCancelled,
         stale: FA.autoResumeStale }[phase] ?? "";
-  row.replaceChildren(label(text, ""));
+  row.replaceChildren(phase === "fired" && account
+    ? withMail(FA.autoResumeSwitched, account) : label(text, ""));
   const action = { armed: ["cancel", FA.autoResumeCancel], stale: ["now", FA.autoResumeNow] }[phase];
   if (action) {
     const tab = state.tab;
@@ -2578,7 +2581,10 @@ export function renderEvent(ev) {
       for (const part of ev.message?.content ?? []) {
         if (part.type === "text" && ev.message?.model === "<synthetic>"
             && USAGE_WALL.test(part.text ?? "")) {
-          bubble("assistant", FA.usageWall).classList.add("meta");
+          const wall = bubble("assistant", FA.usageWall);
+          wall.classList.add("meta");
+          // Another account carries on now (pcg-6ml); a replayed wall is over.
+          if (!bulk) wallAccounts(wall, state.tab);
           continue;
         }
         if (part.type === "text") {
@@ -3027,7 +3033,7 @@ export function renderEvent(ev) {
       } else if (ev.subtype === "shell") {
         renderShell(ev);
       } else if (ev.subtype === "auto_resume") {
-        resumeRow(ev.state, ev.at);
+        resumeRow(ev.state, ev.at, ev.account);
         if (ev.state === "fired") {
           // user_echo's bookkeeping for a message nobody typed: the turn is
           // working, its stop button stops it, and no bubble is drawn.

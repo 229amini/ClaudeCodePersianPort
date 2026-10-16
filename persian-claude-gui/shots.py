@@ -57,7 +57,7 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
-          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter")
+          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall")
 
 FALLBACK_STYLE_LABELS = [
     {"id": "frugal-concise", "title": "کار روزمره",
@@ -130,6 +130,16 @@ def stub_script(now: float) -> str:
             "  if (path === '/api/pins') return Promise.resolve(new Response("
             "    JSON.stringify({pins: [{uuid: 'a-t11', label: 'انجام شد. حالا هر قاب فقط یک خط وضعیت دارد'}]}),"
             "    {headers: {'Content-Type': 'application/json'}}));"
+            # Several accounts (pcg-6ml): the sheet and the usage wall's buttons.
+            "  if (path === '/api/auth') return Promise.resolve(new Response("
+            "    JSON.stringify({loggedIn: true, email: 'maryam.k@example.com', subscriptionType: 'max'}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
+            "  if (path === '/api/accounts') return Promise.resolve(new Response(JSON.stringify("
+            "    {active: 'maryam.k@example.com', accounts: ["
+            "      {email: 'maryam.k@example.com', active: true, plan: 'max', expired: false},"
+            "      {email: 'office.team@example.com', active: false, plan: 'team', expired: false},"
+            "      {email: 'old.account@example.com', active: false, plan: 'pro', expired: true}]}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
             "  return real(url, opts);"
             "};"
             "})();</script>")
@@ -141,6 +151,7 @@ def stub_script(now: float) -> str:
 SCENE_JS = r"""
 <script type="module">
 import * as APP from "/static/js/app.js";
+import { openLogin } from "/static/js/login.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SCENE = new URLSearchParams(location.search).get("scene");
 const STYLE_LABELS = {{STYLE_LABELS}};
@@ -346,6 +357,29 @@ async function run() {
     await sleep(120);
     document.querySelector("#grid .cell .change-row")?.click();
     await sleep(200);
+    return;
+  }
+  if (SCENE === "accounts" || SCENE === "wall") {
+    // pcg-6ml: /login with two other accounts (one run out), and a live usage
+    // wall offering the usable one.
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    turn("t1", 1);
+    if (SCENE === "accounts") {
+      ev("t1", {type: "result", subtype: "success", is_error: false, duration_ms: 42000});
+      ev("t1", {type: "command_lifecycle", command_uuid: "u-t11", state: "completed"});
+      await openLogin();
+    } else {
+      ev("t1", {type: "rate_limit_event", rate_limit_info: {status: "rejected",
+                resetsAt: Math.floor(Date.now() / 1000) + 7200, rateLimitType: "five_hour"}});
+      ev("t1", {type: "assistant", message: {model: "<synthetic>", content: [
+        {type: "text", text: "You've hit your limit · resets 3:46pm (Asia/Tehran)"}]}});
+      ev("t1", {type: "wrapper", subtype: "auto_resume", state: "armed",
+                at: Math.floor(Date.now() / 1000) + 7200});
+    }
+    await sleep(300);
     return;
   }
   if (SCENE === "audit" || SCENE === "ctx" || SCENE === "idle") {

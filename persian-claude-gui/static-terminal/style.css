@@ -5194,7 +5194,10 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
 /* The usage-wall row's one button (render.js resumeRow): quiet, secondary,
    on the row's own line. 24px is the pointer floor (WCAG 2.5.8). */
 .resume-act {
-  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: 24px;
   margin-inline-start: 8px;
   padding: 0 12px;
   border: 1px solid var(--app-button-border);
@@ -5295,6 +5298,17 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
   color: var(--fg);
 }
 .login-error { color: var(--danger); }
+/* Several accounts (login.js accountList): one row each, the email cut with
+   an ellipsis before the buttons are pushed off the sheet. */
+.account-list { display: grid; gap: 4px; margin: 0 0 8px; padding: 0; list-style: none; }
+.account-row { display: flex; align-items: center; gap: 8px; min-block-size: 32px; }
+.account-name { display: flex; flex-direction: column; flex: 1; min-inline-size: 0; }
+/* The email is LTR: cut at ITS end, not at the start the RTL row would cut. */
+.account-name bdi { align-self: flex-start; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; text-align: end; }
+/* Under the usage wall (login.js wallAccounts): its own line, wrapping. */
+.wall-accounts { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px; }
+.wall-accounts .resume-act { margin-inline-start: 0; }
+.wall-accounts .path { padding-block: 0; }
 #login menu, #folders menu {
   display: flex;
   gap: 8px;

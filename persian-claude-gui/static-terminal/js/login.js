@@ -12,6 +12,10 @@
    nobody is signed in. A window-level sheet like the keys sheet (showModal):
    an account is the machine's, not one conversation's.
 
+   Signing in again ADDS an account (server.py AccountVault): the sheet lists
+   the others with a switch each, and render.js asks wallAccounts() for the
+   same buttons under a usage wall.
+
    ONE FILE, BOTH EDITIONS: static/js/login.js and static-terminal/js/login.js
    are byte-identical. It imports only api.js.
    ========================================================================= */
@@ -81,21 +85,134 @@ function who(status) {
   return kind ? [p, el("p", { className: "meta", textContent: FA.loginPlan.replace("{p}", kind) })] : [p];
 }
 
-function showSignedIn(status, justNow = false) {
+function mailEl(email) {
+  return el("bdi", { className: "path", dir: "ltr", textContent: email ?? "" });
+}
+
+/* A sentence with one email in it: the {a} slot becomes an isolated <bdi>. */
+export function withMail(template, email) {
+  const [before, after = ""] = template.split("{a}");
+  const span = document.createElement("span");
+  span.append(before, mailEl(email), after);
+  return span;
+}
+
+/* SEVERAL ACCOUNTS (pcg-6ml, wiki/accounts.md). Every account signed in here
+   stays in a vault on this PC; switching swaps only the identity, so skills,
+   settings and history are the same under each. The list is the other
+   accounts: a switch button each, or a fresh login for one whose refresh
+   token ran out, and a remove. */
+async function fetchAccounts() {
+  try {
+    const r = await api("/api/accounts");
+    return Array.isArray(r.accounts) ? r : { active: null, accounts: [] };
+  } catch (e) {
+    return { active: null, accounts: [] };
+  }
+}
+
+function accountList(listing, err) {
+  const others = listing.accounts.filter((a) => !a.active);
+  if (!others.length) return [];
+  const rows = others.map((a) => {
+    const kind = plan({ subscriptionType: a.plan });
+    const name = el("span", { className: "account-name" }, mailEl(a.email),
+                    el("span", { className: "meta",
+                                 textContent: a.expired ? FA.accountExpired : kind }));
+    const go = a.expired
+      ? button(FA.accountRelogin, () => begin(), "ghost")
+      : button(FA.accountSwitch, async () => {
+          go.disabled = true;
+          showError(err, "");
+          try {
+            const r = await api("/api/accounts/switch", { email: a.email });
+            if (r.status?.loggedIn) return showSignedIn(r.status, { switched: true, deferred: r.deferred });
+            showError(err, FA.accountSwitchFailed);
+          } catch (e) {
+            showError(err, FA.accountSwitchFailed);
+          }
+          go.disabled = false;
+        }, "ghost");
+    const drop = button(FA.accountRemove, async () => {
+      drop.disabled = true;
+      try {
+        await api("/api/accounts/remove", { email: a.email });
+        row.remove();
+      } catch (e) {
+        drop.disabled = false;
+      }
+    }, "ghost");
+    drop.setAttribute("aria-label", FA.accountRemove + " " + a.email);
+    const row = el("li", { className: "account-row" }, name, go, drop);
+    return row;
+  });
+  return [el("p", { className: "meta", textContent: FA.accountOthers }),
+          el("ul", { className: "account-list" }, ...rows)];
+}
+
+async function showSignedIn(status, { justNow = false, switched = false, deferred = 0 } = {}) {
   const err = errorLine();
-  paint(justNow ? FA.loginDone : FA.loginTitleIn, [...who(status), err], [
+  const listing = await fetchAccounts();
+  const notes = [];
+  if (switched) notes.push(el("p", { className: "meta", textContent: FA.accountSwitched }));
+  if (deferred) notes.push(el("p", { className: "meta", textContent: FA.accountDeferred }));
+  paint(justNow ? FA.loginDone : FA.loginTitleIn,
+        [...who(status), ...notes, ...accountList(listing, err), err], [
     button(FA.loginClose, () => sheet.close(), "ghost"),
     button(FA.loginSwitch, () => begin(), "ghost"),
     button(FA.logoutButton, async () => {
       try {
         const r = await api("/api/auth/logout", {});
         if (!r.ok) return showError(err, FA.logoutFailed);
-        begin();
+        showSignedOut();
       } catch (e) {
         showError(err, FA.logoutFailed);
       }
     }, "danger"),
   ]);
+}
+
+/* Nobody signed in. With accounts in the vault that is one click away, so
+   the sheet offers them before a fresh login. */
+async function showSignedOut() {
+  const listing = await fetchAccounts();
+  if (!listing.accounts.length) return begin();
+  const err = errorLine();
+  paint(FA.loginTitle, [el("p", { textContent: FA.accountSignedOut }),
+                        ...accountList(listing, err), err], [
+    button(FA.loginCancel, () => sheet.close(), "ghost"),
+    button(FA.loginSwitch, () => begin()),
+  ]);
+}
+
+/* THE USAGE WALL (render.js USAGE_WALL): the other accounts, one button each,
+   under the wall's own row. A click switches and the server carries this tab
+   -- and every other tab waiting at a wall -- on, on that account. No other
+   account: one button to add one. Live rows only; a replay has no wall left. */
+export async function wallAccounts(row, tab) {
+  if (!token) return;
+  const listing = await fetchAccounts();
+  const usable = listing.accounts.filter((a) => !a.active && !a.expired);
+  const strip = el("div", { className: "wall-accounts" });
+  if (!usable.length) {
+    strip.append(button(FA.accountAddAtWall, () => begin(), "resume-act"));
+  }
+  for (const a of usable) {
+    const b = el("button", { type: "button", className: "resume-act" },
+                 withMail(FA.accountContinueOn, a.email));
+    b.addEventListener("click", async () => {
+      for (const other of strip.querySelectorAll("button")) other.disabled = true;
+      try {
+        const r = await api("/api/accounts/switch", { email: a.email, resume: tab });
+        if (r.active === a.email) return strip.remove();
+      } catch (e) {
+        // falls through: the buttons come back
+      }
+      for (const other of strip.querySelectorAll("button")) other.disabled = false;
+    });
+    strip.append(b);
+  }
+  row.append(strip);
 }
 
 /* `why`: the line a retry opens with — the last code's verdict. */
@@ -139,7 +256,7 @@ async function begin(why = "") {
     }
     if (attempt !== mine) return;     // the browser finished it first
     flowOpen = false;
-    if (r.ok && r.status?.loggedIn) return showSignedIn(r.status, true);
+    if (r.ok && r.status?.loggedIn) return showSignedIn(r.status, { justNow: true });
     // The CLI's one try is spent: a wrong code needs a fresh link.
     begin(FA.loginBadCode);
   };
@@ -158,7 +275,7 @@ async function begin(why = "") {
       if (r?.state === "done") {
         attempt++;
         flowOpen = false;
-        if (r.ok && r.status?.loggedIn) return showSignedIn(r.status, true);
+        if (r.ok && r.status?.loggedIn) return showSignedIn(r.status, { justNow: true });
         return begin(FA.loginFailed);
       }
       if (r?.state === "idle") return;
@@ -195,7 +312,7 @@ export async function openLogin() {
   try {
     const status = await api("/api/auth");
     if (status.loggedIn) showSignedIn(status);
-    else begin();
+    else showSignedOut();
   } catch (e) {
     begin();
   }
@@ -208,7 +325,7 @@ export async function initLogin() {
   if (!token) return;
   try {
     const status = await api("/api/auth");
-    if (status.loggedIn === false) begin();
+    if (status.loggedIn === false) showSignedOut();
   } catch (e) {
     // The check is a courtesy; a failure costs nothing but the prompt.
   }

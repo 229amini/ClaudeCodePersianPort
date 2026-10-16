@@ -58,8 +58,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.13.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.13.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.14.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.14.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -569,6 +569,258 @@ def auth_logout(claude_bin: str) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
+
+
+# --- accounts (pcg-6ml, wiki/accounts.md) -------------------------------------
+#
+# Several Claude accounts on ONE config dir: skills, hooks, settings, memory and
+# history stay shared, only the identity moves. Measured on claude 2.1.300, the
+# identity is two keys and nothing else:
+#   - `claudeAiOauth` in <config>/.credentials.json. The same file holds
+#     `mcpOAuth` (MCP servers' tokens), so only that one key is ever swapped.
+#   - `oauthAccount` in the CLI's global config (~/.claude.json). That file is
+#     the CLI's live state and can carry duplicate keys that a Python dict
+#     would silently merge, so the one value is replaced in the TEXT and every
+#     other byte is kept.
+# A running CLI re-reads .credentials.json when its mtime moves (the bundle's
+# lastCredentialsMtimeMs check), so a swap does not strand a turn in flight; the
+# idle tabs are still respawned so nothing holds the old oauthAccount.
+
+ACCOUNT_VAULT_NAME = ".persian-claude-accounts.json"
+
+
+def claude_config_dir() -> Path:
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(env) if env else Path.home() / ".claude"
+
+
+def global_config_path() -> Path:
+    """Where the CLI keeps oauthAccount: a legacy <config>/.config.json wins,
+    else .claude.json in $CLAUDE_CONFIG_DIR or the home folder."""
+    legacy = claude_config_dir() / ".config.json"
+    if legacy.exists():
+        return legacy
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(env) if env else Path.home()) / ".claude.json"
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Temp file + rename, the way the CLI writes its own (.claude.json.tmp.*),
+    so a crash mid-write never leaves half a file. 0600 on POSIX: it holds
+    live tokens. Windows refuses a rename onto a file someone has open for a
+    moment, so that is retried briefly."""
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(4)}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05)
+
+
+def _top_level_span(text: str, key: str) -> tuple[int, int] | None:
+    """(start, end) of KEY's value in a JSON object's text, top level only, or
+    None when the key is absent. ValueError when the text is not an object."""
+    decoder = json.JSONDecoder()
+    ws = re.compile(r"\s*")
+    i = ws.match(text, 0).end()
+    if text[i:i + 1] != "{":
+        raise ValueError("not a JSON object")
+    i = ws.match(text, i + 1).end()
+    if text[i:i + 1] == "}":
+        return None
+    while True:
+        name, i = decoder.raw_decode(text, i)
+        i = ws.match(text, i).end()
+        if text[i:i + 1] != ":":
+            raise ValueError("expected ':'")
+        start = ws.match(text, i + 1).end()
+        _, end = decoder.raw_decode(text, start)
+        if name == key:
+            return start, end
+        i = ws.match(text, end).end()
+        if text[i:i + 1] == ",":
+            i = ws.match(text, i + 1).end()
+            continue
+        if text[i:i + 1] == "}":
+            return None
+        raise ValueError("expected ',' or '}'")
+
+
+def replace_top_level(text: str, key: str, value) -> str:
+    """TEXT with KEY's top-level value set to VALUE (inserted first when
+    absent), formatted the way JSON.stringify(_, null, 2) nests it."""
+    rendered = json.dumps(value, indent=2, ensure_ascii=False).replace("\n", "\n  ")
+    span = _top_level_span(text, key)
+    if span:
+        return text[:span[0]] + rendered + text[span[1]:]
+    brace = text.index("{")
+    entry = f"\n  {json.dumps(key)}: {rendered}"
+    empty = re.match(r"\{\s*\}", text[brace:])
+    if empty:
+        return text[:brace] + "{" + entry + "\n}" + text[brace + empty.end():]
+    return text[:brace + 1] + entry + "," + text[brace + 1:]
+
+
+class AccountVault:
+    """Every account this window has seen signed in, keyed by email: its
+    claudeAiOauth and oauthAccount as they were when it last left the disk.
+
+    The file sits beside .credentials.json (same owner, same 0600, never the
+    repo, never a log). OAuth refresh tokens ROTATE: the CLI writes a new one
+    on every refresh, so the copy that matters is always the one on disk now.
+    capture() therefore runs before anything replaces it -- a switch, a new
+    login -- and a stale vault copy of the ACTIVE account is never written back.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _vault_path() -> Path:
+        return claude_config_dir() / ACCOUNT_VAULT_NAME
+
+    @staticmethod
+    def _creds_path() -> Path:
+        return claude_config_dir() / ".credentials.json"
+
+    def _load(self) -> dict:
+        try:
+            data = json.loads(self._vault_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict) or not isinstance(data.get("accounts"), dict):
+            data = {"version": 1, "active": None, "accounts": {}}
+        return data
+
+    def _save(self, data: dict) -> None:
+        self._vault_path().parent.mkdir(parents=True, exist_ok=True)
+        _write_private(self._vault_path(), json.dumps(data, indent=2, ensure_ascii=False))
+
+    def _on_disk(self) -> tuple[dict, dict] | None:
+        """(claudeAiOauth, oauthAccount) as the CLI has them now, or None when
+        nobody is signed in through a subscription login."""
+        try:
+            creds = json.loads(self._creds_path().read_text(encoding="utf-8"))
+            text = global_config_path().read_text(encoding="utf-8")
+            span = _top_level_span(text, "oauthAccount")
+            account = json.loads(text[span[0]:span[1]]) if span else None
+        except (OSError, ValueError):
+            return None
+        oauth = creds.get("claudeAiOauth") if isinstance(creds, dict) else None
+        if not (isinstance(oauth, dict) and oauth.get("accessToken")
+                and isinstance(account, dict)
+                and isinstance(account.get("emailAddress"), str)):
+            return None
+        return oauth, account
+
+    def current_email(self) -> str | None:
+        found = self._on_disk()
+        return found[1]["emailAddress"] if found else None
+
+    def capture(self) -> str | None:
+        """File the account now on disk under its email and mark it active.
+        Returns that email, or None when nobody is signed in."""
+        with self._lock:
+            found = self._on_disk()
+            if not found:
+                return None
+            oauth, account = found
+            email = account["emailAddress"]
+            data = self._load()
+            kept = data["accounts"].get(email) or {}
+            if (data.get("active") == email and kept.get("oauth") == oauth
+                    and kept.get("account") == account):
+                return email   # nothing moved; a GET does not rewrite the file
+            data["accounts"][email] = {"oauth": oauth, "account": account,
+                                       "saved_at": int(time.time())}
+            data["active"] = email
+            self._save(data)
+            return email
+
+    @staticmethod
+    def _expired(oauth: dict) -> bool:
+        """The refresh token itself has run out: switching to it would land
+        on "Not logged in", so the window offers a fresh login instead."""
+        until = oauth.get("refreshTokenExpiresAt")
+        if not isinstance(until, (int, float)):
+            return False
+        if until > 1e12:          # the CLI's timestamps are milliseconds
+            until /= 1000
+        return until < time.time()
+
+    def listing(self) -> dict:
+        with self._lock:
+            active = self.capture()
+            data = self._load()
+            rows = []
+            for email, entry in data["accounts"].items():
+                oauth = entry.get("oauth") or {}
+                account = entry.get("account") or {}
+                rows.append({
+                    "email": email,
+                    "active": email == active,
+                    "plan": oauth.get("subscriptionType"),
+                    "org": account.get("organizationName"),
+                    "expired": email != active and self._expired(oauth),
+                })
+            rows.sort(key=lambda r: (not r["active"], r["email"].lower()))
+            return {"active": active, "accounts": rows}
+
+    def switch(self, email: str) -> str | None:
+        """Make EMAIL the account on disk. None on success, else the reason."""
+        with self._lock:
+            current = self.capture()
+            if email == current:
+                return None
+            entry = self._load()["accounts"].get(email)
+            if not entry:
+                return "unknown account"
+            if self._expired(entry.get("oauth") or {}):
+                return "expired"
+            try:
+                creds_path = self._creds_path()
+                try:
+                    creds = json.loads(creds_path.read_text(encoding="utf-8"))
+                except OSError:
+                    creds = {}
+                if not isinstance(creds, dict):
+                    creds = {}
+                creds["claudeAiOauth"] = entry["oauth"]
+                config = global_config_path()
+                text = config.read_text(encoding="utf-8") if config.exists() else "{}\n"
+                # oauthAccount first: a CLI that reads the new token before the
+                # new account would report the right email either way, but one
+                # that saw only the token would fetch a profile for nothing.
+                _write_private(config, replace_top_level(text, "oauthAccount", entry["account"]))
+                _write_private(creds_path, json.dumps(creds, indent=2, ensure_ascii=False))
+            except (OSError, ValueError) as err:
+                return str(err)
+            data = self._load()
+            data["active"] = email
+            self._save(data)
+            return None
+
+    def forget(self, email: str | None) -> bool:
+        if not email:
+            return False
+        with self._lock:
+            data = self._load()
+            if data["accounts"].pop(email, None) is None:
+                return False
+            if data.get("active") == email:
+                data["active"] = None
+            self._save(data)
+            return True
+
+
+ACCOUNTS = AccountVault()
 
 
 def free_port() -> int:
@@ -3261,6 +3513,9 @@ class ClaudeSession:
         self._resume_seq = 0
         self._resume_armed = False
         self._resume_lock = threading.Lock()
+        # An account switch that found this tab mid-turn: the turn finishes on
+        # the process it started on, and _sync_idle respawns it after.
+        self.respawn_when_idle = False
 
     # ponytail: the ledger is stick-proofed at both ends -- discarding an
     # unknown uuid is free, every path that ends a PROCESS empties it outright
@@ -3308,6 +3563,7 @@ class ClaudeSession:
               fork_id: str | None = None, fork_at: str | None = None) -> None:
         self._generation += 1
         generation = self._generation
+        self.respawn_when_idle = False        # a new process reads the disk anyway
         self.cancel_auto_resume(quiet=True)   # that wait belonged to the old process
         # A DELIBERATE respawn (a resume, a restart) kills whatever the old
         # process still held exactly as a crash would -- and the generation bump
@@ -3913,8 +4169,9 @@ class ClaudeSession:
                 self.resume_now()
             return
 
-    def resume_now(self) -> str:
-        """Send the TUI's continuation prompt. The armed wait, if any, ends."""
+    def resume_now(self, account: str | None = None) -> str:
+        """Send the TUI's continuation prompt. The armed wait, if any, ends.
+        ACCOUNT: the one this goes on after a switch at the wall, for the row."""
         with self._resume_lock:
             self._resume_seq += 1
             self._resume_armed = False
@@ -3923,8 +4180,14 @@ class ClaudeSession:
         # ledger uuid (so the turn shows as working and the stop button stops
         # it) and no text (so no bubble).
         self.hub.publish({"type": "wrapper", "subtype": "auto_resume", "state": "fired",
-                          "uuid": command_uuid})
+                          "uuid": command_uuid,
+                          **({"account": account} if account else {})})
         return command_uuid
+
+    @property
+    def at_wall(self) -> bool:
+        """Waiting out a usage wall (an armed auto-resume)."""
+        return self._resume_armed
 
     def cancel_auto_resume(self, quiet: bool = False) -> bool:
         """End a pending wait. False when there was none (nothing published)."""
@@ -4244,6 +4507,8 @@ class ClaudeSession:
                     self._idle_deadline = 0.0
                     self._outstanding.clear()
                     self.hub.publish({"type": "wrapper", "subtype": "idle_sync"})
+                    if self.respawn_when_idle:
+                        threading.Thread(target=self.respawn, daemon=True).start()
                     return
         self._arm_idle_sync(remaining)
 
@@ -4656,6 +4921,10 @@ class Handler(BaseHTTPRequestHandler):
         if cls.login is None:
             cls.login = LoginFlow(cls.claude_bin)
         if verb == "login":
+            # The login about to run overwrites whoever is signed in; their
+            # tokens go into the vault first, so «ورود با حساب دیگر» ADDS an
+            # account instead of replacing one.
+            ACCOUNTS.capture()
             reply = cls.login.begin()
             self._send_json(HTTPStatus.OK if "url" in reply else HTTPStatus.BAD_GATEWAY, reply)
             return
@@ -4676,14 +4945,70 @@ class Handler(BaseHTTPRequestHandler):
                 return
         else:   # logout
             cls.login.cancel()
+            leaving = ACCOUNTS.current_email()
             reply = {"ok": auth_logout(cls.claude_bin)}
+            if reply["ok"]:
+                ACCOUNTS.forget(leaving)   # signing out of it means it is gone
         if reply.get("ok"):
-            with _SESSIONS_LOCK:
-                idle = [s for s in cls.sessions.values() if not s.busy]
-            for session in idle:
-                session.respawn()
+            # A login is a new account: tabs waiting out the old one's wall
+            # carry on, on it, rather than wait for a reset that no longer matters.
+            joined = ACCOUNTS.capture() if verb != "logout" else None
+            reply["deferred"] = cls.respawn_for_account(account=joined)
             reply["status"] = auth_status(cls.claude_bin)
         self._send_json(HTTPStatus.OK, reply)
+
+    @classmethod
+    def respawn_for_account(cls, resume: str | None = None,
+                            account: str | None = None) -> int:
+        """The account on disk changed: every idle tab gets a new process now
+        on the same conversation, a busy one after its turn (respawn_when_idle).
+        With ACCOUNT (a switch or a login), the tab the switch was made from
+        (RESUME) and every tab waiting out a usage wall carry on at once, on
+        it. Returns how many tabs were left to finish their turn first."""
+        with _SESSIONS_LOCK:
+            tabs = list(cls.sessions.items())
+        deferred = 0
+        for tab, session in tabs:
+            go_on = account is not None and (tab == resume or session.at_wall)
+            if session.busy and not go_on:
+                session.respawn_when_idle = True
+                deferred += 1
+                continue
+            if session.at_wall and not go_on:
+                session.cancel_auto_resume()   # said, not dropped by start()
+            session.respawn()
+            if go_on:
+                try:
+                    session.resume_now(account)
+                except RuntimeError:
+                    pass   # the new process died at once; its exit says so
+        return deferred
+
+    def _accounts(self, verb: str, body: dict) -> None:
+        """/api/accounts/{switch,remove} -- see AccountVault."""
+        cls = type(self)
+        email = body.get("email")
+        if not isinstance(email, str) or not email:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "email"})
+            return
+        if verb == "remove":
+            if email == ACCOUNTS.current_email():
+                self._send_json(HTTPStatus.CONFLICT, {"error": "active"})
+                return
+            ACCOUNTS.forget(email)
+            self._send_json(HTTPStatus.OK, ACCOUNTS.listing())
+            return
+        if cls.login is not None:
+            cls.login.cancel()   # a half-done login would land on top of the switch
+        was = ACCOUNTS.current_email()
+        why = ACCOUNTS.switch(email)
+        if why:
+            self._send_json(HTTPStatus.CONFLICT, {"error": why})
+            return
+        resume = body.get("resume") if isinstance(body.get("resume"), str) else None
+        deferred = cls.respawn_for_account(resume=resume, account=email) if email != was else 0
+        self._send_json(HTTPStatus.OK, {**ACCOUNTS.listing(), "deferred": deferred,
+                                        "status": auth_status(cls.claude_bin)})
 
     @classmethod
     def tabs_payload(cls) -> dict:
@@ -4834,6 +5159,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, self.tabs_payload())
         elif parsed.path == "/api/auth":
             self._send_json(HTTPStatus.OK, auth_status(self.claude_bin))
+        elif parsed.path == "/api/accounts":
+            self._send_json(HTTPStatus.OK, ACCOUNTS.listing())
         elif parsed.path == "/api/image":
             key = params.get("path", [""])[0]
             image = Path(key)
@@ -5066,6 +5393,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path in ("/api/auth/login", "/api/auth/code", "/api/auth/flow",
                            "/api/auth/cancel", "/api/auth/logout"):
             self._auth(parsed.path.rsplit("/", 1)[1], body)
+        elif parsed.path in ("/api/accounts/switch", "/api/accounts/remove"):
+            self._accounts(parsed.path.rsplit("/", 1)[1], body)
         elif parsed.path == "/api/message":
             session = self._target(tab)
             if session is None:
