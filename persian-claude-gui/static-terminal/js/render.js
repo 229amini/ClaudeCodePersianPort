@@ -23,6 +23,7 @@ import { showPermission, dismissPermission } from "./perm.js";
 import { isAway } from "./composer.js";
 import { api, token } from "./api.js";
 import { cliUpdateRow } from "./cliupdate.js";
+import { tellHost } from "./hosts.js";
 /* A leaf (it imports only api.js): the usage wall's account buttons. */
 import { wallAccounts, withMail } from "./login.js";
 import { paintRing, noteCache, paintCache } from "./bar.js";
@@ -1232,6 +1233,9 @@ function settlePulse() {
    no announcement. The flash stops by itself when the window comes to the
    front, so there is nothing to clear. */
 function flashTaskbar() {
+  // Inside a server tab (hosts.js) the window holding it decides: a dot on
+  // the tab, a flash of ITS taskbar button. This server has no screen.
+  if (tellHost("news")) return;
   if (!document.hidden && document.hasFocus()) return;
   api("/api/attention", { title: document.title }).catch(() => {});
 }

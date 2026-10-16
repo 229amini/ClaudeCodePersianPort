@@ -350,6 +350,18 @@ window.FA = {
   cliUpdated: "Claude Code به نسخهٔ {v} رسید. پیامتان را دوباره بفرستید.",
   cliUpdateSame: "نسخهٔ تازه‌تری پیدا نشد ({v}).",
   cliUpdateFailed: "به‌روزرسانی انجام نشد.",
+  // Servers as tabs along the top of the window (hosts.js).
+  hostsLabel: "زبانه‌های سرور",
+  hostsLocal: "این رایانه",
+  hostsClose: "بستن زبانهٔ {n}",
+  hostsPopOut: "باز کردن {n} در پنجرهٔ جدا",
+  hostsConnecting: "در حال وصل شدن به {n}…",
+  hostsOffline: "اتصال به {n} قطع شد. دوباره وصل می‌شود…",
+  hostsOfflineDot: "اتصال قطع است",
+  hostsFailed: "وصل شدن به {n} انجام نشد. {why}",
+  hostsBusy: "در حال کار",
+  hostsNews: "خبر تازه",
+  srvOpenWindow: "پنجرهٔ جدا",
   // Linux servers over SSH (servers.js, servers.py, wiki/linux-ssh.md).
   sideAccounts: "حساب‌ها",
   sideServers: "سرورها",

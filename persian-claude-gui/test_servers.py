@@ -14,6 +14,12 @@ tunnels.json is never read or written -- asserted):
 3. The window, per PCG_UI, every route stubbed in the page: the sidebar's two
    entries, the list and what each server has, add -> password -> install ->
    ready, the password cleared after it is sent, remove on the second click.
+4. Servers as tabs (hosts.js), per PCG_UI: «باز کردن» opens a tab along the
+   top (inline, no window), the strip and the frame; a page inside the frame
+   running hosts.js itself says hello, busy and news over postMessage and
+   forwards Ctrl+PageDown; the window's own Ctrl+PageUp; the open tabs are
+   saved; a dropped tunnel turns the dot red and says why; × closes the tab
+   and the strip goes with the last one.
 
 The live half -- a real server, a real password, a real install -- ran by hand
 against the VMware Ubuntu guest on 2026-10-16 (wiki/linux-ssh.md); set
@@ -114,8 +120,8 @@ const until = async (fn, ms = 4000) => { const end = Date.now() + ms;
   out.factB = rows()[1].querySelector(".server-facts")?.textContent;
   out.wantUpdate = FA.srvUpdate.replace("{v}", "0.14.0");
   out.factC = rows()[2].querySelector(".server-facts")?.textContent;
-  out.closeOnlyOpen = !rows()[0].querySelectorAll(".server-acts button")[1].hidden
-    && rows()[1].querySelectorAll(".server-acts button")[1].hidden;
+  const closeOf = (r) => [...r.querySelectorAll(".server-acts button")].find((b) => b.textContent === FA.srvCloseBtn);
+  out.closeOnlyOpen = !closeOf(rows()[0]).hidden && closeOf(rows()[1]).hidden;
 
   btn(FA.srvAdd).click(); await sleep(50);
   const inputs = [...sheet().querySelectorAll("input")];
@@ -145,7 +151,9 @@ const until = async (fn, ms = 4000) => { const end = Date.now() + ms;
   out.ready = sheet().textContent.includes(FA.srvReady.replace("{v}", "0.14.0"));
   btn(FA.srvOpenBtn).click(); await sleep(150);
   out.openBody = calls.filter((c) => c.url === "/api/servers/open").at(-1)?.body;
+  out.sheetClosed = !sheet().open;
 
+  side.click();
   await until(() => rows().length === 4);
   const drop = () => [...rows()[1].querySelectorAll("button")].find((b) => b.textContent.startsWith(FA.srvRemove));
   drop().click(); await sleep(50);
@@ -161,6 +169,169 @@ const until = async (fn, ms = 4000) => { const end = Date.now() + ms;
 })();
 </script>
 """
+
+
+INNER_HTML = """<!doctype html><html dir="rtl"><body><div class="busy"></div>
+<script>window.STRINGS = {};</script>
+<script type="module">
+import { initHosts, tellHost } from "/static/js/hosts.js";
+initHosts();
+window.addEventListener("message", (e) => {
+  if (e.data === "press") document.dispatchEvent(new KeyboardEvent("keydown",
+    { key: "PageDown", ctrlKey: true, bubbles: true, cancelable: true }));
+  if (e.data === "news") tellHost("news");
+});
+</script></body></html>
+"""
+
+TABS_JS = r"""
+<pre id="probe-out" hidden></pre>
+<script type="module">
+import { openInTab } from "/static/js/hosts.js";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const FA = window.STRINGS;
+const calls = [];
+const json = (o, status = 200) => new Response(JSON.stringify(o), { status,
+  headers: { "Content-Type": "application/json" } });
+let up = true;
+const servers = () => [{ target: "a@10.0.0.1", user: "a", host: "10.0.0.1", name: "سرور الف",
+                         ssh_port: 22, port: 8701, open: up }];
+window.fetch = async (url, init) => {
+  const u = String(url).split("?")[0];
+  const body = init?.body ? JSON.parse(init.body) : null;
+  calls.push({ url: u, body });
+  if (u === "/api/servers") return json({ servers: servers(), version: "0.14.0", ssh: true,
+                                          tabs: { tabs: [], active: null } });
+  if (u === "/api/servers/open") {
+    return up ? json({ ok: true, port: Number(location.port),
+                       url: "/static/_hosts_inner.html" + location.search })
+              : json({ ok: false, error: "unreachable" });
+  }
+  if (u.startsWith("/api/projects")) return json({ projects: [] });
+  if (u.startsWith("/api/tabs")) return json({ tabs: [], active: "" });
+  if (u.startsWith("/api/session")) return json({ events: [] });
+  if (u.startsWith("/api/agents")) return json({ agents: [] });
+  if (u.startsWith("/api/accounts")) return json({ active: null, accounts: [] });
+  return json({ ok: true });
+};
+const until = async (fn, ms = 4000) => { const end = Date.now() + ms;
+  while (Date.now() < end) { if (fn()) return true; await sleep(50); } return false; };
+const strip = () => document.getElementById("hosts");
+const frames = () => document.getElementById("host-frames");
+const wraps = () => [...strip().querySelectorAll(".host-wrap")];
+const dot = () => strip().querySelector(".host-dot");
+const lastTabs = () => calls.filter((c) => c.url === "/api/servers/tabs").at(-1)?.body;
+const out = {};
+// Written after every step: a run cut short by the virtual-time budget still
+// reports how far it got, and the missing keys fail their checks.
+const flush = () => { document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE"; };
+
+(async () => {
+ try {
+  await sleep(300);
+  out.noStripAtFirst = !strip() || strip().hidden;
+  out.notHostedAtFirst = !document.body.classList.contains("hosted");
+  openInTab({ target: "a@10.0.0.1", name: "سرور الف" });
+  const frame = () => frames()?.querySelector("iframe");
+  await until(() => frame());
+  out.stripShown = !strip().hidden && document.body.classList.contains("hosted");
+  out.tabNames = wraps().map((w) => w.querySelector(".host-tab").textContent);
+  out.openInline = calls.find((c) => c.url === "/api/servers/open")?.body;
+  out.frameShown = !frames().hidden && !!frame();
+  const sr = strip().getBoundingClientRect(), fr = frames().getBoundingClientRect();
+  out.frameUnderStrip = Math.abs(fr.top - sr.bottom) <= 1 && fr.bottom >= innerHeight - 1;
+  out.appBelowStrip = document.getElementById("sidebar").getBoundingClientRect().top >= sr.bottom - 1;
+  out.activeSaved = lastTabs(); flush();
+  await until(() => dot().classList.contains("busy"));
+  out.busyDot = dot().classList.contains("busy");
+  out.noteGone = frames().querySelector(".host-note").hidden;
+
+  wraps()[0].querySelector(".host-tab").click();
+  out.localBack = frames().hidden && wraps()[0].querySelector(".host-tab").getAttribute("aria-current") === "true";
+  frame().contentWindow.postMessage("news", "*");
+  await until(() => dot().classList.contains("news"));
+  out.newsDot = dot().classList.contains("news"); flush();
+
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", ctrlKey: true, bubbles: true, cancelable: true }));
+  out.keyHere = !frames().hidden;
+  out.newsCleared = !dot().classList.contains("news");
+  frame().contentWindow.postMessage("press", "*");
+  await until(() => frames().hidden);
+  out.keyInside = frames().hidden; flush();
+
+  up = false;
+  await until(() => dot().classList.contains("offline"), 7000);
+  out.offlineDot = dot().classList.contains("offline"); flush();
+  wraps()[1].querySelector(".host-tab").click();
+  await until(() => frames().querySelector(".host-note button"));
+  const note = frames().querySelector(".host-note");
+  out.offlineSays = note.textContent.includes(FA.srvErrors.unreachable)
+    && !!note.querySelector("button");
+
+  wraps()[1].querySelector(".host-x:not(.host-pop)").click();
+  out.closed = strip().hidden && !document.body.classList.contains("hosted") && frames().hidden;
+  out.closedSaved = lastTabs();
+  document.getElementById("probe-out").textContent = "PROBE" + JSON.stringify(out) + "ENDPROBE";
+ } catch (err) {
+  document.getElementById("probe-out").textContent =
+    "PROBE" + JSON.stringify({ error: String(err && err.stack || err), partial: out }) + "ENDPROBE";
+ }
+})();
+</script>
+"""
+
+
+def tab_checks() -> list[tuple[bool, str, str]]:
+    from server import EDITIONS
+    from test_layout import boot_server, find_edge, hold_sse, measure
+    edition = os.environ.get("PCG_UI", "web")
+    static = HERE / EDITIONS[edition][0]
+    probe = static / "_tabs_probe.html"
+    inner = static / "_hosts_inner.html"
+    page = (static / "index.html").read_text(encoding="utf-8").replace("{{VERSION}}", "9.9.9")
+    page = page.replace('<body class="app">', '<body class="app" data-render-only>', 1)
+    probe.write_text(page.replace("</body>", TABS_JS + "\n</body>", 1), encoding="utf-8")
+    inner.write_text(INNER_HTML, encoding="utf-8")
+    stop = threading.Event()
+    proc = None
+    try:
+        proc, base, token = boot_server(edition=edition)
+        threading.Thread(target=hold_sse, args=(base, token, stop), daemon=True).start()
+        m = measure(find_edge(), f"{base}/static/_tabs_probe.html?t={token}", 1280, 900)
+    except Exception as err:                                  # noqa: BLE001
+        return [(False, f"[{edition}] the tabs probe ran", repr(err))]
+    finally:
+        stop.set()
+        if proc:
+            proc.terminate()
+        probe.unlink(missing_ok=True)
+        inner.unlink(missing_ok=True)
+    out: list[tuple[bool, str, str]] = []
+
+    def check(ok, what, why=""):
+        out.append((bool(ok), f"[{edition}] tabs: {what}", why))
+
+    check(m.get("noStripAtFirst") and m.get("notHostedAtFirst"), "no strip while no server is open")
+    check(m.get("stripShown") and m.get("tabNames") == ["این رایانه", "سرور الف"],
+          "opening one draws the strip: «این رایانه», then the server", str(m.get("tabNames")))
+    check((m.get("openInline") or {}).get("inline") is True, "the tab asks for the tunnel, not a window",
+          str(m.get("openInline")))
+    check(m.get("frameShown") and m.get("frameUnderStrip") and m.get("appBelowStrip"),
+          "the frame fills the window under the strip; the app moved down by it",
+          f"{m.get('frameUnderStrip')} {m.get('appBelowStrip')}")
+    check((m.get("activeSaved") or {}) == {"tabs": ["a@10.0.0.1"], "active": "a@10.0.0.1"},
+          "the open tab is saved, in front", str(m.get("activeSaved")))
+    check(m.get("busyDot") and m.get("noteGone"),
+          "the page inside says hello and busy: the note goes, the dot pulses")
+    check(m.get("localBack") and m.get("newsDot"), "back on «این رایانه», news from the server marks its tab")
+    check(m.get("keyHere") and m.get("newsCleared"), "Ctrl+PageUp here switches tabs; a visit clears the news")
+    check(m.get("keyInside"), "Ctrl+PageDown inside the frame switches too (forwarded)")
+    check(m.get("offlineDot") and m.get("offlineSays"),
+          "a dropped tunnel: red dot, the reason and «دوباره امتحان کنید»",
+          f"{m.get('offlineDot')} {m.get('offlineSays')}")
+    check(m.get("closed") and (m.get("closedSaved") or {}).get("tabs") == [],
+          "× closes the tab; the strip goes with the last one", str(m.get("closedSaved")))
+    return out
 
 
 def ui_checks() -> list[tuple[bool, str, str]]:
@@ -215,8 +386,9 @@ def ui_checks() -> list[tuple[bool, str, str]]:
     check(m.get("pwSent") == ["wrong", "s3cret&!"], "the password goes out only on «ادامه»", str(m.get("pwSent")))
     check(m.get("installView") and m.get("logLtr") == "ltr", "not installed: «نصب روی سرور», then the log, LTR")
     check(m.get("ready"), "a finished install lands on «آماده است» with the version")
-    check((m.get("openBody") or {}).get("target") == "maryam@10.0.0.9", "«باز کردن» opens that server",
-          str(m.get("openBody")))
+    check((m.get("openBody") or {}).get("target") == "maryam@10.0.0.9"
+          and (m.get("openBody") or {}).get("inline") is True and m.get("sheetClosed"),
+          "«باز کردن» opens that server as a tab, and the sheet steps aside", str(m.get("openBody")))
     check(m.get("armedNoCall") and (m.get("removeBody") or {}).get("target") == "b@10.0.0.2",
           "remove needs a second click", str(m.get("removeBody")))
     check(m.get("passwordNowhere"), "the password is in no field afterwards")
@@ -245,16 +417,20 @@ def main() -> int:
                                             "remote_port": 8765}},
               "a bare port from connect.ps1 reads as an entry", str(S.load()))
         with socket.socket() as busy:
-            busy.bind(("127.0.0.1", 8702))
+            # Ports a real tunnel on this PC already holds are skipped too, so
+            # the busy one and the expected one are the next two free ones.
+            free = [q for q in range(8702, 8800) if not S.port_open(q)]
+            busy_port, want = free[0], free[1]
+            busy.bind(("127.0.0.1", busy_port))
             busy.listen(1)
             t = S.upsert("me", "10.1.1.2", 2222, " دفتر ", None)
         e = S.load()[t]
-        check(e["port"] == 8703 and e["ssh_port"] == 2222 and e["name"] == "دفتر",
+        check(e["port"] == want and e["ssh_port"] == 2222 and e["name"] == "دفتر",
               "a new server skips taken and listening ports", str(e))
         S.upsert("me", "10.1.1.2", 22, "x", t)
-        check(S.load()[t]["port"] == 8703, "an edit keeps the local port")
+        check(S.load()[t]["port"] == want, "an edit keeps the local port")
         t2 = S.upsert("me", "10.1.1.9", 22, "x", t)
-        check(t not in S.load() and S.load()[t2]["port"] == 8703, "a rename moves the entry, port and all")
+        check(t not in S.load() and S.load()[t2]["port"] == want, "a rename moves the entry, port and all")
         for bad in (("", "h"), ("u", ""), ("u;rm", "h"), ("u", "h h")):
             try:
                 S.upsert(bad[0], bad[1], 22, "", None)
@@ -304,6 +480,10 @@ def main() -> int:
         check(code == 200 and r.get("target") == "new@10.1.1.5", "a good one is saved", str(r)[:200])
         code, r = call(base, token, "/api/servers/check", {"target": "nobody@nowhere"})
         check(code == 404, "an unknown target is a 404", f"{code}")
+        code, r = call(base, token, "/api/servers/tabs", {"tabs": [t2, "ghost@1.2.3.4"], "active": t2})
+        code2, r2 = call(base, token, "/api/servers")
+        check(code == 200 and r2.get("tabs") == {"tabs": [t2], "active": t2},
+              "open tabs are kept, unknown servers dropped", str(r2.get("tabs")))
         code, r = call(base, token, "/api/servers/remove", {"target": "new@10.1.1.5"})
         check(code == 200 and "new@10.1.1.5" not in [s["target"] for s in r.get("servers", [])],
               "remove drops it", str(r)[:200])
@@ -321,7 +501,7 @@ def main() -> int:
             os.environ["APPDATA"] = saved
         shutil.rmtree(appdata, ignore_errors=True)
 
-    for ok, what, why in ui_checks():
+    for ok, what, why in ui_checks() + tab_checks():
         check(ok, what, why)
     after = REAL_STATE.stat().st_mtime if REAL_STATE.exists() else None
     check(before == after, "this PC's own tunnels.json was not touched", f"{before} -> {after}")

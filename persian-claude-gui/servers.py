@@ -87,6 +87,33 @@ def save(entries: dict[str, dict]) -> None:
     os.replace(tmp, state_file())
 
 
+def tabs_file() -> Path:
+    return state_dir() / "tabs.json"
+
+
+def load_tabs() -> dict:
+    """The servers open as tabs in the window (js/hosts.js) and the one in
+    front, kept here because the window's own origin changes every run."""
+    try:
+        raw = json.loads(tabs_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"tabs": [], "active": None}
+    known = load()
+    tabs = [t for t in raw.get("tabs", []) if isinstance(t, str) and t in known]         if isinstance(raw, dict) else []
+    active = raw.get("active") if isinstance(raw, dict) else None
+    return {"tabs": tabs, "active": active if active in tabs else None}
+
+
+def save_tabs(tabs: list, active) -> None:
+    known = load()
+    tabs = [t for t in tabs if isinstance(t, str) and t in known][:32]
+    state_dir().mkdir(parents=True, exist_ok=True)
+    tmp = tabs_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps({"tabs": tabs, "active": active if active in tabs else None}),
+                   encoding="utf-8")
+    os.replace(tmp, tabs_file())
+
+
 def port_open(port: int) -> bool:
     with socket.socket() as s:
         s.settimeout(0.3)
@@ -463,8 +490,11 @@ def open_tunnel(target: str) -> str | None:
     return "tunnel"
 
 
-def open_server(target: str, launch) -> dict:
-    """Tunnel + the server's own app window (LAUNCH is server.launch_window)."""
+def open_server(target: str, launch=None) -> dict:
+    """Tunnel + the server's own app window (LAUNCH is server.launch_window),
+    or, with no LAUNCH, the address for a tab in THIS window (js/hosts.js):
+    the token goes only to the window of the person who could read it off
+    the server with their own key anyway."""
     problem, _, facts = _facts(target)
     secret = facts.get("token", "")
     if problem or len(secret) < 32:
@@ -473,5 +503,8 @@ def open_server(target: str, launch) -> dict:
     if problem:
         return {"ok": False, "error": problem}
     port = load()[target]["port"]
-    launch(f"http://127.0.0.1:{port}/?t={secret}")
+    url = f"http://127.0.0.1:{port}/?t={secret}"
+    if launch is None:
+        return {"ok": True, "url": url, "port": port}
+    launch(url)
     return {"ok": True}

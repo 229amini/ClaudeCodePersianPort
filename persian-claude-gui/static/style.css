@@ -3910,3 +3910,101 @@ button.side-item { inline-size: 100%; border: 0; background: none; font-family: 
 .cli-update { margin: 0 0 12px; }
 .cli-update p { margin: 0 0 8px; }
 .cli-update .meta { margin: 8px 0 0; color: var(--fg-muted); }
+
+/* Servers as tabs along the top (js/hosts.js). Drawn only while one is open;
+   the app below moves down by the strip's height, and a server's tab is its
+   own app in a frame that covers everything under the strip. The frame undoes
+   the root's CSS zoom (terminal edition): the page inside zooms itself. */
+:root { --hosts-h: 32px; }
+.hosts {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: var(--hosts-h);
+  z-index: 40;
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: var(--bg-side);
+  border-block-end: 1px solid var(--border);
+}
+.host-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  block-size: 28px;
+  padding: 0 4px;
+  border-radius: 4px 4px 0 0;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.host-wrap:hover { background: var(--surface-2); }
+.host-wrap.on { background: var(--bg); color: var(--fg); }
+.host-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  block-size: 100%;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.host-x {
+  inline-size: 20px;
+  block-size: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.host-x:hover { background: var(--surface-2); color: var(--fg); }
+.host-wrap:not(.on):not(:hover) .host-pop { visibility: hidden; }
+.host-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.host-dot.busy { background: var(--accent); animation: host-pulse 1.6s ease-in-out infinite; }
+.host-dot.news { background: var(--accent); }
+.host-dot.offline { background: var(--danger); }
+@keyframes host-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .host-dot.busy { animation: none; } }
+#host-frames {
+  position: fixed;
+  inset: var(--hosts-h) 0 0 0;
+  z-index: 30;
+  background: var(--bg);
+}
+:root.css-zoom #host-frames {
+  zoom: calc(1 / var(--zoom, 1));
+  inset-block-start: calc(var(--hosts-h) * var(--zoom, 1));
+}
+.host-pane { position: absolute; inset: 0; }
+.host-pane iframe { display: block; inline-size: 100%; block-size: 100%; border: 0; }
+.host-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  text-align: center;
+}
+.host-note p { margin: 0; }
+body.app.hosted { padding-block-start: var(--hosts-h); }

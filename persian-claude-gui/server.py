@@ -5082,7 +5082,7 @@ class Handler(BaseHTTPRequestHandler):
         return deferred
 
     def _servers(self, verb: str, body: dict) -> None:
-        """/api/servers[/save,check,install,install/state,open,close,remove,hostkey]
+        """/api/servers[/save,tabs,check,install,install/state,open,close,remove,hostkey]
         -- the Linux servers this PC reaches over SSH (servers.py). Only where a
         person sits at THIS machine: a window that is itself at the end of a
         tunnel has nothing to open a tunnel from."""
@@ -5093,7 +5093,13 @@ class Handler(BaseHTTPRequestHandler):
         local = EDITIONS["terminal"][2]
         if verb == "list":
             self._send_json(HTTPStatus.OK, {"servers": servers.listing(), "version": local,
-                                            "ssh": bool(servers.ssh_bin())})
+                                            "ssh": bool(servers.ssh_bin()),
+                                            "tabs": servers.load_tabs()})
+            return
+        if verb == "tabs":
+            tabs = body.get("tabs")
+            servers.save_tabs(tabs if isinstance(tabs, list) else [], body.get("active"))
+            self._send_json(HTTPStatus.OK, {"ok": True})
             return
         if verb == "save":
             try:
@@ -5126,7 +5132,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, job.state() if job else {"running": False, "rc": None,
                                                                     "lines": []})
         elif verb == "open":
-            self._send_json(HTTPStatus.OK, servers.open_server(target, launch_window))
+            # "inline": a tab in this window (js/hosts.js), not a window of its own.
+            self._send_json(HTTPStatus.OK, servers.open_server(
+                target, None if body.get("inline") else launch_window))
         elif verb == "close":
             self._send_json(HTTPStatus.OK, {"closed": servers.close(target),
                                             "servers": servers.listing()})

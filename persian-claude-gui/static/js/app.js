@@ -54,6 +54,7 @@ import {
 import { initFocus } from "./focus.js";
 import { initLogin } from "./login.js";
 import { initSideFoot } from "./servers.js";
+import { initHosts } from "./hosts.js";
 import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
 import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
@@ -811,6 +812,7 @@ initChrome();
 initFocus();   // pcg-ahh.5: Focus view, the window's own preference
 initLogin();   // nobody signed in: the sign-in sheet before the first message
 initSideFoot();   // «حساب‌ها» and «سرورها» in the sidebar foot
+initHosts();      // servers as tabs along the top (hosts.js)
 
 /* The first column. Here rather than at the top of the file for the reason the
    load-order note gives: this is where initComposer()/initControls() used to

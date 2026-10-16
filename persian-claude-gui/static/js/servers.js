@@ -13,13 +13,18 @@
    that is itself at the end of a tunnel (api.js `remote`) has no servers
    entry: there is nothing to open a tunnel from.
 
+   «باز کردن» opens the server as a tab along the top of this window
+   (hosts.js); «پنجرهٔ جدا» is the window of its own it always had.
+
    ONE FILE, BOTH EDITIONS: static/js/servers.js and static-terminal/js/
-   servers.js are byte-identical. It imports only api.js and login.js.
+   servers.js are byte-identical. It imports only api.js, login.js and
+   hosts.js.
    ========================================================================= */
 "use strict";
 
 import { api, token, remote } from "./api.js";
 import { openLogin } from "./login.js";
+import { openInTab } from "./hosts.js";
 
 const FA = window.STRINGS;
 let sheet = null;
@@ -117,23 +122,28 @@ function serverRow(s, localVersion, err) {
                   el("span", { className: "server-addr" }, ltr(s.target), " ", state),
                   facts);
   const acts = el("span", { className: "server-acts" });
-  const openBtn = button(FA.srvOpenBtn, async () => {
-    openBtn.disabled = true;
+  // A tab in this window; it says itself if the server cannot be reached.
+  const openBtn = button(FA.srvOpenBtn, () => {
+    sheet.close();
+    openInTab(s);
+  }, "");
+  const winBtn = button(FA.srvOpenWindow, async () => {
+    winBtn.disabled = true;
     say(err, "");
-    openBtn.textContent = FA.srvOpening;
+    winBtn.textContent = FA.srvOpening;
     let r;
     try {
       r = await api("/api/servers/open", { target: s.target });
     } catch (e) {
       r = { ok: false, error: "other" };
     }
-    openBtn.disabled = false;
-    openBtn.textContent = FA.srvOpenBtn;
+    winBtn.disabled = false;
+    winBtn.textContent = FA.srvOpenWindow;
     if (!r.ok) return say(err, why(r.error));
     state.textContent = FA.srvOpen;
     state.classList.add("on");
     closeBtn.hidden = false;
-  }, "");
+  }, "ghost");
   const closeBtn = button(FA.srvCloseBtn, async () => {
     closeBtn.disabled = true;
     try {
@@ -161,8 +171,8 @@ function serverRow(s, localVersion, err) {
       drop.disabled = false;
     }
   }, "ghost");
-  for (const b of [edit, drop, closeBtn]) b.setAttribute("aria-label", b.textContent + " " + s.name);
-  acts.append(openBtn, closeBtn, edit, drop);
+  for (const b of [winBtn, edit, drop, closeBtn]) b.setAttribute("aria-label", b.textContent + " " + s.name);
+  acts.append(openBtn, winBtn, closeBtn, edit, drop);
   const row = el("li", { className: "server-row" }, name, acts);
 
   /* The server's own facts: installed? which version? reachable? */
@@ -184,7 +194,7 @@ function serverRow(s, localVersion, err) {
     if (!r.installed) {
       facts.textContent = FA.srvNotInstalled + " ";
       facts.append(button(FA.srvInstall, () => showInstall(s), "link"));
-      openBtn.disabled = true;
+      openBtn.disabled = winBtn.disabled = true;
       return;
     }
     facts.textContent = FA.srvVersion.replace("{v}", r.version);
@@ -374,23 +384,13 @@ function showInstall(s, update = false, facts = null) {
 }
 
 function showReady(s, facts) {
-  const err = errorLine();
-  const open = button(FA.srvOpenBtn, async () => {
-    open.disabled = true;
-    let r;
-    try {
-      r = await api("/api/servers/open", { target: s.target });
-    } catch (e) {
-      r = { ok: false, error: "other" };
-    }
-    open.disabled = false;
-    if (!r.ok) return say(err, why(r.error));
-    openServers();
+  const open = button(FA.srvOpenBtn, () => {
+    sheet.close();
+    openInTab(s);
   });
   paint(FA.srvReadyTitle.replace("{n}", s.name), [
     el("p", { textContent: FA.srvReady.replace("{v}", facts.version ?? "") }),
     el("p", { className: "meta", textContent: FA.srvReadyLogin }),
-    err,
   ], [
     button(FA.srvBack, () => openServers(), "ghost"),
     open,

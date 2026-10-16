@@ -70,6 +70,7 @@ import { initZoom, readPref, writePref, cssPx } from "./prefs.js";
 import { initFocus } from "./focus.js";
 import { initLogin } from "./login.js";
 import { initSideFoot } from "./servers.js";
+import { initHosts } from "./hosts.js";
 
 const FA = window.STRINGS;
 
@@ -1411,6 +1412,7 @@ initZoom();
 initFocus();   // pcg-ahh.5: Focus view, the window's own preference   // §D13: does nothing unless ZOOM_MODE (prefs.js) says "css"
 initLogin();   // nobody signed in: the sign-in sheet before the first message
 initSideFoot();   // «حساب‌ها» and «سرورها» in the sidebar foot
+initHosts();      // servers as tabs along the top (hosts.js)
 
 /* --- transport ------------------------------------------------------------ */
 
