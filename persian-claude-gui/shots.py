@@ -57,7 +57,8 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
-          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall")
+          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall",
+          "servers", "servers-add")
 
 FALLBACK_STYLE_LABELS = [
     {"id": "frugal-concise", "title": "کار روزمره",
@@ -140,6 +141,24 @@ def stub_script(now: float) -> str:
             "      {email: 'office.team@example.com', active: false, plan: 'team', expired: false},"
             "      {email: 'old.account@example.com', active: false, plan: 'pro', expired: true}]}),"
             "    {headers: {'Content-Type': 'application/json'}}));"
+            # Linux servers (pcg-kwk): one open and current, one behind, one new.
+            "  if (path === '/api/servers') return Promise.resolve(new Response(JSON.stringify("
+            "    {version: '0.14.0', ssh: true, servers: ["
+            "      {target: 'maryam@192.168.1.20', user: 'maryam', host: '192.168.1.20', name: 'سرور دفتر',"
+            "       ssh_port: 22, port: 8701, open: true},"
+            "      {target: 'dev@build.example.com', user: 'dev', host: 'build.example.com', name: 'build.example.com',"
+            "       ssh_port: 22, port: 8702, open: false},"
+            "      {target: 'ubuntu@10.0.0.7', user: 'ubuntu', host: '10.0.0.7', name: 'سرور آزمایشی',"
+            "       ssh_port: 2222, port: 8703, open: false}]}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
+            "  if (path === '/api/servers/check') {"
+            "    const t = JSON.parse(opts.body).target;"
+            "    const r = t.startsWith('maryam') ? {ok: true, installed: true, version: '0.14.0'}"
+            "      : t.startsWith('dev') ? {ok: true, installed: true, version: '0.13.0'}"
+            "      : {ok: true, installed: false, claude: true, python_ok: true};"
+            "    return Promise.resolve(new Response(JSON.stringify(r),"
+            "      {headers: {'Content-Type': 'application/json'}}));"
+            "  }"
             "  return real(url, opts);"
             "};"
             "})();</script>")
@@ -152,6 +171,7 @@ SCENE_JS = r"""
 <script type="module">
 import * as APP from "/static/js/app.js";
 import { openLogin } from "/static/js/login.js";
+import { openServers } from "/static/js/servers.js";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SCENE = new URLSearchParams(location.search).get("scene");
 const STYLE_LABELS = {{STYLE_LABELS}};
@@ -357,6 +377,19 @@ async function run() {
     await sleep(120);
     document.querySelector("#grid .cell .change-row")?.click();
     await sleep(200);
+    return;
+  }
+  if (SCENE === "servers" || SCENE === "servers-add") {
+    useTabs([TABS[0]], "t1");
+    APP.applyTabs({tabs: [TABS[0]], active: "t1"});
+    await sleep(60);
+    status("t1", TABS[0].cwd);
+    await openServers();
+    await sleep(300);
+    if (SCENE === "servers-add") {
+      [...document.querySelectorAll("#servers menu button")].at(-1).click();
+      await sleep(100);
+    }
     return;
   }
   if (SCENE === "accounts" || SCENE === "wall") {

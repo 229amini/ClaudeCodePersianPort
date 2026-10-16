@@ -13,19 +13,24 @@
 #   ./install-linux.sh --no-service    copy the files only
 #   ./install-linux.sh --uninstall     stop the service, remove the app
 #                                      (your ~/.claude and its chats stay)
+#   ./install-linux.sh --yes           no questions: install claude if missing
+#                                      (what the Windows window's «نصب» runs)
 set -euo pipefail
 
 PORT=8765
+PORT_SET=0
 SERVICE=1
 DESKTOP=0
 UNINSTALL=0
+YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --port) PORT="$2"; shift 2 ;;
+    --yes) YES=1; shift ;;
+    --port) PORT="$2"; PORT_SET=1; shift 2 ;;
     --desktop) DESKTOP=1; shift ;;
     --no-service) SERVICE=0; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -36,10 +41,30 @@ UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT="$UNIT_DIR/persian-claude.service"
 LAUNCHER="${XDG_DATA_HOME:-$HOME/.local/share}/applications/persian-claude.desktop"
 TOKEN_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/persian-claude/token"
+# The port this user's service listens on, read by the Windows window
+# (servers.py PROBE) so its tunnel lands on THIS user's server.
+PORT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/persian-claude/port"
 
 say() { printf '==> %s\n' "$*"; }
 warn() { printf '!!  %s\n' "$*" >&2; }
 have_user_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
+port_busy() { command -v ss >/dev/null && ss -Hltn "sport = :$1" 2>/dev/null | grep -q .; }
+
+# Which port: --port, else the one this user already has (the port file, or
+# an older unit's --port), else 8765 -- or the next free one when 8765 is
+# another user's (two people on one server, measured 2026-10-16: the second
+# service never came up and the tunnel reached the FIRST user's window).
+if [ "$PORT_SET" = 0 ]; then
+  if [ -s "$PORT_FILE" ]; then
+    PORT="$(head -n1 "$PORT_FILE")"
+  elif [ -f "$UNIT" ] && grep -q -- '--port [0-9]' "$UNIT"; then
+    PORT="$(sed -n 's/.*--port \([0-9][0-9]*\).*/\1/p' "$UNIT" | head -n1)"
+  fi
+  # Busy while our own service is NOT the one up: someone else holds it.
+  if [ "$(systemctl --user is-active persian-claude 2>/dev/null || true)" != active ]; then
+    while port_busy "$PORT"; do PORT=$((PORT + 1)); done
+  fi
+fi
 
 if [ "$UNINSTALL" = 1 ]; then
   if have_user_systemd && [ -f "$UNIT" ]; then
@@ -72,8 +97,13 @@ CLAUDE="$(command -v claude || true)"
 [ -z "$CLAUDE" ] && [ -x "$HOME/.local/bin/claude" ] && CLAUDE="$HOME/.local/bin/claude"
 if [ -z "$CLAUDE" ]; then
   warn "the claude CLI is not installed."
-  printf 'Install it now with the official installer (curl -fsSL https://claude.ai/install.sh | bash)? [y/N] '
-  read -r answer
+  if [ "$YES" = 1 ]; then
+    answer=y
+    say "installing it with the official installer"
+  else
+    printf 'Install it now with the official installer (curl -fsSL https://claude.ai/install.sh | bash)? [y/N] '
+    read -r answer || answer=n
+  fi
   case "$answer" in
     y|Y) curl -fsSL https://claude.ai/install.sh | bash
          CLAUDE="$HOME/.local/bin/claude" ;;
@@ -89,7 +119,9 @@ cp "$SRC/server.py" "$DEST/server.py"
 rm -rf "$DEST/static-terminal" "$DEST/assets"
 cp -R "$SRC/static-terminal" "$DEST/static-terminal"
 cp -R "$SRC/assets" "$DEST/assets"
-say "app: $DEST"
+mkdir -p "$(dirname "$PORT_FILE")"
+printf '%s\n' "$PORT" > "$PORT_FILE"
+say "app: $DEST (port $PORT)"
 
 # 4. The service.
 if [ "$SERVICE" = 1 ]; then

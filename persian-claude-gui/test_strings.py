@@ -107,6 +107,9 @@ ALLOWED_LATIN = {
     # the button on Anthropic's sign-in page, which is English: the sheet has
     # to name what the person will actually see there (js/login.js)
     "authorize",
+    # «سرورها» (js/servers.js): the protocol the person will meet everywhere
+    # else under this name, and the one address form a server is given by
+    "ssh", "openssh", "ip",
 }
 
 

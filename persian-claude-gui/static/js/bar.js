@@ -510,7 +510,7 @@ export function limitRows(limits, now = Date.now()) {
   return rows;
 }
 
-function paintUsage(box, { detail, context, limits, onCompact, fresh }) {
+function paintUsage(box, { detail, context, limits, onCompact, fresh, account, onAccounts }) {
   box.replaceChildren();
   // The context window.
   const head = el("div", "bar-head");
@@ -579,6 +579,23 @@ function paintUsage(box, { detail, context, limits, onCompact, fresh }) {
   // The plan's usage limits.
   box.append(el("hr", "bar-rule"));
   box.append(el("div", "bar-head", FA.barLimits));
+  // WHOSE limits (pcg-6ml): with several accounts the figures below are the
+  // active one's, and the way to another is one click away.
+  if (account?.email) {
+    const row = el("div", "bar-account");
+    const who = el("span", "bar-muted", FA.barAccount + " ");
+    const mail = el("bdi", "path", account.email);
+    mail.dir = "ltr";
+    who.append(mail);
+    row.append(who);
+    if (onAccounts) {
+      const go = el("button", "bar-btn", account.others ? FA.barAccountSwitch : FA.barAccountAdd);
+      go.type = "button";
+      go.addEventListener("click", () => { close(); onAccounts(); });
+      row.append(go);
+    }
+    box.append(row);
+  }
   if (limits === undefined) {
     box.append(el("p", "bar-muted", FA.barLoading));
   } else if (limits === null) {
@@ -593,9 +610,9 @@ function paintUsage(box, { detail, context, limits, onCompact, fresh }) {
 /* `data` is what the host already knows; `refresh()` (optional) asks the CLI
    again and resolves with the same shape — the panel paints at once and then
    repaints with fresher numbers, never waits on the slow context call. */
-export function openUsage(anchor, { data, refresh, onCompact, toCss }) {
+export function openUsage(anchor, { data, refresh, onCompact, onAccounts, toCss }) {
   if (toggledShut(anchor)) return null;
-  const state = { ...data, onCompact };
+  const state = { ...data, onCompact, onAccounts };
   const { pop, relayout } = popover(anchor, "bar-usage", FA.barUsage, (box) => {
     paintUsage(box, state);
   }, toCss);

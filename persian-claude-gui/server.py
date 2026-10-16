@@ -4984,6 +4984,64 @@ class Handler(BaseHTTPRequestHandler):
                     pass   # the new process died at once; its exit says so
         return deferred
 
+    def _servers(self, verb: str, body: dict) -> None:
+        """/api/servers[/save,check,install,install/state,open,close,remove,hostkey]
+        -- the Linux servers this PC reaches over SSH (servers.py). Only where a
+        person sits at THIS machine: a window that is itself at the end of a
+        tunnel has nothing to open a tunnel from."""
+        if not has_desktop():
+            self._send_json(HTTPStatus.CONFLICT, {"error": "remote"})
+            return
+        import servers   # lazy: a Linux --serve install carries server.py alone
+        local = EDITIONS["terminal"][2]
+        if verb == "list":
+            self._send_json(HTTPStatus.OK, {"servers": servers.listing(), "version": local,
+                                            "ssh": bool(servers.ssh_bin())})
+            return
+        if verb == "save":
+            try:
+                ssh_port = int(body.get("ssh_port") or 22)
+                target = servers.upsert(str(body.get("user") or "").strip(),
+                                        str(body.get("host") or "").strip(), ssh_port,
+                                        str(body.get("name") or ""),
+                                        body.get("was") if isinstance(body.get("was"), str) else None)
+            except (TypeError, ValueError) as err:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
+                return
+            self._send_json(HTTPStatus.OK, {"target": target, "servers": servers.listing()})
+            return
+        target = body.get("target")
+        if not isinstance(target, str) or target not in servers.load():
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "unknown"})
+            return
+        if verb == "check":
+            password = body.get("password")
+            if isinstance(password, str) and password:
+                problem = servers.install_key(target, password)
+                if problem:
+                    self._send_json(HTTPStatus.OK, {"ok": False, "error": problem})
+                    return
+            self._send_json(HTTPStatus.OK, {**servers.probe(target), "local": local})
+        elif verb == "install":
+            self._send_json(HTTPStatus.OK, servers.InstallJob.start(target).state())
+        elif verb == "install/state":
+            job = servers.InstallJob.jobs.get(target)
+            self._send_json(HTTPStatus.OK, job.state() if job else {"running": False, "rc": None,
+                                                                    "lines": []})
+        elif verb == "open":
+            self._send_json(HTTPStatus.OK, servers.open_server(target, launch_window))
+        elif verb == "close":
+            self._send_json(HTTPStatus.OK, {"closed": servers.close(target),
+                                            "servers": servers.listing()})
+        elif verb == "remove":
+            servers.remove(target)
+            self._send_json(HTTPStatus.OK, {"servers": servers.listing()})
+        elif verb == "hostkey":
+            servers.forget_host_key(target)
+            self._send_json(HTTPStatus.OK, {"ok": True})
+        else:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "verb"})
+
     def _accounts(self, verb: str, body: dict) -> None:
         """/api/accounts/{switch,remove} -- see AccountVault."""
         cls = type(self)
@@ -5161,6 +5219,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, auth_status(self.claude_bin))
         elif parsed.path == "/api/accounts":
             self._send_json(HTTPStatus.OK, ACCOUNTS.listing())
+        elif parsed.path == "/api/servers":
+            self._servers("list", {})
         elif parsed.path == "/api/image":
             key = params.get("path", [""])[0]
             image = Path(key)
@@ -5395,6 +5455,8 @@ class Handler(BaseHTTPRequestHandler):
             self._auth(parsed.path.rsplit("/", 1)[1], body)
         elif parsed.path in ("/api/accounts/switch", "/api/accounts/remove"):
             self._accounts(parsed.path.rsplit("/", 1)[1], body)
+        elif parsed.path.startswith("/api/servers/"):
+            self._servers(parsed.path[len("/api/servers/"):], body)
         elif parsed.path == "/api/message":
             session = self._target(tab)
             if session is None:

@@ -1321,7 +1321,12 @@ export function makeComposer(root, cell) {
                 // conversation nobody has written in yet
                 fresh: typeof s.context !== "number" && !cell.log.childElementCount },
         onCompact: () => api("/api/message", { tab: cell.tab, text: "/compact" }).catch(() => {}),
+        onAccounts: () => openLogin(),
         refresh: async (paint) => {
+          // Whose limits these are (pcg-6ml); cheap, the vault is a file.
+          const accounts = await api("/api/accounts").catch(() => null);
+          const mine = accounts?.accounts?.find((a) => a.active);
+          if (mine) paint({ account: { email: mine.email, others: accounts.accounts.length - 1 } });
           const tab = cell.tab;
           const usage = await api("/api/control",
             { subtype: "get_usage", params: { skip_behaviors: true }, tab }).catch(() => null);

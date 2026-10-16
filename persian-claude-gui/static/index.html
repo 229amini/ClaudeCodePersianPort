@@ -54,6 +54,25 @@
   </div>
 
   <div class="side-foot">
+    <!-- The machine's Claude accounts (login.js) and its Linux servers
+         (servers.js): hidden until servers.js knows they apply here. -->
+    <button id="btn-accounts" class="side-item" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="8.5" r="3.6"/>
+        <path d="M4.8 19.6c1.2-3.3 4-5 7.2-5s6 1.7 7.2 5"/>
+      </svg>
+      <span id="btn-accounts-label"></span>
+    </button>
+    <button id="btn-servers" class="side-item" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <rect x="3.5" y="4.5" width="17" height="6" rx="1.6"/>
+        <rect x="3.5" y="13.5" width="17" height="6" rx="1.6"/>
+        <path d="M7.5 7.5h.01M7.5 16.5h.01"/>
+      </svg>
+      <span id="btn-servers-label"></span>
+    </button>
     <a id="btn-help" class="side-item" href="/static/help.html" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round" aria-hidden="true">

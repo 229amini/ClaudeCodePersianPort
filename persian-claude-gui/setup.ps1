@@ -304,8 +304,10 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 Step "کپی برنامه"
 
 New-Item -ItemType Directory -Force -Path $DeployRoot | Out-Null
-foreach ($item in @('server.py', 'smoke_test.py', 'test_no_console.py', 'static',
-                    'static-terminal', 'assets')) {
+# servers.py + install-linux.sh: «سرورها» installs the app on a Linux server
+# from THIS copy; connect.bat/.ps1 do the same from a command line.
+foreach ($item in @('server.py', 'servers.py', 'smoke_test.py', 'test_no_console.py', 'static',
+                    'static-terminal', 'assets', 'install-linux.sh', 'connect.bat', 'connect.ps1')) {
     $src = Join-Path $Here $item
     if (-not (Test-Path $src)) { Die "فایل $item پیدا نشد — بسته نصب ناقص است" }
     Copy-Item -Path $src -Destination $DeployRoot -Recurse -Force

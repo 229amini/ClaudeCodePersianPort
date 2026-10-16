@@ -3817,6 +3817,84 @@ body.focus-view .log > .focus-head:not(.focus-open) > summary::after {
 .wall-accounts { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px; }
 .wall-accounts .resume-act { margin-inline-start: 0; }
 .wall-accounts .path { padding-block: 0; }
+
+/* Linux servers (servers.js): the sign-in sheet's shape, wider for the rows. */
+#servers {
+  inline-size: min(36rem, calc(100vw - 32px));
+  max-block-size: calc(100vh - 32px);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  color: var(--fg);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .5);
+}
+#servers::backdrop { background: rgb(0 0 0 / .45); }
+#servers h2 { margin: 0 0 12px; font-size: 14px; font-weight: 500; }
+#servers p { margin: 0 0 8px; line-height: 1.6; }
+#servers .meta { color: var(--fg-muted); }
+#servers menu {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.server-list { display: grid; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.server-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.server-name { display: flex; flex-direction: column; gap: 4px; flex: 1; min-inline-size: 0; }
+.server-addr { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
+.server-addr bdi { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server-state { flex: none; font-size: 12px; color: var(--fg-muted); }
+.server-state.on { color: var(--ok, var(--fg)); }
+.server-facts { font-size: 12px; }
+.server-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: none; max-inline-size: 60%; }
+/* Row actions at the 28 px step (DESIGN.md), so four fit beside the name. */
+.server-acts button { min-height: 28px; padding: 0 12px; font-size: 12px; }
+/* The display name is prose, not a token: the app's own face. */
+.server-field .login-code[dir="auto"] { font-family: inherit; }
+/* A text-only action inside a sentence ("نصب روی سرور", "به‌روزرسانی"). */
+#servers button.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.server-field { display: grid; gap: 4px; margin-block-end: 8px; }
+.server-field .login-code { inline-size: 100%; box-sizing: border-box; }
+.server-log {
+  max-block-size: 16rem;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  unicode-bidi: isolate;
+}
+/* The sidebar foot's two entries are buttons, not links. */
+button.side-item { inline-size: 100%; border: 0; background: none; font-family: inherit; text-align: start; }
+/* The active account in the usage panel (bar.js). */
+.bar-account { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 8px; }
+.bar-account bdi { unicode-bidi: isolate; }
 #login menu {
   display: flex;
   gap: 8px;
