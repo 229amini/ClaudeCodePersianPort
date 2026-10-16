@@ -94,7 +94,21 @@ say "python: $PY ($("$PY" --version 2>&1))"
 # 2. The real Claude Code CLI. Its own installer, its own login: this app
 #    never reimplements either.
 CLAUDE="$(command -v claude || true)"
-[ -z "$CLAUDE" ] && [ -x "$HOME/.local/bin/claude" ] && CLAUDE="$HOME/.local/bin/claude"
+# server.py's find_claude() takes the newest of PATH's and ~/.local/bin's
+# (a frozen copy on PATH can shadow the self-updating one); report that one.
+LOCAL_CLAUDE="$HOME/.local/bin/claude"
+if [ -x "$LOCAL_CLAUDE" ]; then
+  if [ -z "$CLAUDE" ]; then
+    CLAUDE="$LOCAL_CLAUDE"
+  else
+    v_path="$("$CLAUDE" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    v_local="$("$LOCAL_CLAUDE" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    if [ -n "$v_local" ] && [ "$v_local" != "$v_path" ] &&
+       [ "$(printf '%s\n%s\n' "$v_path" "$v_local" | sort -V | tail -1)" = "$v_local" ]; then
+      CLAUDE="$LOCAL_CLAUDE"
+    fi
+  fi
+fi
 if [ -z "$CLAUDE" ]; then
   warn "the claude CLI is not installed."
   if [ "$YES" = 1 ]; then
