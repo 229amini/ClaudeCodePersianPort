@@ -701,6 +701,7 @@ window.FA = {
      the one place this window lied about what costs money. */
   cmdBtwCost: "پرسش جانبی مانند یک نوبت معمولی هزینه دارد",
   cmdBtwFailed: "پاسخ به پرسش جانبی گرفته نشد",
+  cmdBtwUsage: "پرسش را در همان سطر، پس از نام دستور بنویسید",
   cmdOpened: "این فایل باز شد:",
   cmdOpenFailed: "باز کردن فایل ممکن نشد",
   /* A window on another machine (server.py --serve, wiki/linux-ssh.md): nothing
@@ -996,6 +997,7 @@ window.FA = {
     resume: "ادامهٔ یک گفتگوی قبلی",
     rewind: "برگشتن به نقطه‌ای قبل‌تر",
     branch: "شاخهٔ تازه از همین گفتگو",
+    btw: "پرسش جانبی",
     rename: "تغییر نام گفتگو",
     context: "پنجرهٔ زمینه",
     cost: "هزینهٔ این گفتگو",

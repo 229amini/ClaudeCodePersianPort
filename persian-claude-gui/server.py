@@ -204,6 +204,13 @@ CONTROL_ALLOWED = frozenset({
 # local round-trips on an open pipe, so anything slow means trouble.
 CONTROL_TIMEOUT = 15.0
 
+# `side_question` is the one whitelisted control that is a MODEL CALL (/btw,
+# measured §5.4), not a local round-trip: it sends the conversation so far and
+# waits for an answer, usually while the main turn is still streaming. 15 s cut
+# every real one off -- the window said «پاسخ گرفته نشد» and the answer, when it
+# came, found no waiter (2026-10-18).
+SIDE_QUESTION_TIMEOUT = 300.0
+
 # The interrupt receipt's own, much shorter budget. The CLI answers an
 # interrupt as soon as it reads the line -- this is NOT one of the slow
 # post-result requests (get_context_usage prices every skill, agent and MCP
@@ -5897,7 +5904,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "reserved param"})
                 return
             try:
-                response = session.control(subtype, **control_params)
+                timeout = (SIDE_QUESTION_TIMEOUT if subtype == "side_question"
+                           else CONTROL_TIMEOUT)
+                response = session.control(subtype, timeout=timeout, **control_params)
             except (RuntimeError, TypeError) as exc:
                 self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return

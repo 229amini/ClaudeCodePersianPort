@@ -123,7 +123,13 @@ const LIFECYCLE_VERBS = {
    list carries them (bar.js paletteGroups gives them their Persian names). */
 const WINDOW_VERBS = ["clear", "model", "effort", "output-style", "permissions", "export",
                       "branch", "resume", "memory", "hooks", "status", "help",
-                      "login", "logout"];
+                      "login", "logout", "btw"];
+/* The ones of those that wait for an argument rather than run at once. */
+const WINDOW_ARG_VERBS = new Set(["btw"]);
+const windowVerbs = () => WINDOW_VERBS.map((name) => ({
+  name, description: FA.cmdHelp?.[name] ?? "",
+  argumentHint: WINDOW_ARG_VERBS.has(name) ? "…" : "",
+}));
 
 /* The window-local commands that TAKE an argument, and are this module's own:
    `!` is a composer mode, so `/bash ls` is the same call the `!` line makes
@@ -870,7 +876,10 @@ export function makeComposer(root, cell) {
       slashPopup.hidden = true;
       return;
     }
-    slashMatches = slashCommands
+    // The CLI's list in -p mode leaves out verbs only the window answers
+    // (/btw among them): those are offered too, after the CLI's own.
+    const known = new Set(slashCommands.map((cmd) => cmd.name));
+    slashMatches = [...slashCommands, ...windowVerbs().filter((cmd) => !known.has(cmd.name))]
       .filter((cmd) => cmd.name.toLowerCase().startsWith(query.toLowerCase()))
       .slice(0, 50);
     if (!slashMatches.length) {
@@ -1789,7 +1798,7 @@ export function makeComposer(root, cell) {
         toCss: cssPx, title: FA.barPalette, placeholder: FA.barPaletteFilter,
         // The verbs the window answers itself first: the CLI's list in -p
         // mode leaves most of them out, and the window's is the one that runs.
-        groups: paletteGroups([...WINDOW_VERBS.map((name) => ({ name })), ...slashCommands]),
+        groups: paletteGroups([...windowVerbs(), ...slashCommands]),
         onPick: runCommand,
       }));
     }

@@ -903,7 +903,7 @@ export function paintCache(button, c) {
    other (a skill, a plugin's command) keeps its name and the CLI's description,
    in the last group. */
 const PALETTE_GROUP = {
-  chat: ["clear", "compact", "rewind", "branch", "rename", "resume", "export"],
+  chat: ["clear", "compact", "rewind", "branch", "btw", "rename", "resume", "export"],
   model: ["model", "effort", "output-style", "permissions", "fast", "context", "usage", "cost"],
   project: ["init", "memory", "add-dir", "agents", "hooks", "mcp", "review", "security-review",
             "status", "help", "login", "logout"],

@@ -229,13 +229,18 @@ function sideRow(kind, text) {
 }
 
 function sideQuestion(text, cell) {
-  if (!text) return false;            // `/btw` alone is not a question
+  // `/btw` alone is not a question -- and falling through sent it to the CLI
+  // as text, which answers it with nothing: «sent», then silence.
+  if (!text) { note(FA.cmdBtwUsage); return true; }
   sideRow("user", text);
   note(FA.cmdBtwCost);
   api("/api/control", { subtype: "side_question", params: { question: text },
                         tab: cell.tab })
     .then((data) => {
-      const answer = data.ok && (data.response?.response ?? "");
+      // `response` is null when the model refused and a fallback model
+      // answered instead (§5.4): that answer is in `refusal_fallback.content`.
+      const reply = data.response ?? {};
+      const answer = data.ok && (reply.response ?? reply.refusal_fallback?.content ?? "");
       if (answer) sideRow("assistant", String(answer));
       else bubble("error", FA.cmdBtwFailed);
     })
