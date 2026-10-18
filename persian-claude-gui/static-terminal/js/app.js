@@ -924,6 +924,12 @@ function placeIn(cell, tab) {
   if (cell.tab !== tab) cell.changes?.close();   // it was about the last one
   const holder = cellOf(tab);
   if (holder && holder !== cell) blank(holder);
+  // Placed again where it already is, the box holds its LIVE draft, newer than
+  // the one parked with it, which must not be written back over it. So does an
+  // empty column's box: it is the draft of the conversation being opened in it.
+  const held = cell.composer.snapshot().draft;
+  const liveDraft = cell.tab === tab
+    || (!cell.tab && (held.raw.trim() || held.attachments.length)) ? held : null;
   if (cell.tab && cell.tab !== tab) park(cell);
 
   cell.log.replaceChildren(...entry.node.childNodes);
@@ -945,7 +951,8 @@ function placeIn(cell, tab) {
   // nothing. This project has shipped that defect three times already.
   withRenderTarget(cell.log, entry.scope, () => {
     cell.controls.restore(entry.chrome?.controls);
-    cell.composer.restore(entry.chrome?.composer);
+    cell.composer.restore(liveDraft
+      ? { ...entry.chrome?.composer, draft: liveDraft } : entry.chrome?.composer);
     setStatus({});                     // repaint from THIS session's own status
     applyChrome(cell, state.chrome);   // what landed while it was in the background
     state.chrome = {};

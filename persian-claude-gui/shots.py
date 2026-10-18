@@ -57,7 +57,7 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession",
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
-          "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall",
+          "search", "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall",
           "servers", "servers-add")
 
 FALLBACK_STYLE_LABELS = [
@@ -124,6 +124,9 @@ def stub_script(now: float) -> str:
             "  if (path === '/api/agents') return Promise.resolve(new Response(JSON.stringify({agents: ["
             "    {id: 'ag1', kind: 'agent', description: 'CLI transcript rendering research', agentType: 'general-purpose',"
             "     model: 'claude-opus-5-5', status: 'running', startedAt: Date.now() / 1000 - 93},"
+            "    {id: 'bg1', kind: 'command', description: 'Run rendering, layout and unit gates',"
+            "     status: 'running', startedAt: Date.now() / 1000 - 1395, outputBytes: 2048,"
+            "     outputAt: Date.now() - 4000},"
             "    {id: 'ag0', kind: 'command', description: 'npm test', status: 'completed',"
             "     startedAt: Date.now() / 1000 - 900, finishedAt: Date.now() / 1000 - 800}]}),"
             "    {headers: {'Content-Type': 'application/json'}}));"
@@ -256,6 +259,15 @@ function turn(tab, n) {
 
 async function run() {
   if (SCENE === "home") return;
+  if (SCENE === "search") {
+    // A Latin query turns the field LTR: the glass and the clear button must not meet.
+    const field = document.getElementById("side-search");
+    field.focus();
+    field.value = "api";
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    await sleep(300);
+    return;
+  }
   if (SCENE.startsWith("newsession")) {
     document.getElementById("btn-new").click();
     await sleep(150);

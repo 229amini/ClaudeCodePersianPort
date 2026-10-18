@@ -248,7 +248,12 @@ window.FA = {
   agentRunning: "در حال اجرا",
   agentClose: "بستن",
   agentEmpty: "هنوز چیزی از این عامل ثبت نشده است",
-  agentsWaiting: "در انتظار {n} کار پس‌زمینه…",
+  // The strip's lines (agents.js stripLine): a command's sign of life, and
+  // the running tasks past the third.
+  agLastOutput: "آخرین خروجی {t} پیش",
+  agNoOutput: "هنوز خروجی نداده",
+  agMore: "+{n} کار دیگر",
+  elapsedHourMin: "{h} ساعت و {m} دقیقه",
   /* The Background tasks panel, after claude.ai/code's. */
   tasksTitle: "کارهای پس‌زمینه",
   tasksRunning: "در حال اجرا",
@@ -311,6 +316,8 @@ window.FA = {
   searchSessions: "جستجوی گفتگوها",
   searchResults: "نتیجه‌ها",
   searchEmpty: "گفتگویی پیدا نشد",
+  searchProjects: "پروژه‌ها",
+  searchInText: "در متن گفتگوها",
   confirmDelete: "مطمئنید؟",
   replaying: "نمایش تاریخچه — برای ادامه دکمه «ادامه» را بزنید",
   resumed: "گفتگو از سر گرفته شد",

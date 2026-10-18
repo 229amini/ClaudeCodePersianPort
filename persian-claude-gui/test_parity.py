@@ -70,13 +70,20 @@ window.fetch = async (url, init) => {
   const u = String(url);
   calls.push({ url: u, body: init?.body ? JSON.parse(init.body) : null });
   if (u.startsWith("/api/projects")) return json(PROJECTS);
+  // Full-text search (pcg-1eo): one conversation said «کوکی», nobody else did.
+  if (u.startsWith("/api/search")) {
+    const q = new URL(u, location.href).searchParams.get("q") ?? "";
+    return json({ hits: q === "کوکی" ? [{ session_id: "a2", path: "C:/kar/alef",
+      snippet: "…اول کوکی‌ها را پاک کن و دوباره…", modified: NOW - 7200 }] : [] });
+  }
   if (u.startsWith("/api/tabs")) return json({ tabs: TABS_NOW, active: TABS_NOW.at(-1)?.tab ?? "" });
   if (u.startsWith("/api/session/fork")) {
     const b = JSON.parse(init.body);
     const tab = "fork-" + (++forks);
     TABS_NOW.push({ tab, cwd: "C:/kar/alef", session_id: "" });
     return json({ ok: true, tab, forked_from: "s-src",
-                  at: b.before ? (b.at === "u2" ? "a1" : null) : b.at });
+                  at: b.before ? (b.at === "u2" ? "a1" : null) : b.at,
+                  attachments: b.before ? ["C:/tmp/paste-1.png"] : [] });
   }
   if (u.startsWith("/api/session?")) return json({ events: HISTORY });
   if (u.startsWith("/api/session/rename")) return json({ ok: true, title: "x" });
@@ -126,6 +133,17 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   out.titleHit = hits();
   await type("هیچ‌چیز-نیست");
   out.emptyText = nav.querySelector(".search-hits .empty")?.textContent;
+  // A project by its folder name, above the conversations (pcg-1eo).
+  await type("be");
+  out.projHit = [...nav.querySelectorAll(".proj")].map((p) => p.textContent.includes("be"));
+  out.projFirst = nav.firstElementChild?.textContent.includes(FA.searchProjects);
+  // A conversation that only SAID it: its own section, the words around the hit.
+  await type("کوکی");
+  await sleep(450);
+  out.textHit = [...nav.querySelectorAll(".search-hits li[data-session]")].map((li) =>
+    [li.dataset.session, li.querySelector(".sess-snippet")?.textContent ?? null]);
+  out.textHead = [...nav.querySelectorAll(".side-title")].some((h) =>
+    h.textContent.includes(FA.searchInText));
   field.focus();
   field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await sleep(20);
@@ -214,6 +232,16 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
   out.forkBody2 = posts()[1]?.body;
   out.fork2Rows = said(logOf("fork-2"));
   out.fork2Draft = cellOf("fork-2")?.root.querySelector("textarea.input")?.value;
+  const chips = (tab) => cellOf(tab)?.root.querySelectorAll(".attachments .chip").length ?? -1;
+  out.fork2Chips = chips("fork-2");
+  // The draft is the conversation's (2026-10-18): it does not follow a switch,
+  // and it is there again on the way back.
+  await switchTab("t9");
+  await sleep(60);
+  out.t9Draft = [cellOf("t9")?.root.querySelector("textarea.input")?.value, chips("t9")];
+  await switchTab("fork-2");
+  await sleep(60);
+  out.fork2Back = [cellOf("fork-2")?.root.querySelector("textarea.input")?.value, chips("fork-2")];
   // --- 5. Focus view ---
   await switchTab("t9");
   await sleep(60);
@@ -436,6 +464,17 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           m.get("forkBody2") == {"tab": "t9", "at": "u2", "before": True}
           and m.get("fork2Rows") == "u1,a1" and m.get("fork2Draft") == "پرسش دوم",
           f"{m.get('forkBody2')}, rows {m.get('fork2Rows')!r}, draft {m.get('fork2Draft')!r}")
+    check("search lists a matching PROJECT first, in its own section",
+          m.get("projHit") == [True] and m.get("projFirst"),
+          f"{m.get('projHit')}, first {m.get('projFirst')}")
+    check("...and a conversation that only said the word, with the words around it",
+          m.get("textHit") == [["a2", "…اول کوکی‌ها را پاک کن و دوباره…"]] and m.get("textHead"),
+          f"{m.get('textHit')}, head {m.get('textHead')}")
+    check("...and its images back as attachments, not the words alone",
+          m.get("fork2Chips") == 1, f"chips {m.get('fork2Chips')}")
+    check("a draft stays with its conversation: none in the other, all of it on the way back",
+          m.get("t9Draft") == ["", 0] and m.get("fork2Back") == ["پرسش دوم", 1],
+          f"other {m.get('t9Draft')}, back {m.get('fork2Back')}")
 
     # 5. Focus view
     check("Focus view is off by default: every step row is on screen", m.get("offAll"))

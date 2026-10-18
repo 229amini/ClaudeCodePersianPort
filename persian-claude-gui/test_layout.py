@@ -35,6 +35,10 @@ from server import EDITIONS  # noqa: E402
 EDITION = os.environ.get("PCG_UI", "web")
 STATIC = HERE / EDITIONS[EDITION][0]
 PROBE = STATIC / "_layout_probe.html"
+# The PC's own APPDATA at import. A gate that swaps in a throwaway one
+# (test_servers.py) keeps it; every other gate gets an empty state dir, so no
+# page restores this machine's saved server tabs (boot_server).
+_REAL_APPDATA = os.environ.get("APPDATA")
 
 # 500px is about as narrow as a real window gets: Chromium refuses to make a
 # window much smaller, and a --window-size=420 request comes back reporting
@@ -442,12 +446,17 @@ def boot_server(cwd: Path | None = None, edition: str | None = None) -> tuple[su
     edition differs (test_column.py/test_keys.py/test_shell.py default to
     "terminal") or it boots a throwaway project dir (test_reload.py).
     """
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    # A saved server tab restored into a harness page opened a REAL ssh tunnel
+    # whose frame never finished loading, and headless Edge waited on it until
+    # every terminal-edition gate timed out (2026-10-18, servers.state_dir).
+    if os.environ.get("APPDATA") == _REAL_APPDATA and "PCG_STATE_DIR" not in os.environ:
+        env["PCG_STATE_DIR"] = tempfile.mkdtemp(prefix="pcg-state-")
     proc = subprocess.Popen(
         [sys.executable, str(HERE / "server.py"), "--cwd", str(cwd if cwd is not None else HERE.parent),
          "--no-window", "--ui", edition if edition is not None else EDITION],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        text=True, encoding="utf-8", errors="replace", env=env)
     for line in proc.stdout:                          # type: ignore[union-attr]
         found = re.search(r"(http://127\.0\.0\.1:\d+)/\?t=(\S+)", line)
         if found:

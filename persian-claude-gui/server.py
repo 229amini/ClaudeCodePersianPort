@@ -1176,6 +1176,122 @@ def _sessions_in(folder: Path) -> list[dict]:
     return sessions
 
 
+# --- the sidebar's full-text search (pcg-1eo, 2026-10-18) ---------------------
+#
+# The sidebar matches titles and first prompts itself; this is the rest of what
+# was SAID — user and assistant text only, never tool output or thinking.
+# Measured 2026-10-18: 589 transcripts, 1.6 GB on disk, 8.8 M characters of
+# that kind; a cold scan is ~4 s, so every transcript's text is kept here,
+# keyed like _META_CACHE on (mtime_ns, size) and re-read only when it changed.
+_TEXT_CACHE: dict[str, tuple[int, int, list[tuple[str, str]]]] = {}
+_TEXT_LOCK = threading.Lock()
+SEARCH_LIMIT = 30
+SEARCH_SNIPPET = 48     # characters of context on each side of a hit
+_FOLD_DROP = dict.fromkeys(map(ord, "‌‍‎‏"))
+_FOLD_SWAP = str.maketrans({"ي": "ی", "ك": "ک"})
+
+
+def fold_text(text: str) -> str:
+    """chrome.js foldText(): case, the half-space and the bidi marks, and the
+    Arabic ي/ك a pasted word carries — so «میخواهم» finds «می‌خواهم»."""
+    return text.lower().translate(_FOLD_DROP).translate(_FOLD_SWAP)
+
+
+def _spoken_texts(transcript: Path) -> list[tuple[str, str]]:
+    """(folded, original) for every user/assistant text the person saw."""
+    out: list[tuple[str, str]] = []
+    try:
+        with transcript.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"type":"user"' not in line and '"type":"assistant"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if (event.get("type") not in ("user", "assistant") or event.get("isMeta")
+                        or event.get("isSidechain")):
+                    continue
+                content = (event.get("message") or {}).get("content")
+                parts = [content] if isinstance(content, str) else [
+                    p.get("text") for p in content or []
+                    if isinstance(p, dict) and p.get("type") == "text"]
+                for text in parts:
+                    # The CLI's own wrappers (<command-name>, caveats, task
+                    # notifications) are not something anyone typed or read.
+                    if isinstance(text, str) and text.strip() and not text.lstrip().startswith("<"):
+                        out.append((fold_text(text), text))
+    except OSError:
+        return []
+    return out
+
+
+def _texts_of(transcript: Path, stat: os.stat_result) -> list[tuple[str, str]]:
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    hit = _TEXT_CACHE.get(str(transcript))
+    if hit is None or hit[:2] != stamp:
+        hit = (*stamp, _spoken_texts(transcript))
+        _TEXT_CACHE[str(transcript)] = hit
+    return hit[2]
+
+
+def _snippet(original: str, query: str) -> str:
+    """The words around the first hit, in the ORIGINAL text: folded one
+    character at a time, remembering where each folded character came from."""
+    folded: list[str] = []
+    source: list[int] = []
+    for i, char in enumerate(original):
+        for f in fold_text(char):
+            folded.append(f)
+            source.append(i)
+    at = "".join(folded).find(query)
+    if at < 0:
+        return ""
+    start, end = source[at], source[at + len(query) - 1] + 1
+    left = max(0, start - SEARCH_SNIPPET)
+    right = min(len(original), end + SEARCH_SNIPPET)
+    text = " ".join(original[left:right].split())
+    return ("…" if left else "") + text + ("…" if right < len(original) else "")
+
+
+def search_transcripts(query: str) -> list[dict]:
+    """Sessions whose spoken text contains `query`, newest first, one hit each.
+
+    The project path and worktree are resolved the way list_projects() does
+    it, so the window can draw each hit as the row it already knows."""
+    q = fold_text(query).strip()
+    hits: list[dict] = []
+    if not PROJECTS_DIR.is_dir():
+        return hits
+    with _TEXT_LOCK:
+        for candidate in PROJECTS_DIR.iterdir():
+            if not candidate.is_dir():
+                continue
+            transcripts = list(candidate.glob("*.jsonl"))
+            if not transcripts:
+                continue
+            cwd = _first_field(transcripts[0], "cwd")
+            if not cwd:
+                continue
+            split = split_worktree(cwd)
+            path, worktree = (split[0], split[1]) if split else (cwd, None)
+            for transcript in transcripts:
+                try:
+                    stat = transcript.stat()
+                except OSError:
+                    continue
+                texts = _texts_of(transcript, stat)
+                if not q:
+                    continue   # an empty query only warms the cache
+                found = next((orig for folded, orig in texts if q in folded), None)
+                if found is not None:
+                    hits.append({"session_id": transcript.stem, "path": path,
+                                 "worktree": worktree, "modified": stat.st_mtime,
+                                 "snippet": _snippet(found, q)})
+    hits.sort(key=lambda h: h["modified"], reverse=True)
+    return hits[:SEARCH_LIMIT]
+
+
 # --- git worktrees -----------------------------------------------------------
 #
 # `claude … --worktree <name>` creates <cwd>/.claude/worktrees/<name> on branch
@@ -1645,6 +1761,10 @@ ASYNC_AGENT_ID_RE = re.compile(r"agentId:\s*([0-9a-f]{6,40})")
 BG_COMMAND_ID_RE = re.compile(
     r"(?:running in background with ID:|moved to the background \(ID:|Monitor started \(task)\s*([A-Za-z0-9_-]{4,40})")
 BG_COMMAND_TOOLS = ("Bash", "PowerShell", "Monitor")
+# Where a background command's output goes, from the same ack. Only ever
+# STATTED (bg_output_facts), never read or served: its size and last write are
+# the one sign of life a shell command has -- it spends no tokens.
+BG_OUTPUT_RE = re.compile(r"Output is being written to:\s*(\S[^\r\n]*?\.output)\b")
 
 
 def subagents_dir(cwd: Path, session_id: str) -> Path | None:
@@ -1809,6 +1929,9 @@ def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
                           "description": launch.get("description"),
                           "agentType": None, "model": None,
                           "startedAt": iso_epoch(event.get("timestamp"))})
+            out = BG_OUTPUT_RE.search(_tool_result_text(part.get("content")))
+            if out:
+                entry["outputFile"] = out.group(1).strip()
             continue
         agent_id = model = description = None
         if isinstance(tur, dict) and tur.get("isAsync") and tur.get("status") == "async_launched":
@@ -1832,6 +1955,24 @@ def _scan_agent_ack(event: dict, registry: dict, pending: dict) -> None:
         entry["agentType"] = launch.get("agentType")
         entry["model"] = model
         entry["startedAt"] = iso_epoch(event.get("timestamp"))
+
+
+def bg_output_facts(path: str | None) -> dict:
+    """Size and last write (epoch ms) of a background command's output file.
+
+    The path comes out of a transcript, so it is held to the one place the CLI
+    writes these -- `<temp>/claude/...*.output` -- and only stat()ed."""
+    if not path:
+        return {}
+    try:
+        target = Path(path).resolve()
+        root = (Path(tempfile.gettempdir()) / "claude").resolve()
+        if target.suffix != ".output" or not target.is_relative_to(root):
+            return {}
+        st = target.stat()
+    except (OSError, ValueError):
+        return {}
+    return {"outputBytes": st.st_size, "outputAt": int(st.st_mtime * 1000)}
 
 
 def _scan_notification(event: dict, registry: dict) -> None:
@@ -5373,6 +5514,12 @@ class Handler(BaseHTTPRequestHandler):
                 "recents": load_recents(),
                 "sessions": list_sessions(session.history_cwd),
             })
+        elif parsed.path == "/api/search":
+            # Full-text search for the sidebar (pcg-1eo). Tab-less like
+            # /api/projects below, and for the same reason. An empty `q`
+            # warms the cache: the window sends one when the field is focused.
+            query = params.get("q", [""])[0][:200]
+            self._send_json(HTTPStatus.OK, {"hits": search_transcripts(query)})
         elif parsed.path == "/api/projects":
             # Sidebar payload: all known projects with their sessions inline,
             # one round-trip. The current project may be brand new (opened via
@@ -5443,12 +5590,15 @@ class Handler(BaseHTTPRequestHandler):
             agents = []
             for entry in build_agent_registry(transcript).values():
                 _enrich_agent_meta(folder, entry)
+                status = _agent_status(entry, live, spawned_at)
                 agents.append({
+                    **(bg_output_facts(entry.get("outputFile"))
+                       if status == "running" else {}),
                     "id": entry["id"], "kind": entry["kind"],
                     "description": entry.get("description"),
                     "agentType": entry.get("agentType"),
                     "model": entry.get("model"),
-                    "status": _agent_status(entry, live, spawned_at),
+                    "status": status,
                     "startedAt": entry.get("startedAt"),
                     "finishedAt": entry.get("finishedAt"),
                     "summary": entry.get("summary"),
@@ -6167,8 +6317,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CONFLICT,
                                 {"error": "too many tabs", "max_tabs": MAX_TABS})
                 return
+            # The words go back to the prompt (the window does that) and so do
+            # the message's images: the transcript holds their bytes, spilled
+            # to files here exactly like a paste. Text alone read as the whole
+            # message and was sent again without them (2026-10-18).
+            images: list[str] = []
+            if at and body.get("before"):
+                content = (entry.get("message") or {}).get("content")
+                for part in content if isinstance(content, list) else []:
+                    if not isinstance(part, dict) or part.get("type") != "image":
+                        continue
+                    src = part.get("source") or {}
+                    if src.get("type") == "base64":
+                        saved = save_pasted_file(src.get("media_type", ""),
+                                                 src.get("data", ""))
+                        if saved:
+                            images.append(saved)
             self._send_json(HTTPStatus.OK, {"ok": True, "tab": new_tab,
-                                            "forked_from": source, "at": fork_at})
+                                            "forked_from": source, "at": fork_at,
+                                            "attachments": images})
         elif parsed.path == "/api/session/delete":
             session_id = (body.get("session_id") or "").strip()
             if not session_id:

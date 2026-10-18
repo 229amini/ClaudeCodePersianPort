@@ -135,8 +135,13 @@ export function makeComposer(root, cell) {
      render.js suppresses the give-back for it). As a dedupe it was also wrong in
      the direction that loses text: a returned message that happens to be a
      SUBSTRING of what is being typed was swallowed silently. */
-  function restoreDraft(text) {
-    if (!input || !text) return;
+  function restoreDraft(text, files = []) {
+    if (!input) return;
+    // A message's images and files come back with its words: the text alone
+    // read as the whole message, and was sent again without them (2026-10-18).
+    const fresh = files.filter((one) => !attachments.includes(one));
+    if (fresh.length) setAttachments([...attachments, ...fresh]);
+    if (!text) return;
     input.value = input.value ? input.value + "\n" + text : text;
     autoGrow();
   }
@@ -273,13 +278,19 @@ export function makeComposer(root, cell) {
 
   /* --- one composer, N conversations -----------------------------------------
 
-     The draft text and the attachments stay GLOBAL on purpose: there is one box,
-     and a message half-typed is about the person, not about the session. What is
-     per-session is everything the box says ABOUT the conversation — whether it is
-     working, which slash commands that CLI has, and how full its context is. */
+     The draft is the conversation's too (2026-10-18, the user's call): its text
+     and its attachments. It used to stay in the box across a switch, and the
+     text arrived in the next conversation while its images did not — the same
+     message was sent twice, the second time without them. A new conversation
+     starts empty; going back to one gives its draft back. Everything else here
+     is what the box says ABOUT the conversation — whether it is working, which
+     slash commands that CLI has, and how full its context is. */
   function snapshot() {
     return { busy, slashCommands, dismissedAt, lastContext, lastActivity,
              notice: noticeState,
+             // Mid Ctrl+R the box holds the QUERY; the draft is stashed.
+             draft: { raw: popMode === "search" ? searchDraft : input?.value ?? "",
+                      attachments: attachments.slice() },
              // The prompt history is the PROJECT's, read once per conversation:
              // carrying one tab's list into another would offer a folder's
              // prompts inside a different folder.
@@ -295,6 +306,10 @@ export function makeComposer(root, cell) {
     endSearch(false);
     closePopup();
     const s = saved ?? {};
+    if (input) input.value = s.draft?.raw ?? "";
+    setAttachments(s.draft?.attachments ?? []);
+    autoGrow();
+    refreshBashMode();
     slashCommands = s.slashCommands ?? [];
     historyList = s.historyList ?? null;
     historyIndex = null;

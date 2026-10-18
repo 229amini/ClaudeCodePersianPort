@@ -56,6 +56,11 @@ _lock = threading.RLock()
 # --- state -------------------------------------------------------------------
 
 def state_dir() -> Path:
+    # The gates' own (test_layout.boot_server): a harness page that restored the
+    # PC's saved server tabs opened a real ssh tunnel, and headless Edge waited
+    # on that frame forever (2026-10-18).
+    if os.environ.get("PCG_STATE_DIR"):
+        return Path(os.environ["PCG_STATE_DIR"])
     base = os.environ.get("APPDATA")
     return (Path(base) if base else Path.home() / ".config") / "persian-claude"
 

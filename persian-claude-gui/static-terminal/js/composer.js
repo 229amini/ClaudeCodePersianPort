@@ -328,7 +328,8 @@ export function makeComposer(root, cell) {
       back.setAttribute("aria-label", FA.laterBack);
       back.addEventListener("click", () => {
         const [held] = later.splice(i, 1);
-        restoreDraft(held.raw);
+        // Expanded: its paste chips were dropped when it was held.
+        restoreDraft(held.text, held.attachments);
         paintLater();
         paintAction();
       });
@@ -362,10 +363,16 @@ export function makeComposer(root, cell) {
      render.js suppresses the give-back for it). As a dedupe it was also wrong in
      the direction that loses text: a returned message that happens to be a
      SUBSTRING of what is being typed was swallowed silently. */
-  function restoreDraft(text) {
-    if (!input || !text) return;
+  function restoreDraft(text, files = []) {
+    if (!input) return;
+    // A message's images and files come back with its words: the text alone
+    // read as the whole message, and was sent again without them (2026-10-18).
+    const fresh = files.filter((one) => !attachments.includes(one));
+    if (fresh.length) setAttachments([...attachments, ...fresh]);
+    if (!text) return;
     input.value = input.value ? input.value + "\n" + text : text;
     autoGrow();
+    paintAction();
   }
 
   /* A failed send puts the box back as it was: the text with its paste chips,
@@ -523,16 +530,39 @@ export function makeComposer(root, cell) {
 
   /* --- one composer, N conversations -----------------------------------------
 
-     The draft text and the attachments stay GLOBAL on purpose: there is one box,
-     and a message half-typed is about the person, not about the session. What is
-     per-session is everything the box says ABOUT the conversation — whether it is
-     working, which slash commands that CLI has, and how full its context is. */
+     The draft is the conversation's too (2026-10-18, the user's call): text,
+     parked pastes, attachments and the «بعداً بفرست» rows. It used to stay in
+     the box across a switch, and the text arrived in the next conversation while
+     its images did not — the same message was sent twice, the second time
+     without them. A new conversation starts empty; going back to one gives its
+     draft back. Everything else here is what the box says ABOUT the
+     conversation — whether it is working, which slash commands that CLI has,
+     and how full its context is. */
+  function draftNow() {
+    // Mid Ctrl+R the box holds the QUERY; the draft is stashed.
+    return { raw: searchOn ? searchDraft : input?.value ?? "", pastes: new Map(pastes),
+             attachments: attachments.slice(), later: later.slice() };
+  }
+
   function snapshot() {
-    return { busy, slashCommands, dismissedAt, lastContext, lastActivity, notice: noticeState };
+    return { busy, slashCommands, dismissedAt, lastContext, lastActivity, notice: noticeState,
+             draft: draftNow() };
+  }
+
+  function restoreDraftState(draft) {
+    if (input) input.value = draft?.raw ?? "";
+    pastes = new Map(draft?.pastes ?? []);
+    paintPastes();
+    later.splice(0, later.length, ...(draft?.later ?? []));
+    if (later.length || laterStrip) paintLater();
+    setAttachments(draft?.attachments ?? []);
+    autoGrow();
+    refreshBashMode();
   }
 
   function restore(saved) {
     const s = saved ?? {};
+    restoreDraftState(s.draft);
     // History is per PROJECT and the menus describe the conversation that was on
     // screen a moment ago. Dropped rather than snapshotted: the list is one GET
     // away, and a stale one would offer another project's prompts under Up.
@@ -643,8 +673,7 @@ export function makeComposer(root, cell) {
      with none of them gets the short form instead of «+0 سطر».
 
      The map is keyed by the placeholder's number and holds the real text. It is
-     global for the same reason `attachments` above is: there is one box, and a
-     half-composed message belongs to the person, not to the session. */
+     part of the conversation's draft, with `attachments` above (snapshot()). */
   const PASTE_MAX_CHARS = 800;
   const PASTE_MAX_NEWLINES = 2;
   /* What the hover tooltip is allowed to carry. A `title` is the native

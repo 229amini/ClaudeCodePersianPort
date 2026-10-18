@@ -28,11 +28,14 @@ const FA = window.STRINGS;
 
 const POLL_LIST_MS = 3000;     // while anything is still running
 const POLL_DRAWER_MS = 2000;   // while the open agent is still running
+const TICK_MS = 1000;          // the clocks on screen, while anything runs
+const STRIP_LINES = 3;         // running tasks drawn as lines; the rest are «+N»
 
 let registry = [];      // what /api/agents last reported, in its own order
 let strip = null;       // the row of agents above the composer
 let listTimer = 0;
 let refreshTimer = 0;
+let tickTimer = 0;
 let drawer = null;      // { id, panel, body, live, scope, cursor, empty }
 let showHistory = false; // the panel's «پایان‌یافته» list, folded until asked
 let panel = null;       // the Background tasks panel, while it is open
@@ -82,11 +85,56 @@ function elapsed(agent) {
   const start = stamp(agent.startedAt);
   const end = agent.status === "running" ? Date.now() : stamp(agent.finishedAt);
   if (!start || !end || end < start) return "";
-  const seconds = Math.round((end - start) / 1000);
-  const [key, n] = seconds < 60
-    ? ["elapsedSeconds", seconds]
-    : ["elapsedMinutes", Math.round(seconds / 60)];
-  return FA[key].replace("{n}", n.toLocaleString("fa-IR"));
+  return span(end - start);
+}
+
+/* «۴۰ ثانیه», «۲ دقیقه و ۱۳ ثانیه», «۱ ساعت و ۵ دقیقه». To the second while
+   under an hour: these clocks tick (tick()), and a running task whose clock
+   sits still for a minute reads as stuck. */
+function span(ms) {
+  const fa = (n) => n.toLocaleString("fa-IR");
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return FA.elapsedSeconds.replace("{n}", fa(s));
+  if (s < 3600) {
+    return s % 60
+      ? FA.elapsedMinSec.replace("{m}", fa(Math.floor(s / 60))).replace("{s}", fa(s % 60))
+      : FA.elapsedMinutes.replace("{n}", fa(s / 60));
+  }
+  return FA.elapsedHourMin.replace("{h}", fa(Math.floor(s / 3600)))
+                          .replace("{m}", fa(Math.floor(s / 60) % 60));
+}
+
+/* A shell command spends no tokens, so its sign of life is its output file:
+   the server reports when it was last written (server.py bg_output_facts). */
+function lastOutput(agent) {
+  if (agent.kind !== "command" || agent.status !== "running") return "";
+  const at = Number(agent.outputAt);
+  if (!at || !agent.outputBytes) return FA.agNoOutput;
+  return FA.agLastOutput.replace("{t}", span(Date.now() - at));
+}
+
+/* A node whose text is a clock: tick() rewrites it from these, so the second
+   hand moves without a repaint that would steal focus or a hover. */
+function clockEl(cls, text, agent, kind) {
+  const el = label(text, cls);
+  el.dataset.tick = kind;
+  el.dataset.agentId = agent.id;
+  return el;
+}
+
+function tick() {
+  clearTimeout(tickTimer);
+  const running = registry.filter((a) => a.status === "running");
+  if (!running.length) return;
+  const byId = new Map(running.map((a) => [a.id, a]));
+  for (const root of [strip, panel?.body]) {
+    for (const el of root?.querySelectorAll("[data-tick]") ?? []) {
+      const agent = byId.get(el.dataset.agentId);
+      if (!agent) continue;
+      el.textContent = el.dataset.tick === "out" ? lastOutput(agent) : elapsed(agent);
+    }
+  }
+  tickTimer = setTimeout(tick, TICK_MS);
 }
 
 function dotEl(status) {
@@ -113,24 +161,54 @@ function paint() {
   document.body.classList.toggle("agents-running", running.length > 0);
   setRunningTasks(running.length);
   if (panel) paintPanel();
-  el.replaceChildren();
-  if (!running.length || document.body.classList.contains("busy")) {
-    el.hidden = true;
-    return;
-  }
-  const n = running.length.toLocaleString("fa-IR");
-  el.append(taskChip(running.length),
-            label(FA.agentsWaiting.replace("{n}", n), "ag-wait"));
-  el.hidden = false;
+  paintStrip(el, running);
+  tick();
 }
 
-function taskChip(count) {
-  const chip = document.createElement("button");
-  chip.type = "button";
-  chip.className = "ag-chip";
-  chip.textContent = FA.pulseTasks.replace("{n}", count.toLocaleString("fa-IR"));
-  chip.addEventListener("click", () => openPanel());
-  return chip;
+/* One line per running task, the CLI's footer in Persian (2026-10-18): what
+   it is, how long it has been at it — to the second — and the proof it is
+   still going: an agent's tokens and current step, a command's last output.
+   «۲ کار در حال اجرا» alone left the reader unable to tell a working task
+   from a stuck one. Shown during a turn too: these outlive it. */
+function paintStrip(el, running) {
+  el.replaceChildren();
+  el.hidden = !running.length;
+  for (const agent of running.slice(0, STRIP_LINES)) el.append(stripLine(agent));
+  const more = running.length - STRIP_LINES;
+  if (more > 0) {
+    const rest = document.createElement("button");
+    rest.type = "button";
+    rest.className = "ag-line ag-more";
+    rest.textContent = FA.agMore.replace("{n}", more.toLocaleString("fa-IR"));
+    rest.addEventListener("click", () => openPanel(rest.closest(".cell")));
+    el.append(rest);
+  }
+}
+
+function stripLine(agent) {
+  const p = progress.get(agent.id) ?? {};
+  const line = document.createElement("button");
+  line.type = "button";
+  line.className = "ag-line";
+  line.dataset.agentId = agent.id;
+  line.title = FA.tasksTitle;
+  const dot = label("", "ag-live");
+  dot.setAttribute("aria-hidden", "true");
+  const name = document.createElement("bdi");
+  name.className = "ag-name";
+  name.setAttribute("dir", "auto");
+  name.textContent = agent.description || p.description || FA.agentRow;
+  line.append(dot, name, clockEl("ag-clock", elapsed(agent), agent, "time"));
+  if (agent.kind === "agent") {
+    if (typeof p.tokens === "number") {
+      line.append(label(FA.tasksTokens.replace("{n}", fmtCount(p.tokens)), "ag-fact"));
+    }
+    if (p.lastTool) line.append(label(nowDoing(p.lastTool), "ag-fact ag-now"));
+  } else {
+    line.append(clockEl("ag-fact", lastOutput(agent), agent, "out"));
+  }
+  line.addEventListener("click", () => openPanel(line.closest(".cell")));
+  return line;
 }
 
 /* --- the Background tasks panel (P3) -----------------------------------------
@@ -154,6 +232,7 @@ export function noteTaskProgress(ev) {
     description: ev.description ?? was.description,
   });
   if (panel) paintPanel();
+  if (strip && !strip.hidden) paintStrip(strip, registry.filter((a) => a.status === "running"));
 }
 
 function fmtCount(n) {
@@ -198,7 +277,9 @@ function taskCard(agent) {
   kind.className = "tk-meta";
   kind.append(label(agent.kind === "agent" ? FA.tasksKindAgent : FA.tasksKindCommand, "tk-kind"));
   const when = elapsed(agent);
-  if (when) kind.append(label(when, "tk-time"));
+  if (when) kind.append(live ? clockEl("tk-time", when, agent, "time") : label(when, "tk-time"));
+  const out = lastOutput(agent);
+  if (out) kind.append(clockEl("tk-fact", out, agent, "out"));
   card.append(kind);
 
   const facts = document.createElement("div");
@@ -561,6 +642,7 @@ export function unfoldAgents() {
 export function resetAgents() {
   clearTimeout(listTimer);
   clearTimeout(refreshTimer);
+  clearTimeout(tickTimer);
   listTimer = refreshTimer = 0;
   closeDrawer();
   closePanel();

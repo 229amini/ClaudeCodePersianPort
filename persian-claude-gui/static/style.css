@@ -539,7 +539,11 @@ pre, code, .path, .diff, .tool-output, .mono {
   margin: 0 12px 8px;
   min-height: 32px;
   padding-block: 0;
-  padding-inline: 32px 12px;
+  /* PHYSICAL, like the glass: a Latin query turns the field LTR, and a
+     logical end padding then let the text and the native clear button run
+     under the icon on the right (2026-10-18). */
+  padding-left: 12px;
+  padding-right: 32px;
   border: 1px solid var(--app-input-border);
   border-radius: var(--corner-radius-medium);
   background: var(--app-input-background)
@@ -556,6 +560,18 @@ pre, code, .path, .diff, .tool-output, .mono {
 :is(input, textarea)[dir="auto"]:placeholder-shown { direction: rtl; }
 .side-search:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 /* A hit names the project it lives in, after its own name. */
+/* A full-text hit: the words around it, under its row (chrome.js
+   renderSearch). Two lines at most; the row above is the thing to click. */
+.sess-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0 12px 4px;
+  padding-inline: 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-meta);
+}
 .sess-proj {
   flex: none;
   max-inline-size: 40%;
@@ -1825,7 +1841,7 @@ details.card > summary:focus-visible { outline: 2px solid var(--accent); outline
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 4px 4px;
+  padding: 4px 8px 8px;   /* clear of the box's rounded edge (2026-10-18) */
   border-block-start: 1px solid var(--app-input-border);
   color: var(--app-secondary-foreground);
 }
@@ -2599,10 +2615,53 @@ button.round svg { width: 16px; height: 16px; }
    the whole strip disappears when there is nothing out. */
 .agents-strip {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   margin: 0 max(20px, calc((100% - var(--app-column-max)) / 2)) 8px;
 }
+/* One running task per line (agents.js stripLine, 2026-10-18): a live dot,
+   its name, a clock to the second, then the proof it is still going. The
+   name gives way first; the clock and the facts never wrap or clip. */
+.ag-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--app-font-size-min-fa);
+  text-align: start;
+  cursor: pointer;
+}
+.ag-line:hover { background: var(--app-list-hover-background); }
+.ag-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ag-live {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--app-claude-orange);
+  animation: ag-live 1.6s ease-in-out infinite;
+}
+@keyframes ag-live { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ag-live { animation: none; } }
+.ag-name {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.ag-clock, .ag-fact { flex: none; white-space: nowrap; }
+.ag-clock { font-variant-numeric: tabular-nums; }
+.ag-more { color: var(--fg-muted); }
 /* The site's «N running task» chip, the same as the working line's. */
 .ag-chip {
   min-height: 0;

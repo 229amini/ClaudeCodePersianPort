@@ -1712,11 +1712,26 @@ check("a subagent's sidechain prompt echo renders nothing",
   !specLog.textContent.includes("single word PING"),
   specLog.childElementCount + " vs " + beforeSide);
 
-/* BACKGROUND TASKS. The strip above the composer is
-   the site's «N running task» chip and nothing else; the chip opens the panel,
-   whose cards carry the CLI's own task_progress numbers. Painted from a
+/* BACKGROUND TASKS. The strip above the composer is one line per running
+   task (2026-10-18): its name, a clock to the second, and the proof it is
+   still going — an agent's tokens, a command's last output. A line opens the
+   panel, whose cards carry the CLI's own task_progress numbers. Painted from a
    synthetic /api/agents payload through the shipping builder
    (window.renderAgents). */
+window.renderAgents([
+  { id: "c3", kind: "command", description: "npm run build", status: "running",
+    startedAt: Math.floor(Date.now() / 1000) - 75, outputBytes: 120,
+    outputAt: Date.now() - 5000 },
+]);
+{
+  const line = document.querySelector('.agents-strip .ag-line[data-agent-id="c3"]');
+  const facts = [...(line?.querySelectorAll(".ag-clock, .ag-fact") ?? [])].map((n) => n.textContent);
+  check("a running command is a strip line: its name, its clock to the second, its last output",
+    line?.querySelector(".ag-name")?.textContent === "npm run build" &&
+    /^۱ دقیقه و ۱[۵۶] ثانیه$/.test(facts[0] ?? "") &&
+    facts[1] === window.STRINGS.agLastOutput.replace("{t}", "۵ ثانیه"),
+    JSON.stringify(facts));
+}
 window.renderAgents([
   { id: "a1", kind: "agent", description: "Audit the RTL rules",
     agentType: "Explore", model: "claude-opus-5-5", status: "running",
@@ -1726,12 +1741,13 @@ window.renderAgents([
     finishedAt: Math.floor(Date.now() / 1000) - 60 },
 ]);
 const strip = document.querySelector(".agents-strip");
-const stripChip = strip?.querySelector(".ag-chip");
-check("the strip is the running-task chip, counted in Persian digits",
-  !strip.hidden && stripChip?.textContent === window.STRINGS.pulseTasks.replace("{n}", "۱") &&
-  strip.querySelector(".ag-wait")?.textContent === window.STRINGS.agentsWaiting.replace("{n}", "۱") &&
-  !strip.querySelector(".ag-row"),
-  (strip.hidden ? "hidden" : "visible") + " / «" + (stripChip?.textContent ?? "no chip") + "»");
+const stripChip = strip?.querySelector('.ag-line[data-agent-id="a1"]');
+check("the strip is one line per RUNNING task, its Latin name isolated",
+  !strip.hidden && strip.querySelectorAll(".ag-line").length === 1 &&
+  stripChip?.querySelector(".ag-name")?.tagName === "BDI" &&
+  stripChip.querySelector(".ag-name").textContent === "Audit the RTL rules" &&
+  !!stripChip.querySelector(".ag-clock") && !strip.querySelector(".ag-row"),
+  (strip.hidden ? "hidden" : "visible") + " / «" + (stripChip?.textContent ?? "no line") + "»");
 
 stripChip.click();
 const tPanel = document.getElementById("tasks-panel");
@@ -1747,7 +1763,7 @@ check("a running card isolates its Latin title and says kind and time in Persian
   cardTitle?.tagName === "BDI" && dirOf(cardTitle) === "ltr" &&
   getComputedStyle(cardTitle).unicodeBidi === "isolate" &&
   cardA.querySelector(".tk-kind")?.textContent === window.STRINGS.tasksKindAgent &&
-  cardA.querySelector(".tk-time")?.textContent === "۲ دقیقه" &&
+  /^۲ دقیقه( و ۱ ثانیه)?$/.test(cardA.querySelector(".tk-time")?.textContent ?? "") &&
   !!cardA.querySelector(".tk-stop") && !!cardA.querySelector(".tk-view"),
   (dirOf(cardTitle) ?? "none") + " / " + (cardA?.querySelector(".tk-time")?.textContent ?? "no time"));
 

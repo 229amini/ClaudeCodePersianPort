@@ -1109,39 +1109,118 @@ export function sessionMatches(sess, query) {
   return foldText(sess.title).includes(q) || foldText(sess.preview).includes(q);
 }
 
+function searchHead(text, n) {
+  const head = document.createElement("h3");
+  head.className = "side-title";
+  head.append(document.createTextNode(text), countPill(n));
+  ui.projects.append(head);
+}
+
+/* What the server found in the conversations' own words (server.py
+   search_transcripts): `query` is what it was asked, so an answer to an older
+   query is never drawn under a newer one. */
+let textHits = { query: "", hits: [] };
+let textTimer = 0;
+
+function projectMatches(proj, query) {
+  const q = foldText(query).trim();
+  if (!q) return false;
+  const base = String(proj.path).split(/[\\/]/).filter(Boolean).pop() ?? "";
+  return foldText(displayName(proj.path)).includes(q) || foldText(base).includes(q);
+}
+
+/* Three sections, in the order the user chose (pcg-1eo): the projects whose
+   name matches, the conversations whose name or first prompt does, then the
+   ones that only SAID it — each with the words around the hit. */
 function renderSearch(projects) {
+  const projHits = projects.filter((p) => projectMatches(p, searchQuery));
+  if (projHits.length) {
+    searchHead(FA.searchProjects, projHits.length);
+    for (const proj of projHits) ui.projects.append(projEl(proj, projects));
+  }
+
   const hits = [];
+  const byId = new Map();
   for (const proj of projects) {
     for (const sess of proj.sessions ?? []) {
+      byId.set(sess.session_id, [sess, proj.path]);
       if (sessionMatches(sess, searchQuery)) hits.push([sess, proj.path]);
     }
   }
   hits.sort((a, b) => (b[0].modified ?? 0) - (a[0].modified ?? 0));
-  const head = document.createElement("h3");
-  head.className = "side-title";
-  head.append(document.createTextNode(FA.searchResults), countPill(hits.length));
-  ui.projects.append(head);
-  const ul = document.createElement("ul");
-  ul.className = "proj-sessions search-hits";
-  if (!hits.length) {
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.setAttribute("dir", "auto");
-    li.textContent = FA.searchEmpty;
-    ul.append(li);
+  const named = new Set(hits.map(([sess]) => sess.session_id));
+  const said = textHits.query === searchQuery.trim()
+    ? textHits.hits.filter((h) => !named.has(h.session_id) && byId.has(h.session_id))
+    : [];
+
+  // An empty «نتیجه‌ها ۰» under a project that matched says nothing; the
+  // section stays only to say «پیدا نشد» when nothing else did.
+  const nothing = !hits.length && !projHits.length && !said.length;
+  if (hits.length || nothing) {
+    searchHead(FA.searchResults, hits.length);
+    const ul = document.createElement("ul");
+    ul.className = "proj-sessions search-hits";
+    if (nothing) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.setAttribute("dir", "auto");
+      li.textContent = FA.searchEmpty;
+      ul.append(li);
+    }
+    for (const [sess, path] of hits) ul.append(hitRow(sess, path));
+    ui.projects.append(ul);
   }
-  for (const [sess, path] of hits) {
-    const row = sessionRow(sess, path,
-      path.toLowerCase() === currentCwd.toLowerCase() && sess.session_id === currentSession);
-    // Which project it is in: the flat list has no project row above it.
-    const where = document.createElement("bdi");
-    where.className = "sess-proj";
-    where.textContent = displayName(path);
-    where.title = path;
-    row.querySelector(".sess")?.append(where);
-    ul.append(row);
+
+  if (said.length) {
+    searchHead(FA.searchInText, said.length);
+    const more = document.createElement("ul");
+    more.className = "proj-sessions search-hits";
+    for (const hit of said) {
+      const [sess, path] = byId.get(hit.session_id);
+      const row = hitRow(sess, path);
+      // The words around the hit, so the row says WHY it is here.
+      const snip = document.createElement("div");
+      snip.className = "sess-snippet";
+      snip.setAttribute("dir", "auto");
+      snip.textContent = hit.snippet;
+      row.append(snip);
+      more.append(row);
+    }
+    ui.projects.append(more);
   }
-  ui.projects.append(ul);
+}
+
+function hitRow(sess, path) {
+  const row = sessionRow(sess, path,
+    path.toLowerCase() === currentCwd.toLowerCase() && sess.session_id === currentSession);
+  // Which project it is in: the flat list has no project row above it.
+  const where = document.createElement("bdi");
+  where.className = "sess-proj";
+  where.textContent = displayName(path);
+  where.title = path;
+  row.querySelector(".sess")?.append(where);
+  return row;
+}
+
+/* Debounced: a transcript scan is cheap once warm (~0.4 s over 589 of them)
+   but not per keystroke. Two characters at least — one matches everything. */
+function askText(query) {
+  clearTimeout(textTimer);
+  const q = query.trim();
+  if ([...foldText(q)].length < 2) {
+    textHits = { query: q, hits: [] };
+    return;
+  }
+  textTimer = setTimeout(async () => {
+    try {
+      const data = await api("/api/search?q=" + encodeURIComponent(q));
+      if (searchQuery.trim() !== q) return;   // typed on meanwhile
+      textHits = { query: q, hits: data.hits ?? [] };
+      renderProjects(lastProjects);
+    } catch (err) {
+      // Best effort: the name matches are already on screen.
+    }
+  }, 250);
 }
 
 function wireSearch() {
@@ -1149,8 +1228,14 @@ function wireSearch() {
   if (!field) return;
   field.placeholder = FA.searchSessions;
   field.setAttribute("aria-label", FA.searchSessions);
+  // The first scan reads every transcript (~2.5 s cold): start it when the
+  // field is entered, so the first query is answered from the warm cache.
+  field.addEventListener("focus", () => {
+    api("/api/search?q=").catch(() => {});
+  }, { once: true });
   field.addEventListener("input", () => {
     searchQuery = field.value;
+    askText(searchQuery);
     renderProjects(lastProjects);
   });
   field.addEventListener("keydown", (e) => {
@@ -1159,6 +1244,7 @@ function wireSearch() {
     e.stopPropagation();
     field.value = "";
     searchQuery = "";
+    askText("");
     renderProjects(lastProjects);
   });
 }
@@ -1695,9 +1781,8 @@ export async function forkFrom({ el, uuid, before = false, text = "" }) {
   renderInto(data.tab, events);
   if (tabBridge?.active?.() === data.tab) {
     bubble("assistant", FA.forkDone).classList.add("meta");
-    if (text) {
-      tabBridge?.cells?.().find((c) => c.tab === data.tab)?.composer?.restoreDraft(text);
-    }
+    tabBridge?.cells?.().find((c) => c.tab === data.tab)?.composer
+      ?.restoreDraft(text, data.attachments ?? []);
   }
   refreshProjects();
 }
