@@ -757,9 +757,11 @@ GRID_JS = """
   }
   await sleep(80);
   out.panes.drag = {before: dragBefore, after: wide()};
-  /* ↕ on pane 1: its row takes the grid's height, its width stays, the other
-     row goes; the same button brings the grid back. */
+  /* ↕ on pane 1: IT takes the grid's height, its width stays, every other pane
+     keeps its box (user, 2026-10-18 - it used to take its whole row along);
+     the same button brings the grid back. */
   const gridH = document.getElementById("grid").getBoundingClientRect().height;
+  const gridY = Math.round(document.getElementById("grid").getBoundingClientRect().top);
   const vBefore = CELLS().map(box);
   CELLS()[0].querySelector(".pane-vzoom")?.click();
   await sleep(60);
@@ -767,7 +769,7 @@ GRID_JS = """
   const vPressed = CELLS()[0].querySelector(".pane-vzoom")?.getAttribute("aria-pressed");
   CELLS()[0].querySelector(".pane-vzoom")?.click();
   await sleep(60);
-  out.panes.vzoom = {gridH, before: vBefore, on: vOn, pressed: vPressed,
+  out.panes.vzoom = {gridH, gridY, before: vBefore, on: vOn, pressed: vPressed,
                      off: CELLS().map(box),
                      shown: getComputedStyle(CELLS()[0].querySelector(".pane-vzoom")).display};
 """
@@ -1055,13 +1057,16 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             if v["shown"] != "none":
                 say("↕ is drawn with a single row, where it can do nothing")
         elif (v["pressed"] != "true" or abs(v["on"][0]["h"] - v["gridH"]) > 2
+                or abs(v["on"][0]["y"] - v["gridY"]) > 2
                 or abs(v["on"][0]["w"] - v["before"][0]["w"]) > 2
-                or v["on"][2]["w"] != 0
+                or any(abs(v["on"][i][k] - v["before"][i][k]) > 2
+                       for i in range(1, len(v["before"])) for k in "xywh")
                 or abs(v["off"][0]["h"] - v["before"][0]["h"]) > 2):
             say(f"↕ on pane 1: grid {v['gridH']}px, pane {v['before'][0]} -> "
-                f"{v['on'][0]} -> {v['off'][0]}, bottom pane {v['on'][2]}, pressed "
-                f"{v['pressed']} - want full height, same width, the other row "
-                "gone, and back on the second press")
+                f"{v['on'][0]} -> {v['off'][0]}, others {v['before'][1:]} -> "
+                f"{v['on'][1:]}, pressed {v['pressed']} - want full height from "
+                "the grid's top, same width, every other pane where it was, and "
+                "back on the second press")
 
     # 5b. the sidebar fills an empty pane before it replaces the focused one
     f = m["fill"]

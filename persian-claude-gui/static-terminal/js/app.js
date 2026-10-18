@@ -265,7 +265,50 @@ function toggleZoom(cell, axis = "full") {
   }
   if (on) grid.dataset.zoomed = axis;
   else delete grid.dataset.zoomed;
+  syncVZoom();
   if (on) focusCell(cells.indexOf(cell), { focusInput: true });
+}
+
+/* «تمام‌قد» grows ONE pane, not its row (user, 2026-10-18): at 4-up or 6-up
+   the pane takes its own column's whole height and every other pane keeps its
+   place. The pane stays in its row's flow, so its width and the dividers'
+   fractions are untouched; it is pulled up to the grid's top and given the
+   grid's height, drawn over the panes under it, which go invisible (so Tab and
+   a click cannot reach a pane nobody can see). A pane only partly under it (3
+   or 5 panes: rows of unequal widths) stays drawn - hiding it would leave a
+   hole. Measured in CSS px (prefs.js cssPx): the values land in a style. */
+let vzObserver = null;
+
+function syncVZoom() {
+  const grid = document.getElementById("grid");
+  const on = grid?.dataset.zoomed === "v" && zoomed;
+  for (const one of cells) {
+    if (one !== zoomed || !on) {
+      one.root.style.removeProperty("--vz-top");
+      one.root.style.removeProperty("--vz-h");
+    }
+  }
+  if (!on) {
+    for (const one of cells) one.root.classList.remove("vz-covered");
+    vzObserver?.disconnect();
+    vzObserver = null;
+    return;
+  }
+  const row = zoomed.root.parentElement;
+  const g = grid.getBoundingClientRect();
+  zoomed.root.style.setProperty("--vz-top", cssPx(row.getBoundingClientRect().top - g.top) + "px");
+  zoomed.root.style.setProperty("--vz-h", cssPx(g.height) + "px");
+  const z = zoomed.root.getBoundingClientRect();
+  for (const one of cells) {
+    const r = one.root.getBoundingClientRect();
+    one.root.classList.toggle("vz-covered", one !== zoomed && one.root.parentElement !== row
+      && r.left >= z.left - 1 && r.right <= z.right + 1);
+  }
+  if (!vzObserver) {
+    vzObserver = new ResizeObserver(() => syncVZoom());
+    vzObserver.observe(grid);
+    for (const one of cells) vzObserver.observe(one.root);
+  }
 }
 
 /* ✕ on a pane CLOSES its conversation and, in a grid, the pane with it
@@ -375,6 +418,7 @@ function arrangeGrid() {
   grid.replaceChildren(frag);
   grid.dataset.rows = String(shape.length);   // one row: nothing to grow into vertically
   applyFractions();
+  syncVZoom();
   cells.forEach((one, i) => { one.log.scrollTop = scrolls[i]; });
   if (active && active !== document.activeElement && document.contains(active)) {
     active.focus({ preventScroll: true });

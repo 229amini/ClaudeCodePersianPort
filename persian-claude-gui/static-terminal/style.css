@@ -1646,8 +1646,19 @@ body.alt-held #grid:not([data-split="1"]) .cell-badge { display: inline-block; }
    DOM, keep their logs and keep receiving events - only their box goes. */
 #grid[data-zoomed="full"] .cell:not(.zoomed),
 #grid[data-zoomed="full"] .divider,
-#grid[data-zoomed] .grid-row:not(:has(.zoomed)),
-#grid[data-zoomed="v"] > .divider.h { display: none; }
+#grid[data-zoomed="full"] .grid-row:not(:has(.zoomed)) { display: none; }
+/* «تمام‌قد»: the ONE pane spans its column, top to bottom; the rest of the grid
+   stays as it was (js/app.js syncVZoom writes the two lengths). Over the
+   dividers' z-index 1; the panes it covers go invisible, not display:none, so
+   the grid keeps its shape under it. */
+#grid[data-zoomed="v"] .cell.zoomed {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  block-size: var(--vz-h, 100%);
+  margin-block-start: calc(-1 * var(--vz-top, 0px));
+}
+#grid[data-zoomed="v"] .cell.vz-covered { visibility: hidden; }
 
 /* A PANE WITH NO CONVERSATION (§D5): one line, one button. No header controls,
    no welcome box, no prompt that can send nowhere and no status line. The
