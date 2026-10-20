@@ -238,6 +238,7 @@ const flush = () => { document.getElementById("probe-out").textContent = "PROBE"
   out.tabNames = wraps().map((w) => w.querySelector(".host-tab").textContent);
   out.openInline = calls.find((c) => c.url === "/api/servers/open")?.body;
   out.frameShown = !frames().hidden && !!frame();
+  out.frameAllow = frame().getAttribute("allow") ?? "";
   const sr = strip().getBoundingClientRect(), fr = frames().getBoundingClientRect();
   out.frameUnderStrip = Math.abs(fr.top - sr.bottom) <= 1 && fr.bottom >= innerHeight - 1;
   out.appBelowStrip = document.getElementById("sidebar").getBoundingClientRect().top >= sr.bottom - 1;
@@ -316,6 +317,9 @@ def tab_checks() -> list[tuple[bool, str, str]]:
           "opening one draws the strip: «این رایانه», then the server", str(m.get("tabNames")))
     check((m.get("openInline") or {}).get("inline") is True, "the tab asks for the tunnel, not a window",
           str(m.get("openInline")))
+    check("clipboard-write" in (m.get("frameAllow") or ""),
+          "the frame may write the clipboard: copy buttons inside a server tab work",
+          repr(m.get("frameAllow")))
     check(m.get("frameShown") and m.get("frameUnderStrip") and m.get("appBelowStrip"),
           "the frame fills the window under the strip; the app moved down by it",
           f"{m.get('frameUnderStrip')} {m.get('appBelowStrip')}")

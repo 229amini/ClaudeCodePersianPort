@@ -220,7 +220,11 @@ async function connect(t, now = false) {
   t.origin = "http://127.0.0.1:" + r.port;
   paintTab(t);
   if (!t.frame) {
-    t.frame = el("iframe", { title: t.name, src: r.url });
+    // `allow` before `src`: it is read when the frame navigates. The page
+    // inside is another origin (another port), and Permissions Policy keeps
+    // navigator.clipboard.writeText to the top frame unless it is granted,
+    // so every copy button in a server tab failed silently.
+    t.frame = el("iframe", { title: t.name, allow: "clipboard-write", src: r.url });
     t.frame.addEventListener("load", () => { if (!t.offline) note(t, ""); });
     t.pane.prepend(t.frame);
   } else if (!t.hello) {
