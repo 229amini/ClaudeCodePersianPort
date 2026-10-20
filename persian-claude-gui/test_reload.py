@@ -64,16 +64,20 @@ ANSWERED = "پاسخی که باید پس از بارگذاری دوباره د�
 # Long enough to be several screens tall, so "opened at the bottom" is a
 # measurement and not the only place a short transcript can be.
 TURNS = 20
+# And heavy enough (~650 K characters) to be more than one page of history
+# (server.py HISTORY_PAGE_BYTES): the terminal edition asks for the tail only,
+# and the first message has to come back through «پیام‌های قبلی».
+FILLER_REPEATS = 700
 
-# The setup pair, four per page load, and - terminal only - the rail on the
-# reload; the web edition has no rail to restore.
-CHECKS = 2 + 2 * 4 +(1 if EDITION == "terminal" else 0)
+# The setup pair, four per page load, and - terminal only - the older page per
+# load and the rail on the reload; the web edition has neither.
+CHECKS = 2 + 2 * 4 + (3 if EDITION == "terminal" else 0)
 
 
 def transcript_lines(cwd: Path) -> str:
     """Two turns in the record format read_session() parses."""
     common = {"sessionId": SESSION_ID, "cwd": str(cwd), "version": "2.1.261"}
-    filler = "\n\n".join(["یک بند پرکننده تا گفتگو از یک صفحه بلندتر شود."] * 6)
+    filler = "\n\n".join(["یک بند پرکننده تا گفتگو از یک صفحه بلندتر شود."] * FILLER_REPEATS)
     rows = [
         {"type": "user", "uuid": "u1", "timestamp": "2026-09-08T10:00:00.000Z",
          "message": {"role": "user", "content": SAID}, **common},
@@ -122,6 +126,17 @@ const log = () => cell().querySelector(".log");
     const l = log();
     out.tall = l.scrollHeight > l.clientHeight * 2;
     out.gap = Math.round(l.scrollHeight - l.scrollTop - l.clientHeight);
+    // A paged history (terminal): bring the older pages back one click at a
+    // time, each a /api/session?before= round trip.
+    out.earlier = !!l.querySelector(".history-earlier");
+    for (let i = 0; i < 20; i++) {
+      const row = l.querySelector(".history-earlier");
+      if (!row) break;
+      row.click();
+      for (let j = 0; j < 30 && row.isConnected && row.disabled; j++) await sleep(50);
+      await sleep(100);
+    }
+    out.saidAfter = l.textContent.includes(SAID);
   } catch (err) {
     out.error = String((err && err.stack) || err);
   }
@@ -244,7 +259,15 @@ def main() -> int:
             if m["home"]:
                 bad.append(f"{where}: the home greeting is showing over an open "
                            "conversation")
-            if not (m.get("said") and m.get("answered")):
+            if EDITION == "terminal":
+                if m.get("said") or not m.get("answered") or not m.get("earlier"):
+                    bad.append(f"{where}: expected the last page only, with «پیام‌های "
+                               f"قبلی» above it (said={m.get('said')}, "
+                               f"earlier={m.get('earlier')}, {m['text'][:80]!r})")
+                if not m.get("saidAfter"):
+                    bad.append(f"{where}: the older pages never brought the first "
+                               "message back")
+            elif not (m.get("said") and m.get("answered")):
                 bad.append(f"{where}: the rows are not this session's "
                            f"({m['text'][:120]!r})")
             if not m.get("tall"):

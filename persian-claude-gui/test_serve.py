@@ -9,11 +9,14 @@ client, and asserts what an SSH user depends on:
   - the page is told it is remote (`data-host="remote"`), and the two native
     dialogs refuse with 409 instead of opening on a screen nobody looks at;
   - the in-page folder browser's route lists a folder;
-  - a restart keeps the token, so a reopened window still gets in.
+  - a restart keeps the token, so a reopened window still gets in;
+  - over the tunnel, JSON and the page's files go gzipped and a reloaded
+    module is a 304, not its bytes again (wiki/linux-ssh.md §"Slow links").
 
 No CLI turn, no cost: nothing here opens a conversation. ~1 min (the wait).
 Run: <python> test_serve.py
 """
+import gzip
 import http.client
 import json
 import os
@@ -46,9 +49,9 @@ def free_port():
         return s.getsockname()[1]
 
 
-def request(port, method, path, body=None, host=None):
+def request(port, method, path, body=None, host=None, headers=None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", **(headers or {})}
     if host:
         headers["Host"] = host
     conn.request(method, path, json.dumps(body) if body is not None else None, headers)
@@ -109,6 +112,24 @@ try:
     status, data, _ = request(port, "POST", "/api/fs/dirs" + q, {"path": str(HERE)})
     listing = json.loads(data) if status == 200 else {}
     check("the in-page browser lists a folder", "static-terminal" in listing.get("dirs", []))
+
+    gz = {"Accept-Encoding": "gzip, deflate, br"}
+    status, data, res = request(port, "GET", "/api/projects" + q, headers=gz)
+    check("JSON goes gzipped when the browser accepts it",
+          status == 200 and res.getheader("Content-Encoding") == "gzip"
+          and isinstance(json.loads(gzip.decompress(data)), dict))
+    status, data, res = request(port, "GET", "/static/js/chrome.js" + q, headers=gz)
+    tag = res.getheader("ETag") or ""
+    check("a module goes gzipped, tagged, kept but revalidated (no-cache)",
+          status == 200 and res.getheader("Content-Encoding") == "gzip" and tag
+          and res.getheader("Cache-Control") == "no-cache"
+          and b"historyUrl" in gzip.decompress(data))
+    status, data, _ = request(port, "GET", "/static/js/chrome.js" + q,
+                              headers={**gz, "If-None-Match": tag})
+    check("asked again with its tag, it is a 304 with no body", status == 304 and not data)
+    status, data, res = request(port, "GET", "/api/projects" + q)
+    check("no Accept-Encoding, no gzip", status == 200 and not res.getheader("Content-Encoding")
+          and isinstance(json.loads(data), dict))
 
     print(f"  ...  {WAIT:.0f} s with no window connected")
     time.sleep(WAIT)

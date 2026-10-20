@@ -1300,9 +1300,8 @@ function schedulePreview(row, sess, projPath) {
     let items = previewCache.get(sess.session_id);
     if (!items) {
       try {
-        const data = await api("/api/session?id=" + encodeURIComponent(sess.session_id)
-                               + "&cwd=" + encodeURIComponent(projPath || currentCwd)
-                               + worktreeQuery(sess.worktree));
+        const data = await api(historyUrl(sess.session_id, projPath || currentCwd,
+                                          sess.worktree) + "&preview=3");
         items = exchanges(data.events ?? []);
       } catch (err) {
         return;   // best-effort chrome; never interrupts the conversation
@@ -1491,16 +1490,15 @@ async function replaySession(sessionId, projPath, worktree) {
   // rendering it into whatever is on screen then would hand one conversation
   // another one's history — permanently, at the next park (app.js).
   const tab = tabBridge?.active?.();
+  const url = historyUrl(sessionId, projPath || currentCwd, worktree);
   let data;
   try {
-    data = await api("/api/session?id=" + encodeURIComponent(sessionId)
-                     + "&cwd=" + encodeURIComponent(projPath || currentCwd)
-                     + worktreeQuery(worktree));
+    data = await api(url + "&tail=1");
   } catch (err) {
     bubble("error", FA.sendFailed);
     return;
   }
-  renderInto(tab, data.events);
+  renderInto(tab, data.events, false, { url, start: data.start });
   showReplayBanner(sessionId, projPath, worktree);
 }
 
@@ -1511,7 +1509,7 @@ async function replaySession(sessionId, projPath, worktree) {
    was closed while the fetch was out gets nothing at all (app.js renderInTab).
    Shared by replay and by a resumed session's backfill — the two differ only in
    whether the closing «گفتگو از سر گرفته شد» line is added. */
-export function renderInto(tab, events, resumedNote = false) {
+export function renderInto(tab, events, resumedNote = false, more = null) {
   const all = events ?? [];
   // A long history renders its TAIL: a
   // two-thousand-event transcript is seconds of layout nobody asked for.
@@ -1521,7 +1519,7 @@ export function renderInto(tab, events, resumedNote = false) {
     resetTurn();
     state.toolCards.clear();
     state.turnEdits = new Map();   // this render's own turns only
-    if (from > 0) node.append(earlierRow(tab, all, from, node));
+    if (from > 0 || more?.start > 0) node.append(earlierRow(tab, all, from, node, more));
     // A finished transcript in one synchronous loop: every append() would ask
     // "is the reader at the bottom?" and force a layout to answer, hundreds of
     // times, about a view that is not on screen yet. The answer is only needed
@@ -1539,6 +1537,15 @@ export function renderInto(tab, events, resumedNote = false) {
     if (cell) syncHome(cell);
     node.scrollTop = node.scrollHeight;   // a replay opens at its newest message
   });
+}
+
+/* An old conversation's URL; `&tail=1` asks for its last page only and
+   `&before=N` for the page before event N (server.py history_page_start). A
+   transcript can be 168 MB, and over an SSH tunnel the whole of it was minutes
+   (wiki/linux-ssh.md §"Slow links"). */
+function historyUrl(sessionId, cwd, worktree) {
+  return "/api/session?id=" + encodeURIComponent(sessionId)
+    + "&cwd=" + encodeURIComponent(cwd || "") + worktreeQuery(worktree);
 }
 
 /* Over 400 events, the last ~300 are drawn and a row at the top brings the
@@ -1563,17 +1570,35 @@ function chunkStart(events, end) {
   return at;
 }
 
-function earlierRow(tab, events, from, node) {
+function earlierRow(tab, events, from, node, more) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "history-earlier";
   row.setAttribute("dir", "auto");
   let end = from;
+  // Events before events[0] that are still on the server: a paged history
+  // (`more`) brings them over one page per click once the local ones are drawn.
+  let offset = more?.start ?? 0;
   const paint = () => {
-    row.textContent = FA.historyEarlier.replace("{n}", end.toLocaleString("fa-IR"));
+    row.textContent = FA.historyEarlier.replace("{n}", (offset + end).toLocaleString("fa-IR"));
   };
   paint();
-  row.addEventListener("click", () => {
+  row.addEventListener("click", async () => {
+    if (row.disabled) return;
+    if (end === 0) {
+      row.disabled = true;
+      let page;
+      try {
+        page = await api(more.url + "&before=" + offset);
+      } catch (err) {
+        return void (row.disabled = false);
+      }
+      row.disabled = false;
+      events = page.events ?? [];
+      end = events.length;
+      offset = page.start ?? 0;
+      if (!end) return void row.remove();
+    }
     const start = chunkStart(events, end);
     // Rendered into a node of its own, through the same renderEvent, with a
     // fresh scope - then moved in above what is on screen, holding the
@@ -1588,7 +1613,7 @@ function earlierRow(tab, events, from, node) {
     row.after(...into.childNodes);
     node.scrollTop += node.scrollHeight - before;
     end = start;
-    if (end > 0) paint();
+    if (offset + end > 0) paint();
     else row.remove();
   });
   return row;
@@ -1623,11 +1648,10 @@ export function backfillTab(tab) {
   if (!entry?.session_id || backfilled.has(tab)) return;
   backfilled.add(tab);
   (async () => {
+    const url = historyUrl(entry.session_id, entry.cwd, entry.worktree);
     let history;
     try {
-      history = await api("/api/session?id=" + encodeURIComponent(entry.session_id)
-                          + "&cwd=" + encodeURIComponent(entry.cwd || "")
-                          + worktreeQuery(entry.worktree));
+      history = await api(url + "&tail=1");
     } catch (err) {
       return;
     }
@@ -1637,7 +1661,7 @@ export function backfillTab(tab) {
     // happened. renderInTab (through renderInto) resolves the destination
     // AFTER the await, so a tab parked or closed while this was in the air
     // paints into its own buffer, or into nothing.
-    renderInto(tab, history.events);
+    renderInto(tab, history.events, false, { url, start: history.start });
   })();
 }
 
@@ -1690,6 +1714,9 @@ async function resumeSession(sessionId, projPath, worktree) {
     reportOpenFailure(err);
     return;
   }
+  // The history below is this tab's backfill: without the mark, putting the
+  // tab on screen fetched the same transcript a second time (backfillTab).
+  if (!data.adopted) backfilled.add(data.tab);
   await tabBridge?.switchTo(data.tab);
   if (data.adopted) return;   // it was already on screen in that tab
   // The switch can be refused (that tab is gone) or overtaken by the user, and
@@ -1701,15 +1728,14 @@ async function resumeSession(sessionId, projPath, worktree) {
   }
   // A resumed CLI does not re-emit the conversation, so the new tab's view
   // would be empty: replay the transcript into it, through the one renderer.
+  const url = historyUrl(sessionId, projPath || currentCwd, worktree);
   let history;
   try {
-    history = await api("/api/session?id=" + encodeURIComponent(sessionId)
-                        + "&cwd=" + encodeURIComponent(projPath || currentCwd)
-                        + worktreeQuery(worktree));
+    history = await api(url + "&tail=1");
   } catch (err) {
     return;   // the session IS resumed; only its backfill failed to arrive
   }
-  renderInto(data.tab, history.events, true);
+  renderInto(data.tab, history.events, true, { url, start: history.start });
   refreshProjects();
 }
 
@@ -1767,9 +1793,7 @@ export async function forkFrom({ el, uuid, before = false, text = "" }) {
   let events = [];
   if (data.at) {
     try {
-      const history = await api("/api/session?id=" + encodeURIComponent(entry.session_id)
-                                + "&cwd=" + encodeURIComponent(entry.cwd || "")
-                                + worktreeQuery(entry.worktree));
+      const history = await api(historyUrl(entry.session_id, entry.cwd, entry.worktree));
       const all = history.events ?? [];
       const at = all.findIndex((ev) => ev.uuid === uuid);
       events = at < 0 ? [] : all.slice(0, before ? at : at + 1);
@@ -1777,6 +1801,7 @@ export async function forkFrom({ el, uuid, before = false, text = "" }) {
       events = [];   // the copy exists; only its picture of the past is missing
     }
   }
+  backfilled.add(data.tab);   // drawn right here, from the source transcript
   await switchToTab(data.tab);
   renderInto(data.tab, events);
   if (tabBridge?.active?.() === data.tab) {

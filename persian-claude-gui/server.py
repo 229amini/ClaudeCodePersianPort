@@ -20,6 +20,8 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime
+import gzip
+import hashlib
 import json
 import os
 import queue
@@ -323,6 +325,9 @@ LINUX_BROWSERS = ("microsoft-edge", "microsoft-edge-stable", "google-chrome",
 # server outlives every window instead of following the last one out.
 REMOTE = False
 SERVE_PORT = 8765
+# What _send() compresses for a remote window, and from what size up.
+GZIP_TYPES = ("text/", "application/json", "image/svg+xml")
+GZIP_MIN_BYTES = 1024
 
 # Seconds with zero SSE clients before the server tears itself down.
 IDLE_SHUTDOWN_SECONDS = 10.0
@@ -1714,7 +1719,83 @@ def _marks_of(event: dict) -> dict:
     return {k: event[k] for k in ("uuid", "timestamp") if isinstance(event.get(k), str)}
 
 
-def read_session(cwd: Path, session_id: str) -> list[dict]:
+def drop_signatures(event: dict) -> dict:
+    """Blank what only the API can read: a thinking block's `signature` and a
+    redacted one's `data`. The window draws neither, the CLI keeps its own
+    copy, and on a real server they were 63 of a transcript's 168 MB -- the bulk
+    of what /api/session and the live stream pushed through an SSH tunnel
+    (wiki/linux-ssh.md §"Slow links"). In place; returns the event."""
+    inner = event.get("event") if event.get("type") == "stream_event" else None
+    if isinstance(inner, dict):
+        delta = inner.get("delta")
+        if isinstance(delta, dict) and "signature" in delta:
+            delta["signature"] = ""
+        parts = [inner.get("content_block")]
+    else:
+        message = event.get("message")
+        parts = message.get("content") if isinstance(message, dict) else None
+    for part in parts if isinstance(parts, list) else ():
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "thinking" and "signature" in part:
+            part["signature"] = ""
+        elif part.get("type") == "redacted_thinking" and "data" in part:
+            part["data"] = ""
+    return event
+
+
+# One page of an old conversation (wiki/linux-ssh.md §"Slow links"): the window
+# asks for the tail and brings the rest back a page at a time. A page closes at
+# whichever comes first, then widens back to the start of its turn so a
+# tool_result never lands on a page without the tool_use it answers.
+HISTORY_PAGE_EVENTS = 300
+HISTORY_PAGE_BYTES = 512 * 1024
+# How far a page may widen to reach its turn's start before it is cut mid-turn
+# instead: one autonomous turn ran to ~850 transcript lines on a real server.
+HISTORY_PAGE_SLACK = 4
+
+
+def _turn_start(event: dict) -> bool:
+    """Something the person said -- the same test as chrome.js isTurnStart()."""
+    if event.get("type") != "user":
+        return False
+    content = (event.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return True
+    kinds = {p.get("type") for p in content if isinstance(p, dict)} if isinstance(content, list) else set()
+    return "text" in kinds and "tool_result" not in kinds
+
+
+def history_page_start(events: list[dict], end: int) -> int:
+    """Where the page that ends at `end` begins. A turn start when one is within
+    reach; otherwise the nearest assistant event right after a tool_result (every
+    call before it is answered), so no card is split; otherwise the budget's own
+    edge."""
+    end = max(0, min(end, len(events)))
+    at, size = end, 0
+    while at > 0 and end - at < HISTORY_PAGE_EVENTS and size < HISTORY_PAGE_BYTES:
+        at -= 1
+        size += len(json.dumps(events[at], ensure_ascii=False))
+    turn = at
+    while turn > 0 and not _turn_start(events[turn]) and size < HISTORY_PAGE_BYTES * HISTORY_PAGE_SLACK:
+        turn -= 1
+        size += len(json.dumps(events[turn], ensure_ascii=False))
+    if turn == 0 or _turn_start(events[turn]):
+        return turn
+    for cut in range(at, turn, -1):
+        if events[cut].get("type") == "assistant" and events[cut - 1].get("type") == "user":
+            return cut
+    return at
+
+
+def _says_something(event: dict) -> bool:
+    content = (event.get("message") or {}).get("content")
+    return isinstance(content, list) and any(
+        isinstance(p, dict) and p.get("type") == "text" and (p.get("text") or "").strip()
+        for p in content)
+
+
+def read_session(cwd: Path, session_id: str, said: int = 0) -> list[dict]:
     """Replayable events for one session.
 
     Transcript `user`/`assistant` lines carry the same `message` shape as live
@@ -1722,12 +1803,16 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
     (plan §B-4: one renderer, two sources). Everything else in the file —
     queue-operation, attachment, last-prompt, and sidechain (subagent) turns —
     is bookkeeping and would only add noise.
+
+    `said` > 0 stops reading once that many events have text in them: the
+    sidebar's hover preview wants the first few lines, not a 168 MB file.
     """
     transcript = transcript_path(cwd, session_id)
     if transcript is None:
         return []
 
     events: list[dict] = []
+    spoken = 0
     with transcript.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             try:
@@ -1746,7 +1831,11 @@ def read_session(cwd: Path, session_id: str) -> list[dict]:
                 continue
             normalized = _normalize_transcript_event(event)
             if normalized is not None:
-                _append_transcript_event(events, normalized)
+                _append_transcript_event(events, drop_signatures(normalized))
+                if said and _says_something(normalized):
+                    spoken += 1
+                    if spoken >= said:
+                        break
     return events
 
 
@@ -2174,7 +2263,7 @@ def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int
                 continue
             normalized = _normalize_transcript_event(event)
             if normalized is not None:
-                _append_transcript_event(events, normalized)
+                _append_transcript_event(events, drop_signatures(normalized))
     return events, total
 
 
@@ -4102,6 +4191,7 @@ class ClaudeSession:
             if etype == "system" and isinstance(event.get("permissionMode"), str):
                 if self.broker:
                     self.broker.sync_cli_mode(event["permissionMode"])
+            drop_signatures(event)
             self.hub.publish(event)
             if etype == "rate_limit_event":
                 self._arm_auto_resume(event.get("rate_limit_info") or {}, generation)
@@ -5442,11 +5532,21 @@ class Handler(BaseHTTPRequestHandler):
         return f"{COOKIE_NAME}_{port}"
 
     def _send(self, status: int, body: bytes, content_type: str,
-              extra_headers: tuple[tuple[str, str], ...] = ()) -> None:
+              extra_headers: tuple[tuple[str, str], ...] = (),
+              cache: str = "no-store") -> None:
+        # Over an SSH tunnel every byte counts (wiki/linux-ssh.md §"Slow
+        # links"): JSON and the page's own files shrink ~4x. Locally there is
+        # no wire to save, so the CPU is not spent.
+        if (REMOTE and len(body) >= GZIP_MIN_BYTES
+                and content_type.startswith(GZIP_TYPES)
+                and "gzip" in self.headers.get("Accept-Encoding", "")):
+            body = gzip.compress(body, compresslevel=5)
+            extra_headers = (("Content-Encoding", "gzip"), ("Vary", "Accept-Encoding"),
+                             *extra_headers)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         for name, value in extra_headers:
             self.send_header(name, value)
         self.end_headers()
@@ -5568,10 +5668,24 @@ class Handler(BaseHTTPRequestHandler):
                                 params.get("worktree", [""])[0])
             if cwd is None:
                 return
-            self._send_json(HTTPStatus.OK, {
-                "session_id": session_id,
-                "events": read_session(cwd, session_id),
-            })
+            # `preview=N`: only up to the Nth thing said (the hover card).
+            # `tail=1` / `before=K`: one page, ending at the end / at event K,
+            # with `start` = its first event's index in the whole list -- the
+            # window passes that back as the next `before`. No paging
+            # parameter: the whole list, as before (fork, the web edition).
+            def number(name: str) -> int:
+                raw = params.get(name, [""])[0]
+                return int(raw) if raw.isdigit() else -1
+            preview, before = number("preview"), number("before")
+            events = read_session(cwd, session_id, said=max(preview, 0))
+            reply: dict = {"session_id": session_id}
+            if params.get("tail", [""])[0] == "1" or before >= 0:
+                end = len(events) if before < 0 else min(before, len(events))
+                start = history_page_start(events, end)
+                reply.update(events=events[start:end], start=start)
+            else:
+                reply["events"] = events
+            self._send_json(HTTPStatus.OK, reply)
         elif parsed.path == "/api/agents":
             # Background-agents panel, one round-trip per poll. Same id/cwd
             # convention as /api/session -- any project's history, not just
@@ -6458,7 +6572,21 @@ class Handler(BaseHTTPRequestHandler):
                 "Set-Cookie",
                 f"{self._cookie_name()}={self.token}; Path=/; HttpOnly; SameSite=Strict",
             ),)
-        self._send(HTTPStatus.OK, body, ctype, extra)
+        if path.suffix.lower() == ".html" or not REMOTE:
+            self._send(HTTPStatus.OK, body, ctype, extra)
+            return
+        # Remote: the page's ~1.3 MB of modules, fonts and styles are kept by
+        # the browser and asked about again on every load (no-cache, not
+        # no-store), so a reload costs one 304 per file instead of the whole
+        # set through the tunnel. An upgrade changes the bytes, so the tag.
+        tag = '"' + hashlib.blake2b(body, digest_size=12).hexdigest() + '"'
+        if tag in self.headers.get("If-None-Match", ""):
+            self.send_response(HTTPStatus.NOT_MODIFIED)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        self._send(HTTPStatus.OK, body, ctype, (("ETag", tag), *extra), cache="no-cache")
 
     def _serve_sse(self) -> None:
         self.send_response(HTTPStatus.OK)

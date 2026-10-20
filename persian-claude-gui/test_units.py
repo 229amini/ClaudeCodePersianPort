@@ -868,6 +868,70 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         server.PROJECTS_DIR = old_projects_dir
 
+print("slow links: signatures dropped, history paged, preview stops early (2026-10-21)")
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    cwd = root / "proj5"
+    cwd.mkdir()
+    old_projects_dir = server.PROJECTS_DIR
+    server.PROJECTS_DIR = root / "projects"
+    folder = server.PROJECTS_DIR / str(cwd).replace(":", "-").replace("\\", "-").replace("/", "-")
+    folder.mkdir(parents=True)
+
+    def said(text):
+        return {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+
+    def thought(i):
+        return {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "thinking", "thinking": "", "signature": "S" * 4000},
+            {"type": "redacted_thinking", "data": "D" * 100},
+            {"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": "ls"}}]}}
+
+    def answered(i):
+        return {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": f"t{i}", "content": "x" * 3000}]}}
+
+    lines = []
+    for turn in range(4):
+        lines.append(said(f"turn {turn}"))
+        for i in range(60):
+            lines += [thought(i), answered(i)]
+        lines.append({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": f"done {turn}"}]}})
+    (folder / "s5.jsonl").write_text("\n".join(map(_line, lines)) + "\n", encoding="utf-8")
+    try:
+        events = server.read_session(cwd, "s5")
+        check("a replayed thinking block keeps no signature and a redacted one no data",
+              "SSSS" not in json.dumps(events) and "DDDD" not in json.dumps(events))
+        live = server.drop_signatures({"type": "stream_event", "event": {
+            "type": "content_block_delta", "delta": {"type": "signature_delta", "signature": "abc"}}})
+        check("a live signature_delta is blanked, the event itself kept",
+              live["event"]["delta"] == {"type": "signature_delta", "signature": ""})
+        start = server.history_page_start(events, len(events))
+        page = events[start:]
+        check("the tail page is whole turns under the budget: it opens on what the person said",
+              0 < start < len(events) and page[0]["message"]["content"][0].get("text", "").startswith("turn")
+              and len(json.dumps(page)) < server.HISTORY_PAGE_BYTES * server.HISTORY_PAGE_SLACK)
+        before = server.history_page_start(events, start)
+        check("the page before it ends where the tail began and opens on a turn too",
+              before < start and events[before]["message"]["content"][0].get("text", "").startswith("turn"))
+        # A turn longer than the slack: cut mid-turn, but never between a call
+        # and its answer.
+        server.HISTORY_PAGE_BYTES, old_bytes = 20 * 1024, server.HISTORY_PAGE_BYTES
+        try:
+            cut = server.history_page_start(events, len(events))
+        finally:
+            server.HISTORY_PAGE_BYTES = old_bytes
+        check("an over-long turn is cut before an assistant event that follows an answer",
+              events[cut]["type"] == "assistant" and events[cut - 1]["type"] == "user"
+              and cut > start)
+        head = server.read_session(cwd, "s5", said=2)
+        check("preview=2 stops reading after the second thing said",
+              [e["message"]["content"][0].get("text") for e in head if server._says_something(e)]
+              == ["turn 0", "done 0"] and len(head) < len(events))
+    finally:
+        server.PROJECTS_DIR = old_projects_dir
+
 print("read_agent_events: after/next offset behaviour")
 with tempfile.TemporaryDirectory() as tmp:
     agent_file = Path(tmp) / "agent-f00d.jsonl"

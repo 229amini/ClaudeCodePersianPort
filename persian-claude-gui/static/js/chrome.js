@@ -1120,7 +1120,8 @@ function schedulePreview(row, sess, projPath) {
       try {
         const data = await api("/api/session?id=" + encodeURIComponent(sess.session_id)
                                + "&cwd=" + encodeURIComponent(projPath || currentCwd)
-                               + worktreeQuery(sess.worktree));
+                               + worktreeQuery(sess.worktree)
+                               + "&preview=3");   // the first lines, not the file
         items = exchanges(data.events ?? []);
       } catch (err) {
         return;   // best-effort chrome; never interrupts the conversation
@@ -1429,6 +1430,9 @@ async function resumeSession(sessionId, projPath, worktree) {
     reportOpenFailure(err);
     return;
   }
+  // The history below is this tab's backfill: without the mark, putting the
+  // tab on screen fetched the same transcript a second time (backfillTab).
+  if (!data.adopted) backfilled.add(data.tab);
   await tabBridge?.switchTo(data.tab);
   if (data.adopted) return;   // it was already on screen in that tab
   // The switch can be refused (that tab is gone) or overtaken by the user, and
@@ -1509,6 +1513,7 @@ export async function forkFrom({ el, uuid, before = false, text = "" }) {
       events = [];   // the copy exists; only its picture of the past is missing
     }
   }
+  backfilled.add(data.tab);   // drawn right here, from the source transcript
   await switchToTab(data.tab);
   renderInto(data.tab, events);
   if (tabBridge?.active?.() === data.tab) {
