@@ -33,6 +33,7 @@ const TICK_MS = 1000;          // the clocks on screen, while anything runs
 const STRIP_LINES = 3;         // running tasks drawn as lines; the rest are «+N»
 
 let registry = [];      // what /api/agents last reported, in its own order
+let registryFor = null; // the session `registry` belongs to
 let strip = null;       // the row of agents above the composer
 let listTimer = 0;
 let refreshTimer = 0;
@@ -439,7 +440,17 @@ export function refreshAgents() {
 async function loadAgents() {
   // No session yet (a fresh conversation before its first turn): /api/agents
   // requires an id and answers 400 without one, so there is nothing to ask.
-  if (!token || !state.status.sessionId) return;
+  if (!token) return;
+  // The list belongs to ONE session. A switch to a tab with no session yet, or
+  // one whose request then fails, kept painting the previous tab's helpers —
+  // in every conversation the user opened. Drop them before asking.
+  if (registryFor !== (state.status.sessionId || null)) {
+    registry = [];
+    registryFor = null;
+    progress.clear();
+    paint();
+  }
+  if (!state.status.sessionId) return;
   // Captured before the await: a project/session switch clears state.status
   // .sessionId synchronously (resetStatus), but a request already in flight
   // for the OLD session can still land after it — without this check its
@@ -450,6 +461,7 @@ async function loadAgents() {
     const data = await api(agentsUrl("/api/agents"));
     if (state.status.sessionId !== forSession) return;   // session changed under us
     registry = Array.isArray(data.agents) ? data.agents : [];
+    registryFor = forSession;
     paint();
   } catch (err) {
     // best-effort chrome; the next poll retries. `registry` is left exactly
@@ -670,6 +682,7 @@ export function resetAgents() {
   closeDrawer();
   closePanel();
   registry = [];
+  registryFor = null;
   progress.clear();
   cleared.clear();
   showHistory = false;

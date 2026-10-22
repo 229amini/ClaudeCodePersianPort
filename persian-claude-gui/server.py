@@ -2223,6 +2223,14 @@ def _enrich_agent_meta(folder: Path | None, entry: dict) -> None:
         entry["agentType"] = meta["agentType"]
     if meta.get("model"):
         entry["model"] = meta["model"]
+    # A stop from the CLI's own UI (Esc / kill) writes no task-notification and
+    # no TaskStop result — only this flag — so without it the agent of a still
+    # open session reported "running" forever.
+    if meta.get("stoppedByUser") and not entry.get("completed"):
+        entry["completed"] = True
+        entry["stopped"] = True
+    elif meta.get("finished"):
+        entry["completed"] = True
 
 
 def read_agent_events(agent_file: Path, after: int = 0) -> tuple[list[dict], int]:
