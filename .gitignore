@@ -45,3 +45,6 @@ persian-claude-gui/static*/_shot_probe.html
 # one left behind by an interrupted run must never be committed.
 persian-claude-gui/static*/_*_probe.html
 persian-claude-gui/static*/_probe_edge.html
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
