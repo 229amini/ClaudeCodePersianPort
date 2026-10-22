@@ -146,7 +146,8 @@ CLAUDE_ARGS = [
 
 
 def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
-               worktree: str | None = None, fork_at: str | None = None) -> list[str]:
+               worktree: str | None = None, fork_at: str | None = None,
+               chrome: bool = False) -> list[str]:
     """The CLI argv for one process, minus the binary itself.
 
     Lifted out of ClaudeSession.start() so the flag combinations can be
@@ -154,8 +155,16 @@ def spawn_args(resume_id: str | None = None, fork_id: str | None = None,
     appended LAST and is orthogonal to the resume flags: a resumed session
     reuses the worktree it already had rather than making a second one
     (measured 2026-09-06, CLI 2.1.263).
+
+    `--chrome` is the Claude in Chrome extension. `-p` ignores the TUI's own
+    default (claudeInChromeDefaultEnabled in .claude.json) and connects the
+    extension only when the flag is on argv (measured 2026-10-22, CLI
+    2.1.301: 22 mcp__claude-in-chrome__* tools in system/init with the flag,
+    none without). See chrome_default_enabled().
     """
     args = list(CLAUDE_ARGS)
+    if chrome:
+        args.append("--chrome")
     if fork_id:
         args += ["--resume", fork_id, "--fork-session"]
         # Fork FROM A MESSAGE: the copy keeps the history only up
@@ -730,6 +739,17 @@ def global_config_path() -> Path:
         return legacy
     env = os.environ.get("CLAUDE_CONFIG_DIR")
     return (Path(env) if env else Path.home()) / ".claude.json"
+
+
+def chrome_default_enabled() -> bool:
+    """The TUI's «/chrome → Enabled by default» choice, which `-p` does not
+    read for itself (see spawn_args). False on any read or parse failure: a
+    missing extension must never stop a conversation from starting."""
+    try:
+        data = json.loads(global_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("claudeInChromeDefaultEnabled") is True
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -3958,7 +3978,8 @@ class ClaudeSession:
         # a session started from scratch.
         self.session_id = None if fork_id else resume_id
         args = spawn_args(resume_id=resume_id, fork_id=fork_id,
-                          worktree=self.worktree, fork_at=fork_at)
+                          worktree=self.worktree, fork_at=fork_at,
+                          chrome=chrome_default_enabled())
 
         # No --settings: hooks supplied that way are ignored entirely by claude
         # 2.1.221. Approvals arrive in-band as

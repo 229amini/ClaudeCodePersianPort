@@ -2626,6 +2626,26 @@ check("a fork from a message cuts the copy with --resume-session-at",
       == ["--resume", "s", "--fork-session", "--resume-session-at", "m-1", "--worktree", "w"])
 check("...and a plain resume never carries a cut",
       "--resume-session-at" not in server.spawn_args(resume_id="s", fork_at="m-1"))
+check("--chrome only when asked, and the worktree still last",
+      "--chrome" not in server.spawn_args()
+      and server.spawn_args(resume_id="s", worktree="w", chrome=True)[-5:]
+      == ["--chrome", "--resume", "s", "--worktree", "w"])
+_saved_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+with tempfile.TemporaryDirectory() as tmp:
+    os.environ["CLAUDE_CONFIG_DIR"] = tmp
+    try:
+        check("no .claude.json → no --chrome", server.chrome_default_enabled() is False)
+        (Path(tmp) / ".claude.json").write_text('{"claudeInChromeDefaultEnabled": true}',
+                                                encoding="utf-8")
+        check("the TUI's Chrome default is honoured", server.chrome_default_enabled() is True)
+        (Path(tmp) / ".claude.json").write_text('{"claudeInChromeDefaultEnabled": false',
+                                                encoding="utf-8")
+        check("a half-written .claude.json reads as off", server.chrome_default_enabled() is False)
+    finally:
+        if _saved_cfg is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = _saved_cfg
 with tempfile.TemporaryDirectory() as tmp:
     chain = Path(tmp) / "c.jsonl"
     chain.write_text('{"type":"user","uuid":"u-1","parentUuid":null}\n'
