@@ -58,7 +58,7 @@ SCENES = ("home", "conversation", "panes3", "panes4", "permission", "question", 
           "newsession-pair", "bell", "changes", "layout", "queue",
           "bar-model", "bar-slash", "bar-mode", "bar-usage", "bar-plus", "marks", "tasks", "lw0",
           "search", "bar-style", "bar-switch", "audit", "ctx", "idle", "beforeafter", "accounts", "wall",
-          "servers", "servers-add")
+          "servers", "servers-add", "search-text")
 
 FALLBACK_STYLE_LABELS = [
     {"id": "frugal-concise", "title": "کار روزمره",
@@ -114,6 +114,12 @@ def stub_script(now: float) -> str:
             # would take them back out of the sidebar and the pane headers.
             "  if (path === '/api/tabs') return Promise.resolve(new Response("
             "    JSON.stringify(window.__shotTabs || {tabs: [], active: ''}),"
+            "    {headers: {'Content-Type': 'application/json'}}));"
+            # The sidebar's full-text search: two conversations that matched in
+            # their words only, each with the snippet around its hit.
+            "  if (path === '/api/search') return Promise.resolve(new Response(JSON.stringify({hits: ["
+            "    {session_id: 'sess-4', snippet: '…سبد خرید وقتی ده کالا دارد سه ثانیه طول می‌کشد تا باز شود، علتش کوئری‌های پشت سر هم است…'},"
+            "    {session_id: 'sess-6', snippet: '…هزینه‌های شهریور را از روی فاکتورها جمع بزن و جدول را مرتب کن…'}]}),"
             "    {headers: {'Content-Type': 'application/json'}}));"
             # The composer bar's «+» asks for this machine's MCP servers.
             "  if (path === '/api/control' && String(opts && opts.body).includes('mcp_status'))"
@@ -266,6 +272,15 @@ async function run() {
     field.value = "api";
     field.dispatchEvent(new Event("input", {bubbles: true}));
     await sleep(300);
+    return;
+  }
+  if (SCENE === "search-text") {
+    // A hit in the words only: its snippet goes on a line of its own under the row.
+    const field = document.getElementById("side-search");
+    field.focus();
+    field.value = "هزینه";
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    await sleep(700);     // askText's 250 ms debounce, then the repaint
     return;
   }
   if (SCENE.startsWith("newsession")) {

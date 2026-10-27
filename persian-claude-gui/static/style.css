@@ -561,8 +561,14 @@ pre, code, .path, .diff, .tool-output, .mono {
 .side-search:focus-visible { outline: none; border-color: var(--app-input-active-border); }
 /* A hit names the project it lives in, after its own name. */
 /* A full-text hit: the words around it, under its row (chrome.js
-   renderSearch). Two lines at most; the row above is the thing to click. */
+   renderSearch). Two lines at most; the row above is the thing to click.
+   The row is a flex LINE, so the snippet wraps onto its own line at full
+   width — beside the button it squeezed the name away and the time ran over
+   the snippet's text (2026-10-25). */
+.proj-sessions li:has(> .sess-snippet) { flex-wrap: wrap; }
 .sess-snippet {
+  flex: 1 0 100%;
+  min-width: 0;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
