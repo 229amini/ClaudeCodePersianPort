@@ -60,8 +60,8 @@ COOKIE_NAME = "pcg_token"
 # version number are per-edition; everything below this line is not. PCG_UI
 # exists so a test that boots the server can pick an edition without a flag.
 EDITIONS = {
-    "web":      ("static",          "کلاد فارسی",            "1.14.0"),
-    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.14.0"),
+    "web":      ("static",          "کلاد فارسی",            "1.15.0"),
+    "terminal": ("static-terminal", "کلاد فارسی — ترمینال",  "0.15.0"),
 }
 
 HERE = Path(__file__).resolve().parent
@@ -396,7 +396,7 @@ def has_desktop() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
-def desktop_open(target: Path) -> None:
+def desktop_open(target: Path | str) -> None:
     """What a double-click does: `startfile` on Windows, xdg-open on a Linux
     desktop. Raises OSError where there is no desktop to open it on."""
     if not has_desktop():
@@ -410,6 +410,25 @@ def desktop_open(target: Path) -> None:
     subprocess.Popen([opener, str(target)], stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
+
+
+LINK_SCHEMES = ("http", "https", "mailto")
+
+
+def checked_link(url: object) -> str | None:
+    """URL if a link in the window may go to the default browser, else None.
+    `startfile` on anything else is "run this": a `file:` URL, a bare path or
+    a registered protocol handler would be launched, not shown."""
+    if not isinstance(url, str) or not 0 < len(url) <= 4096:
+        return None
+    if any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7F for c in url):
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in LINK_SCHEMES:
+        return None
+    if parsed.scheme.lower() != "mailto" and not parsed.netloc:
+        return None
+    return url
 
 
 def shell_command(command: str, shell: str | None = None) -> str | list[str]:
@@ -6217,6 +6236,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": error})
                 return
             self._send_json(HTTPStatus.OK, {"ok": True, "path": path})
+        elif parsed.path == "/api/open-link":
+            # A link in a message opens in the person's default browser, not
+            # in this app window (where it replaced the app). No desktop here
+            # (--serve): 409, and the page opens it in its own browser.
+            url = checked_link(body.get("url"))
+            if url is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "not a link"})
+                return
+            if not has_desktop():
+                self._send_json(HTTPStatus.CONFLICT, {"error": "no desktop"})
+                return
+            try:
+                desktop_open(url)
+            except OSError as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True})
         elif parsed.path == "/api/attention":
             title = body.get("title")
             flashed = flash_window(title[:512]) if isinstance(title, str) else 0

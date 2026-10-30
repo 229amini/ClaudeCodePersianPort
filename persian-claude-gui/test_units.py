@@ -2594,6 +2594,16 @@ try:
     remote_out, remote_out_err = server.export_transcript("x")
     check("and so does export_transcript", remote_out_err is None and not opened)
     check("Ctrl+G's editor never starts", server.edit_externally("draft") == ("draft", False))
+
+    print("checked_link: /api/open-link hands only a web or mail link to the shell")
+    check("http, https and mailto pass unchanged",
+          [server.checked_link(u) for u in ("https://a.b/c?d=1#e", "http://a.b", "mailto:x@y.z")]
+          == ["https://a.b/c?d=1#e", "http://a.b", "mailto:x@y.z"])
+    check("anything startfile would RUN is refused",
+          not any(server.checked_link(u) for u in (
+              "file:///C:/Windows/System32/calc.exe", r"C:\Windows\System32\calc.exe",
+              "ms-settings:", "javascript:alert(1)", "https:", "https://a.b/ c",
+              "https://a.b/\nc", "", None, 5, "https://" + "a" * 4096)))
 finally:
     server.desktop_open, server.has_desktop = _real_desktop_open, _real_has_desktop
     server.Path.home = _real_home

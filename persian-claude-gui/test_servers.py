@@ -44,6 +44,13 @@ sys.path.insert(0, str(HERE))
 
 REAL_STATE = Path(os.environ.get("APPDATA") or Path.home() / ".config") / "persian-claude" / "tunnels.json"
 
+# Now, before main() swaps APPDATA: test_layout reads the PC's real APPDATA at
+# import, and boot_server gives a server booted on THAT one a throwaway state
+# dir. Imported later, it took the throwaway APPDATA for the real one, so the
+# route half lost its seeded servers and the tab half restored this PC's saved
+# server tabs (2026-10-30).
+import test_layout  # noqa: E402,F401
+
 
 PROBE_JS = r"""
 <pre id="probe-out" hidden></pre>
@@ -172,6 +179,7 @@ const until = async (fn, ms = 4000) => { const end = Date.now() + ms;
 
 
 INNER_HTML = """<!doctype html><html dir="rtl"><body><div class="busy"></div>
+<a id="ext" href="https://example.com/inner">x</a>
 <script>window.STRINGS = {};</script>
 <script type="module">
 import { initHosts, tellHost } from "/static/js/hosts.js";
@@ -180,6 +188,7 @@ window.addEventListener("message", (e) => {
   if (e.data === "press") document.dispatchEvent(new KeyboardEvent("keydown",
     { key: "PageDown", ctrlKey: true, bubbles: true, cancelable: true }));
   if (e.data === "news") tellHost("news");
+  if (e.data === "link") document.getElementById("ext").click();
 });
 </script></body></html>
 """
@@ -252,6 +261,22 @@ const flush = () => { document.getElementById("probe-out").textContent = "PROBE"
   frame().contentWindow.postMessage("news", "*");
   await until(() => dot().classList.contains("news"));
   out.newsDot = dot().classList.contains("news"); flush();
+
+  const opened = () => calls.filter((c) => c.url === "/api/open-link").map((c) => c.body.url);
+  const here = location.href;
+  const a = Object.assign(document.createElement("a"), { href: "https://example.com/a?b=1", textContent: "a" });
+  const own = Object.assign(document.createElement("a"), { href: "#own", textContent: "own" });
+  document.body.append(a, own);
+  a.click();
+  a.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
+  own.click();
+  await sleep(100);
+  out.linkOut = opened();
+  out.linkStayed = location.href.split("#")[0] === here.split("#")[0];
+  frame().contentWindow.postMessage("link", "*");
+  await until(() => opened().length > 2);
+  out.linkInner = opened()[2] ?? null;
+  a.remove(); own.remove(); flush();
 
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", ctrlKey: true, bubbles: true, cancelable: true }));
   out.keyHere = !frames().hidden;
@@ -329,6 +354,11 @@ def tab_checks() -> list[tuple[bool, str, str]]:
           "the page inside says hello and busy: the note goes, the dot pulses")
     check(m.get("localBack") and m.get("newsDot"), "back on «این رایانه», news from the server marks its tab")
     check(m.get("keyHere") and m.get("newsCleared"), "Ctrl+PageUp here switches tabs; a visit clears the news")
+    check(m.get("linkOut") == ["https://example.com/a?b=1"] * 2 and m.get("linkStayed"),
+          "a link (click or middle click) goes to the default browser; the window stays; "
+          "a link to the app itself is left alone", str(m.get("linkOut")))
+    check(m.get("linkInner") == "https://example.com/inner",
+          "a link inside a server tab opens through THIS window's machine", str(m.get("linkInner")))
     check(m.get("keyInside"), "Ctrl+PageDown inside the frame switches too (forwarded)")
     check(m.get("offlineDot") and m.get("offlineSays"),
           "a dropped tunnel: red dot, the reason and «دوباره امتحان کنید»",

@@ -18,7 +18,8 @@
    127.0.0.1 origins: `hello` once loaded, `busy`, `news` (render.js
    flashTaskbar, which inside a tab asks the window holding it to flash
    instead — the server's own /api/attention has no screen), and `key` for
-   Ctrl+PageUp/PageDown, which the frame would otherwise swallow. A server on
+   Ctrl+PageUp/PageDown, which the frame would otherwise swallow, and `link`
+   for a link to open in this machine's default browser. A server on
    an older version sends none of them and still works; its tab just has no
    dot.
 
@@ -61,6 +62,46 @@ export function tellHost(kind, extra = {}) {
   const origin = hostOrigin();
   if (origin) window.parent.postMessage({ pcg: kind, ...extra }, origin);
   return true;
+}
+
+/* --- links: the person's own browser, never this window ---------------------
+   An app-mode window has no address bar and no back button: a link followed
+   in it replaced the app, and target=_blank opened an Edge window whatever
+   the default browser was. Every http/https/mailto link to another origin
+   goes to /api/open-link (startfile, the default browser) instead. Inside a
+   server tab the server has no screen, so the window holding the tab asks
+   its own; a remote window with no holder opens it itself. */
+
+const LINK_URL = /^(https?:\/\/|mailto:)/i;
+
+export function openLink(url) {
+  if (embedded && hostOrigin()) {
+    tellHost("link", { url });
+    return;
+  }
+  const fallback = () => window.open(url, "_blank", "noopener");
+  if (!token || remote) return void fallback();
+  api("/api/open-link", { url }).catch(fallback);
+}
+
+function onLinkClick(e) {
+  if (e.defaultPrevented || e.button > 1) return;
+  const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  if (!a || a.hasAttribute("download")) return;
+  let url;
+  try {
+    url = new URL(a.getAttribute("href"), location.href);
+  } catch (err) {
+    return;
+  }
+  if (!LINK_URL.test(url.href) || url.origin === location.origin) return;
+  e.preventDefault();
+  if (e.type === "click" || e.button === 1) openLink(url.href);
+}
+
+function initLinks() {
+  document.addEventListener("click", onLinkClick);
+  document.addEventListener("auxclick", onLinkClick);
 }
 
 function initEmbedded() {
@@ -337,10 +378,14 @@ function onMessage(e) {
     case "key":
       if (e.data.dir === 1 || e.data.dir === -1) cycle(e.data.dir);
       break;
+    case "link":
+      if (typeof e.data.url === "string" && LINK_URL.test(e.data.url)) openLink(e.data.url);
+      break;
   }
 }
 
 export async function initHosts() {
+  initLinks();
   if (embedded) {
     initEmbedded();
     return;
