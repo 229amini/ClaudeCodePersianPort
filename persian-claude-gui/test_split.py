@@ -523,10 +523,10 @@ async function layoutCase(which) {
     request_id: "r1", tool_name: "Write",
     tool_input: {file_path: "D:\\\\projects\\\\p9\\\\a.md", content: "x"}});
   await sleep(150);
+  // Held, not drawn into another conversation's column (user, 2026-11-02).
   out.permOpen = CELLS().map((r) => !!r.querySelector(".perm")?.open);
-  const src = CELLS()[0].querySelector(".perm-source");
-  out.permSource = {shown: !!src && !src.hidden, text: (src?.textContent ?? "").trim()};
-  APP.cells[0].perm.dismiss("r1");
+  APP.routeEvent({type: "wrapper", subtype: "permission_resolved", tab: "t9",
+    request_id: "r1", tool_name: "Write", decision: "deny"});
   await sleep(80);
 
   /* --- Alt+3 moves the keyboard, and the next key follows it --------------- */
@@ -649,8 +649,11 @@ async function layoutCase(which) {
   APP.routeEvent({type: "wrapper", subtype: "permission_request", tab: "t4",
     request_id: "r2", tool_name: "Bash", tool_input: {command: "dir"}});
   await sleep(120);
+  const permT4 = CELLS().map((r) => !!r.querySelector(".perm")?.open);
+  const t4Cells = APP.cells.map((c) => c.tab === "t4");
   APP.setSplit(1);
   await sleep(220);
+  const heldOpen = !!CELLS()[0].querySelector(".perm")?.open;
   out.afterSplit1 = {
     cells: CELLS().length,
     split: grid.dataset.split,
@@ -658,11 +661,18 @@ async function layoutCase(which) {
     known: APP.tabs.size,
     // The dialog the removed column was asking through is gone; the request it
     // was holding must not have gone with it.
-    permOpen: !!CELLS()[0].querySelector(".perm")?.open,
-    permTool: (CELLS()[0].querySelector(".perm-tool")?.textContent ?? "").trim(),
+    permT4,
+    t4Cells,
+    heldOpen,
+    waiting: document.querySelector('#open-tabs .tab-row[data-tab="t4"]')?.dataset.status ?? "",
   };
-  APP.cells[0].perm.dismiss("r2");
+  // Still held, not lost: the server resolving it is what clears the row.
+  // (Opening that conversation brings it on screen: test_parity.py.)
+  APP.routeEvent({type: "wrapper", subtype: "permission_resolved", tab: "t4",
+    request_id: "r2", tool_name: "Bash", decision: "deny"});
   await sleep(80);
+  out.afterSplit1.cleared =
+    document.querySelector('#open-tabs .tab-row[data-tab="t4"]')?.dataset.status ?? "";
 
   /* --- known risk 2: is the per-frame paint still coalesced with 4 columns? -
      The DOM write for a streaming bubble is rAF-coalesced (render.js
@@ -1078,10 +1088,9 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
             "pane replaced: ['t1', 't3']")
 
     # 6. a request for a conversation nobody is watching
-    if m["permOpen"] != [True, False, False, False]:
-        say(f"the unplaced tab's permission opened in {m['permOpen']} (want the focused cell)")
-    if not m["permSource"]["shown"] or not m["permSource"]["text"]:
-        say(f"the «from another session» line did not show: {m['permSource']}")
+    if any(m["permOpen"]):
+        say(f"the unplaced tab's permission opened in {m['permOpen']} - want no "
+            "column: it waits until its own conversation is on screen")
     # 6b. pcg-0o7: the dialog pulled the keyboard in mid-render; nothing else moves
     mid = m["midRender"]
     if mid["focused"] != 1:
@@ -1123,9 +1132,16 @@ def check(m: dict, where: str, bad: list[str], tight: bool = False,
         say(f"the parked conversations left the sidebar: {after['sidebar']}")
     if after["known"] < 4:
         say(f"only {after['known']} tabs survived /split 1")
-    if not after["permOpen"] or "Bash" not in after["permTool"]:
-        say("the removed column's pending permission was lost "
-            f"(open={after['permOpen']} tool={after['permTool']!r})")
+    if after["permT4"] != after["t4Cells"]:
+        say(f"t4's permission opened in {after['permT4']} - want its own column only "
+            f"{after['t4Cells']}")
+    if after["heldOpen"]:
+        say("the removed column's permission opened over another conversation")
+    if after["waiting"] != "waiting":
+        say(f"the held permission's row reads {after['waiting']!r}, not 'waiting'")
+    if after["cleared"] == "waiting":
+        say("the held permission's row still reads 'waiting' after the server "
+            "resolved it")
     # 10. the idle hint: gated on the agents flag, and only in the focused column
     if any(m["idleWithAgents"]):
         say(f"the idle notice fired over running agents in {m['idleWithAgents']}")

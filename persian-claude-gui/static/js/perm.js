@@ -67,6 +67,7 @@ function askQuestions(req) {
    that will never resolve itself. */
 export function permAsking(tab) {
   if (!tab) return false;
+  if (held.some((req) => req.tab === tab)) return true;
   for (const one of PERMS) {
     if (one.asking(tab)) return true;
   }
@@ -87,24 +88,56 @@ export function setPermFocus(fn) {
   getFocusedCell = fn;
 }
 
-/* ONE dialog per cell, N conversations: the request opens in the cell already
-   showing that conversation, and otherwise in the FOCUSED cell — which then
-   says «از نشست دیگر» itself (paintPermSource below). NEVER
-   deferred: a background conversation waiting on an answer is exactly the case
-   the dialog has to name, and leaving it unshown blocks that CLI until its
-   timeout with nothing on screen. */
+/* Requests for a conversation no cell is showing. They wait here, not in some
+   other conversation's dialog: a question from session A drawn over session B
+   stopped B's work until it was answered (user, 2026-11-02). The sidebar row
+   still says «منتظر تأیید» (permAsking above), and nothing times out —
+   PERMISSION_TIMEOUT and ASK_TIMEOUT are None in server.py. */
+let held = [];
+
+/* Does this dialog's cell show that conversation? spec-test.html has no grid
+   (cell is null): its one dialog shows everything. A request with no tab has
+   no conversation to wait for. */
+function showsTab(one, tab) {
+  return !tab || !one.cell || one.cell.tab === tab;
+}
+
+/* ONE dialog per cell, N conversations: the request opens in the cell showing
+   that conversation and nowhere else; with no such cell it is held until one
+   shows it (syncPermissions). Only a request with no tab falls back to the
+   FOCUSED cell. */
 export function showPermission(req) {
   const list = [...PERMS];
   const focused = getFocusedCell?.();
-  const target = list.find((one) => req?.tab && one.cell.tab === req.tab)
-              ?? list.find((one) => one.cell === focused)
-              ?? list[0];
-  target?.show(req);
+  const target = req?.tab
+    ? list.find((one) => showsTab(one, req.tab))
+    : list.find((one) => one.cell === focused) ?? list[0];
+  if (target) {
+    target.show(req);
+    return;
+  }
+  held.push(req);
+  // Held is still asked: the tab's dot follows this window's list from here.
+  if (req?.tab) permSeen.add(req.tab);
+  repaintTabs();
+}
+
+/* A cell changed the conversation it shows (app.js park/placeIn): requests
+   whose conversation left the screen are held, and held ones whose
+   conversation is now on screen open there. */
+export function syncPermissions() {
+  for (const one of PERMS) held.push(...one.evict());
+  const waiting = held;
+  held = [];
+  for (const req of waiting) showPermission(req);
+  repaintTabs();
 }
 
 /* The server resolved it without us (timeout, or another window answered). */
 export function dismissPermission(requestId) {
+  held = held.filter((req) => req.request_id !== requestId);
   for (const one of PERMS) one.dismiss(requestId);
+  repaintTabs();
 }
 
 /* That conversation is gone (app.js dropTab, off a tagged `wrapper/closed`).
@@ -119,6 +152,7 @@ export function dismissTabPermissions(tab) {
   // answer, which is the right default for a tab this window knows nothing
   // about yet.
   permSeen.delete(tab);
+  held = held.filter((req) => req.tab !== tab);
   for (const one of PERMS) one.dismissTab(tab);
 }
 
@@ -551,10 +585,19 @@ export function makePerm(root, cell) {
     dismissTab: (tab) => dropPermissions((req) => req.tab === tab),
     asking: (tab) => perm.current?.tab === tab
                   || perm.queue.some((req) => req.tab === tab),
+    /* Hand back every request this cell no longer shows the conversation of.
+       Not answered: they wait in `held` until that conversation is on screen. */
+    evict() {
+      const gone = [perm.current, ...perm.queue]
+        .filter((req) => req && !showsTab(self, req.tab));
+      if (gone.length) dropPermissions((req) => gone.includes(req));
+      return gone;
+    },
     /* The cell is going away — `/split 1` removed the column this dialog was
        drawn in (MA4-T2). Whatever it was asking is NOT answered here: a
-       pending request holds a real CLI open until its timeout, so it is handed
-       to whichever dialog is left. Never denied on the user's behalf; that is
+       pending request holds a real CLI open, so it goes back through
+       showPermission: to the cell still showing its conversation, or held
+       until one does. Never denied on the user's behalf; that is
        an answer nobody gave. */
     retire() {
       PERMS.delete(self);

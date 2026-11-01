@@ -2561,10 +2561,9 @@ export function renderEvent(ev) {
         }
       } else if (ev.subtype === "permission_request") {
         pulsePhase("waiting");
-        // NEVER gated: one modal queue serves every open tab, and a background
-        // conversation waiting on an answer is exactly the case the dialog has
-        // to name (chrome.js reads ev.tab). Deferring it would leave that CLI
-        // blocked until its timeout with nothing on screen.
+        // Not gated on the column: perm.js routes it to the dialog of the
+        // column showing ev.tab, or holds it until one does - never into
+        // another conversation's column (user, 2026-11-02).
         showPermission(ev);
       } else if (ev.subtype === "permission_resolved") {
         dismissPermission(ev.request_id);

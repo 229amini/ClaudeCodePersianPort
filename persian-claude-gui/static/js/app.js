@@ -55,7 +55,9 @@ import { initFocus } from "./focus.js";
 import { initLogin } from "./login.js";
 import { initSideFoot } from "./servers.js";
 import { initHosts } from "./hosts.js";
-import { makePerm, dismissTabPermissions, setPermFocus } from "./perm.js";
+import {
+  makePerm, dismissTabPermissions, setPermFocus, syncPermissions,
+} from "./perm.js";
 import { makeComposer } from "./composer.js";
 import { makeControls } from "./controls.js";
 import { initAgents, applyAgents, refreshAgents, resetAgents } from "./agents.js";
@@ -435,6 +437,8 @@ function park(cell) {
   const entry = tab && tabs.get(tab);
   cell.tab = "";
   saveLayout();
+  // Its permission requests wait for it off screen (perm.js held).
+  syncPermissions();
   if (!entry) return;
   // Read BEFORE the move: an emptied log reports scrollTop 0, so the other
   // order silently sends every returning tab back to the top.
@@ -548,6 +552,8 @@ function placeIn(cell, tab) {
      chrome.js backfillTab decides the rest. */
   if (wantsTransport && !cell.log.childElementCount) backfillTab(tab);
   refreshProjects();
+  // Its held permission requests open here, and only here (perm.js).
+  syncPermissions();
 }
 
 /* Synchronous half of a switch: DOM, render state and chrome, into the FOCUSED

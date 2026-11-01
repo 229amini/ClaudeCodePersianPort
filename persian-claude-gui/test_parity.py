@@ -321,6 +321,16 @@ const hits = () => [...nav.querySelectorAll(".search-hits li[data-session]")]
     return !c || c.hidden ? "" : c.textContent; };
   const esc = async () => { dlg().dispatchEvent(new KeyboardEvent("keydown",
     { key: "Escape", bubbles: true, cancelable: true })); await sleep(40); };
+  // A request opens only in the column showing its conversation, and waits
+  // until that conversation is on screen (user, 2026-11-02).
+  routeEvent({ tab: "t1", type: "wrapper", subtype: "permission_request",
+    request_id: "p0", tool_name: "Bash", tool_use_id: "up0", tool_input: { command: "ls p0" } }); await sleep(30);
+  out.heldOff = dlg()?.open === true;
+  await switchTab("t1");
+  await sleep(60);
+  out.heldOn = dlg()?.open === true
+    && (dlg().querySelector(".perm-params")?.textContent ?? "").includes("ls p0");
+  await esc();
   ask("p1"); await sleep(30);
   out.lone = countText();
   ask("p2"); ask("p3"); await sleep(30);
@@ -496,6 +506,10 @@ def checks(m: dict) -> list[tuple[str, bool, str]]:
           m.get("offAgain") and m.get("offNote"), f"{m.get('offAgain')} / note {m.get('offNote')}")
 
     # 2. N of M
+    check("a request for a conversation not on screen waits, unopened",
+          m.get("heldOff") is False, str(m.get("heldOff")))
+    check("...and opens when that conversation comes on screen", m.get("heldOn") is True,
+          str(m.get("heldOn")))
     check("a lone permission request shows no count", m.get("lone") == "", f"«{m.get('lone')}»")
     check("stacked requests count «۱ از ۳», then «۲ از ۳», «۳ از ۳» as each is answered",
           (m.get("count1"), m.get("count2"), m.get("count3")) == ("۱ از ۳", "۲ از ۳", "۳ از ۳"),
